@@ -8,12 +8,13 @@
   "scripts": {
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "dev": "electron-vite dev",
-    "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build",
+    "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build && tsc -p tsconfig.e2e.json",
     "package": "npm run build && electron-builder --config electron-builder.yml",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.212",
     "better-sqlite3": "^11.3.0"
   },
   "devDependencies": {
