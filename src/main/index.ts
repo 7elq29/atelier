@@ -1,7 +1,9 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification } from 'electron'
 import { join } from 'node:path'
+import { loadConfig, saveConfig } from './config'
 import { closeDatabase, openDatabase } from './db'
 import { getLogFilePath, logger, rendererLogger } from './logger'
+import type { GardeniaConfig } from '../shared/config'
 
 const isDev = !app.isPackaged
 
@@ -55,6 +57,26 @@ function registerIpcHandlers(): void {
             ? rendererLogger.debug
             : rendererLogger.info
     fn(msg, extra)
+  })
+
+  ipcMain.handle('config:get', () => loadConfig())
+
+  ipcMain.handle('config:set', (_event, partial: Partial<GardeniaConfig>) => saveConfig(partial))
+
+  // Debug-only trigger for desktop notifications: there's no real "session
+  // needs attention" event yet (that lands with the session/chat surfaces),
+  // so this is the one real, testable path that exercises Electron's actual
+  // Notification API end-to-end.
+  ipcMain.handle('notification:debugTrigger', (_event, payload: { title: string; body: string }) => {
+    const { title, body } = payload
+    if (!Notification.isSupported()) {
+      logger.warn('desktop notifications not supported on this platform', { title, body })
+      return false
+    }
+    const notification = new Notification({ title, body })
+    notification.show()
+    logger.info('notification shown', { title, body })
+    return true
   })
 }
 
