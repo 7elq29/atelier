@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { GardeniaConfig } from '../shared/config'
+import type { DailyNote, ReadDailyNoteResult } from '../shared/daily-note-types'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -19,9 +20,27 @@ const api = {
     ipcRenderer.invoke('config:set', partial),
   /** Debug-only: fires a real OS notification via Electron's Notification API. */
   debugNotify: (title: string, body: string): Promise<boolean> =>
-    ipcRenderer.invoke('notification:debugTrigger', { title, body })
+    ipcRenderer.invoke('notification:debugTrigger', { title, body }),
+
+  // ── Daily notes (Obsidian integration) ──────────────────────────
+  getVaultRoot: (): Promise<string | null> => ipcRenderer.invoke('daily-note:getVaultRoot'),
+  getDefaultDate: (): Promise<string> => ipcRenderer.invoke('daily-note:getDefaultDate'),
+  readDailyNote: (date: string): Promise<ReadDailyNoteResult> => ipcRenderer.invoke('daily-note:read', date),
+  createDailyNote: (date: string): Promise<ReadDailyNoteResult> => ipcRenderer.invoke('daily-note:create', date),
+  writeDailyNote: (date: string, note: DailyNote): Promise<{ note: DailyNote }> =>
+    ipcRenderer.invoke('daily-note:write', date, note),
+  watchDailyNote: (date: string): Promise<void> => ipcRenderer.invoke('daily-note:watch', date),
+  unwatchDailyNote: (): Promise<void> => ipcRenderer.invoke('daily-note:unwatch'),
+  onDailyNoteChanged: (callback: (note: DailyNote) => void): (() => void) => {
+    const listener = (_event: unknown, note: DailyNote): void => callback(note)
+    ipcRenderer.on('daily-note:changed', listener)
+    return () => ipcRenderer.removeListener('daily-note:changed', listener)
+  },
+  /** Test-only: delays the next write-daily-note call. No-op if not registered (test builds only). */
+  testDelayNextWrite: (ms: number): Promise<void> => ipcRenderer.invoke('daily-note:testDelayNextWrite', ms)
 }
 
 contextBridge.exposeInMainWorld('gardenia', api)
 
 export type GardeniaApi = typeof api
+

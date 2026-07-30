@@ -3,6 +3,7 @@ import CommandPalette, { type PaletteItem } from './components/CommandPalette'
 import OnboardingWizard from './components/OnboardingWizard'
 import Sidebar, { type PlaceholderSession } from './components/Sidebar'
 import SettingsPanel from './components/SettingsPanel'
+import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
 import { useConfig } from './hooks/useConfig'
 
 // TODO: replace with the real session list once 02-session-lifecycle exists.
@@ -16,14 +17,16 @@ function resolveEffectiveTheme(theme: 'system' | 'light' | 'dark'): 'light' | 'd
 }
 
 /**
- * App shell + global nav/settings chrome for 08-global-nav-and-settings.
- * There's no real session/chat UI yet (that starts in 03-chat-surface-core),
- * so the sidebar's session list is a single placeholder entry — everything
- * else (command palette, collapsed rail, settings, onboarding, notifications)
- * is fully real.
+ * App shell + global nav/settings chrome for 08-global-nav-and-settings,
+ * with the Daily Notes / Obsidian-integration sidebar (09) docked to the
+ * right of the main area. There's no real session/chat UI yet (that starts
+ * in 03-chat-surface-core), so the sidebar's session list is a single
+ * placeholder entry — everything else (command palette, collapsed rail,
+ * settings, onboarding, notifications, daily notes) is fully real.
  */
 export default function App(): JSX.Element {
   const [appVersion, setAppVersion] = useState<string | null>(null)
+  const [date, setDate] = useState<string | null>(null)
   const { config, loaded, updateConfig } = useConfig()
 
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -42,6 +45,8 @@ export default function App(): JSX.Element {
           error: err instanceof Error ? err.message : String(err)
         })
       })
+
+    window.gardenia.getDefaultDate().then(setDate)
   }, [])
 
   // Theme: really flips `data-theme` on <html> — this is the one source of
@@ -178,6 +183,8 @@ export default function App(): JSX.Element {
             <span data-testid="app-version">{appVersion ?? 'loading…'}</span>
           </div>
         </div>
+
+        {date && <DailyNotesSidebar date={date} />}
       </div>
 
       <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />

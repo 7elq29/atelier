@@ -4,8 +4,10 @@ import { loadConfig, saveConfig } from './config'
 import { closeDatabase, openDatabase } from './db'
 import { getLogFilePath, logger, rendererLogger } from './logger'
 import type { GardeniaConfig } from '../shared/config'
+import { registerDailyNoteHandlers } from './daily-notes-handlers'
 
 const isDev = !app.isPackaged
+let mainWindow: BrowserWindow | null = null
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -31,6 +33,10 @@ function createWindow(): BrowserWindow {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
 
   return win
 }
@@ -78,6 +84,8 @@ function registerIpcHandlers(): void {
     logger.info('notification shown', { title, body })
     return true
   })
+
+  registerDailyNoteHandlers(() => mainWindow)
 }
 
 app.whenReady().then(() => {
@@ -88,10 +96,10 @@ app.whenReady().then(() => {
 
   logger.info('app ready', { version: app.getVersion(), platform: process.platform })
 
-  createWindow()
+  mainWindow = createWindow()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
   })
 })
 

@@ -1,0 +1,197 @@
+/* Daily Notes sidebar — mirrors Features/UI-Design/mocks/index.html's
+   .daily-notes-panel / .dn-* rules (the "round 8" enlarged sizing/typography
+   pass), rebuilt here as scoped classnames (dn-*) for the React tree. */
+
+.daily-notes-panel {
+  width: 350px;
+  flex-shrink: 0;
+  height: 100%;
+  background: var(--bg-sidebar);
+  display: flex;
+  flex-direction: column;
+}
+
+.dn-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.dn-head .dtitle {
+  font-size: 15px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.dn-section {
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  min-height: 40px;
+  overflow: hidden;
+}
+
+.dn-section-head {
+  padding: 12px 18px 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  display: flex;
+  flex-shrink: 0;
+}
+
+.dn-section-body {
+  padding: 0 18px 16px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.dn-resize-handle {
+  height: 5px;
+  cursor: row-resize;
+  background: transparent;
+  flex-shrink: 0;
+}
+.dn-resize-handle:hover {
+  background: var(--accent);
+}
+
+.dn-empty-state {
+  padding: 18px;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+/* ---- Timeline ---- */
+
+.dn-timeline-body {
+  position: relative;
+}
+.dn-timeline-track {
+  position: relative;
+}
+
+.dn-time-block {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 13px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.dn-time-block.done {
+  opacity: 0.55;
+  border-left-color: var(--border-strong);
+}
+.dn-time-block .dn-tb-range {
+  font-family: var(--font-mono);
+  font-size: 14.5px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.01em;
+}
+.dn-time-block .dn-tb-body {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+}
+.dn-time-block.done .dn-tb-label {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+}
+.dn-time-block-draft {
+  z-index: 5;
+  border-left-color: var(--warning);
+}
+.dn-draft-input {
+  width: 100%;
+  font-size: 14px;
+}
+
+.dn-tbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-strong);
+  flex-shrink: 0;
+}
+.dn-time-block.done .dn-tbox {
+  background: var(--border-strong);
+  border-color: var(--border-strong);
+}
+.dn-tbox.done {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.dn-current-time-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+  pointer-events: none;
+}
+.dn-current-time-label {
+  color: var(--accent);
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.dn-current-time-track {
+  flex: 1;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* ---- Unscheduled ---- */
+
+.dn-task-chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  padding: 7px 0;
+}
+.dn-task-chip.done span {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+}
+.dn-task-chip-remove {
+  margin-left: auto;
+  opacity: 0;
+}
+.dn-task-chip:hover .dn-task-chip-remove {
+  opacity: 1;
+}
+
+/* ---- Trackers ---- */
+
+.dn-tracker-mini {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  padding: 6px 0;
+}

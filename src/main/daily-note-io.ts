@@ -1,0 +1,363 @@
+/**
+ * daily-note-io.ts — Pure-function parser/serializer for Gardenia's Obsidian
+ * daily-note format. No `fs`/Electron imports: all disk access is handled by
+ * the caller (src/main/daily-notes-handlers.ts).
+ *
+ * Vault layout: `${vaultRoot}/01.dailynotes/${yyyy}/${mmm}/${ww}/${date}.md`
+ *
+ * Task line grammar:
+ *   `- [x] 09:30–12:00 Task text #tag [scheduled:: 2026-07-23] [gid:: <uuid>] — PersonName`
+ *
+ * `[key:: value]` is a single generic inline-field mechanism — `gid` is not
+ * special-cased in the regex, it rides the same extraction as `scheduled` /
+ * `completion` / `due`. Every task is minted a `gid` the first time it's
+ * parsed if it doesn't already have one; a task's `id` is always equal to
+ * its `gid`. Because `gid` lives in the file content rather than being
+ * derived from line position, a task's `id` is stable across re-parses even
+ * when other lines are added/removed/reordered around it — this is the
+ * mechanism the write-back tombstone diff (daily-notes-handlers.ts) relies
+ * on to tell "externally deleted" apart from "still there, just moved".
+ */
+
+import type {
+  DailyNote,
+  DailyTask,
+  TaskStatus,
+  TaskSection,
+  ExternalLink,
+  RawSections
+} from '../shared/daily-note-types'
+
+// ── id minting ───────────────────────────────────────────────────
+
+/** Mint a fresh persistent task id (UUID v4 via the platform's WebCrypto). */
+export function mintTaskId(): string {
+  return globalThis.crypto.randomUUID()
+}
+
+/** The set of task ids (== gids) present in a note — used for tombstone diffing. */
+export function getTaskIds(note: DailyNote): Set<string> {
+  return new Set(note.tasks.map((t) => t.id))
+}
+
+// ── status mapping ───────────────────────────────────────────────
+
+const STATUS_CHAR_TO_STATUS: Record<string, TaskStatus> = {
+  ' ': 'open',
+  x: 'done',
+  '>': 'forwarded',
+  '/': 'in-progress',
+  '-': 'cancelled'
+}
+
+const STATUS_TO_CHAR: Record<TaskStatus, string> = {
+  open: ' ',
+  done: 'x',
+  forwarded: '>',
+  'in-progress': '/',
+  cancelled: '-'
+}
+
+// ── line-level parsing ───────────────────────────────────────────
+
+const TASK_RE = /^(\s*)- \[(.)\]\s+(.*)$/
+const PLAIN_BULLET_RE = /^(\s*)-\s+(.+)$/
+
+function parseBulletLine(
+  line: string,
+  sectionHint: TaskSection,
+  isDelegatedSection: boolean,
+  allowPlainBullet: boolean
+): DailyTask | null {
+  const taskMatch = line.match(TASK_RE)
+  let rest: string
+  let status: TaskStatus = 'open'
+  let isNote = false
+
+  if (taskMatch) {
+    status = STATUS_CHAR_TO_STATUS[taskMatch[2]!] ?? 'open'
+    rest = taskMatch[3]!
+  } else if (allowPlainBullet) {
+    const plainMatch = line.match(PLAIN_BULLET_RE)
+    if (!plainMatch || !plainMatch[2]!.trim()) return null
+    rest = plainMatch[2]!
+    isNote = true
+  } else {
+    return null
+  }
+
+  let remaining = rest
+
+  // Time block, e.g. "09:30–12:00" or "09:30-12:00"
+  let timeBlock: string | undefined
+  const timeMatch = remaining.match(/^(\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2})\s+/)
+  if (timeMatch) {
+    timeBlock = timeMatch[1]!.replace(/\s+/g, '')
+    remaining = remaining.slice(timeMatch[0]!.length)
+  }
+
+  // Generic inline metadata: [key:: value] — gid rides this same mechanism.
+  const metadata: Record<string, string> = {}
+  remaining = remaining.replace(/\[(\w+)::\s*([^\]]*)\]/g, (_m, key: string, value: string) => {
+    metadata[key] = value.trim()
+    return ''
+  })
+
+  // External links: [label](url)
+  const externalLinks: ExternalLink[] = []
+  remaining = remaining.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+    (_m, label: string, url: string) => {
+      externalLinks.push({ label, url })
+      return ''
+    }
+  )
+
+  // Tags: #word or #word/word
+  const tags: string[] = []
+  remaining = remaining.replace(/#[\w/]+/g, (tag) => {
+    tags.push(tag)
+    return ''
+  })
+
+  // Delegated-to suffix: " — PersonName"
+  let delegatedTo: string | undefined
+  const delegatedMatch = remaining.match(/\s+—\s+(\S.*)$/)
+  if (delegatedMatch) {
+    delegatedTo = delegatedMatch[1]!.trim()
+    remaining = remaining.slice(0, delegatedMatch.index)
+  }
+
+  if (isDelegatedSection && !tags.includes('#delegated')) {
+    tags.push('#delegated')
+  }
+
+  const text = remaining.trim()
+  const isTracker = sectionHint === 'tracker' || tags.includes('#tracker')
+  const section: TaskSection = timeBlock && sectionHint !== 'tracker' ? 'day-plan' : sectionHint
+  const gid = metadata.gid && metadata.gid.length > 0 ? metadata.gid : mintTaskId()
+
+  return {
+    id: gid,
+    gid,
+    text,
+    status,
+    section,
+    tags,
+    scheduled: metadata.scheduled,
+    completion: metadata.completion,
+    due: metadata.due,
+    timeBlock,
+    externalLinks,
+    delegatedTo,
+    isTracker,
+    isNote
+  }
+}
+
+// ── section detection ────────────────────────────────────────────
+
+type SectionKind = 'frontmatter' | 'before-tasks' | 'tasks' | 'backlog' | 'delegated' | 'trackers' | 'after-tasks'
+
+function detectSection(line: string): SectionKind | null {
+  const trimmed = line.trim()
+  if (/^##\s+.*Tasks/i.test(trimmed)) return 'tasks'
+  if (/^###\s+.*Backlog/i.test(trimmed)) return 'backlog'
+  if (/^###\s+.*Delegated/i.test(trimmed)) return 'delegated'
+  if (/^##\s+.*(Retro|Claude\s*Log|Notes)/i.test(trimmed)) return 'after-tasks'
+  if (/>\s*\[!invisible]\s*Trackers/i.test(trimmed)) return 'trackers'
+  return null
+}
+
+// ── parser ────────────────────────────────────────────────────────
+
+export function parseDailyNote(content: string, date: string): { note: DailyNote; raw: RawSections } {
+  const lines = content.split('\n')
+  const tasks: DailyTask[] = []
+  const raw: RawSections = { frontmatter: [], beforeTasks: [], afterTasks: [] }
+
+  let currentSection: SectionKind = 'frontmatter'
+  let inFrontmatter = false
+  let frontmatterDone = false
+  let dayOfWeek = ''
+
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
+  if (fmMatch) {
+    const dayMatch = fmMatch[1]!.match(/day:\s*(.+)/)
+    if (dayMatch) dayOfWeek = dayMatch[1]!.trim()
+  }
+
+  for (const line of lines) {
+    if (line.trim() === '---' && !frontmatterDone) {
+      raw.frontmatter.push(line)
+      if (!inFrontmatter) {
+        inFrontmatter = true
+      } else {
+        inFrontmatter = false
+        frontmatterDone = true
+      }
+      continue
+    }
+    if (inFrontmatter) {
+      raw.frontmatter.push(line)
+      continue
+    }
+
+    const detected = detectSection(line)
+    if (detected !== null) currentSection = detected
+
+    switch (currentSection) {
+      case 'frontmatter':
+        break
+      case 'before-tasks':
+        if (detected !== 'tasks') raw.beforeTasks.push(line)
+        break
+      case 'tasks':
+        if (detected !== 'tasks') {
+          const task = parseBulletLine(line, 'day-plan', false, true)
+          if (task) tasks.push(task)
+        }
+        break
+      case 'backlog':
+        if (detected !== 'backlog') {
+          const task = parseBulletLine(line, 'unscheduled', false, true)
+          if (task) tasks.push(task)
+        }
+        break
+      case 'delegated':
+        if (detected !== 'delegated') {
+          const task = parseBulletLine(line, 'unscheduled', true, true)
+          if (task) tasks.push(task)
+        }
+        break
+      case 'trackers': {
+        const stripped = line.replace(/^>\s?/, '')
+        const task = parseBulletLine(stripped, 'tracker', false, true)
+        if (task) tasks.push(task)
+        break
+      }
+      case 'after-tasks':
+        if (detected === 'trackers') break
+        raw.afterTasks.push(line)
+        break
+    }
+  }
+
+  return { note: { date, dayOfWeek, tasks, bigThree: [] }, raw }
+}
+
+// ── serializer ────────────────────────────────────────────────────
+
+function serializeTaskLine(task: DailyTask): string {
+  const parts: string[] = []
+  if (task.timeBlock) parts.push(task.timeBlock)
+  if (task.text) parts.push(task.text)
+
+  const visibleTags = task.tags.filter((t) => t !== '#delegated')
+  if (visibleTags.length > 0) parts.push(visibleTags.join(' '))
+
+  for (const link of task.externalLinks) parts.push(`[${link.label}](${link.url})`)
+  if (task.delegatedTo) parts.push(`— ${task.delegatedTo}`)
+
+  const metaParts: string[] = []
+  if (task.scheduled) metaParts.push(`[scheduled:: ${task.scheduled}]`)
+  if (task.completion) metaParts.push(`[completion:: ${task.completion}]`)
+  if (task.due) metaParts.push(`[due:: ${task.due}]`)
+  // gid always round-trips, minted lazily by the parser if missing.
+  metaParts.push(`[gid:: ${task.gid}]`)
+  if (metaParts.length > 0) parts.push(metaParts.join(' '))
+
+  const prefix = task.isNote ? '-' : `- [${STATUS_TO_CHAR[task.status] ?? ' '}]`
+  return `${prefix} ${parts.join(' ').replace(/[ \t]+/g, ' ').trim()}`
+}
+
+export function serializeDailyNote(note: DailyNote, raw: RawSections): string {
+  const sections: string[] = []
+
+  if (raw.frontmatter.length > 0) sections.push(raw.frontmatter.join('\n'))
+  if (raw.beforeTasks.length > 0) {
+    sections.push('')
+    sections.push(...raw.beforeTasks)
+  }
+
+  sections.push('')
+  sections.push('## \u{1F4CB} Tasks')
+  sections.push('')
+  for (const task of note.tasks.filter((t) => t.section === 'day-plan')) {
+    sections.push(serializeTaskLine(task))
+  }
+
+  sections.push('')
+  sections.push('### ⚪ Backlog')
+  const backlog = note.tasks.filter((t) => t.section === 'unscheduled' && !t.tags.includes('#delegated'))
+  if (backlog.length > 0) for (const task of backlog) sections.push(serializeTaskLine(task))
+  else sections.push('- ')
+
+  sections.push('')
+  sections.push('### \u{1F91D} Delegated')
+  const delegated = note.tasks.filter((t) => t.section === 'unscheduled' && t.tags.includes('#delegated'))
+  if (delegated.length > 0) for (const task of delegated) sections.push(serializeTaskLine(task))
+  else sections.push('- ')
+
+  if (raw.afterTasks.length > 0) {
+    sections.push('')
+    sections.push(raw.afterTasks.join('\n'))
+  }
+
+  const trackers = note.tasks.filter((t) => t.section === 'tracker')
+  if (trackers.length > 0) {
+    sections.push('> [!invisible] Trackers')
+    for (const task of trackers) sections.push(`> ${serializeTaskLine(task)}`)
+  }
+
+  return `${sections.join('\n')}\n`
+}
+
+// ── path resolution ──────────────────────────────────────────────
+
+const MONTH_ABBREVS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+export function getISOWeek(d: Date): number {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  const dayNum = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+}
+
+export function resolveNotePath(date: string, vaultRoot: string): string {
+  const d = new Date(`${date}T00:00:00`)
+  const yyyy = d.getFullYear().toString()
+  const mmm = MONTH_ABBREVS[d.getMonth()]!
+  const ww = String(getISOWeek(d)).padStart(2, '0')
+  return `${vaultRoot}/01.dailynotes/${yyyy}/${mmm}/${ww}/${date}.md`
+}
+
+export function getDayOfWeek(date: string): string {
+  const d = new Date(`${date}T00:00:00`)
+  return DAY_NAMES[d.getDay()]!
+}
+
+export function generateNewNote(date: string): string {
+  const dayName = getDayOfWeek(date)
+  const lines: string[] = [
+    '---',
+    `date: ${date}`,
+    `day: ${dayName}`,
+    'type: daily',
+    '---',
+    '',
+    '## \u{1F4CB} Tasks',
+    '',
+    '### ⚪ Backlog',
+    '- ',
+    '',
+    '### \u{1F91D} Delegated',
+    '- ',
+    '',
+    '> [!invisible] Trackers',
+    ''
+  ]
+  return lines.join('\n')
+}
