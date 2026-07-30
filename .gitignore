@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-electron/
+release/
+*.log
+.DS_Store
+playwright-report/
+test-results/
+e2e-artifacts/actual/
+*.sqlite
+*.sqlite-journal
