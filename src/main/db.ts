@@ -98,6 +98,25 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
         tokenize = 'unicode61'
       );
     `
+  },
+  {
+    // fix-bug-triage-jul31 / bug #49: remembers recently-used project paths
+    // per host so the New Session modal can offer them again on reopen,
+    // instead of NewSessionModal's `isOpen` effect unconditionally wiping
+    // `projectPath` back to null every time it opens. Keyed on (host_id,
+    // path) so re-using an existing path is an upsert (bumps `used_at`,
+    // never duplicates) rather than growing unbounded — pruning to the 10
+    // most recent per host happens in SessionStore.recordProjectPathUsage.
+    name: '0005_project_path_history',
+    sql: `
+      CREATE TABLE IF NOT EXISTS project_path_history (
+        host_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        used_at TEXT NOT NULL,
+        PRIMARY KEY (host_id, path)
+      );
+      CREATE INDEX IF NOT EXISTS idx_project_path_history_host_used ON project_path_history(host_id, used_at);
+    `
   }
 ]
 

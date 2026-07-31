@@ -21,6 +21,11 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
   const [prompt, setPrompt] = useState('')
   const [planMode, setPlanMode] = useState(false)
   const [creating, setCreating] = useState(false)
+  // fix-bug-triage-jul31 / bug #49: recently-used remote paths for the
+  // currently-selected host, offered via a <datalist> on the remote path
+  // input rather than auto-filled — auto-filling risks silently creating a
+  // session in the wrong directory, so history is opt-in/selectable only.
+  const [recentPaths, setRecentPaths] = useState<string[]>([])
 
   useEffect(() => {
     if (isOpen) {
@@ -32,6 +37,25 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
       setCreating(false)
     }
   }, [isOpen])
+
+  // Re-fetch this host's path history whenever the modal opens or the
+  // selected host changes, so switching hosts always shows that host's own
+  // history rather than the previous host's.
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    window.gardenia
+      .listRecentProjectPaths(hostId)
+      .then((paths) => {
+        if (!cancelled) setRecentPaths(paths)
+      })
+      .catch(() => {
+        if (!cancelled) setRecentPaths([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, hostId])
 
   if (!isOpen) return null
 
@@ -82,14 +106,25 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
               // dialog can't address it, so this is a plain path field
               // (matches the harness's RemoteHost model: `cwd` is interpreted
               // on the remote host when `host` is set).
-              <input
-                className="input"
-                style={{ width: '100%' }}
-                data-testid="remote-project-path"
-                placeholder="/home/user/code/my-project"
-                value={projectPath ?? ''}
-                onChange={(e) => setProjectPath(e.target.value)}
-              />
+              <>
+                <input
+                  className="input"
+                  style={{ width: '100%' }}
+                  data-testid="remote-project-path"
+                  placeholder="/home/user/code/my-project"
+                  value={projectPath ?? ''}
+                  onChange={(e) => setProjectPath(e.target.value)}
+                  list="remote-project-path-history"
+                />
+                {/* Selectable history only — never auto-filled as a default
+                    value, to avoid silently creating a session in the wrong
+                    directory (fix-bug-triage-jul31 / bug #49). */}
+                <datalist id="remote-project-path-history" data-testid="remote-project-path-history">
+                  {recentPaths.map((path) => (
+                    <option key={path} value={path} />
+                  ))}
+                </datalist>
+              </>
             ) : (
               <button className="project-picker" data-testid="pick-project-folder" onClick={pickFolder} style={buttonReset}>
                 <span style={{ flex: 1, textAlign: 'left' }}>{projectPath ?? 'Choose a project folder…'}</span>
