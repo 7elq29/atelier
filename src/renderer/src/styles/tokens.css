@@ -199,6 +199,14 @@ a:hover { text-decoration: underline; }
 .btn-icon:hover { background: var(--bg-hover); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ---- Interactive-prompt action buttons (05-interactive-prompts) ---- */
+.btn-allow { background: var(--accent); border-color: var(--accent); color: var(--accent-text-on); }
+.btn-allow:hover { background: var(--accent-strong); }
+.btn-deny { background: transparent; border-color: var(--border-default); color: var(--danger); }
+.btn-deny:hover { background: var(--danger-dim); border-color: var(--danger); }
+.btn-keep-planning { margin-left: auto; background: transparent; border-color: var(--border-default); color: var(--text-secondary); }
+.btn-keep-planning:hover { background: var(--bg-hover); color: var(--text-primary); }
+
 /* ---- Chips / badges ---- */
 .chip {
   display: inline-flex;

@@ -4,7 +4,7 @@
  * in index.ts.
  */
 import { ipcMain, dialog, type BrowserWindow } from 'electron'
-import type { CreateSessionOptions } from '../../shared/session-types'
+import type { CreateSessionOptions, PromptDecision } from '../../shared/session-types'
 import { logger } from '../logger'
 import { openDatabase } from '../db'
 import type { SessionManager } from './manager'
@@ -70,4 +70,9 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
   ipcMain.handle('session:rename', (_event, sessionId: string, name: string) => manager.renameSession(sessionId, name))
 
   ipcMain.handle('session:setPinned', (_event, sessionId: string, pinned: boolean) => manager.setPinned(sessionId, pinned))
+
+  // 05-interactive-prompts: resolves a permission/AskUserQuestion/plan card.
+  ipcMain.handle('session:respondToPrompt', (_event, sessionId: string, requestId: string, decision: PromptDecision) =>
+    manager.respondToPrompt(sessionId, requestId, decision)
+  )
 }

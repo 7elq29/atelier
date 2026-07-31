@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   CreateSessionOptions,
   MessageRecord,
+  PromptDecision,
   RemoteHostOption,
   SessionRecord
 } from '../../../shared/session-types'
@@ -15,6 +16,7 @@ export interface UseSessionsResult {
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
   sendMessage: (sessionId: string, text: string) => Promise<void>
+  respondToPrompt: (sessionId: string, requestId: string, decision: PromptDecision) => Promise<void>
   forkSession: (sessionId: string) => Promise<SessionRecord>
   restartSession: (sessionId: string) => Promise<SessionRecord>
   closeSession: (sessionId: string) => Promise<void>
@@ -111,6 +113,13 @@ export function useSessions(): UseSessionsResult {
     await window.gardenia.sendSessionMessage(sessionId, text)
   }, [])
 
+  const respondToPrompt = useCallback(
+    async (sessionId: string, requestId: string, decision: PromptDecision): Promise<void> => {
+      await window.gardenia.respondToPrompt(sessionId, requestId, decision)
+    },
+    []
+  )
+
   const forkSession = useCallback(async (sessionId: string): Promise<SessionRecord> => {
     const forked = await window.gardenia.forkSession(sessionId)
     const messages = await window.gardenia.listSessionMessages(forked.id)
@@ -155,6 +164,7 @@ export function useSessions(): UseSessionsResult {
     createSession,
     resumeSession,
     sendMessage,
+    respondToPrompt,
     forkSession,
     restartSession,
     closeSession,

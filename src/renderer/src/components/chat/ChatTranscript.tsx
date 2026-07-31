@@ -1,7 +1,11 @@
 import { Fragment } from 'react'
 import type { MessageRecord } from '../../../../shared/session-types'
+import type { PromptDecision } from '../../../../shared/session-types'
 import { parseStructuredContent, type ToolCallContent } from '../../../../shared/chat-content'
 import ToolCallCard, { toolHeadline } from './ToolCallCard'
+import AskUserQuestionCard from './AskUserQuestionCard'
+import PermissionRequestCard from './PermissionRequestCard'
+import PlanProposedCard from './PlanProposedCard'
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
@@ -38,7 +42,14 @@ interface TopRow {
  * `.turn-divider`/`.msg-user`/`.msg-assistant`/`.compaction-banner`/
  * `.subagent-wrap` exactly.
  */
-export default function ChatTranscript({ messages }: { messages: MessageRecord[] }): JSX.Element {
+export default function ChatTranscript({
+  messages,
+  onRespond
+}: {
+  messages: MessageRecord[]
+  /** Resolves a permission/AskUserQuestion/plan card by requestId (05-interactive-prompts). */
+  onRespond: (requestId: string, decision: PromptDecision) => void
+}): JSX.Element {
   const childrenByParent = new Map<string, TopRow[]>()
   const topRows: TopRow[] = []
 
@@ -83,6 +94,24 @@ export default function ChatTranscript({ messages }: { messages: MessageRecord[]
             <div className="compaction-banner" data-testid="compaction-banner" key={message.id}>
               — context compacted ({formatTokens(parsed.preTokens)}
               {parsed.postTokens != null ? ` → ${formatTokens(parsed.postTokens)}` : ''} tokens) —
+            </div>
+          )
+        } else if (parsed?.kind === 'permission_request') {
+          nodes.push(
+            <div data-testid="transcript-message" data-role={message.role} key={message.id}>
+              <PermissionRequestCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+            </div>
+          )
+        } else if (parsed?.kind === 'ask_user_question') {
+          nodes.push(
+            <div data-testid="transcript-message" data-role={message.role} key={message.id}>
+              <AskUserQuestionCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+            </div>
+          )
+        } else if (parsed?.kind === 'plan_proposed') {
+          nodes.push(
+            <div data-testid="transcript-message" data-role={message.role} key={message.id}>
+              <PlanProposedCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
             </div>
           )
         } else if (tool) {

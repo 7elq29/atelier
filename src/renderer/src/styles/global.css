@@ -679,6 +679,58 @@ input[type='range'] {
 .spinner { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--accent); animation: spin .7s linear infinite; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ===== Interactive prompts (05-interactive-prompts) =====
+   Selectors/values copied verbatim from Features/UI-Design/mocks/index.html
+   — token-driven callout styling throughout (var(--bg-panel), bordered/
+   shadowed like any other card, heading colored via var(--accent)/
+   var(--warning)) — an earlier hardcoded-dark-background version of these
+   cards was explicitly rejected during design work; this must never
+   reintroduce a hardcoded background. */
+
+/* ---- AskUserQuestion card ---- */
+.aq-card { border: 1px solid var(--elevation-border); background: var(--bg-panel); border-radius: var(--r-lg); overflow: hidden; max-width: 84%; box-shadow: var(--elevation-shadow); }
+.aq-head { display: flex; align-items: center; gap: 8px; padding: 13px 16px 8px; font-size: 13.5px; font-weight: 600; color: var(--accent); }
+.aq-body { padding: 0 16px 15px; display: flex; flex-direction: column; gap: 10px; }
+.aq-question { font-size: var(--text-base); color: var(--text-primary); }
+.aq-options { display: flex; flex-direction: column; gap: 7px; }
+.aq-option { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border: none; border-radius: 12px; background: var(--bg-tint); cursor: pointer; font-size: var(--text-sm); }
+.aq-option:hover { background: var(--bg-hover); }
+.aq-option .num { width: 17px; height: 17px; border-radius: 50%; background: transparent; border: 1.5px solid var(--text-tertiary); font-size: 0; flex-shrink: 0; }
+.aq-option .desc { color: var(--text-tertiary); font-size: 14.5px; margin-top: 1px; }
+.aq-card.answered .aq-option { pointer-events: none; opacity: .45; }
+.aq-card.answered .aq-option.selected { opacity: 1; background: var(--accent-dim); }
+.aq-card.answered .aq-option.selected .num { background: var(--accent); border-color: var(--accent); }
+.aq-option.aq-other { border: 1.5px dashed var(--border-strong); background: transparent; color: var(--text-secondary); }
+.aq-other-box { display: none; gap: 6px; }
+.aq-other-box.show { display: flex; }
+.aq-other-box textarea { flex: 1; background: var(--bg-input); border: 1px solid var(--accent); border-radius: var(--r-md); color: var(--text-primary); font-family: var(--font-ui); font-size: var(--text-sm); padding: 7px 9px; resize: none; outline: none; min-height: 34px; }
+.aq-footer-hint { font-size: 12.5px; color: var(--text-tertiary); padding-top: 2px; }
+.aq-footer-hint a { cursor: pointer; }
+
+/* ---- Permission card ---- */
+.perm-card { border: 1px solid var(--warning); background: var(--bg-panel); border-radius: var(--r-lg); overflow: hidden; max-width: 84%; }
+.perm-head { display: flex; align-items: center; gap: 8px; padding: 13px 16px 8px; font-size: 13.5px; font-weight: 600; color: var(--warning); }
+.perm-body { padding: 0 16px 15px; display: flex; flex-direction: column; gap: 9px; color: var(--text-primary); }
+.perm-cmd { font-family: var(--font-mono); font-size: 14px; background: var(--bg-tint); color: var(--text-primary); padding: 7px 10px; border-radius: 6px; }
+.perm-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px; }
+.perm-remember { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 14.5px; color: var(--text-tertiary); flex-wrap: wrap; max-width: 100%; }
+.perm-remember code { word-break: break-word; }
+.perm-resolved { font-size: 13.5px; padding: 2px 0; color: var(--text-secondary); }
+.perm-resolved.allowed { color: var(--accent); }
+.perm-resolved.denied { color: var(--danger); }
+
+/* ---- Plan card ---- */
+.plan-card { border: 1px solid var(--elevation-border); background: var(--bg-panel); border-radius: var(--r-lg); overflow: hidden; max-width: 84%; box-shadow: var(--elevation-shadow); }
+.plan-head { display: flex; align-items: center; gap: 8px; padding: 13px 16px 6px; font-size: 13.5px; font-weight: 600; }
+.plan-body { padding: 4px 16px 15px; font-size: var(--text-base); line-height: 1.6; }
+.plan-body h4 { margin: 0 0 6px; font-size: 15px; }
+.plan-body ol { margin: 0; padding-left: 18px; }
+.plan-actions { display: flex; gap: 8px; padding: 4px 16px 13px; }
+.plan-card.resolved .plan-actions { display: none; }
+.plan-resolved-note { display: none; padding: 9px 16px 13px; font-size: 13.5px; color: var(--accent); }
+.plan-card.resolved .plan-resolved-note { display: block; }
+
+
 /* ---- Tracker rail (Todos/Subagents) ---- */
 .tracker-rail { width: 290px; flex-shrink: 0; padding: 16px 16px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; transition: width .12s ease, padding .12s ease; }
 .tracker-rail.collapsed { width: 40px; padding: 12px 6px; align-items: center; }
