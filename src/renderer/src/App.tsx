@@ -97,7 +97,18 @@ export default function App(): JSX.Element {
 
   async function selectSession(session: SessionRecord): Promise<void> {
     setActiveSessionId(session.id)
-    if (session.closedAt) {
+    // Two independent reasons to call resumeSession (reopen + reconnect +
+    // fetch transcript), not just one:
+    //  - session.closedAt: an explicitly-closed session must always reopen
+    //    and reconnect its live harness connection, even if its transcript
+    //    happens to already be cached client-side from before it was closed.
+    //  - !messagesBySession[id]: an "active" session's transcript only ever
+    //    lived in this renderer's in-memory state, which resets on every app
+    //    relaunch — without this, reopening a session that was never
+    //    explicitly closed (the common case after just quitting and
+    //    restarting the app) showed an empty transcript despite the real
+    //    messages being intact in SQLite.
+    if (session.closedAt || !sessions.messagesBySession[session.id]) {
       await sessions.resumeSession(session.id)
     }
   }

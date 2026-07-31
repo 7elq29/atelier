@@ -225,6 +225,33 @@ test.describe('02-session-lifecycle', () => {
     appendMainLog(userDataDir)
   })
 
+  // ── 4b. Regression: an ACTIVE (never explicitly closed) session's
+  // transcript must also survive a relaunch when clicked directly — not
+  // just a session reopened via History's explicit "Resume" button. A
+  // still-active session's transcript previously only ever lived in the
+  // renderer's in-memory state, which resets on every relaunch; clicking it
+  // never re-fetched from SQLite, so a real user quitting and restarting the
+  // whole app (the common case, not an explicit per-session close) saw an
+  // empty transcript despite the real messages being intact on disk.
+  test('resume: an active (never-closed) session also reloads its transcript from SQLite after a real relaunch', async () => {
+    await electronApp.close()
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+
+    const row = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    // Never went through History/closed — clicking it directly is the only
+    // affordance a real user has for a still-active session after relaunch.
+    await row.click()
+
+    await expect
+      .poll(async () => page.locator('[data-testid="transcript-message"]').count(), { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(4)
+
+    const texts = await page.locator('[data-testid="transcript-message"]').allTextContents()
+    expect(texts.some((t) => t.includes('PING'))).toBe(true)
+    expect(texts.some((t) => t.includes('PONG'))).toBe(true)
+  })
+
   // ── 5. Fork ───────────────────────────────────────────────────────────
   test('fork: independent id, identical transcript, same group', async () => {
     const row = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
