@@ -108,5 +108,16 @@ test.describe('bug-repro: AskUserQuestionCard submits instantly on first click, 
     await expect(card).toHaveAttribute('data-status', 'pending')
     const logAfterClick = readFileSync(logPath, 'utf-8')
     expect(logAfterClick).not.toContain(`respondToPrompt: dispatching to harness","sessionId":"${sessionId}"`)
+
+    // Explicit Submit click is required to actually dispatch the answer.
+    const submitButton = card.getByTestId('aq-submit')
+    await expect(submitButton).toBeEnabled()
+    await submitButton.click()
+
+    await expect(card).toHaveAttribute('data-status', 'answered', { timeout: 15_000 })
+    await page.screenshot({ path: join(artifactsDir, 'fix-ask-user-question-explicit-submit-after-submit.png') })
+
+    const logAfterSubmit = readFileSync(logPath, 'utf-8')
+    expect(logAfterSubmit).toContain(`respondToPrompt: dispatching to harness","sessionId":"${sessionId}"`)
   })
 })

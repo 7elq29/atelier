@@ -111,6 +111,14 @@ test.describe('05-interactive-prompts', () => {
 
     await appleOption.click()
 
+    // bug #52: a single click only selects — the card stays pending until an
+    // explicit Submit click.
+    await expect(card).toHaveAttribute('data-status', 'pending')
+    await expect(appleOption).toHaveClass(/selected/)
+    const submitButton = card.getByTestId('aq-submit')
+    await expect(submitButton).toBeEnabled()
+    await submitButton.click()
+
     // Card flips to its resolved/answered state (real UI feedback, not just a click handler firing).
     await expect(card).toHaveClass(/answered/, { timeout: 10_000 })
     await expect(appleOption).toHaveClass(/selected/)
