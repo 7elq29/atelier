@@ -8,6 +8,12 @@ import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
 import ChatTranscript from './components/chat/ChatTranscript'
 import Composer from './components/chat/Composer'
 import TrackerRail from './components/chat/TrackerRail'
+import TabBar, { type SessionTab } from './components/panels/TabBar'
+import DiffPanel from './components/panels/DiffPanel'
+import FilesPanel from './components/panels/FilesPanel'
+import PortsPanel from './components/panels/PortsPanel'
+import TerminalPanel from './components/panels/TerminalPanel'
+import CompanionTerminalDrawer from './components/panels/CompanionTerminalDrawer'
 import { useConfig } from './hooks/useConfig'
 import { useSessions } from './hooks/useSessions'
 import type { SessionRecord } from '../../shared/session-types'
@@ -36,6 +42,10 @@ export default function App(): JSX.Element {
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [composerText, setComposerText] = useState('')
+  const [activeTab, setActiveTab] = useState<SessionTab>('chat')
+  const [visitedTabs, setVisitedTabs] = useState<Set<SessionTab>>(new Set(['chat']))
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerHeight, setDrawerHeight] = useState(240)
 
   useEffect(() => {
     window.gardenia
@@ -97,6 +107,9 @@ export default function App(): JSX.Element {
 
   async function selectSession(session: SessionRecord): Promise<void> {
     setActiveSessionId(session.id)
+    setActiveTab('chat')
+    setVisitedTabs(new Set(['chat']))
+    setDrawerOpen(false)
     // Two independent reasons to call resumeSession (reopen + reconnect +
     // fetch transcript), not just one:
     //  - session.closedAt: an explicitly-closed session must always reopen
@@ -111,6 +124,11 @@ export default function App(): JSX.Element {
     if (session.closedAt || !sessions.messagesBySession[session.id]) {
       await sessions.resumeSession(session.id)
     }
+  }
+
+  function selectTab(tab: SessionTab): void {
+    setActiveTab(tab)
+    setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)))
   }
 
   // "Focus jumped to that session": move real DOM focus to the row, not just
@@ -230,29 +248,92 @@ export default function App(): JSX.Element {
             <span className="title" data-testid="main-title">
               {activeSession ? activeSession.name : 'Gardenia'}
             </span>
+            {activeSession && activeSession.mode === 'claude-code' && (
+              <>
+                <TabBar activeTab={activeTab} onSelect={selectTab} showPorts={Boolean(activeSession.hostname)} />
+                <div className="topbar-spacer" />
+                <button className="btn btn-sm" data-testid="toggle-companion-drawer" onClick={() => setDrawerOpen((o) => !o)}>
+                  ▤ Terminal
+                </button>
+              </>
+            )}
           </div>
 
           {activeSession ? (
-            <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <div className="chat-body-row">
-                <div className="chat-main-col">
-                  <ChatTranscript
-                    messages={activeMessages}
-                    onRespond={(requestId, decision) => void sessions.respondToPrompt(activeSession.id, requestId, decision)}
-                  />
-                  {activeSession.mode === 'claude-code' && (
-                    <Composer
-                      value={composerText}
-                      onChange={setComposerText}
-                      onSend={(text) => void handleSend(text)}
-                      onInterrupt={() => void handleInterrupt()}
-                      busy={sessions.busyBySession[activeSession.id] ?? false}
-                    />
+            activeSession.mode === 'terminal' ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }} data-testid="terminal-only-session">
+                <TerminalPanel ptyId={activeSession.id} cwd={activeSession.projectPath} hostname={activeSession.hostname} />
+              </div>
+            ) : (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                  <div className={`tab-content${activeTab === 'chat' ? '' : ' hidden'}`} data-tab="chat">
+                    <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                      <div className="chat-body-row">
+                        <div className="chat-main-col">
+                          <ChatTranscript
+                            messages={activeMessages}
+                            onRespond={(requestId, decision) => void sessions.respondToPrompt(activeSession.id, requestId, decision)}
+                          />
+                          {activeSession.mode === 'claude-code' && (
+                            <Composer
+                              value={composerText}
+                              onChange={setComposerText}
+                              onSend={(text) => void handleSend(text)}
+                              onInterrupt={() => void handleInterrupt()}
+                              busy={sessions.busyBySession[activeSession.id] ?? false}
+                            />
+                          )}
+                        </div>
+                        <TrackerRail messages={activeMessages} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={`tab-content${activeTab === 'diff' ? '' : ' hidden'}`} data-tab="diff">
+                    {visitedTabs.has('diff') && (
+                      <DiffPanel
+                        projectPath={activeSession.projectPath}
+                        onAddComment={(note) => setComposerText((prev) => (prev ? `${prev}\n\n${note}` : note))}
+                      />
+                    )}
+                  </div>
+
+                  <div className={`tab-content${activeTab === 'files' ? '' : ' hidden'}`} data-tab="files">
+                    {visitedTabs.has('files') && <FilesPanel projectPath={activeSession.projectPath} />}
+                  </div>
+
+                  <div className={`tab-content${activeTab === 'terminal' ? '' : ' hidden'}`} data-tab="terminal">
+                    {visitedTabs.has('terminal') && (
+                      <TerminalPanel
+                        ptyId={`${activeSession.id}:tab-terminal`}
+                        cwd={activeSession.projectPath}
+                        hostname={activeSession.hostname}
+                      />
+                    )}
+                  </div>
+
+                  {Boolean(activeSession.hostname) && (
+                    <div className={`tab-content${activeTab === 'ports' ? '' : ' hidden'}`} data-tab="ports">
+                      {visitedTabs.has('ports') && (
+                        <PortsPanel sessionId={activeSession.id} sshHost={activeSession.hostname as string} />
+                      )}
+                    </div>
                   )}
                 </div>
-                <TrackerRail messages={activeMessages} />
+
+                {drawerOpen && (
+                  <CompanionTerminalDrawer
+                    sessionId={activeSession.id}
+                    cwd={activeSession.projectPath}
+                    hostname={activeSession.hostname}
+                    height={drawerHeight}
+                    onHeightChange={setDrawerHeight}
+                    onClose={() => setDrawerOpen(false)}
+                  />
+                )}
               </div>
-            </div>
+            )
           ) : (
             <div className="empty-main" data-testid="main-empty-state">
               <div>No session selected</div>

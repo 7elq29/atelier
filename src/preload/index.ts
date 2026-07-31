@@ -16,6 +16,14 @@ import type {
   SessionStreamEvent,
   SessionTurnStateEvent
 } from '../shared/session-types'
+import type {
+  CommitInfo,
+  DiffSummary,
+  FileReadResult,
+  FileTreeNode,
+  PortForward,
+  WorktreeInfo
+} from '../shared/panel-types'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -139,7 +147,49 @@ const api = {
   },
   /** Test-only: raw read-only SQL query against the real SQLite DB (see session:debugQueryDb handler). */
   debugQueryDb: <T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> =>
-    ipcRenderer.invoke('debug:queryDb', sql, params)
+    ipcRenderer.invoke('debug:queryDb', sql, params),
+
+  // ── Secondary panels (07-secondary-panels) ──────────────────────────
+  gitDiff: (projectPath: string): Promise<DiffSummary> => ipcRenderer.invoke('panel:git:diff', projectPath),
+  gitCommits: (projectPath: string): Promise<CommitInfo[]> => ipcRenderer.invoke('panel:git:commits', projectPath),
+  gitWorktrees: (projectPath: string): Promise<WorktreeInfo[]> => ipcRenderer.invoke('panel:git:worktrees', projectPath),
+  gitWorktreeAdd: (projectPath: string, worktreePath: string, branch: string): Promise<void> =>
+    ipcRenderer.invoke('panel:git:worktreeAdd', projectPath, worktreePath, branch),
+  gitWorktreeRemove: (projectPath: string, worktreePath: string): Promise<void> =>
+    ipcRenderer.invoke('panel:git:worktreeRemove', projectPath, worktreePath),
+  gitWorktreeMerge: (projectPath: string, branch: string): Promise<void> =>
+    ipcRenderer.invoke('panel:git:worktreeMerge', projectPath, branch),
+
+  filesTree: (projectPath: string): Promise<FileTreeNode[]> => ipcRenderer.invoke('panel:files:tree', projectPath),
+  filesRead: (path: string): Promise<FileReadResult> => ipcRenderer.invoke('panel:files:read', path),
+
+  ptySpawn: (opts: { id: string; cwd: string; hostname?: string | null; cols: number; rows: number }): Promise<boolean> =>
+    ipcRenderer.invoke('panel:pty:spawn', opts),
+  ptyWrite: (id: string, data: string): Promise<void> => ipcRenderer.invoke('panel:pty:write', id, data),
+  ptyResize: (id: string, cols: number, rows: number): Promise<void> => ipcRenderer.invoke('panel:pty:resize', id, cols, rows),
+  ptyKill: (id: string): Promise<void> => ipcRenderer.invoke('panel:pty:kill', id),
+  onPtyData: (callback: (payload: { id: string; data: string }) => void): (() => void) => {
+    const listener = (_event: unknown, payload: { id: string; data: string }): void => callback(payload)
+    ipcRenderer.on('pty:data', listener)
+    return () => ipcRenderer.removeListener('pty:data', listener)
+  },
+  onPtyExit: (callback: (payload: { id: string; exitCode: number }) => void): (() => void) => {
+    const listener = (_event: unknown, payload: { id: string; exitCode: number }): void => callback(payload)
+    ipcRenderer.on('pty:exit', listener)
+    return () => ipcRenderer.removeListener('pty:exit', listener)
+  },
+
+  portsAdd: (sessionId: string, sshHost: string, localPort: number, remoteHost: string, remotePort: number): Promise<PortForward> =>
+    ipcRenderer.invoke('panel:ports:add', sessionId, sshHost, localPort, remoteHost, remotePort),
+  portsRemove: (id: string): Promise<void> => ipcRenderer.invoke('panel:ports:remove', id),
+  portsList: (sessionId: string): Promise<PortForward[]> => ipcRenderer.invoke('panel:ports:list', sessionId),
+  onPortsUpdated: (callback: (forwards: PortForward[]) => void): (() => void) => {
+    const listener = (_event: unknown, forwards: PortForward[]): void => callback(forwards)
+    ipcRenderer.on('ports:updated', listener)
+    return () => ipcRenderer.removeListener('ports:updated', listener)
+  },
+
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url)
 }
 
 contextBridge.exposeInMainWorld('gardenia', api)

@@ -951,3 +951,95 @@ input[type='range'] {
 .sdp-tag-input { width: 100%; font-size: 12.5px; padding: 5px 8px; }
 .sdp-notes { width: 100%; resize: vertical; font-size: 13px; }
 
+/* ===== Secondary panels (07-secondary-panels): tab bar + Diff/Files/Terminal/Ports ===== */
+.tab-strip { display: flex; gap: 2px; margin-left: 10px; }
+.tab-strip button { background: transparent; border: none; color: var(--text-secondary); font-size: var(--text-sm); padding: 6px 10px; border-radius: var(--r-sm); cursor: pointer; }
+.tab-strip button.active { background: var(--bg-active); color: var(--text-primary); }
+.tab-content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.tab-content.hidden { display: none; }
+
+/* ===== Diff tab ===== */
+.diff-sub-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--border-subtle); }
+.diff-sub-tabs button { background: transparent; border: none; color: var(--text-secondary); font-size: 14px; padding: 6px 10px; border-radius: 6px 6px 0 0; cursor: pointer; }
+.diff-sub-tabs button.active { background: var(--bg-panel-raised); color: var(--text-primary); }
+.diff-sub-content { flex: 1; display: flex; min-height: 0; flex-direction: column; }
+.diff-sub-content.hidden { display: none; }
+.review-body { flex: 1; display: flex; min-height: 0; }
+.file-tree { width: 240px; flex-shrink: 0; border-right: 1px solid var(--border-subtle); overflow-y: auto; padding: 8px; }
+.ft-summary { font-size: 12.5px; color: var(--text-tertiary); padding: 4px 8px 10px; }
+.ft-item { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border-radius: var(--r-sm); font-size: 14px; cursor: pointer; }
+.ft-item:hover { background: var(--bg-hover); }
+.ft-item.active { background: var(--bg-active); }
+.ft-item .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ft-counts { font-family: var(--font-mono); font-size: 13.5px; flex-shrink: 0; }
+.ft-add { color: var(--accent); }
+.ft-del { color: var(--danger); margin-left: 4px; }
+.diff-area { flex: 1; overflow-y: auto; padding: 16px; }
+.diff-file-card { border: 1px solid var(--border-default); border-radius: var(--r-md); margin-bottom: 16px; overflow: hidden; }
+.diff-file-header { display: flex; align-items: center; gap: 8px; padding: 7px 11px; background: var(--bg-hover); font-family: var(--font-ui); font-size: 13.5px; }
+.badge-mod { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: var(--accent-dim); color: var(--accent); }
+.diff-lines { font-family: var(--font-mono); font-size: 13.5px; }
+.diff-lines .diff-line { display: flex; padding: 0; }
+.diff-lines .diff-line.add { background: rgba(143,193,127,.14); color: var(--success); }
+.diff-lines .diff-line.del { background: rgba(217,143,116,.14); color: var(--danger); }
+.diff-lines .diff-line.ctx { color: var(--text-tertiary); }
+.diff-lines .diff-line .ln { width: 42px; flex-shrink: 0; text-align: right; padding: 1px 8px; color: var(--text-disabled); user-select: none; }
+.diff-lines .diff-line .content { flex: 1; padding: 1px 10px; white-space: pre; position: relative; }
+.comment-add { position: absolute; left: -20px; top: 1px; opacity: 0; cursor: pointer; color: var(--text-tertiary); font-size: 13.5px; background: none; border: none; }
+.diff-lines .diff-line:hover .comment-add { opacity: 1; }
+.inline-comment { margin: 2px 0 8px 42px; background: var(--bg-panel-raised); border: 1px solid var(--border-default); border-radius: var(--r-md); padding: 8px 10px; }
+.inline-comment textarea { width: 100%; border: none; background: transparent; color: var(--text-primary); font-size: 14px; resize: none; outline: none; font-family: var(--font-ui); }
+.inline-comment-actions { display: flex; gap: 6px; margin-top: 6px; }
+
+.worktree-list { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.worktree-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-panel-raised); }
+.worktree-row .wpath { flex: 1; font-size: 14px; }
+.worktree-row .wbranch { font-size: 12.5px; color: var(--text-tertiary); font-family: var(--font-mono); margin-left: 6px; }
+
+.commit-row { padding: 9px 10px; border-radius: var(--r-md); cursor: pointer; margin: 0 8px; }
+.commit-row:hover { background: var(--bg-hover); }
+.commit-msg { font-size: 14px; }
+.commit-meta { font-size: 13.5px; color: var(--text-tertiary); margin-top: 2px; font-family: var(--font-mono); }
+.ext-link { color: var(--accent); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+
+/* ===== Files tab ===== */
+.files-body { flex: 1; display: flex; min-height: 0; }
+.files-tree { width: 240px; flex-shrink: 0; border-right: 1px solid var(--border-subtle); overflow-y: auto; padding: 8px; }
+.files-tree .ft-item.dir { color: var(--text-secondary); }
+.file-view { flex: 1; overflow: auto; padding: 14px 18px; }
+.file-view pre { margin: 0; font-family: var(--font-mono); font-size: 14px; line-height: 1.6; color: var(--text-secondary); }
+.file-view .find-row { display: flex; gap: 8px; padding: 6px 0 12px; }
+.file-view img.file-preview-image { max-width: 100%; border-radius: var(--r-md); border: 1px solid var(--border-default); }
+.file-view iframe.file-preview-html { width: 100%; height: 100%; min-height: 320px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: #fff; }
+.tok-key { color: var(--sc-teal); }
+.tok-str { color: var(--success); }
+.tok-com { color: var(--text-disabled); font-style: italic; }
+.tok-num { color: var(--warning); }
+
+/* ===== Terminal tab ===== */
+.term-body { flex: 1; background: #17150f; font-family: var(--font-mono); font-size: 14px; padding: 12px 14px; color: #ece7d9; overflow-y: auto; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+.term-body .prompt { color: var(--accent); }
+.term-body .dim { color: var(--text-tertiary); }
+.cursor-block { display: inline-block; width: 7px; height: 14px; background: #ece7d9; vertical-align: middle; animation: term-blink 1s steps(1) infinite; }
+@keyframes term-blink { 50% { opacity: 0; } }
+.drawer-handle { height: 6px; background: var(--border-subtle); cursor: row-resize; flex-shrink: 0; }
+.drawer-handle:hover { background: var(--accent); }
+.drawer { flex-shrink: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border-default); }
+.drawer-head { height: 30px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--bg-panel); border-bottom: 1px solid var(--border-subtle); font-size: 14.5px; color: var(--text-secondary); }
+.drawer-head .spacer { flex: 1; }
+
+/* ===== Ports tab ===== */
+.ports-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.port-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-panel-raised); font-size: 14px; }
+.port-row .pmain { flex: 1; font-family: var(--font-mono); }
+.port-state { font-size: 11.5px; padding: 2px 8px; border-radius: 100px; }
+.port-state.active { background: var(--accent-dim); color: var(--accent); }
+.port-state.connecting { background: rgba(224,185,92,.15); color: var(--warning); }
+.port-state.error { background: var(--danger-dim); color: var(--danger); }
+.add-port-form { display: flex; gap: 8px; padding: 0 16px 16px; flex-wrap: wrap; }
+.add-port-form input { background: var(--bg-input); border: 1px solid var(--border-default); border-radius: var(--r-sm); color: var(--text-primary); padding: 6px 9px; font-size: 14px; width: 120px; }
+
+/* ===== Empty state (shared with tab panels) ===== */
+.empty-main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--text-tertiary); }
+.empty-icon { width: 56px; height: 56px; border-radius: var(--r-lg); background: var(--bg-panel-raised); border: 1px solid var(--border-default); display: flex; align-items: center; justify-content: center; font-size: 24px; }
+.icon-standalone { color: var(--text-tertiary); }

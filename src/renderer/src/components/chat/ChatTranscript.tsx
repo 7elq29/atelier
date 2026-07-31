@@ -6,6 +6,7 @@ import ToolCallCard, { toolHeadline } from './ToolCallCard'
 import AskUserQuestionCard from './AskUserQuestionCard'
 import PermissionRequestCard from './PermissionRequestCard'
 import PlanProposedCard from './PlanProposedCard'
+import Linkify from '../panels/Linkify'
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
@@ -150,7 +151,7 @@ export default function ChatTranscript({
         } else {
           nodes.push(
             <div className="msg-assistant" data-testid="transcript-message" data-role={message.role} key={message.id}>
-              {message.content}
+              <Linkify text={message.content} />
             </div>
           )
         }
