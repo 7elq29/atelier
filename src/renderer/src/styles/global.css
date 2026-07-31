@@ -250,18 +250,6 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   color: #ece7d9;
 }
 
-.app-shell__debug {
-  position: absolute;
-  bottom: var(--sp-3);
-  right: var(--sp-3);
-  padding: var(--sp-1) var(--sp-3);
-  background: var(--bg-tint);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-sm);
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-}
-
 /* ===== Modals (command palette / settings / onboarding) ===== */
 .modal-backdrop {
   position: fixed;

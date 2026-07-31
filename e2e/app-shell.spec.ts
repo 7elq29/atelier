@@ -34,16 +34,15 @@ test('#root has rendered children', async () => {
 })
 
 test('IPC round-trip returns a real app version', async () => {
-  const versionLocator = page.locator('[data-testid="app-version"]')
-  await expect(versionLocator).not.toHaveText('loading…', { timeout: 10_000 })
-  const versionText = await versionLocator.textContent()
-  expect(versionText).toMatch(/^\d+\.\d+\.\d+/)
-
-  // Also call it directly to make sure the bridge itself (not just the React
-  // effect) resolves a real value.
+  // There is no visible "debug corner" in the normal UI (see
+  // bug-remove-version-corner.spec.ts) — the app:getVersion IPC bridge is
+  // exercised directly here instead of reading it off the DOM.
   const directVersion = await page.evaluate(() => window.gardenia.getAppVersion())
   expect(directVersion).toMatch(/^\d+\.\d+\.\d+/)
-  expect(directVersion).toBe(versionText)
+
+  // Calling it a second time should be stable/idempotent.
+  const secondCall = await page.evaluate(() => window.gardenia.getAppVersion())
+  expect(secondCall).toBe(directVersion)
 })
 
 test('main-process log file contains "app ready" and IPC entries', async () => {
