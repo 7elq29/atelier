@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FileReadResult, FileTreeNode } from '../../../../shared/panel-types'
 
 /**
@@ -76,10 +76,22 @@ export default function FilesPanel({ projectPath }: { projectPath: string }): JS
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [fileResult, setFileResult] = useState<FileReadResult | null>(null)
   const [find, setFind] = useState('')
+  const htmlPreviewRef = useRef<HTMLIFrameElement | null>(null)
 
   useEffect(() => {
     void window.gardenia.filesTree(projectPath).then(setTree)
   }, [projectPath])
+
+  // Setting `srcDoc` as a JSX prop can silently no-op: React assigns it to the
+  // <iframe> node before that node is attached to the document, and Chromium
+  // only runs the srcdoc navigation steps on attribute mutations of an
+  // already-connected node. Assigning it imperatively once the node is
+  // mounted guarantees the navigation actually fires.
+  useEffect(() => {
+    if (fileResult?.kind === 'html' && htmlPreviewRef.current) {
+      htmlPreviewRef.current.srcdoc = fileResult.content
+    }
+  }, [fileResult])
 
   async function handleSelect(node: FileTreeNode): Promise<void> {
     if (node.type === 'dir') return
@@ -115,11 +127,11 @@ export default function FilesPanel({ projectPath }: { projectPath: string }): JS
             )}
             {fileResult?.kind === 'html' && (
               <iframe
+                ref={htmlPreviewRef}
                 className="file-preview-html"
                 data-testid="file-preview-html"
                 title="html preview"
                 sandbox=""
-                srcDoc={fileResult.content}
               />
             )}
             {fileResult?.kind === 'binary' && <div style={{ color: 'var(--text-tertiary)' }}>Binary file — no preview available</div>}

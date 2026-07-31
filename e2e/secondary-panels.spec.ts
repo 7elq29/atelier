@@ -201,6 +201,12 @@ test.describe('07-secondary-panels', () => {
     await page.locator('[data-testid="file-tree-file"][data-path="page.html"]').click()
     await expect(page.getByTestId('file-preview-html')).toBeVisible()
 
+    // The iframe uses `sandbox=""` (no allow-same-origin), so its document
+    // has an opaque origin and is genuinely cross-origin from the page's
+    // perspective. Playwright's frameLocator drives it via CDP regardless.
+    const previewFrame = page.frameLocator('[data-testid="file-preview-html"]')
+    await expect(previewFrame.locator('h1')).toHaveText('Fixture page')
+
     await page.screenshot({ path: join(artifactsDir, '07-files.png') })
     log('files panel: real tree + text/image/html preview OK')
   })
