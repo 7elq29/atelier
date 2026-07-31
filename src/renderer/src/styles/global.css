@@ -773,6 +773,19 @@ input[type='range'] {
 .stop-btn { display: flex; align-items: center; gap: 7px; background: var(--danger-dim); color: var(--danger); border: 1px solid var(--danger); border-radius: 100px; padding: 8px 18px; font-size: 14px; font-weight: 500; cursor: pointer; }
 .send-btn { display: flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-text-on); border: 1px solid var(--accent); border-radius: 100px; padding: 8px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .send-btn:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+/* @file mention / slash command popovers (10e-enrichment-file-mentions-and-
+   commands) — quoted verbatim from mocks/index.html's `.mention-popup`/
+   `.slash-popup`/`.mention-item`/`.slash-item` rules. `.selected` is an
+   addition (the mock is mouse-only) reusing the same --bg-active token as
+   the hover state, matching CommandPalette's `.cp-item.selected` pattern. */
+.mention-popup, .slash-popup { position: absolute; bottom: 100%; left: 14px; margin-bottom: 6px; width: 280px; background: var(--bg-panel-raised); border: 1px solid var(--border-default); border-radius: var(--r-md); box-shadow: var(--shadow-popover); overflow: hidden; z-index: 6; max-height: 220px; overflow-y: auto; }
+.mention-item, .slash-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; font-size: 14px; cursor: pointer; }
+.mention-item:hover, .slash-item:hover,
+.mention-item.selected, .slash-item.selected { background: var(--bg-active); }
+.mention-item .fpath { color: var(--text-tertiary); font-size: 12.5px; }
+.slash-item .cmd { font-family: var(--font-mono); color: var(--accent); }
+.slash-item { flex-direction: column; align-items: flex-start; }
+.slash-item .cmddesc { color: var(--text-tertiary); font-size: 12.5px; }
 .send-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 /* Onboarding */
