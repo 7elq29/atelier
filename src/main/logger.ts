@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { createWriteStream, mkdirSync, type WriteStream } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -18,10 +19,25 @@ let logFilePath: string | undefined
 /**
  * Resolves the log file path under the app's user-data dir and lazily opens
  * an append-mode write stream to it. Safe to call multiple times.
+ *
+ * Falls back to a scratch dir under the OS tmpdir when `app` isn't actually
+ * running inside Electron (`app.getPath` throws/is unavailable) — this
+ * logger is also exercised directly by the standalone probe scripts under
+ * `src/e2e/` (run via plain `node`, not `electron .`; see
+ * `run-interrupt-probe.ts`). 04-composer-core added the first `logger.info()`
+ * calls reachable from a purely-local probe run
+ * (`ClaudeAgentSdkHarness.interrupt()`/`streamInput()`), which surfaced this
+ * gap for real (`app.getPath` throws "Cannot read properties of undefined"
+ * outside Electron).
  */
 function getStream(): WriteStream {
   if (!stream) {
-    const logsDir = join(app.getPath('userData'), 'logs')
+    let logsDir: string
+    try {
+      logsDir = join(app.getPath('userData'), 'logs')
+    } catch {
+      logsDir = join(tmpdir(), 'gardenia-standalone-logs')
+    }
     mkdirSync(logsDir, { recursive: true })
     logFilePath = join(logsDir, 'main.log')
     stream = createWriteStream(logFilePath, { flags: 'a' })

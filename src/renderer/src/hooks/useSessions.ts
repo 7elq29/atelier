@@ -11,10 +11,13 @@ export interface UseSessionsResult {
   historySessions: SessionRecord[]
   hosts: RemoteHostOption[]
   messagesBySession: Record<string, MessageRecord[]>
+  /** True while a turn is in flight for that session — drives the composer's Send/Stop toggle (04-composer-core). */
+  busyBySession: Record<string, boolean>
   refresh: () => Promise<void>
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
   sendMessage: (sessionId: string, text: string) => Promise<void>
+  interrupt: (sessionId: string) => Promise<void>
   forkSession: (sessionId: string) => Promise<SessionRecord>
   restartSession: (sessionId: string) => Promise<SessionRecord>
   closeSession: (sessionId: string) => Promise<void>
@@ -34,6 +37,7 @@ export function useSessions(): UseSessionsResult {
   const [historySessions, setHistorySessions] = useState<SessionRecord[]>([])
   const [hosts, setHosts] = useState<RemoteHostOption[]>([])
   const [messagesBySession, setMessagesBySession] = useState<Record<string, MessageRecord[]>>({})
+  const [busyBySession, setBusyBySession] = useState<Record<string, boolean>>({})
   const messagesRef = useRef(messagesBySession)
   messagesRef.current = messagesBySession
 
@@ -84,10 +88,14 @@ export function useSessions(): UseSessionsResult {
       // correct thing is to just refetch both lists.
       refresh()
     })
+    const offTurnState = window.gardenia.onSessionTurnState(({ sessionId, busy }) => {
+      setBusyBySession((prev) => (prev[sessionId] === busy ? prev : { ...prev, [sessionId]: busy }))
+    })
     return () => {
       offMessage()
       offDelta()
       offLifecycle()
+      offTurnState()
     }
   }, [refresh])
 
@@ -109,6 +117,10 @@ export function useSessions(): UseSessionsResult {
 
   const sendMessage = useCallback(async (sessionId: string, text: string): Promise<void> => {
     await window.gardenia.sendSessionMessage(sessionId, text)
+  }, [])
+
+  const interrupt = useCallback(async (sessionId: string): Promise<void> => {
+    await window.gardenia.interruptSession(sessionId)
   }, [])
 
   const forkSession = useCallback(async (sessionId: string): Promise<SessionRecord> => {
@@ -151,10 +163,12 @@ export function useSessions(): UseSessionsResult {
     historySessions,
     hosts,
     messagesBySession,
+    busyBySession,
     refresh,
     createSession,
     resumeSession,
     sendMessage,
+    interrupt,
     forkSession,
     restartSession,
     closeSession,

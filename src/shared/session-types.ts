@@ -91,3 +91,16 @@ export type SessionLifecycleEvent =
   | { type: 'session.forked'; session: SessionRecord; sourceId: string }
   | { type: 'session.deleted'; sessionId: string }
   | { type: 'session.updated'; session: SessionRecord }
+
+/**
+ * Composer Send/Stop toggle state (04-composer-core). `busy: true` from the
+ * moment a turn starts (initial prompt, a follow-up, or a message streamed
+ * live into an already-in-flight turn) until its terminal harness event
+ * (`result` / `interrupted` / `error`) lands — see
+ * `SessionManager.sendTurnState`.
+ */
+export interface SessionTurnStateEvent {
+  sessionId: string
+  busy: boolean
+}
+

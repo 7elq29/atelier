@@ -8,7 +8,8 @@ import type {
   SessionLifecycleEvent,
   SessionRecord,
   SessionStreamDeltaEvent,
-  SessionStreamEvent
+  SessionStreamEvent,
+  SessionTurnStateEvent
 } from '../shared/session-types'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
@@ -84,6 +85,12 @@ const api = {
     const listener = (_event: unknown, payload: SessionLifecycleEvent): void => callback(payload)
     ipcRenderer.on('session:lifecycle', listener)
     return () => ipcRenderer.removeListener('session:lifecycle', listener)
+  },
+  /** Composer Send/Stop toggle push (04-composer-core) — see SessionTurnStateEvent. */
+  onSessionTurnState: (callback: (event: SessionTurnStateEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionTurnStateEvent): void => callback(payload)
+    ipcRenderer.on('session:turnState', listener)
+    return () => ipcRenderer.removeListener('session:turnState', listener)
   },
   /** Test-only: raw read-only SQL query against the real SQLite DB (see session:debugQueryDb handler). */
   debugQueryDb: <T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> =>

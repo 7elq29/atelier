@@ -701,31 +701,23 @@ input[type='range'] {
 .todo-item.done span { color: var(--text-tertiary); text-decoration: line-through; }
 .todo-item.active span { color: var(--text-primary); font-weight: 500; }
 .subagent-item { display: flex; align-items: center; gap: 9px; font-size: 15px; }
-.composer-wrap {
-  padding: 12px 28px 20px;
-}
-.composer-box {
-  border: 1px solid var(--elevation-border);
-  border-radius: var(--r-xl);
-  background: var(--bg-panel);
-  box-shadow: var(--elevation-shadow);
-  display: flex;
-  gap: 8px;
-  padding: 10px 12px;
-}
-.composer-box textarea {
-  flex: 1;
-  border: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-family: var(--font-ui);
-  font-size: var(--text-base);
-  resize: none;
-  outline: none;
-  min-height: 22px;
-  max-height: 160px;
-  line-height: 1.5;
-}
+/* Composer core (04-composer-core) — quoted verbatim from mocks/index.html's
+   `.composer-wrap`/`.composer-box`/`.composer-footer`/`.stop-btn`/
+   `.send-btn` rules; this is the most recently hand-tuned area of the mock,
+   so these are copied exactly rather than approximated. */
+.composer-wrap { padding: 12px 28px 20px; }
+.composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; }
+.composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.composer-box textarea { width: 100%; border: none; background: transparent; color: var(--text-primary); padding: 11px 13px 4px; font-family: var(--font-ui); font-size: var(--text-base); resize: none; outline: none; min-height: 22px; max-height: 160px; line-height: 1.5; }
+.composer-footer { display: flex; align-items: center; gap: 8px; padding: 8px 14px 12px; flex-wrap: wrap; }
+.composer-footer .spacer { flex: 1; }
+.footer-btn { display: flex; align-items: center; gap: 6px; font-size: 14.5px; color: var(--text-tertiary); background: transparent; border: none; cursor: pointer; padding: 5px 8px; border-radius: 6px; }
+.footer-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+.working-pill { font-size: 12.5px; color: var(--text-tertiary); display: flex; align-items: center; gap: 5px; }
+.stop-btn { display: flex; align-items: center; gap: 7px; background: var(--danger-dim); color: var(--danger); border: 1px solid var(--danger); border-radius: 100px; padding: 8px 18px; font-size: 14px; font-weight: 500; cursor: pointer; }
+.send-btn { display: flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-text-on); border: 1px solid var(--accent); border-radius: 100px; padding: 8px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.send-btn:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.send-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 /* Onboarding */
 .onboarding-dialog {

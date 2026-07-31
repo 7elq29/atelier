@@ -47,6 +47,23 @@ export interface HarnessStartOptions {
    * existing local-only callers.
    */
   host?: RemoteHost
+  /**
+   * When true, the returned session's event generator stays open past its
+   * first turn's `result` — waiting on further `streamInput()` calls into
+   * the SAME connection/subprocess (see `ClaudeAgentSdkHarness.normalize()`)
+   * — instead of completing right after that `result`, which is the
+   * default (and was the ONLY behavior before 04-composer-core). Only
+   * `SessionManager`'s real interactive chat sessions (create/reconnect/
+   * follow-up) set this; one-shot internal calls like the auto-naming
+   * summarizer must NOT set it — a one-shot caller's `for await (const
+   * event of session.events)` never pushes further input and never
+   * interrupts, so without this defaulting to `false` its loop would just
+   * hang forever after the single `result` it's waiting for (this was a
+   * real bug caught here during this task: the initial version of this fix
+   * made EVERY session — including the auto-namer's — stay open
+   * indefinitely, hanging `maybeAutoName()` forever on a live run).
+   */
+  keepAlive?: boolean
 }
 
 /** A single todo item as reported by the agent's planning tool. */
@@ -179,4 +196,21 @@ export interface HarnessDriver {
    * ended.
    */
   streamInput(sessionId: string, message: string): Promise<void>
+
+  /**
+   * True while `sessionId` still has a live, streaming-input query open
+   * (i.e. its `start`/`resume` event generator hasn't returned yet) — added
+   * in 04-composer-core so callers can tell a genuinely-live session (safe
+   * to `streamInput()` directly, injecting into the SAME open
+   * `AsyncIterable`/subprocess with no reconnect) apart from one that has
+   * already ended (generator returned after an `interrupted`/fatal `error`,
+   * or the process was never started this run) and therefore needs a fresh
+   * `resume()` first. See `ClaudeAgentSdkHarness.normalize()`: with the fix
+   * in this task, the generator no longer returns after every turn's
+   * `result` — only when interrupted or on a fatal error — so a session
+   * that's simply idle between turns (connected, no error) is still
+   * "active" here and never needs a reconnect for its next follow-up
+   * message either.
+   */
+  isActive(sessionId: string): boolean
 }
