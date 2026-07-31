@@ -64,6 +64,11 @@ let notePath: string
 
 test.beforeAll(async () => {
   userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-'))
+  // Pre-seed onboarding as completed (08-global-nav-and-settings) so its
+  // modal backdrop doesn't intercept clicks meant for the Daily Notes panel.
+  mkdirSync(join(userDataDir, 'data'), { recursive: true })
+  writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+
   const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-'))
   vaultRoot = join(vaultParent, 'vault')
   const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31')
@@ -86,6 +91,7 @@ test.beforeAll(async () => {
   await page.waitForLoadState('domcontentloaded')
   await expect(page.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
 })
+
 
 test.afterAll(async () => {
   // Copy the main-process structured log (which carries every watcher/write/
