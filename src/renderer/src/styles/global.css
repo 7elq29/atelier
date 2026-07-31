@@ -781,10 +781,17 @@ input[type='range'] {
 .aq-card.answered .aq-option { pointer-events: none; opacity: .45; }
 .aq-card.answered .aq-option.selected { opacity: 1; background: var(--accent-dim); }
 .aq-card.answered .aq-option.selected .num { background: var(--accent); border-color: var(--accent); }
+/* Pending pick (not yet submitted) — same accent treatment as the answered
+   state so a click gives clear feedback before the explicit Submit. */
+.aq-card:not(.answered) .aq-option.selected { background: var(--accent-dim); }
+.aq-card:not(.answered) .aq-option.selected .num { background: var(--accent); border-color: var(--accent); }
 .aq-option.aq-other { border: 1.5px dashed var(--border-strong); background: transparent; color: var(--text-secondary); }
 .aq-other-box { display: none; gap: 6px; }
 .aq-other-box.show { display: flex; }
 .aq-other-box textarea { flex: 1; background: var(--bg-input); border: 1px solid var(--accent); border-radius: var(--r-md); color: var(--text-primary); font-family: var(--font-ui); font-size: var(--text-sm); padding: 7px 9px; resize: none; outline: none; min-height: 34px; }
+.aq-submit { align-self: flex-start; margin-top: 2px; }
+.aq-submit:disabled { opacity: .45; cursor: not-allowed; }
+.aq-submit:disabled:hover { background: var(--accent); border-color: var(--accent); }
 .aq-footer-hint { font-size: 12.5px; color: var(--text-tertiary); padding-top: 2px; }
 .aq-footer-hint a { cursor: pointer; }
 
