@@ -813,7 +813,7 @@ input[type='range'] {
 
 
 /* ---- Tracker rail (Todos/Subagents) ---- */
-.tracker-rail { width: 290px; flex-shrink: 0; padding: 16px 16px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; transition: width .12s ease, padding .12s ease; }
+.tracker-rail { width: 244px; flex-shrink: 0; padding: 8px 20px 20px 8px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; transition: width .12s ease, padding .12s ease; }
 .tracker-rail.collapsed { width: 40px; padding: 12px 6px; align-items: center; }
 .tracker-rail.collapsed .tracker-card { display: none; }
 .tracker-rail-toggle { width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; color: var(--text-tertiary); background: transparent; border: 1px solid var(--border-default); border-radius: var(--r-md); padding: 5px; cursor: pointer; flex-shrink: 0; }
