@@ -1,0 +1,335 @@
+import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+/**
+ * "audit-scroll-experience" — pass-2 deepening of the window-resize audit
+ * (#55). Pass 1 (audit-window-resize-layout.spec.ts) only ever checked
+ * scrollWidth/clientWidth *metrics*; it never proved a user can actually
+ * reach clipped content by scrolling. This file:
+ *   1. Asserts every container that's SUPPOSED to scroll really has
+ *      `overflow-y: auto|scroll`, then programmatically scrolls it
+ *      (`el.scrollTop = el.scrollHeight`) and asserts the last real item's
+ *      `getBoundingClientRect()` actually lands inside the container's
+ *      visible viewport afterward.
+ *   2. Asserts containers that should NOT scroll (topbar, composer footer)
+ *      don't have an accidental inner scrollbar.
+ *   3. Seeds a real fixture vault (GARDENIA_TEST_VAULT_ROOT) with enough
+ *      timed/unscheduled/tracker items to force real overflow in Daily
+ *      Notes' three sections — fixing pass 1's "never saw real vault
+ *      content" gap.
+ *   4. Verifies (or disproves, with numbers) transcript auto-scroll-to-
+ *      bottom on new messages, using real SDK turns (no mocking).
+ */
+
+const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
+const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
+
+function seedSkipOnboarding(userDataDir: string): void {
+  mkdirSync(join(userDataDir, 'data'), { recursive: true })
+  writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+}
+
+async function setWindowSize(app: ElectronApplication, width: number, height: number): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, dims) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) win.setBounds({ x: 0, y: 0, width: dims.width, height: dims.height })
+  }, { width, height })
+}
+
+async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
+  await app.evaluate(({ dialog }, folderPath) => {
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
+  }, path)
+}
+
+async function openNewSessionModal(page: Page): Promise<void> {
+  await page.getByTestId('new-session-button').click()
+  await expect(page.getByTestId('new-session-modal')).toBeVisible()
+}
+
+/** Scrolls `selector`'s element to its bottom and returns before/after scrollTop plus whether it moved at all. */
+async function scrollToBottom(page: Page, selector: string): Promise<{ before: number; after: number; scrollHeight: number; clientHeight: number }> {
+  return page.locator(selector).first().evaluate((el) => {
+    const before = el.scrollTop
+    el.scrollTop = el.scrollHeight
+    return { before, after: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }
+  })
+}
+
+async function computedOverflowY(page: Page, selector: string): Promise<string> {
+  return page.locator(selector).first().evaluate((el) => getComputedStyle(el).overflowY)
+}
+
+/** Verifies `itemSelector`'s LAST matching element is within `containerSelector`'s visible viewport rect. */
+async function lastItemVisibleWithin(page: Page, containerSelector: string, itemSelector: string): Promise<{ itemRect: DOMRect; containerRect: DOMRect }> {
+  return page.evaluate(
+    ({ containerSelector, itemSelector }) => {
+      const container = document.querySelector(containerSelector) as HTMLElement
+      const items = Array.from(container.querySelectorAll(itemSelector))
+      const last = items[items.length - 1] as HTMLElement
+      return { itemRect: last.getBoundingClientRect().toJSON(), containerRect: container.getBoundingClientRect().toJSON() }
+    },
+    { containerSelector, itemSelector }
+  )
+}
+
+test.describe('audit: real scroll-experience verification (not just overflow metrics)', () => {
+  // NOT `mode: 'serial'` deliberately: tests here build on shared state
+  // (session count, window size) in declaration order, which Playwright
+  // already guarantees for a single spec file in one worker — but `serial`
+  // additionally SKIPS every remaining test in the group after one failure,
+  // and this audit expects some assertions to genuinely fail (documenting
+  // real bugs) without that hiding the rest of the audit's results.
+
+  let electronApp: ElectronApplication
+  let page: Page
+  let userDataDir: string
+  let projectDir: string
+  const TEST_DATE = '2026-07-31'
+
+  test.beforeAll(async ({}, testInfo) => {
+    testInfo.setTimeout(60_000)
+    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-scroll-audit-'))
+    seedSkipOnboarding(userDataDir)
+    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-scroll-audit-project-'))
+
+    // A project with many files, so the `@`-mention popover has enough
+    // matches to actually overflow its own 220px max-height.
+    for (let i = 0; i < 25; i++) {
+      writeFileSync(join(projectDir, `file-${String(i).padStart(2, '0')}.txt`), `contents ${i}\n`)
+    }
+
+    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-scroll-audit-vault-'))
+    const vaultRoot = join(vaultParent, 'vault')
+    const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31')
+    mkdirSync(noteDir, { recursive: true })
+    const timedTasks = Array.from({ length: 14 }, (_, i) => {
+      const hour = 6 + i
+      return `- [ ] ${String(hour).padStart(2, '0')}:00–${String(hour).padStart(2, '0')}:30 Timed task #${i + 1} [gid:: ${String(i).padStart(8, 'a')}-aaaa-4aaa-8aaa-aaaaaaaaaaaa]`
+    }).join('\n')
+    const unscheduledTasks = Array.from(
+      { length: 12 },
+      (_, i) => `- [ ] Unscheduled backlog item #${i + 1} [gid:: ${String(i).padStart(8, 'b')}-bbbb-4bbb-8bbb-bbbbbbbbbbbb]`
+    ).join('\n')
+    const trackerItems = Array.from(
+      { length: 10 },
+      (_, i) => `> - [ ] Tracker habit #${i + 1} #tracker [gid:: ${String(i).padStart(8, 'c')}-cccc-4ccc-8ccc-cccccccccccc]`
+    ).join('\n')
+    writeFileSync(
+      join(noteDir, `${TEST_DATE}.md`),
+      `---\ndate: ${TEST_DATE}\nday: Friday\ntype: daily\n---\n\n## \u{1F4CB} Tasks\n\n${timedTasks}\n\n### ⚪ Backlog\n${unscheduledTasks}\n\n### \u{1F91D} Delegated\n-\n\n> [!invisible] Trackers\n${trackerItems}\n`,
+      'utf-8'
+    )
+
+    electronApp = await electron.launch({
+      args: [mainEntry, `--user-data-dir=${userDataDir}`],
+      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TEST_DATE }
+    })
+    page = await electronApp.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    await expect(page.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+    // Shrink to the short-small size so the seeded content is guaranteed to
+    // overflow the (now vertically constrained) daily-notes sections.
+    await setWindowSize(electronApp, 1024, 640)
+    await page.waitForTimeout(150)
+  })
+
+  test.afterAll(async () => {
+    await electronApp.close().catch(() => undefined)
+  })
+
+  test('daily notes: Timeline/Unscheduled/Trackers actually render real seeded content (fixes pass-1 empty-vault gap)', async () => {
+    await expect(page.getByTestId('timeline-task').first()).toBeVisible()
+    await expect(page.getByTestId('unscheduled-task').first()).toBeVisible()
+    await expect(page.getByTestId('tracker-task').first()).toBeVisible()
+    const counts = {
+      timeline: await page.getByTestId('timeline-task').count(),
+      unscheduled: await page.getByTestId('unscheduled-task').count(),
+      tracker: await page.getByTestId('tracker-task').count()
+    }
+    expect(counts.timeline).toBe(14)
+    expect(counts.unscheduled).toBe(12)
+    expect(counts.tracker).toBe(10)
+    await page.screenshot({ path: join(artifactsDir, 'scroll-audit-daily-notes-seeded-content.png') })
+  })
+
+  test('daily notes sections: overflow-y is auto AND scrolling to bottom surfaces the last real item', async () => {
+    for (const { container, item, label } of [
+      { container: '[data-testid="timeline-body"]', item: '[data-testid="timeline-task"]', label: 'timeline' },
+      { container: '[data-testid="unscheduled-body"]', item: '[data-testid="unscheduled-task"]', label: 'unscheduled' },
+      { container: '[data-testid="trackers-body"]', item: '[data-testid="tracker-task"]', label: 'trackers' }
+    ]) {
+      const overflowY = await computedOverflowY(page, container)
+      expect(overflowY, `${label} body should have overflow-y auto/scroll`).toMatch(/auto|scroll/)
+
+      const scroll = await scrollToBottom(page, container)
+      // eslint-disable-next-line no-console
+      console.log(`SCROLL-AUDIT[${label}]`, JSON.stringify(scroll))
+      // Only meaningful if content actually overflowed the container.
+      if (scroll.scrollHeight > scroll.clientHeight + 2) {
+        const { itemRect, containerRect } = await lastItemVisibleWithin(page, container, item)
+        expect(
+          itemRect.bottom,
+          `${label}: last item bottom (${itemRect.bottom}) should be within container's visible bottom (${containerRect.bottom}) after scrolling`
+        ).toBeLessThanOrEqual(containerRect.bottom + 1)
+        expect(itemRect.top, `${label}: last item top (${itemRect.top}) should be at/after container's visible top (${containerRect.top})`).toBeGreaterThanOrEqual(
+          containerRect.top - 1
+        )
+      }
+    }
+    await page.screenshot({ path: join(artifactsDir, 'scroll-audit-daily-notes-scrolled-to-bottom.png') })
+  })
+
+  test('non-scrollable-by-design containers (topbar, composer footer) have no accidental inner scrollbar', async () => {
+    await stubProjectFolder(electronApp, projectDir)
+    await openNewSessionModal(page)
+    await page.getByTestId('pick-project-folder').click()
+    // claude-code mode (not terminal): `.composer-footer` only exists in the
+    // chat surface, which terminal-mode sessions don't render. No initial
+    // prompt is given, so no real SDK turn/cost is incurred — just the
+    // harness connecting.
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    await expect(page.locator('[data-testid="session-row"]').first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('.composer-footer')).toBeVisible({ timeout: 15_000 })
+
+    for (const selector of ['.topbar', '.composer-footer']) {
+      const overflowY = await computedOverflowY(page, selector)
+      expect(overflowY, `${selector} should not be an auto/scroll container by design`).not.toMatch(/^(auto|scroll)$/)
+      const metrics = await page.locator(selector).first().evaluate((el) => ({ clientHeight: el.clientHeight, scrollHeight: el.scrollHeight }))
+      expect(
+        metrics.scrollHeight,
+        `${selector} should not have accumulated an internal scrollbar (scrollHeight ${metrics.scrollHeight} vs clientHeight ${metrics.clientHeight})`
+      ).toBeLessThanOrEqual(metrics.clientHeight + 2)
+    }
+  })
+
+  test('sidebar session list: overflow-y auto, and scrolling to bottom surfaces the last real session row', async ({}, testInfo) => {
+    testInfo.setTimeout(60_000)
+    const before = await page.locator('[data-testid="session-row"]').count()
+    // Create enough terminal-mode sessions (real, but no SDK turn — fast) to
+    // force the session list past its own height at the short-small window
+    // size already in effect from beforeAll.
+    for (let i = 0; i < 10; i++) {
+      await stubProjectFolder(electronApp, projectDir)
+      await openNewSessionModal(page)
+      await page.getByTestId('pick-project-folder').click()
+      await page.getByTestId('mode-terminal').click()
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    }
+    await expect(page.locator('[data-testid="session-row"]')).toHaveCount(before + 10)
+    await page.waitForTimeout(150)
+
+    const overflowY = await computedOverflowY(page, '.session-list')
+    expect(overflowY, 'session-list should have overflow-y auto').toMatch(/auto|scroll/)
+
+    const scroll = await scrollToBottom(page, '.session-list')
+    // eslint-disable-next-line no-console
+    console.log('SCROLL-AUDIT[session-list]', JSON.stringify(scroll))
+    expect(scroll.scrollHeight, 'session-list should actually overflow with 11 sessions at 640px window height').toBeGreaterThan(scroll.clientHeight)
+
+    const { itemRect, containerRect } = await lastItemVisibleWithin(page, '.session-list', '[data-testid="session-row"]')
+    expect(itemRect.bottom, 'last session row should be visible within session-list after scrolling to bottom').toBeLessThanOrEqual(
+      containerRect.bottom + 1
+    )
+    await page.screenshot({ path: join(artifactsDir, 'scroll-audit-session-list-scrolled.png') })
+  })
+
+  test('mention popover: overflow-y auto with many matches, scrolling to bottom surfaces the last match', async () => {
+    // Open a claude-code-mode session so the composer (with @-mention wired
+    // to a real project file list) is present; no message is sent, so no
+    // real SDK turn/cost is incurred by this test.
+    await stubProjectFolder(electronApp, projectDir)
+    await openNewSessionModal(page)
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 15_000 })
+
+    await page.getByTestId('composer-input').fill('@file-')
+    const popover = page.getByTestId('mention-popover')
+    await expect(popover).toBeVisible()
+    await expect(popover.getByTestId('mention-item')).toHaveCount(20) // MAX_MENTION_MATCHES cap in Composer.tsx, out of 25 real files
+
+    const overflowY = await computedOverflowY(page, '[data-testid="mention-popover"]')
+    expect(overflowY, 'mention-popover should have overflow-y auto per global.css').toMatch(/auto|scroll/)
+
+    const scroll = await scrollToBottom(page, '[data-testid="mention-popover"]')
+    // eslint-disable-next-line no-console
+    console.log('SCROLL-AUDIT[mention-popover]', JSON.stringify(scroll))
+    if (scroll.scrollHeight > scroll.clientHeight + 2) {
+      const { itemRect, containerRect } = await lastItemVisibleWithin(page, '[data-testid="mention-popover"]', '[data-testid="mention-item"]')
+      expect(itemRect.bottom, 'last mention-item should be visible after scrolling the popover to bottom').toBeLessThanOrEqual(containerRect.bottom + 1)
+    }
+    await page.screenshot({ path: join(artifactsDir, 'scroll-audit-mention-popover.png') })
+    await page.getByTestId('composer-input').fill('')
+  })
+
+  test('transcript: overflow-y auto, and auto-scroll-to-bottom behavior on new real messages (proof, not assumption)', async ({}, testInfo) => {
+    testInfo.setTimeout(90_000)
+    await stubProjectFolder(electronApp, projectDir)
+    await openNewSessionModal(page)
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('initial-prompt').fill(
+      'Reply with a numbered list from 1 to 40, one short line per number (e.g. "1. one"), and nothing else.'
+    )
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    const transcript = page.getByTestId('transcript')
+    await expect(transcript).toBeVisible({ timeout: 15_000 })
+
+    // Wait for the long real reply to land, forcing real overflow.
+    await expect
+      .poll(async () => transcript.evaluate((el) => el.scrollHeight > el.clientHeight), { timeout: 30_000 })
+      .toBe(true)
+
+    const overflowY = await computedOverflowY(page, '[data-testid="transcript"]')
+    expect(overflowY, 'transcript should have overflow-y auto').toMatch(/auto|scroll/)
+
+    // Send one more short real message and observe whether the transcript
+    // follows it to the bottom WITHOUT any manual scroll — this is the "real
+    // scroll experience" claim from the task brief, verified rather than
+    // assumed.
+    const beforeScrollTop = await transcript.evaluate((el) => el.scrollTop)
+    await page.getByTestId('composer-input').fill('Thanks — now just reply with exactly: DONE.')
+    await page.getByTestId('send-button').click()
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() =>
+            document.querySelectorAll('[data-testid="transcript-message"][data-role="assistant"]')[
+              document.querySelectorAll('[data-testid="transcript-message"][data-role="assistant"]').length - 1
+            ]?.textContent?.includes('DONE')
+          ),
+        { timeout: 30_000 }
+      )
+      .toBe(true)
+    await page.waitForTimeout(300)
+
+    const afterAppend = await transcript.evaluate((el) => ({ scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }))
+    const distanceFromBottom = afterAppend.scrollHeight - afterAppend.clientHeight - afterAppend.scrollTop
+    // eslint-disable-next-line no-console
+    console.log(
+      'SCROLL-AUDIT[transcript-auto-scroll]',
+      JSON.stringify({ beforeScrollTop, afterAppend, distanceFromBottomPx: distanceFromBottom })
+    )
+    await page.screenshot({ path: join(artifactsDir, 'scroll-audit-transcript-after-new-message.png') })
+
+    // This assertion documents the ACTUAL behavior rather than assuming it
+    // works: if ChatTranscript.tsx has no scroll-to-bottom effect (it does
+    // not, as of this audit — see the written findings for
+    // TRANSCRIPT-NO-AUTOSCROLL), this will fail, and the console log above
+    // carries the exact pixel distance from the bottom the view was left at.
+    expect(
+      distanceFromBottom,
+      `transcript should auto-follow to the bottom on new messages; it was left ${distanceFromBottom}px above the bottom instead`
+    ).toBeLessThanOrEqual(4)
+  })
+})
