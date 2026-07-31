@@ -7,6 +7,7 @@ import AskUserQuestionCard from './AskUserQuestionCard'
 import PermissionRequestCard from './PermissionRequestCard'
 import PlanProposedCard from './PlanProposedCard'
 import Linkify from '../panels/Linkify'
+import MessageActions from './MessageActions'
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
@@ -86,8 +87,11 @@ export default function ChatTranscript({
           }
           sawFirstUser = true
           nodes.push(
-            <div className="msg-user" data-testid="transcript-message" data-role="user" key={message.id}>
-              {message.content}
+            <div className="msg-wrap msg-wrap-user" key={message.id}>
+              <MessageActions text={message.content} />
+              <div className="msg-user" data-testid="transcript-message" data-role="user">
+                {message.content}
+              </div>
             </div>
           )
         } else if (parsed?.kind === 'compaction') {
@@ -118,7 +122,8 @@ export default function ChatTranscript({
         } else if (tool) {
           const children = childrenByParent.get(tool.toolUseId)
           nodes.push(
-            <div data-testid="transcript-message" data-role={message.role} key={message.id}>
+            <div className="msg-wrap" data-testid="transcript-message" data-role={message.role} key={message.id}>
+              <MessageActions text={`${tool.name}: ${toolHeadline(tool.name, tool.input)}`} />
               <ToolCallCard content={tool} />
             </div>
           )
@@ -150,8 +155,11 @@ export default function ChatTranscript({
           )
         } else {
           nodes.push(
-            <div className="msg-assistant" data-testid="transcript-message" data-role={message.role} key={message.id}>
-              <Linkify text={message.content} />
+            <div className="msg-wrap" key={message.id}>
+              <MessageActions text={message.content} speakable />
+              <div className="msg-assistant" data-testid="transcript-message" data-role={message.role}>
+                <Linkify text={message.content} />
+              </div>
             </div>
           )
         }
