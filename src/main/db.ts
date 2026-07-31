@@ -68,6 +68,15 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
         created_at TEXT NOT NULL
       );
     `
+  },
+  {
+    // 10a-enrichment-cost-tracking: running per-session dollar total, sourced
+    // exclusively from the SDK's own `result` event's `totalCostUsd` (see
+    // HarnessEvent's 'result' variant) — persisted so it survives relaunch.
+    name: '0003_session_cost_tracking',
+    sql: `
+      ALTER TABLE sessions ADD COLUMN total_cost_usd REAL NOT NULL DEFAULT 0;
+    `
   }
 ]
 

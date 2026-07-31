@@ -24,6 +24,7 @@ interface SessionRow {
   deleted_at: string | null
   notes: string | null
   sort_order: number
+  total_cost_usd: number
 }
 
 interface MessageRow {
@@ -68,7 +69,8 @@ function toSessionRecord(row: SessionRow, tags: string[] = []): SessionRecord {
     closedAt: row.closed_at,
     tags,
     notes: row.notes,
-    sortOrder: row.sort_order
+    sortOrder: row.sort_order,
+    totalCostUsd: row.total_cost_usd
   }
 }
 
@@ -201,6 +203,17 @@ export class SessionStore {
 
   setNotes(id: string, notes: string): SessionRecord | undefined {
     this.db.prepare('UPDATE sessions SET notes = ? WHERE id = ?').run(notes, id)
+    return this.getSession(id)
+  }
+
+  /**
+   * Adds `deltaUsd` to the session's running cost total (10a-enrichment-
+   * cost-tracking) — called once per harness `result` event with that
+   * event's own `totalCostUsd`, so the column accumulates the sum of every
+   * turn's real SDK-reported cost, not a recomputation.
+   */
+  addCost(id: string, deltaUsd: number): SessionRecord | undefined {
+    this.db.prepare('UPDATE sessions SET total_cost_usd = total_cost_usd + ? WHERE id = ?').run(deltaUsd, id)
     return this.getSession(id)
   }
 
