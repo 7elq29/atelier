@@ -10,9 +10,14 @@ import { SessionStore } from './sessions/store'
 import { SessionManager } from './sessions/manager'
 import { createStaticHostResolver } from './sessions/hosts'
 import { registerSessionHandlers } from './sessions/ipc'
+import { registerPanelHandlers } from './panels/ipc'
+import type { PtyManager } from './panels/pty'
+import type { PortForwardManager } from './panels/ports'
 
 const isDev = !app.isPackaged
 let mainWindow: BrowserWindow | null = null
+let ptyManager: PtyManager | null = null
+let portManager: PortForwardManager | null = null
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -92,6 +97,9 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
 
   registerDailyNoteHandlers(() => mainWindow)
   registerSessionHandlers(sessionManager, () => mainWindow)
+  const panelManagers = registerPanelHandlers(() => mainWindow)
+  ptyManager = panelManagers.ptyManager
+  portManager = panelManagers.portManager
 }
 
 app.whenReady().then(() => {
@@ -116,8 +124,17 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  // Real pty/ssh child processes hold ref'd handles that would otherwise
+  // keep the app process alive indefinitely after the last window closes.
+  ptyManager?.killAll()
+  portManager?.killAll()
   closeDatabase()
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  ptyManager?.killAll()
+  portManager?.killAll()
 })

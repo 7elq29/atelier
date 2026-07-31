@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 import type { MessageRecord } from '../../../../shared/session-types'
 import { parseStructuredContent, type ToolCallContent } from '../../../../shared/chat-content'
 import ToolCallCard, { toolHeadline } from './ToolCallCard'
+import Linkify from '../panels/Linkify'
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
@@ -121,7 +122,7 @@ export default function ChatTranscript({ messages }: { messages: MessageRecord[]
         } else {
           nodes.push(
             <div className="msg-assistant" data-testid="transcript-message" data-role={message.role} key={message.id}>
-              {message.content}
+              <Linkify text={message.content} />
             </div>
           )
         }
