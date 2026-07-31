@@ -30,7 +30,7 @@ import type {
   SpawnedProcess,
   SpawnOptions,
 } from '@anthropic-ai/claude-agent-sdk'
-import type { HarnessDriver, HarnessEvent, HarnessSession, HarnessStartOptions, RemoteHost } from './types'
+import type { HarnessDriver, HarnessEvent, HarnessSession, HarnessStartOptions, HarnessTodoItem, RemoteHost } from './types'
 import { logger } from '../logger'
 
 /**
@@ -143,6 +143,30 @@ interface ActiveSession {
   query: SdkQuery
   queue: UserMessageQueue
   interruptRequested: boolean
+  /**
+   * Uber-internal task-tracking tool state. Verified for real against a live
+   * turn (see 03-chat-surface-core's progress notes): this environment's
+   * Claude Code build calls `TaskCreate`/`TaskUpdate` instead of the
+   * "standard" `TodoWrite` tool 01-harness-abstraction assumed. Normalized
+   * here into the same `todo_update` shape TodoWrite produces (a full
+   * current snapshot per event) — keyed by the numeric task id the tool
+   * itself assigns (parsed from `TaskCreate`'s tool_result text, e.g. "Task
+   * #1 created successfully: ...", and matched against `TaskUpdate`'s
+   * `taskId` input field, which uses that same id space).
+   */
+  taskItems: Map<string, HarnessTodoItem>
+  /** toolUseId -> pending TaskCreate/TaskUpdate call, resolved once its tool_result (which carries the real numeric id for TaskCreate) arrives. */
+  pendingTaskCalls: Map<string, { name: string; input: Record<string, unknown> }>
+}
+
+function extractOutputText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => (block && typeof block === 'object' && 'text' in block ? String((block as { text: unknown }).text) : ''))
+      .join('\n')
+  }
+  return ''
 }
 
 export class ClaudeAgentSdkHarness implements HarnessDriver {
@@ -199,7 +223,13 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     }
 
     const query = sdk.query({ prompt: queue, options })
-    const active: ActiveSession = { query, queue, interruptRequested: false }
+    const active: ActiveSession = {
+      query,
+      queue,
+      interruptRequested: false,
+      taskItems: new Map(),
+      pendingTaskCalls: new Map(),
+    }
     this.sessions.set(sessionId, active)
 
     return { sessionId, events: this.normalize(sessionId, query, active) }
@@ -212,7 +242,7 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
   ): AsyncGenerator<HarnessEvent, void, void> {
     try {
       for await (const message of query) {
-        for (const event of toHarnessEvents(sessionId, message)) {
+        for (const event of toHarnessEvents(sessionId, message, active)) {
           yield event
         }
         if (message.type === 'result') {
@@ -239,7 +269,7 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
   }
 }
 
-function toHarnessEvents(sessionId: string, message: SDKMessage): HarnessEvent[] {
+function toHarnessEvents(sessionId: string, message: SDKMessage, active: ActiveSession): HarnessEvent[] {
   const timestamp = new Date().toISOString()
 
   if (message.type === 'system' && message.subtype === 'init') {
@@ -251,6 +281,19 @@ function toHarnessEvents(sessionId: string, message: SDKMessage): HarnessEvent[]
         model: message.model,
         cwd: message.cwd,
         apiKeySource: message.apiKeySource,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'compact_boundary') {
+    return [
+      {
+        type: 'compaction',
+        sessionId,
+        timestamp,
+        trigger: message.compact_metadata.trigger,
+        preTokens: message.compact_metadata.pre_tokens,
+        postTokens: message.compact_metadata.post_tokens,
       },
     ]
   }
@@ -276,12 +319,16 @@ function toHarnessEvents(sessionId: string, message: SDKMessage): HarnessEvent[]
             toolUseId: block.id,
             name: block.name,
             input: block.input,
+            parentToolUseId: message.parent_tool_use_id,
           })
           if (block.name === 'TodoWrite') {
             const todos = (block.input as { todos?: unknown } | undefined)?.todos
             if (Array.isArray(todos)) {
               events.push({ type: 'todo_update', sessionId, timestamp, todos: todos as never })
             }
+          }
+          if (block.name === 'TaskCreate' || block.name === 'TaskUpdate') {
+            active.pendingTaskCalls.set(block.id, { name: block.name, input: (block.input ?? {}) as Record<string, unknown> })
           }
         }
       }
@@ -302,7 +349,30 @@ function toHarnessEvents(sessionId: string, message: SDKMessage): HarnessEvent[]
             toolUseId: block.tool_use_id,
             isError: block.is_error === true,
             output: block.content,
+            parentToolUseId: message.parent_tool_use_id,
           })
+
+          const pendingTask = active.pendingTaskCalls.get(block.tool_use_id)
+          if (pendingTask) {
+            active.pendingTaskCalls.delete(block.tool_use_id)
+            const outputText = extractOutputText(block.content)
+            if (pendingTask.name === 'TaskCreate') {
+              const idMatch = outputText.match(/#(\d+)/)
+              const taskId = idMatch?.[1] ?? block.tool_use_id
+              const subject =
+                (pendingTask.input.subject as string | undefined) ??
+                (pendingTask.input.description as string | undefined) ??
+                'Task'
+              active.taskItems.set(taskId, { content: subject, status: 'pending' })
+            } else {
+              // TaskUpdate: the taskId is already given explicitly in the input (same id space TaskCreate's output assigns).
+              const taskId = String(pendingTask.input.taskId ?? block.tool_use_id)
+              const existing = active.taskItems.get(taskId)
+              const status = (pendingTask.input.status as string | undefined) ?? existing?.status ?? 'pending'
+              active.taskItems.set(taskId, { content: existing?.content ?? 'Task', status })
+            }
+            events.push({ type: 'todo_update', sessionId, timestamp, todos: [...active.taskItems.values()] })
+          }
         }
       }
     }

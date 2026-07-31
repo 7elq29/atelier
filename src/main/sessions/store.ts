@@ -226,6 +226,23 @@ export class SessionStore {
     return toMessageRecord(row)
   }
 
+  /**
+   * In-place update of an existing message row (03-chat-surface-core): used
+   * to (a) commit a streamed assistant text segment's final content once it
+   * ends, and (b) flip a tool-call message's JSON content from `running` to
+   * `completed`/`error` when its `tool_call_end` arrives — both cases keep
+   * the "one row per message" model (no extra row for the terminal state).
+   */
+  updateMessage(id: number, input: { content?: string; rawEvent?: unknown }): MessageRecord | undefined {
+    const existing = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as MessageRow | undefined
+    if (!existing) return undefined
+    const content = input.content !== undefined ? input.content : existing.content
+    const rawEvent = input.rawEvent !== undefined ? JSON.stringify(input.rawEvent) : existing.raw_event
+    this.db.prepare('UPDATE messages SET content = ?, raw_event = ? WHERE id = ?').run(content, rawEvent, id)
+    const row = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as MessageRow
+    return toMessageRecord(row)
+  }
+
   listMessages(sessionId: string): MessageRecord[] {
     const rows = this.db
       .prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC')

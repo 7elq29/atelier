@@ -7,6 +7,7 @@ import type {
   RemoteHostOption,
   SessionLifecycleEvent,
   SessionRecord,
+  SessionStreamDeltaEvent,
   SessionStreamEvent
 } from '../shared/session-types'
 
@@ -72,6 +73,12 @@ const api = {
     const listener = (_event: unknown, payload: SessionStreamEvent): void => callback(payload)
     ipcRenderer.on('session:message', listener)
     return () => ipcRenderer.removeListener('session:message', listener)
+  },
+  /** Token-level live push for an in-progress assistant message (03-chat-surface-core) — see SessionStreamDeltaEvent. */
+  onSessionStreamDelta: (callback: (event: SessionStreamDeltaEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionStreamDeltaEvent): void => callback(payload)
+    ipcRenderer.on('session:streamDelta', listener)
+    return () => ipcRenderer.removeListener('session:streamDelta', listener)
   },
   onSessionLifecycle: (callback: (event: SessionLifecycleEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: SessionLifecycleEvent): void => callback(payload)

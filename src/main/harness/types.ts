@@ -83,6 +83,17 @@ export type HarnessEvent =
       toolUseId: string
       name: string
       input: unknown
+      /**
+       * Id of the enclosing Task tool_use (the "parent") when this call was
+       * made by a spawned subagent rather than the top-level turn; `null`
+       * for top-level calls. Sourced directly from the Agent SDK's own
+       * `parent_tool_use_id` field on the assistant message that carried
+       * this tool_use block (verified present on `SDKAssistantMessage` in
+       * the installed `@anthropic-ai/claude-agent-sdk` types) — added here
+       * in 03-chat-surface-core because 01-harness-abstraction's
+       * normalization dropped it.
+       */
+      parentToolUseId: string | null
     }
   | {
       type: 'tool_call_end'
@@ -91,12 +102,28 @@ export type HarnessEvent =
       toolUseId: string
       isError: boolean
       output: unknown
+      /** See `tool_call_start.parentToolUseId`. Sourced from the same field on the SDKUserMessage carrying the tool_result. */
+      parentToolUseId: string | null
     }
   | {
       type: 'todo_update'
       sessionId: string
       timestamp: string
       todos: HarnessTodoItem[]
+    }
+  | {
+      /**
+       * Context-compaction boundary. Added in 03-chat-surface-core from the
+       * Agent SDK's `SDKCompactBoundaryMessage` (`type: 'system', subtype:
+       * 'compact_boundary'`), which 01-harness-abstraction did not
+       * normalize.
+       */
+      type: 'compaction'
+      sessionId: string
+      timestamp: string
+      trigger: 'manual' | 'auto'
+      preTokens: number
+      postTokens?: number
     }
   | {
       type: 'result'

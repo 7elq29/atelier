@@ -67,6 +67,21 @@ export interface SessionStreamEvent {
   message: MessageRecord
 }
 
+/**
+ * Token-level assistant text push (03-chat-surface-core). Fired on every
+ * `text_delta` for the in-progress assistant message identified by
+ * `messageId` (already created, empty, via a `session:message` push) —
+ * purely a live-render signal, never itself persisted; the final content is
+ * committed to SQLite and re-pushed as an ordinary `session:message` once
+ * the turn's text segment ends.
+ */
+export interface SessionStreamDeltaEvent {
+  sessionId: string
+  messageId: number
+  /** Cumulative text so far for this message (not just the incremental delta) — simplest for the renderer to apply directly. */
+  text: string
+}
+
 /** Lifecycle notifications forwarded from main -> renderer for sidebar refresh + e2e log grepping. */
 export type SessionLifecycleEvent =
   | { type: 'session.created'; session: SessionRecord }

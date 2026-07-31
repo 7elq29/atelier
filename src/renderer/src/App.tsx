@@ -5,6 +5,8 @@ import Sidebar from './components/Sidebar'
 import NewSessionModal from './components/NewSessionModal'
 import SettingsPanel from './components/SettingsPanel'
 import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
+import ChatTranscript from './components/chat/ChatTranscript'
+import TrackerRail from './components/chat/TrackerRail'
 import { useConfig } from './hooks/useConfig'
 import { useSessions } from './hooks/useSessions'
 import type { SessionRecord } from '../../shared/session-types'
@@ -203,40 +205,34 @@ export default function App(): JSX.Element {
 
           {activeSession ? (
             <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <div className="transcript" data-testid="transcript">
-                {activeMessages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={m.role === 'user' ? 'msg-user' : m.role === 'system' ? 'msg-system' : 'msg-assistant'}
-                    data-testid="transcript-message"
-                    data-role={m.role}
-                  >
-                    {m.content}
-                  </div>
-                ))}
-              </div>
-              {activeSession.mode === 'claude-code' && (
-                <div className="composer-wrap">
-                  <div className="composer-box">
-                    <textarea
-                      data-testid="composer-input"
-                      placeholder="Message Gardenia…"
-                      rows={1}
-                      value={composerText}
-                      onChange={(e) => setComposerText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault()
-                          void handleSend()
-                        }
-                      }}
-                    />
-                    <button className="send-btn btn btn-primary" data-testid="send-button" onClick={() => void handleSend()}>
-                      Send
-                    </button>
-                  </div>
+              <div className="chat-body-row">
+                <div className="chat-main-col">
+                  <ChatTranscript messages={activeMessages} />
+                  {activeSession.mode === 'claude-code' && (
+                    <div className="composer-wrap">
+                      <div className="composer-box">
+                        <textarea
+                          data-testid="composer-input"
+                          placeholder="Message Gardenia…"
+                          rows={1}
+                          value={composerText}
+                          onChange={(e) => setComposerText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault()
+                              void handleSend()
+                            }
+                          }}
+                        />
+                        <button className="send-btn btn btn-primary" data-testid="send-button" onClick={() => void handleSend()}>
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
+                <TrackerRail messages={activeMessages} />
+              </div>
             </div>
           ) : (
             <div className="empty-main" data-testid="main-empty-state">

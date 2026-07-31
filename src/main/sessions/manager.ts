@@ -8,17 +8,37 @@ import type {
   SessionLifecycleEvent,
   SessionRecord
 } from '../../shared/session-types'
+import type { CompactionContent, ToolCallContent, TodoUpdateContent } from '../../shared/chat-content'
 import type { SessionStore } from './store'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
 const AUTO_NAME_PROMPT = 'Summarize this conversation topic in under 6 words. Reply with ONLY the title, no punctuation, no quotes.'
 
+/** Bookkeeping for one still-running tool call, keyed by its toolUseId. */
+interface PendingToolCall {
+  messageId: number
+  content: ToolCallContent
+}
+
 /** In-memory bookkeeping for a session's live harness stream, keyed by our session id. */
 interface LiveStream {
   /** Assembled text for the assistant turn currently in progress (flushed on tool-call or result). */
   buffer: string
+  /**
+   * DB id of the (already-persisted, currently empty-or-partial) message row
+   * backing `buffer` — created on the first `text_delta` of a segment so
+   * `session:streamDelta` pushes have a stable id to target, then updated
+   * in place with the final text on flush. `null` when no segment is open.
+   */
+  bufferMessageId: number | null
   /** Number of completed assistant turns ('result' events) seen so far. */
   turnCount: number
+  /** Tool calls started but not yet ended, keyed by toolUseId. */
+  pendingTools: Map<string, PendingToolCall>
+}
+
+function newLiveStream(turnCount = 0): LiveStream {
+  return { buffer: '', bufferMessageId: null, turnCount, pendingTools: new Map() }
 }
 
 export interface RemoteHostResolver {
@@ -77,6 +97,11 @@ export class SessionManager {
 
   private sendMessage(sessionId: string, message: MessageRecord): void {
     this.getWindow()?.webContents.send('session:message', { sessionId, message })
+  }
+
+  /** Live, unpersisted token-level push for the in-progress assistant text message `messageId` — see `SessionStreamDeltaEvent`. */
+  private sendStreamDelta(sessionId: string, messageId: number, text: string): void {
+    this.getWindow()?.webContents.send('session:streamDelta', { sessionId, messageId, text })
   }
 
   private resolveHost(hostId: string): RemoteHost | undefined {
@@ -145,7 +170,7 @@ export class SessionManager {
     }
 
     this.sendLifecycle({ type: 'session.created', session })
-    this.live.set(session.id, { buffer: '', turnCount: 0 })
+    this.live.set(session.id, newLiveStream())
     void this.consume(session.id, harnessSession.events)
     return session
   }
@@ -168,7 +193,7 @@ export class SessionManager {
     if (!session || session.mode !== 'claude-code') return
     const host = this.resolveHostFromSession(session.hostname)
     const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host })
-    this.live.set(sessionId, { buffer: '', turnCount: 0 })
+    this.live.set(sessionId, newLiveStream())
     void this.consume(sessionId, harnessSession.events)
   }
 
@@ -198,7 +223,7 @@ export class SessionManager {
     const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host })
     await this.harness.streamInput(sessionId, text)
     const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
-    this.live.set(sessionId, { buffer: '', turnCount: previousTurnCount })
+    this.live.set(sessionId, newLiveStream(previousTurnCount))
     void this.consume(sessionId, harnessSession.events)
   }
 
@@ -261,30 +286,83 @@ export class SessionManager {
   }
 
   private applyEvent(sessionId: string, event: HarnessEvent): void {
-    const live = this.live.get(sessionId) ?? { buffer: '', turnCount: 0 }
+    const live = this.live.get(sessionId) ?? newLiveStream()
     this.live.set(sessionId, live)
 
     switch (event.type) {
-      case 'text_delta':
+      case 'text_delta': {
+        // First delta of a segment: persist an (initially empty) placeholder
+        // row immediately so the renderer has a stable message id to attach
+        // progressive `session:streamDelta` pushes to — token-level
+        // rendering happens entirely over that channel; only the FINAL text
+        // is written back to this same row (via flushBuffer), so the "one
+        // row per message" DB model still holds (one insert + one update,
+        // never one row per token).
+        if (live.bufferMessageId == null) {
+          const placeholder = this.store.addMessage({ sessionId, role: 'assistant', content: '' })
+          live.bufferMessageId = placeholder.id
+          this.sendMessage(sessionId, placeholder)
+        }
         live.buffer += event.text
+        this.sendStreamDelta(sessionId, live.bufferMessageId, live.buffer)
         return
+      }
 
       case 'tool_call_start': {
         this.flushBuffer(sessionId, live)
+        const content: ToolCallContent = {
+          kind: 'tool_call',
+          toolUseId: event.toolUseId,
+          name: event.name,
+          input: event.input,
+          status: 'running',
+          parentToolUseId: event.parentToolUseId
+        }
         const message = this.store.addMessage({
           sessionId,
           role: 'assistant',
-          content: `⚙ ${event.name}`,
+          content: JSON.stringify(content),
           rawEvent: event
         })
+        live.pendingTools.set(event.toolUseId, { messageId: message.id, content })
         this.sendMessage(sessionId, message)
         return
       }
 
-      case 'tool_call_end':
-      case 'todo_update':
+      case 'tool_call_end': {
+        const pending = live.pendingTools.get(event.toolUseId)
+        if (!pending) return // e.g. a tool call from a prior (already-flushed) turn after resume
+        const content: ToolCallContent = {
+          ...pending.content,
+          status: event.isError ? 'error' : 'completed',
+          output: event.output
+        }
+        const updated = this.store.updateMessage(pending.messageId, { content: JSON.stringify(content), rawEvent: event })
+        if (updated) this.sendMessage(sessionId, updated)
+        live.pendingTools.delete(event.toolUseId)
+        return
+      }
+
+      case 'todo_update': {
+        // Not its own transcript row visually (rendered in the tracker rail
+        // instead) but still persisted as an ordinary message so resume
+        // reconstructs the last-known todo state without a schema change.
+        const content: TodoUpdateContent = { kind: 'todo_update', todos: event.todos }
+        const message = this.store.addMessage({ sessionId, role: 'system', content: JSON.stringify(content), rawEvent: event })
+        this.sendMessage(sessionId, message)
+        return
+      }
+
+      case 'compaction': {
+        this.flushBuffer(sessionId, live)
+        const content: CompactionContent = { kind: 'compaction', trigger: event.trigger, preTokens: event.preTokens, postTokens: event.postTokens }
+        const message = this.store.addMessage({ sessionId, role: 'system', content: JSON.stringify(content), rawEvent: event })
+        this.sendMessage(sessionId, message)
+        return
+      }
+
       case 'session_started':
-        return // structural events only; not rendered as their own transcript row
+        return // structural event only; not rendered as its own transcript row
 
       case 'error': {
         this.flushBuffer(sessionId, live)
@@ -316,10 +394,11 @@ export class SessionManager {
   }
 
   private flushBuffer(sessionId: string, live: LiveStream): void {
-    if (!live.buffer) return
-    const message = this.store.addMessage({ sessionId, role: 'assistant', content: live.buffer })
-    this.sendMessage(sessionId, message)
+    if (live.bufferMessageId == null) return
+    const updated = this.store.updateMessage(live.bufferMessageId, { content: live.buffer })
+    if (updated) this.sendMessage(sessionId, updated)
     live.buffer = ''
+    live.bufferMessageId = null
   }
 
   // ── Auto-naming (background summarizer, Bug #93 regression guard) ────

@@ -51,10 +51,32 @@ export function useSessions(): UseSessionsResult {
     window.gardenia.listHosts().then(setHosts)
 
     const offMessage = window.gardenia.onSessionMessage(({ sessionId, message }) => {
-      setMessagesBySession((prev) => ({
-        ...prev,
-        [sessionId]: [...(prev[sessionId] ?? []), message]
-      }))
+      setMessagesBySession((prev) => {
+        const list = prev[sessionId] ?? []
+        const idx = list.findIndex((m) => m.id === message.id)
+        if (idx === -1) return { ...prev, [sessionId]: [...list, message] }
+        // Same id as an existing row (streamed-text finalization, or a
+        // tool-call flipping from running -> completed/error): replace in
+        // place rather than append, so the transcript never shows a
+        // duplicate row for what is still "one row per message" in SQLite.
+        const next = [...list]
+        next[idx] = message
+        return { ...prev, [sessionId]: next }
+      })
+    })
+    const offDelta = window.gardenia.onSessionStreamDelta(({ sessionId, messageId, text }) => {
+      // Token-level live render: patches the in-progress message's content
+      // directly in renderer state on every delta, without a DB round-trip
+      // — the eventual `session:message` push above commits the final text.
+      setMessagesBySession((prev) => {
+        const list = prev[sessionId]
+        if (!list) return prev
+        const idx = list.findIndex((m) => m.id === messageId)
+        if (idx === -1) return prev
+        const next = [...list]
+        next[idx] = { ...next[idx], content: text }
+        return { ...prev, [sessionId]: next }
+      })
     })
     const offLifecycle = window.gardenia.onSessionLifecycle(() => {
       // Any lifecycle change (created/renamed/closed/resumed/forked/deleted/
@@ -64,6 +86,7 @@ export function useSessions(): UseSessionsResult {
     })
     return () => {
       offMessage()
+      offDelta()
       offLifecycle()
     }
   }, [refresh])
