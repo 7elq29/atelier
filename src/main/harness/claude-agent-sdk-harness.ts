@@ -23,14 +23,26 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import type {
+  CanUseTool,
   Options as SdkOptions,
+  PermissionResult,
+  PermissionUpdate,
   Query as SdkQuery,
   SDKMessage,
   SDKUserMessage,
   SpawnedProcess,
   SpawnOptions,
 } from '@anthropic-ai/claude-agent-sdk'
-import type { HarnessDriver, HarnessEvent, HarnessSession, HarnessStartOptions, HarnessTodoItem, RemoteHost } from './types'
+import type {
+  HarnessAskQuestion,
+  HarnessDriver,
+  HarnessEvent,
+  HarnessSession,
+  HarnessStartOptions,
+  HarnessTodoItem,
+  PromptResponse,
+  RemoteHost,
+} from './types'
 import { logger } from '../logger'
 
 /**
@@ -177,12 +189,70 @@ function userMessage(text: string): SDKUserMessage {
   }
 }
 
+/**
+ * Generic async push-queue (05-interactive-prompts) — same pattern as
+ * `UserMessageQueue` above, generalized so both the SDK-message pump AND a
+ * concurrently-firing `canUseTool` callback can push onto ONE ordered
+ * output stream. This is necessary because `canUseTool` control_requests
+ * arrive over the SDK's transport independently of whichever `SDKMessage`
+ * the consumer is currently awaiting (verified live: `canUseTool` fires
+ * while `for await (const message of query)` is still resolving the
+ * previous iteration) — a plain generator yielding only from that for-await
+ * loop cannot also surface a `permission_request`/`ask_user_question`/
+ * `plan_proposed` event the moment `canUseTool` is invoked.
+ */
+class PushQueue<T> implements AsyncIterable<T> {
+  private buffered: T[] = []
+  private waiters: Array<(result: IteratorResult<T>) => void> = []
+  private closed = false
+
+  push(value: T): void {
+    if (this.closed) return
+    const waiter = this.waiters.shift()
+    if (waiter) {
+      waiter({ value, done: false })
+    } else {
+      this.buffered.push(value)
+    }
+  }
+
+  close(): void {
+    if (this.closed) return
+    this.closed = true
+    while (this.waiters.length > 0) {
+      this.waiters.shift()!({ value: undefined, done: true })
+    }
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<T> {
+    return {
+      next: (): Promise<IteratorResult<T>> => {
+        const next = this.buffered.shift()
+        if (next !== undefined) return Promise.resolve({ value: next, done: false })
+        if (this.closed) return Promise.resolve({ value: undefined, done: true })
+        return new Promise((resolve) => this.waiters.push(resolve))
+      },
+    }
+  }
+}
+
 interface ActiveSession {
   query: SdkQuery
   queue: UserMessageQueue
   interruptRequested: boolean
   /** See `HarnessStartOptions.keepAlive`. */
   keepAlive: boolean
+  /** Merged output stream: SDK-message-derived events AND canUseTool-driven interactive-prompt events, in emission order — see `PushQueue`'s doc comment. */
+  eventQueue: PushQueue<HarnessEvent>
+  /**
+   * Resolvers for prompts currently blocked in `canUseTool`, keyed by the
+   * SDK's own `toolUseID` for that call (stable, unique, and already the
+   * value plumbed through as `HarnessEvent.requestId`/`toolUseId` above).
+   * Populated when a `permission_request`/`ask_user_question`/
+   * `plan_proposed` event is emitted; resolved (and removed) by
+   * `respondToPrompt`.
+   */
+  pendingPrompts: Map<string, (response: PromptResponse) => void>
   /**
    * Uber-internal task-tracking tool state. Verified for real against a live
    * turn (see 03-chat-surface-core's progress notes): this environment's
@@ -255,6 +325,22 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     return this.sessions.has(sessionId)
   }
 
+  async respondToPrompt(sessionId: string, requestId: string, response: PromptResponse): Promise<void> {
+    const active = this.sessions.get(sessionId)
+    if (!active) {
+      logger.warn('respondToPrompt: no active session', { sessionId, requestId, knownSessions: [...this.sessions.keys()] })
+      return
+    }
+    const resolve = active.pendingPrompts.get(requestId)
+    if (!resolve) {
+      logger.warn('respondToPrompt: no pending prompt for requestId', { sessionId, requestId })
+      return // unknown or already-resolved (e.g. a stale double-click)
+    }
+    active.pendingPrompts.delete(requestId)
+    resolve(response)
+    logger.info('respondToPrompt: resolved', { sessionId, requestId, kind: response.kind })
+  }
+
   private async launch(
     prompt: string,
     opts: HarnessStartOptions & { cwd: string },
@@ -264,6 +350,20 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     const sessionId = resumeSessionId ?? randomUUID()
     const queue = new UserMessageQueue()
     if (prompt) queue.push(userMessage(prompt))
+
+    const active: ActiveSession = {
+      // `query` is assigned right after `sdk.query(...)` below — TypeScript
+      // can't see that from inside this object literal, so it's patched on
+      // immediately afterward (still before anything can observe `active`).
+      query: undefined as unknown as SdkQuery,
+      queue,
+      interruptRequested: false,
+      keepAlive: opts.keepAlive ?? false,
+      eventQueue: new PushQueue<HarnessEvent>(),
+      pendingPrompts: new Map(),
+      taskItems: new Map(),
+      pendingTaskCalls: new Map(),
+    }
 
     const options: SdkOptions = {
       cwd: opts.cwd,
@@ -281,35 +381,36 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       // meaningless to the (never-invoked) local spawn path in this case —
       // the real working directory is applied inside the ssh command itself.
       ...(opts.host ? { spawnClaudeCodeProcess: makeRemoteSpawner(opts.host, opts.cwd) } : {}),
+      ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
+      // 05-interactive-prompts: every permission prompt, AskUserQuestion,
+      // and ExitPlanMode call is gated through this one callback — see the
+      // doc comment on ActiveSession.pendingPrompts and makeCanUseTool below.
+      canUseTool: makeCanUseTool(sessionId, active),
     }
 
     const query = sdk.query({ prompt: queue, options })
-    const active: ActiveSession = {
-      query,
-      queue,
-      interruptRequested: false,
-      keepAlive: opts.keepAlive ?? false,
-      taskItems: new Map(),
-      pendingTaskCalls: new Map(),
-    }
+    active.query = query
     this.sessions.set(sessionId, active)
 
-    return { sessionId, events: this.normalize(sessionId, query, active) }
+    // Runs eagerly (not lazily on first consumer pull) so canUseTool's
+    // concurrent prompts are captured into eventQueue the instant they fire,
+    // matching how SessionManager.consume() already drains `events`
+    // immediately after creating/reconnecting a session.
+    void this.pump(sessionId, query, active)
+
+    return { sessionId, events: this.drain(active) }
   }
 
-  private async *normalize(
-    sessionId: string,
-    query: SdkQuery,
-    active: ActiveSession,
-  ): AsyncGenerator<HarnessEvent, void, void> {
+  /** Pulls SDKMessages off `query`, normalizes them, and pushes the results onto `active.eventQueue` — see PushQueue's doc comment for why this can't just be a plain yielding generator anymore. */
+  private async pump(sessionId: string, query: SdkQuery, active: ActiveSession): Promise<void> {
     try {
       for await (const message of query) {
         for (const event of toHarnessEvents(sessionId, message, active)) {
-          yield event
+          active.eventQueue.push(event)
         }
         if (message.type === 'result') {
           if (active.interruptRequested) {
-            yield { type: 'interrupted', sessionId, timestamp: new Date().toISOString() }
+            active.eventQueue.push({ type: 'interrupted', sessionId, timestamp: new Date().toISOString() })
             return
           }
           if (!active.keepAlive) {
@@ -344,19 +445,166 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
         }
       }
     } catch (err) {
-      yield {
+      active.eventQueue.push({
         type: 'error',
         sessionId,
         timestamp: new Date().toISOString(),
         message: err instanceof Error ? err.message : String(err),
-      }
+      })
       if (active.interruptRequested) {
-        yield { type: 'interrupted', sessionId, timestamp: new Date().toISOString() }
+        active.eventQueue.push({ type: 'interrupted', sessionId, timestamp: new Date().toISOString() })
       }
     } finally {
       active.queue.close()
-      this.sessions.delete(sessionId)
+      active.eventQueue.close()
+      // Only remove the map entry if it's STILL this exact ActiveSession —
+      // a `resume()` for the next turn can (and, per a real race verified
+      // live, does) start and re-register `this.sessions.set(sessionId, ...)`
+      // with a NEW ActiveSession before this (the PREVIOUS turn's) pump()
+      // loop finishes draining its trailing messages. An unconditional
+      // `delete(sessionId)` here would then remove the NEW turn's live
+      // entry out from under it — `Map.delete` only looks at the key, not
+      // which value is currently stored — silently orphaning any
+      // `canUseTool` promise it has in flight (observed as
+      // `respondToPrompt: no active session` even though the newer pump()
+      // loop, and its canUseTool call, were still very much alive).
+      if (this.sessions.get(sessionId) === active) {
+        this.sessions.delete(sessionId)
+      }
     }
+  }
+
+  private async *drain(active: ActiveSession): AsyncGenerator<HarnessEvent, void, void> {
+    for await (const event of active.eventQueue) {
+      yield event
+    }
+  }
+}
+
+/**
+ * Builds the per-session `canUseTool` callback (05-interactive-prompts).
+ * Routes all three interactive flows through the same mechanism: push a
+ * HarnessEvent describing the pending decision, then block on a Promise
+ * resolved by `ClaudeAgentSdkHarness.respondToPrompt` once the renderer's
+ * IPC call arrives.
+ *
+ * Real API shapes below (verified live against @anthropic-ai/claude-agent-sdk
+ * 0.3.212, and cross-checked against code.claude.com/docs/en/agent-sdk/
+ * user-input + permissions — see progress.md):
+ *  - `AskUserQuestion`'s answer format is `updatedInput: { questions,
+ *    answers: { [questionText]: labelOrCsv } }` — NOT a per-question
+ *    "answer" field (that silently produces "The user did not answer the
+ *    questions.").
+ *  - `ExitPlanMode`'s input is `{ plan: string, planFilePath?: string }`.
+ *    Returning `{behavior:'allow'}` for it does NOT by itself exit plan
+ *    mode — the session's `permissionMode` stays `'plan'` until
+ *    `query.setPermissionMode('default')` is called explicitly, so a
+ *    rejected/kept-planning decision must NOT call it (deny instead, with a
+ *    message steering Claude back into planning).
+ *  - Bash/Write/etc. permission prompts carry a `suggestions` array of ready
+ *    `PermissionUpdate`s; echoing one back as `updatedPermissions` (with its
+ *    `destination` overridden to `'session'`) is what makes "always allow
+ *    this pattern" actually skip future prompts for matching calls — the
+ *    SDK's own permission engine short-circuits `canUseTool` entirely for
+ *    the rest of the session, it isn't something Gardenia re-implements.
+ */
+function makeCanUseTool(sessionId: string, active: ActiveSession): CanUseTool {
+  function waitForResponse(requestId: string, emit: () => HarnessEvent): Promise<PromptResponse> {
+    return new Promise((resolve) => {
+      active.pendingPrompts.set(requestId, resolve)
+      const event = emit()
+      logger.info('canUseTool: awaiting prompt response', { sessionId, requestId, eventType: event.type })
+      active.eventQueue.push(event)
+    })
+  }
+
+  return async (toolName, input, opts): Promise<PermissionResult> => {
+    const timestamp = new Date().toISOString()
+    const requestId = opts.toolUseID
+
+    if (toolName === 'AskUserQuestion') {
+      const questions = ((input as { questions?: unknown }).questions ?? []) as HarnessAskQuestion[]
+      const response = await waitForResponse(requestId, () => ({
+        type: 'ask_user_question',
+        sessionId,
+        timestamp,
+        requestId,
+        toolUseId: requestId,
+        questions,
+      }))
+      if (response.kind !== 'ask_user_question') {
+        return { behavior: 'deny', message: 'Internal error: mismatched prompt response' }
+      }
+      const updatedInput: Record<string, unknown> = { questions }
+      if (response.freeText) {
+        updatedInput.response = response.freeText
+      } else {
+        updatedInput.answers = response.answers
+      }
+      return { behavior: 'allow', updatedInput }
+    }
+
+    if (toolName === 'ExitPlanMode') {
+      const planInput = input as { plan?: string; planFilePath?: string }
+      const response = await waitForResponse(requestId, () => ({
+        type: 'plan_proposed',
+        sessionId,
+        timestamp,
+        requestId,
+        toolUseId: requestId,
+        plan: planInput.plan ?? '',
+        planFilePath: planInput.planFilePath,
+      }))
+      if (response.kind !== 'plan') {
+        return { behavior: 'deny', message: 'Internal error: mismatched prompt response' }
+      }
+      if (response.decision === 'accept') {
+        // Approving the ExitPlanMode tool call alone does not flip the
+        // session out of plan mode (verified live) — without this, every
+        // subsequent Write/Edit/Bash-write call keeps getting routed back
+        // here as if still planning.
+        await active.query.setPermissionMode('default').catch(() => undefined)
+        return { behavior: 'allow', updatedInput: input as Record<string, unknown> }
+      }
+      const message =
+        response.feedback ||
+        (response.decision === 'keep_planning'
+          ? 'The user wants to keep exploring/refining the plan — do not exit plan mode yet.'
+          : 'The user rejected this plan. Ask what they would like changed before proposing another.')
+      return { behavior: 'deny', message }
+    }
+
+    // Generic tool-use permission prompt (Bash, Write, Edit, ...).
+    const addRulesSuggestion = opts.suggestions?.find(
+      (s): s is Extract<PermissionUpdate, { type: 'addRules' }> => s.type === 'addRules',
+    )
+    const suggestedPattern = addRulesSuggestion?.rules[0]?.ruleContent
+    const response = await waitForResponse(requestId, () => ({
+      type: 'permission_request',
+      sessionId,
+      timestamp,
+      requestId,
+      toolUseId: requestId,
+      toolName,
+      input,
+      title: opts.title,
+      description: opts.description,
+      suggestedPattern,
+    }))
+    if (response.kind !== 'permission') {
+      return { behavior: 'deny', message: 'Internal error: mismatched prompt response' }
+    }
+    if (response.decision === 'deny') {
+      return { behavior: 'deny', message: 'User denied this action' }
+    }
+    if (response.alwaysAllow && addRulesSuggestion) {
+      return {
+        behavior: 'allow',
+        updatedInput: input as Record<string, unknown>,
+        updatedPermissions: [{ ...addRulesSuggestion, destination: 'session' }],
+      }
+    }
+    return { behavior: 'allow', updatedInput: input as Record<string, unknown> }
   }
 }
 

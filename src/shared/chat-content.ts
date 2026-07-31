@@ -38,21 +38,90 @@ export interface CompactionContent {
   postTokens?: number
 }
 
-export type StructuredContent = ToolCallContent | TodoUpdateContent | CompactionContent
+/**
+ * Interactive-prompt content kinds (05-interactive-prompts). Each starts
+ * life persisted with `status: 'pending'` (see SessionManager.applyEvent's
+ * `permission_request`/`ask_user_question`/`plan_proposed` cases) and is
+ * updated in place — same "one row, mutated on resolution" pattern as
+ * `ToolCallContent` — once the user responds (SessionManager.respondToPrompt).
+ */
+
+export interface AskQuestionOption {
+  label: string
+  description: string
+}
+
+export interface AskQuestion {
+  question: string
+  header: string
+  multiSelect: boolean
+  options: AskQuestionOption[]
+}
+
+export type PermissionRequestStatus = 'pending' | 'allowed' | 'denied'
+
+export interface PermissionRequestContent {
+  kind: 'permission_request'
+  requestId: string
+  toolUseId: string
+  toolName: string
+  input: unknown
+  title?: string
+  description?: string
+  suggestedPattern?: string
+  status: PermissionRequestStatus
+  /** Set once resolved, if the "always allow" checkbox was checked at resolution time. */
+  alwaysAllowed?: boolean
+}
+
+export type AskUserQuestionStatus = 'pending' | 'answered'
+
+export interface AskUserQuestionContent {
+  kind: 'ask_user_question'
+  requestId: string
+  toolUseId: string
+  questions: AskQuestion[]
+  status: AskUserQuestionStatus
+  /** question text -> selected label(s) (comma-joined for multiSelect), once answered. */
+  answers?: Record<string, string>
+  /** Free-text reply typed into the "Other" box instead of picking an option, once answered. */
+  freeText?: string
+}
+
+export type PlanStatus = 'pending' | 'accepted' | 'rejected' | 'keep_planning'
+
+export interface PlanProposedContent {
+  kind: 'plan_proposed'
+  requestId: string
+  toolUseId: string
+  plan: string
+  planFilePath?: string
+  status: PlanStatus
+}
+
+export type StructuredContent =
+  | ToolCallContent
+  | TodoUpdateContent
+  | CompactionContent
+  | PermissionRequestContent
+  | AskUserQuestionContent
+  | PlanProposedContent
+
+const STRUCTURED_KINDS = new Set<string>([
+  'tool_call',
+  'todo_update',
+  'compaction',
+  'permission_request',
+  'ask_user_question',
+  'plan_proposed',
+])
 
 /** Best-effort parse: returns null for plain-text message content (the common case). */
 export function parseStructuredContent(content: string): StructuredContent | null {
   if (!content || content[0] !== '{') return null
   try {
     const obj: unknown = JSON.parse(content)
-    if (
-      obj &&
-      typeof obj === 'object' &&
-      'kind' in obj &&
-      ((obj as { kind: unknown }).kind === 'tool_call' ||
-        (obj as { kind: unknown }).kind === 'todo_update' ||
-        (obj as { kind: unknown }).kind === 'compaction')
-    ) {
+    if (obj && typeof obj === 'object' && 'kind' in obj && STRUCTURED_KINDS.has((obj as { kind: unknown }).kind as string)) {
       return obj as StructuredContent
     }
   } catch {

@@ -4,7 +4,7 @@
  * in index.ts.
  */
 import { ipcMain, dialog, type BrowserWindow } from 'electron'
-import type { CreateSessionOptions } from '../../shared/session-types'
+import type { CreateSessionOptions, PromptDecision } from '../../shared/session-types'
 import { logger } from '../logger'
 import { openDatabase } from '../db'
 import type { SessionManager } from './manager'
@@ -104,4 +104,9 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
   ipcMain.handle('group:delete', (_event, groupId: string) => manager.deleteGroup(groupId))
 
   ipcMain.handle('group:reorder', (_event, orderedIds: string[]) => manager.reorderGroups(orderedIds))
+
+  // 05-interactive-prompts: resolves a permission/AskUserQuestion/plan card.
+  ipcMain.handle('session:respondToPrompt', (_event, sessionId: string, requestId: string, decision: PromptDecision) =>
+    manager.respondToPrompt(sessionId, requestId, decision)
+  )
 }

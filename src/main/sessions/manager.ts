@@ -1,9 +1,10 @@
 import type { BrowserWindow } from 'electron'
-import type { HarnessDriver, HarnessEvent, RemoteHost } from '../harness/types'
+import type { HarnessDriver, HarnessEvent, PromptResponse, RemoteHost } from '../harness/types'
 import { logger } from '../logger'
 import type {
   CreateSessionOptions,
   MessageRecord,
+  PromptDecision,
   RemoteHostOption,
   SessionGroupEvent,
   SessionGroupRecord,
@@ -11,7 +12,14 @@ import type {
   SessionRecord,
   SessionStatus
 } from '../../shared/session-types'
-import type { CompactionContent, ToolCallContent, TodoUpdateContent } from '../../shared/chat-content'
+import type {
+  AskUserQuestionContent,
+  CompactionContent,
+  PermissionRequestContent,
+  PlanProposedContent,
+  ToolCallContent,
+  TodoUpdateContent
+} from '../../shared/chat-content'
 import type { SessionStore } from './store'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
@@ -21,6 +29,12 @@ const AUTO_NAME_PROMPT = 'Summarize this conversation topic in under 6 words. Re
 interface PendingToolCall {
   messageId: number
   content: ToolCallContent
+}
+
+/** Bookkeeping for one still-pending interactive prompt, keyed by its requestId (05-interactive-prompts). */
+interface PendingPrompt {
+  messageId: number
+  content: PermissionRequestContent | AskUserQuestionContent | PlanProposedContent
 }
 
 /** In-memory bookkeeping for a session's live harness stream, keyed by our session id. */
@@ -44,11 +58,20 @@ interface LiveStream {
    * 'working' status (06-session-organization).
    */
   busy: boolean
+  /** Interactive prompts awaiting a user decision, keyed by requestId (05-interactive-prompts). */
+  pendingPrompts: Map<string, PendingPrompt>
 }
 
 
 function newLiveStream(turnCount = 0): LiveStream {
-  return { buffer: '', bufferMessageId: null, turnCount, pendingTools: new Map(), busy: false }
+  return {
+    buffer: '',
+    bufferMessageId: null,
+    turnCount,
+    pendingTools: new Map(),
+    busy: false,
+    pendingPrompts: new Map()
+  }
 }
 
 export interface RemoteHostResolver {
@@ -68,6 +91,20 @@ export interface RemoteHostResolver {
  */
 export class SessionManager {
   private readonly live = new Map<string, LiveStream>()
+  /**
+   * Tracks whether a session is currently "in plan mode" (05-interactive-prompts),
+   * across `resume()` reconnects. The SDK's `permissionMode` is per-`query()`
+   * call, NOT restored automatically from a `--resume`d session's history —
+   * verified live: without re-passing `permissionMode: 'plan'` on every
+   * `harness.resume()` call while a plan is still un-approved, a follow-up
+   * composer message reconnects in the SDK's default mode, and a REJECTED
+   * plan's `ExitPlanMode` retry then fails outright ("I'm no longer in plan
+   * mode") because the CLI itself short-circuits the tool before `canUseTool`
+   * is ever invoked. Only sessions started with `planMode: true` are tracked
+   * here; flips to `'default'` the moment a plan is genuinely accepted (see
+   * `respondToPrompt` below), mirroring the real SDK-side state transition.
+   */
+  private readonly permissionModes = new Map<string, 'default' | 'plan'>()
 
   constructor(
     private readonly store: SessionStore,
@@ -204,8 +241,10 @@ export class SessionManager {
       // Real interactive chat session: stays connected past its first turn
       // so a later `sendUserMessage` can inject live via `streamInput()`
       // instead of always reconnecting — see `HarnessStartOptions.keepAlive`.
-      keepAlive: true
+      keepAlive: true,
+      ...(opts.planMode ? { permissionMode: 'plan' as const } : {})
     })
+    if (opts.planMode) this.permissionModes.set(harnessSession.sessionId, 'plan')
 
     const session = this.store.createSession({
       id: harnessSession.sessionId,
@@ -252,7 +291,13 @@ export class SessionManager {
     if (!session || session.mode !== 'claude-code') return
 try {
       const host = this.resolveHostFromSession(session.hostname)
-      const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host, keepAlive: true })
+      const permissionMode = this.permissionModes.get(sessionId)
+      const harnessSession = await this.harness.resume(sessionId, {
+        cwd: session.projectPath,
+        host,
+        keepAlive: true,
+        ...(permissionMode ? { permissionMode } : {})
+      })
       this.live.set(sessionId, newLiveStream())
       this.sendStatus(sessionId)
       void this.consume(sessionId, harnessSession.events)
@@ -308,7 +353,13 @@ try {
       }
       logger.info('sendUserMessage: no live harness session, reconnecting via resume()', { sessionId })
       const host = this.resolveHostFromSession(session.hostname)
-      const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host, keepAlive: true })
+      const permissionMode = this.permissionModes.get(sessionId)
+      const harnessSession = await this.harness.resume(sessionId, {
+        cwd: session.projectPath,
+        host,
+        keepAlive: true,
+        ...(permissionMode ? { permissionMode } : {})
+      })
       await this.harness.streamInput(sessionId, text)
       const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
       this.live.set(sessionId, newLiveStream(previousTurnCount))
@@ -324,6 +375,42 @@ try {
 
   async interrupt(sessionId: string): Promise<void> {
     await this.harness.interrupt(sessionId)
+  }
+
+  // ── Interactive prompts (05-interactive-prompts) ─────────────────────
+
+  /**
+   * Resolves a pending permission/AskUserQuestion/plan card: updates the
+   * persisted message row to its resolved state (same "mutate in place"
+   * pattern as `tool_call_end`) and unblocks the harness's `canUseTool`
+   * call. Throws if `requestId` doesn't match a currently-pending prompt for
+   * this session (e.g. a stale double-click after the harness already
+   * resolved/moved on) so the renderer's IPC call surfaces the mismatch
+   * instead of silently doing nothing.
+   */
+  async respondToPrompt(sessionId: string, requestId: string, decision: PromptDecision): Promise<void> {
+    const live = this.live.get(sessionId)
+    const pending = live?.pendingPrompts.get(requestId)
+    if (!live || !pending) throw new Error(`Unknown or already-resolved prompt: ${requestId}`)
+
+    const resolvedContent = applyDecision(pending.content, decision)
+    const updated = this.store.updateMessage(pending.messageId, { content: JSON.stringify(resolvedContent) })
+    if (updated) this.sendMessage(sessionId, updated)
+    live.pendingPrompts.delete(requestId)
+
+    // Mirrors the real SDK-side transition this same decision triggers
+    // inside `canUseTool` (see claude-agent-sdk-harness.ts's `setPermissionMode`
+    // call): once a plan is genuinely accepted, the session is out of plan
+    // mode for good, so stop re-asserting `permissionMode: 'plan'` on future
+    // `resume()` reconnects for it. A reject/keep-planning decision leaves
+    // the tracked mode untouched — the session is still (and must remain)
+    // in plan mode for the next reconnect.
+    if (decision.kind === 'plan' && decision.decision === 'accept') {
+      this.permissionModes.set(sessionId, 'default')
+    }
+
+    logger.info('respondToPrompt: dispatching to harness', { sessionId, requestId, kind: decision.kind })
+    await this.harness.respondToPrompt(sessionId, requestId, toHarnessPromptResponse(decision))
   }
 
   /**
@@ -583,6 +670,56 @@ try {
       case 'session_started':
         return // structural event only; not rendered as its own transcript row
 
+      case 'permission_request': {
+        this.flushBuffer(sessionId, live)
+        const content: PermissionRequestContent = {
+          kind: 'permission_request',
+          requestId: event.requestId,
+          toolUseId: event.toolUseId,
+          toolName: event.toolName,
+          input: event.input,
+          title: event.title,
+          description: event.description,
+          suggestedPattern: event.suggestedPattern,
+          status: 'pending'
+        }
+        const message = this.store.addMessage({ sessionId, role: 'assistant', content: JSON.stringify(content), rawEvent: event })
+        live.pendingPrompts.set(event.requestId, { messageId: message.id, content })
+        this.sendMessage(sessionId, message)
+        return
+      }
+
+      case 'ask_user_question': {
+        this.flushBuffer(sessionId, live)
+        const content: AskUserQuestionContent = {
+          kind: 'ask_user_question',
+          requestId: event.requestId,
+          toolUseId: event.toolUseId,
+          questions: event.questions,
+          status: 'pending'
+        }
+        const message = this.store.addMessage({ sessionId, role: 'assistant', content: JSON.stringify(content), rawEvent: event })
+        live.pendingPrompts.set(event.requestId, { messageId: message.id, content })
+        this.sendMessage(sessionId, message)
+        return
+      }
+
+      case 'plan_proposed': {
+        this.flushBuffer(sessionId, live)
+        const content: PlanProposedContent = {
+          kind: 'plan_proposed',
+          requestId: event.requestId,
+          toolUseId: event.toolUseId,
+          plan: event.plan,
+          planFilePath: event.planFilePath,
+          status: 'pending'
+        }
+        const message = this.store.addMessage({ sessionId, role: 'assistant', content: JSON.stringify(content), rawEvent: event })
+        live.pendingPrompts.set(event.requestId, { messageId: message.id, content })
+        this.sendMessage(sessionId, message)
+        return
+      }
+
       case 'error': {
         this.flushBuffer(sessionId, live)
         const message = this.store.addMessage({
@@ -687,4 +824,33 @@ function deriveDefaultName(projectPath: string, prompt?: string): string {
   }
   const base = projectPath.split('/').filter(Boolean).pop() ?? projectPath
   return base
+}
+
+/**
+ * Mutates a pending interactive-prompt content object into its resolved
+ * form (05-interactive-prompts) — mirrors `tool_call_end`'s
+ * `{...pending.content, status: ...}` pattern above. Throws on a
+ * kind/decision mismatch (e.g. a `plan` decision sent for a
+ * `permission_request` card) since that can only mean a renderer bug.
+ */
+function applyDecision(
+  content: PermissionRequestContent | AskUserQuestionContent | PlanProposedContent,
+  decision: PromptDecision
+): PermissionRequestContent | AskUserQuestionContent | PlanProposedContent {
+  if (content.kind === 'permission_request' && decision.kind === 'permission') {
+    return { ...content, status: decision.decision === 'allow' ? 'allowed' : 'denied', alwaysAllowed: decision.alwaysAllow }
+  }
+  if (content.kind === 'ask_user_question' && decision.kind === 'ask_user_question') {
+    return { ...content, status: 'answered', answers: decision.answers, freeText: decision.freeText }
+  }
+  if (content.kind === 'plan_proposed' && decision.kind === 'plan') {
+    const status = decision.decision === 'accept' ? 'accepted' : decision.decision === 'reject' ? 'rejected' : 'keep_planning'
+    return { ...content, status }
+  }
+  throw new Error(`Prompt decision kind "${decision.kind}" does not match pending prompt kind "${content.kind}"`)
+}
+
+/** Translates the renderer-facing `PromptDecision` into the harness's own `PromptResponse` shape (kept as separate types — see PromptDecision's doc comment). */
+function toHarnessPromptResponse(decision: PromptDecision): PromptResponse {
+  return decision
 }

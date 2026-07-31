@@ -64,6 +64,14 @@ export interface HarnessStartOptions {
    * indefinitely, hanging `maybeAutoName()` forever on a live run).
    */
   keepAlive?: boolean
+  /**
+   * SDK permission mode (05-interactive-prompts). `'plan'` starts the
+   * session in the SDK's own plan mode: Claude explores/plans without
+   * auto-approved file edits until a proposed plan (`ExitPlanMode`) is
+   * accepted via the plan card. Omitted entirely preserves the existing
+   * `'default'` behavior for every caller that predates this task.
+   */
+  permissionMode?: 'default' | 'plan'
 }
 
 /** A single todo item as reported by the agent's planning tool. */
@@ -72,6 +80,43 @@ export interface HarnessTodoItem {
   status: 'pending' | 'in_progress' | 'completed' | string
   activeForm?: string
 }
+
+/**
+ * Interactive-prompt types (05-interactive-prompts). All three interaction
+ * kinds below — permission prompts, `AskUserQuestion`, and plan-mode's
+ * `ExitPlanMode` — are, per the real `@anthropic-ai/claude-agent-sdk`
+ * (verified live against v0.3.212, not guessed), all routed through the same
+ * `canUseTool` callback passed into `query({ options: { canUseTool } })`:
+ * there is no separate SDK channel for them. `onUserDialog` /
+ * `request_user_dialog` (also present in the SDK's types) was never invoked
+ * in any live run that triggered these three flows — it exists for other
+ * dialog kinds (e.g. `refusal_fallback_prompt`), not these.
+ */
+
+/** One option in an `AskUserQuestion` question, verbatim from the SDK's own `AskUserQuestionInput` shape. */
+export interface HarnessAskQuestionOption {
+  label: string
+  description: string
+}
+
+/** One question in an `AskUserQuestion` tool call. */
+export interface HarnessAskQuestion {
+  question: string
+  header: string
+  multiSelect: boolean
+  options: HarnessAskQuestionOption[]
+}
+
+/**
+ * The response a UI sends back after a `permission_request` /
+ * `ask_user_question` / `plan_proposed` prompt is resolved by the user,
+ * routed back into the harness's pending `canUseTool` call via
+ * `HarnessDriver.respondToPrompt`.
+ */
+export type PromptResponse =
+  | { kind: 'permission'; decision: 'allow' | 'deny'; alwaysAllow?: boolean }
+  | { kind: 'ask_user_question'; answers: Record<string, string>; freeText?: string }
+  | { kind: 'plan'; decision: 'accept' | 'reject' | 'keep_planning'; feedback?: string }
 
 /**
  * Normalized event stream emitted by every harness implementation.
@@ -165,6 +210,54 @@ export type HarnessEvent =
       timestamp: string
       message: string
     }
+  | {
+      /**
+       * A tool call is blocked awaiting a user decision — sourced from a
+       * live `canUseTool` invocation for a tool other than `AskUserQuestion`/
+       * `ExitPlanMode` (typically `Bash`, `Write`, `Edit`, ...). `requestId`
+       * is the SDK's own `toolUseID` for this call (stable, unique per tool
+       * use) — pass it back unchanged to `HarnessDriver.respondToPrompt`.
+       */
+      type: 'permission_request'
+      sessionId: string
+      timestamp: string
+      requestId: string
+      toolUseId: string
+      toolName: string
+      input: unknown
+      /** Full prompt sentence from the bridge, e.g. "Claude wants to run a shell command", when the SDK supplied one. */
+      title?: string
+      description?: string
+      /**
+       * Pattern from the SDK's own `addRules` suggestion (e.g. "npm test *"),
+       * when offered — the basis for an "Always allow `<pattern>`" checkbox.
+       * Absent when the SDK didn't suggest a re-usable rule for this call.
+       */
+      suggestedPattern?: string
+    }
+  | {
+      /** The agent called `AskUserQuestion`; blocked in `canUseTool` awaiting the user's picks. */
+      type: 'ask_user_question'
+      sessionId: string
+      timestamp: string
+      requestId: string
+      toolUseId: string
+      questions: HarnessAskQuestion[]
+    }
+  | {
+      /**
+       * The agent called `ExitPlanMode` (plan-mode); blocked in `canUseTool`
+       * awaiting accept/reject. `plan` is the markdown plan text exactly as
+       * the SDK's `ExitPlanModeInput.plan` field supplied it.
+       */
+      type: 'plan_proposed'
+      sessionId: string
+      timestamp: string
+      requestId: string
+      toolUseId: string
+      plan: string
+      planFilePath?: string
+    }
 
 /** A running (or just-started) agent turn: its id plus its event stream. */
 export interface HarnessSession {
@@ -213,4 +306,12 @@ export interface HarnessDriver {
    * message either.
    */
   isActive(sessionId: string): boolean
+
+  /**
+   * Resolves a pending `permission_request` / `ask_user_question` /
+   * `plan_proposed` prompt, unblocking the `canUseTool` call that emitted it
+   * (05-interactive-prompts). No-op if `requestId` is unknown or already
+   * resolved (e.g. a stale double-click).
+   */
+  respondToPrompt(sessionId: string, requestId: string, response: PromptResponse): Promise<void>
 }

@@ -236,7 +236,10 @@ export default function App(): JSX.Element {
             <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               <div className="chat-body-row">
                 <div className="chat-main-col">
-                  <ChatTranscript messages={activeMessages} />
+                  <ChatTranscript
+                    messages={activeMessages}
+                    onRespond={(requestId, decision) => void sessions.respondToPrompt(activeSession.id, requestId, decision)}
+                  />
                   {activeSession.mode === 'claude-code' && (
                     <Composer
                       value={composerText}

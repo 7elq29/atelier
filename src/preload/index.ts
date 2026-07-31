@@ -4,6 +4,7 @@ import type { DailyNote, ReadDailyNoteResult } from '../shared/daily-note-types'
 import type {
   CreateSessionOptions,
   MessageRecord,
+  PromptDecision,
   RemoteHostOption,
   SessionGroupEvent,
   SessionGroupRecord,
@@ -111,6 +112,9 @@ const api = {
     return () => ipcRenderer.removeListener('group:changed', listener)
   },
 
+  /** Resolves a permission/AskUserQuestion/plan card (05-interactive-prompts). */
+  respondToPrompt: (sessionId: string, requestId: string, decision: PromptDecision): Promise<void> =>
+    ipcRenderer.invoke('session:respondToPrompt', sessionId, requestId, decision),
   onSessionMessage: (callback: (event: SessionStreamEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: SessionStreamEvent): void => callback(payload)
     ipcRenderer.on('session:message', listener)

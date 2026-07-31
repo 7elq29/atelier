@@ -85,6 +85,8 @@ export interface CreateSessionOptions {
   /** Remote host id (matches RemoteHostOption.id), or 'local'. */
   hostId: string
   groupId?: string | null
+  /** Start the session in the SDK's plan permission mode (05-interactive-prompts): Claude explores/plans without editing files until a proposed plan is accepted via the plan card. */
+  planMode?: boolean
 }
 
 export interface RemoteHostOption {
@@ -153,3 +155,15 @@ export interface SessionTurnStateEvent {
   sessionId: string
   busy: boolean
 }
+
+/**
+ * The renderer's answer to a `permission_request` / `ask_user_question` /
+ * `plan_proposed` card (05-interactive-prompts), sent over
+ * `session:respondToPrompt`. Mirrors (but is decoupled from) the harness's
+ * own `PromptResponse` — kept as a separate shared type since preload/
+ * renderer must not import `main/harness/types.ts`.
+ */
+export type PromptDecision =
+  | { kind: 'permission'; decision: 'allow' | 'deny'; alwaysAllow?: boolean }
+  | { kind: 'ask_user_question'; answers: Record<string, string>; freeText?: string }
+  | { kind: 'plan'; decision: 'accept' | 'reject' | 'keep_planning'; feedback?: string }
