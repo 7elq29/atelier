@@ -141,6 +141,11 @@ export class SessionManager {
     return this.store.listMessages(sessionId)
   }
 
+  /** Looks up a single session record by id (10c-enrichment-export-conversation), undefined if it doesn't exist. */
+  getSession(sessionId: string): SessionRecord | undefined {
+    return this.store.getSession(sessionId)
+  }
+
   listHosts(): RemoteHostOption[] {
     return this.hosts.list()
   }

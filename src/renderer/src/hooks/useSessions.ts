@@ -33,6 +33,8 @@ export interface UseSessionsResult {
   deleteSession: (sessionId: string) => Promise<void>
   renameSession: (sessionId: string, name: string) => Promise<void>
   setPinned: (sessionId: string, pinned: boolean) => Promise<void>
+  /** Opens a real native Save dialog and writes the session's transcript to disk (10c-enrichment-export-conversation); resolves to the saved path, or null if cancelled. */
+  exportTranscript: (sessionId: string, format: 'markdown' | 'json') => Promise<string | null>
   setColor: (sessionId: string, color: string) => Promise<void>
   setNotes: (sessionId: string, notes: string) => Promise<void>
   addTag: (sessionId: string, tag: string) => Promise<void>
@@ -208,6 +210,13 @@ export function useSessions(): UseSessionsResult {
     await window.gardenia.setSessionPinned(sessionId, pinned)
   }, [])
 
+  const exportTranscript = useCallback(
+    async (sessionId: string, format: 'markdown' | 'json'): Promise<string | null> => {
+      return window.gardenia.exportTranscript(sessionId, format)
+    },
+    []
+  )
+
   const setColor = useCallback(async (sessionId: string, color: string): Promise<void> => {
     await window.gardenia.setSessionColor(sessionId, color)
   }, [])
@@ -282,6 +291,7 @@ export function useSessions(): UseSessionsResult {
     deleteSession,
     renameSession,
     setPinned,
+    exportTranscript,
     setColor,
     setNotes,
     addTag,

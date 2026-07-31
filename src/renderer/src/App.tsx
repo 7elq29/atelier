@@ -8,6 +8,7 @@ import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
 import ChatTranscript from './components/chat/ChatTranscript'
 import Composer from './components/chat/Composer'
 import TrackerRail from './components/chat/TrackerRail'
+import ExportMenu from './components/chat/ExportMenu'
 import TabBar, { type SessionTab } from './components/panels/TabBar'
 import DiffPanel from './components/panels/DiffPanel'
 import FilesPanel from './components/panels/FilesPanel'
@@ -205,6 +206,11 @@ export default function App(): JSX.Element {
     await sessions.interrupt(activeSessionId)
   }
 
+  async function handleExport(format: 'markdown' | 'json'): Promise<void> {
+    if (!activeSessionId) return
+    await sessions.exportTranscript(activeSessionId, format)
+  }
+
   const activeSession = allSessions.find((s) => s.id === activeSessionId) ?? null
   const activeMessages = activeSessionId ? sessions.messagesBySession[activeSessionId] ?? [] : []
   const showOnboarding = loaded && !config.onboardingCompleted
@@ -261,6 +267,7 @@ export default function App(): JSX.Element {
                 <span className="topbar-chip" data-testid="cost-chip">
                   ${activeSession.totalCostUsd.toFixed(2)}
                 </span>
+                <ExportMenu onExport={(format) => void handleExport(format)} />
                 <button className="btn btn-sm" data-testid="toggle-companion-drawer" onClick={() => setDrawerOpen((o) => !o)}>
                   ▤ Terminal
                 </button>

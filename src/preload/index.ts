@@ -85,6 +85,9 @@ const api = {
     ipcRenderer.invoke('session:rename', sessionId, name),
   setSessionPinned: (sessionId: string, pinned: boolean): Promise<SessionRecord> =>
     ipcRenderer.invoke('session:setPinned', sessionId, pinned),
+  /** Opens a real native Save dialog and writes the session's full transcript to disk (10c-enrichment-export-conversation). Resolves to the saved path, or null if cancelled. */
+  exportTranscript: (sessionId: string, format: 'markdown' | 'json'): Promise<string | null> =>
+    ipcRenderer.invoke('session:exportTranscript', sessionId, format),
 
   // ── Session organization (06-session-organization) ────────────────
   setSessionColor: (sessionId: string, color: string): Promise<SessionRecord> =>
