@@ -774,6 +774,17 @@ input[type='range'] {
 .send-btn { display: flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-text-on); border: 1px solid var(--accent); border-radius: 100px; padding: 8px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .send-btn:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 .send-btn:disabled { opacity: .4; cursor: not-allowed; }
+/* Image attachment (10g-enrichment-image-attachment) — `.attach-row`/
+   `.attach-thumb`/`.attach-thumb .remove` quoted verbatim from mocks/
+   index.html's Attach affordance (see `attachDemoImage()`). The mock's
+   thumb is a gradient placeholder with an icon; here it holds a real
+   dropped/pasted image instead, so an `img` fill rule is added on top of
+   the unmodified base rules. */
+.attach-row { display: flex; gap: 6px; padding: 8px 10px 0; }
+.attach-thumb { width: 40px; height: 40px; border-radius: 6px; background: linear-gradient(135deg, var(--sc-blue), var(--sc-teal)); position: relative; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.attach-thumb .remove { position: absolute; top: -5px; right: -5px; width: 14px; height: 14px; border-radius: 50%; background: var(--bg-panel-raised); border: 1px solid var(--border-default); font-size: 10.5px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.attach-thumb img { width: 100%; height: 100%; border-radius: 6px; object-fit: cover; }
+.composer-box.drag-over { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 
 /* Onboarding */
 .onboarding-dialog {

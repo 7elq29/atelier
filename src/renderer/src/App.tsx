@@ -16,7 +16,7 @@ import TerminalPanel from './components/panels/TerminalPanel'
 import CompanionTerminalDrawer from './components/panels/CompanionTerminalDrawer'
 import { useConfig } from './hooks/useConfig'
 import { useSessions } from './hooks/useSessions'
-import type { SessionRecord } from '../../shared/session-types'
+import type { ImageAttachment, SessionRecord } from '../../shared/session-types'
 
 function resolveEffectiveTheme(theme: 'system' | 'light' | 'dark'): 'light' | 'dark' {
   if (theme !== 'system') return theme
@@ -188,10 +188,10 @@ export default function App(): JSX.Element {
     updateConfig({ onboardingCompleted: true })
   }
 
-  async function handleSend(text: string): Promise<void> {
-    if (!activeSessionId || !text.trim()) return
+  async function handleSend(text: string, image?: ImageAttachment): Promise<void> {
+    if (!activeSessionId || (!text.trim() && !image)) return
     setComposerText('')
-    await sessions.sendMessage(activeSessionId, text.trim())
+    await sessions.sendMessage(activeSessionId, text.trim(), image)
   }
 
   async function handleInterrupt(): Promise<void> {
@@ -279,7 +279,7 @@ export default function App(): JSX.Element {
                             <Composer
                               value={composerText}
                               onChange={setComposerText}
-                              onSend={(text) => void handleSend(text)}
+                              onSend={(text, image) => void handleSend(text, image)}
                               onInterrupt={() => void handleInterrupt()}
                               busy={sessions.busyBySession[activeSession.id] ?? false}
                             />

@@ -1,15 +1,52 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { ImageAttachment } from '../../../../shared/session-types'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
 const MAX_TEXTAREA_HEIGHT = 160
 
+/** The only mime types the Anthropic Messages API's image content block accepts — see `ImageAttachment` in shared/session-types.ts. */
+const ACCEPTED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+
+interface AttachedImage extends ImageAttachment {
+  /** `data:<mime>;base64,<data>` — the same bytes as `data`, kept around only so the thumbnail's `<img src>` doesn't need to re-derive it. */
+  previewUrl: string
+}
+
 interface ComposerProps {
   value: string
   onChange: (text: string) => void
-  onSend: (text: string) => void
+  onSend: (text: string, image?: ImageAttachment) => void
   onInterrupt: () => void
   /** True while a turn is in flight for the active session — swaps Send for Stop, per e2e-test-plan.md/spec.md. */
   busy: boolean
+}
+
+/**
+ * Reads a File/Blob into a `data:` URL via FileReader (10g-enrichment-image-attachment)
+ * — simpler than `arrayBuffer()` + manual base64 encoding, and the result
+ * already carries the mime type in the `data:<mime>;base64,` prefix, which
+ * `readAttachedImage` below splits back apart.
+ */
+function readAsDataUrl(file: File | Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'))
+    reader.readAsDataURL(file)
+  })
+}
+
+/** Returns null for anything that isn't an image the SDK's image content block actually accepts (see ACCEPTED_IMAGE_MIME_TYPES). */
+async function readAttachedImage(file: File | Blob): Promise<AttachedImage | null> {
+  if (!ACCEPTED_IMAGE_MIME_TYPES.has(file.type)) return null
+  const previewUrl = await readAsDataUrl(file)
+  const commaIndex = previewUrl.indexOf(',')
+  if (commaIndex === -1) return null
+  return {
+    mimeType: file.type as AttachedImage['mimeType'],
+    data: previewUrl.slice(commaIndex + 1),
+    previewUrl,
+  }
 }
 
 /**
@@ -33,9 +70,21 @@ interface ComposerProps {
  * hidden while busy (matching the mock's `setWorking()` toggle exactly),
  * but Enter still submits — same as the mock's `onComposerKeydown`, which
  * calls `sendMessage()` unconditionally regardless of working state.
+ *
+ * Image attachment (10g-enrichment-image-attachment): dropping or pasting an
+ * image renders a real thumbnail chip in `.attach-row`/`.attach-thumb`
+ * (matching the mock's Attach affordance markup/CSS exactly — see
+ * mocks/index.html's `attachDemoImage()` — except the thumb here shows the
+ * REAL dropped/pasted image via an `<img>`, not the mock's gradient
+ * placeholder icon) with a `.remove` (×) button to clear it before sending.
+ * `onSend` receives the image alongside whatever text was typed, single
+ * image at a time (dropping/pasting a second one replaces the first — no
+ * multi-attach UI, per spec.md's minimal scope).
  */
 export default function Composer({ value, onChange, onSend, onInterrupt, busy }: ComposerProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
 
   // Auto-grow: mirrors mocks/index.html's onComposerInput exactly —
   // `height = 'auto'` first (so shrinking on delete works, not just
@@ -50,13 +99,64 @@ export default function Composer({ value, onChange, onSend, onInterrupt, busy }:
 
   function handleSend(): void {
     const text = value.trim()
-    if (!text) return
-    onSend(text)
+    if (!text && !attachedImage) return
+    onSend(text, attachedImage ? { mimeType: attachedImage.mimeType, data: attachedImage.data } : undefined)
+    setAttachedImage(null)
+  }
+
+  async function attachFile(file: File | null | undefined): Promise<void> {
+    if (!file) return
+    const image = await readAttachedImage(file)
+    if (image) setAttachedImage(image)
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>): void {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  function handleDragLeave(): void {
+    setIsDragOver(false)
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>): void {
+    if (e.dataTransfer.files.length === 0) return
+    e.preventDefault()
+    setIsDragOver(false)
+    void attachFile(e.dataTransfer.files[0])
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>): void {
+    const items = Array.from(e.clipboardData.items)
+    const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    if (!imageItem) return // ordinary text paste — let the default handler run
+    e.preventDefault()
+    void attachFile(imageItem.getAsFile())
   }
 
   return (
     <div className="composer-wrap">
-      <div className="composer-box">
+      <div
+        className={`composer-box${isDragOver ? ' drag-over' : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {attachedImage && (
+          <div className="attach-row" data-testid="composer-attach-row">
+            <div className="attach-thumb" data-testid="composer-attach-thumb">
+              <img src={attachedImage.previewUrl} alt="Attached" data-testid="composer-attach-image" />
+              <span
+                className="remove"
+                data-testid="composer-attach-remove"
+                onClick={() => setAttachedImage(null)}
+              >
+                ✕
+              </span>
+            </div>
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           data-testid="composer-input"
@@ -64,6 +164,7 @@ export default function Composer({ value, onChange, onSend, onInterrupt, busy }:
           rows={1}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onPaste={handlePaste}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
@@ -87,7 +188,7 @@ export default function Composer({ value, onChange, onSend, onInterrupt, busy }:
             <button
               className="send-btn"
               data-testid="send-button"
-              disabled={!value.trim()}
+              disabled={!value.trim() && !attachedImage}
               title="Send (Enter)"
               onClick={handleSend}
             >

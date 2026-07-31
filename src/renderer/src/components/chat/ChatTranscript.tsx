@@ -85,11 +85,24 @@ export default function ChatTranscript({
             )
           }
           sawFirstUser = true
-          nodes.push(
-            <div className="msg-user" data-testid="transcript-message" data-role="user" key={message.id}>
-              {message.content}
-            </div>
-          )
+          if (parsed?.kind === 'image_attachment') {
+            nodes.push(
+              <div className="msg-user" data-testid="transcript-message" data-role="user" key={message.id}>
+                <div className="attach-row" data-testid="transcript-attach-row">
+                  <div className="attach-thumb" data-testid="transcript-attach-thumb">
+                    <img src={`data:${parsed.mimeType};base64,${parsed.data}`} alt="Attached" />
+                  </div>
+                </div>
+                {parsed.text && <div>{parsed.text}</div>}
+              </div>
+            )
+          } else {
+            nodes.push(
+              <div className="msg-user" data-testid="transcript-message" data-role="user" key={message.id}>
+                {message.content}
+              </div>
+            )
+          }
         } else if (parsed?.kind === 'compaction') {
           nodes.push(
             <div className="compaction-banner" data-testid="compaction-banner" key={message.id}>
