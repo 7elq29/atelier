@@ -1,7 +1,8 @@
-{"ts":"2026-07-31T16:01:35.166Z","level":"info","process":"main","msg":"database migration applied","name":"0001_sessions_and_messages"}
-{"ts":"2026-07-31T16:01:35.168Z","level":"info","process":"main","msg":"database migration applied","name":"0002_tags_notes_groups_ordering"}
-{"ts":"2026-07-31T16:01:35.169Z","level":"info","process":"main","msg":"database opened","dbPath":"/private/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-ilFaQa/data/gardenia.sqlite"}
-{"ts":"2026-07-31T16:01:35.169Z","level":"info","process":"main","msg":"app ready","version":"32.3.3","platform":"darwin"}
-{"ts":"2026-07-31T16:01:35.517Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
-{"ts":"2026-07-31T16:01:35.642Z","level":"info","process":"renderer","msg":"renderer received app version via IPC","version":"32.3.3"}
-{"ts":"2026-07-31T16:01:35.766Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
+{"ts":"2026-07-31T20:53:28.649Z","level":"info","process":"main","msg":"database migration applied","name":"0001_sessions_and_messages"}
+{"ts":"2026-07-31T20:53:28.650Z","level":"info","process":"main","msg":"database migration applied","name":"0002_tags_notes_groups_ordering"}
+{"ts":"2026-07-31T20:53:28.650Z","level":"info","process":"main","msg":"database migration applied","name":"0003_session_cost_tracking"}
+{"ts":"2026-07-31T20:53:28.651Z","level":"info","process":"main","msg":"database migration applied","name":"0004_message_full_text_search"}
+{"ts":"2026-07-31T20:53:28.651Z","level":"info","process":"main","msg":"database opened","dbPath":"/private/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-LoZBkJ/data/gardenia.sqlite"}
+{"ts":"2026-07-31T20:53:28.651Z","level":"info","process":"main","msg":"app ready","version":"32.3.3","platform":"darwin"}
+{"ts":"2026-07-31T20:53:29.229Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
+{"ts":"2026-07-31T20:53:29.232Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}

@@ -157,6 +157,11 @@ export class SessionManager {
     return this.hosts.list()
   }
 
+  /** Recently-used project paths for `hostId` ('local' or a RemoteHostOption.id), newest first (fix-bug-triage-jul31 / bug #49). */
+  listRecentProjectPaths(hostId: string): string[] {
+    return this.store.listRecentProjectPaths(hostId)
+  }
+
   private sendLifecycle(event: SessionLifecycleEvent): void {
     logger.info('session lifecycle event', {
       event: event.type,
@@ -258,6 +263,13 @@ export class SessionManager {
     const host = this.resolveHost(opts.hostId)
     const hostOption = opts.hostId === 'local' ? undefined : this.hosts.resolve(opts.hostId)
     const defaultName = deriveDefaultName(opts.projectPath, opts.prompt)
+
+    // fix-bug-triage-jul31 / bug #49: remember this path was used for this
+    // host, so the New Session modal can offer it again later even after
+    // the modal's own state resets on reopen. Recorded once host resolution
+    // above has already succeeded (an unknown hostId throws before this
+    // point), so we never record a path against a host id that doesn't exist.
+    this.store.recordProjectPathUsage(opts.hostId, opts.projectPath)
 
     if (opts.mode === 'terminal') {
       // Terminal-only sessions have no agent/harness involvement in this task

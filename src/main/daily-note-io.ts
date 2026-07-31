@@ -134,7 +134,18 @@ function parseBulletLine(
 
   const text = remaining.trim()
   const isTracker = sectionHint === 'tracker' || tags.includes('#tracker')
-  const section: TaskSection = timeBlock && sectionHint !== 'tracker' ? 'day-plan' : sectionHint
+  // A task's section is determined solely by which markdown heading it
+  // physically sits under (sectionHint), never by whether its text happens
+  // to carry a time-block-shaped prefix. Bug #57: this used to force any
+  // line with a leading time-block onto 'day-plan' regardless of
+  // sectionHint, so a task moved as-is (time-block prefix intact — exactly
+  // what a human drag/cut-paste in Obsidian produces) from "## Tasks" into
+  // "### Backlog" kept rendering in the Timeline forever, because the
+  // parser silently re-promoted it back to day-plan on every reparse. The
+  // watcher/push/reconcile pipeline (daily-notes-handlers.ts) was already
+  // correctly detecting and pushing the external edit — the bug was purely
+  // this line ignoring where the edit actually placed the task.
+  const section: TaskSection = sectionHint
   const gid = metadata.gid && metadata.gid.length > 0 ? metadata.gid : mintTaskId()
 
   return {

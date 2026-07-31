@@ -17,6 +17,13 @@ import type { PromptDecision } from '../../../../shared/session-types'
  * Only single-select is exercised by the real e2e run; multiSelect questions
  * still render (comma-joins picks) since the SDK's own `AskUserQuestionInput`
  * allows it.
+ *
+ * bug #52: clicking an option used to call `submit()` the instant every
+ * question had a pick — for the common single-question case, the very first
+ * click submitted, with no chance to reconsider. Picking now only updates
+ * local `picked` state (shown via `.aq-option.selected`); an explicit
+ * `aq-submit` button — disabled until every question has a pick, styled
+ * like the existing `aq-other-send` button — performs the actual submit.
  */
 export default function AskUserQuestionCard({
   content,
@@ -41,12 +48,11 @@ export default function AskUserQuestionCard({
 
   function pickOption(qIndex: number, label: string): void {
     if (answered) return
-    const next = { ...picked, [qIndex]: label }
-    setPicked(next)
-    // Single-question cards (the common case, and the only one the real e2e
-    // prompt uses) submit immediately; multi-question cards submit once every
-    // question has an answer.
-    if (Object.keys(next).length >= content.questions.length) submit(next)
+    // Only record the pick here — submission requires an explicit click on
+    // the Submit button below, even once every question has an answer
+    // (bug #52: clicking an option used to submit instantly with no chance
+    // to change your mind).
+    setPicked((prev) => ({ ...prev, [qIndex]: label }))
   }
 
   function submitOther(qIndex: number): void {
@@ -63,6 +69,8 @@ export default function AskUserQuestionCard({
   const selectedAnswer = (q: AskUserQuestionContent['questions'][number]): string | undefined =>
     answered ? content.answers?.[q.question] : undefined
 
+  const allPicked = content.questions.every((_, i) => picked[i] !== undefined)
+
   return (
     <div className={`aq-card${answered ? ' answered' : ''}`} data-testid="ask-user-question-card" data-status={content.status}>
       <div className="aq-head">
@@ -71,6 +79,7 @@ export default function AskUserQuestionCard({
       <div className="aq-body">
         {content.questions.map((q, qIndex) => {
           const selected = selectedAnswer(q)
+          const pendingPick = picked[qIndex]
           return (
             <div key={q.question} data-testid="aq-question-block">
               <div className="aq-question">{q.question}</div>
@@ -78,7 +87,7 @@ export default function AskUserQuestionCard({
                 {q.options.map((opt, optIndex) => (
                   <div
                     key={opt.label}
-                    className={`aq-option${selected === opt.label ? ' selected' : ''}`}
+                    className={`aq-option${selected === opt.label || pendingPick === opt.label ? ' selected' : ''}`}
                     data-testid="aq-option"
                     onClick={() => pickOption(qIndex, opt.label)}
                   >
@@ -113,6 +122,16 @@ export default function AskUserQuestionCard({
             </div>
           )
         })}
+        {!answered && (
+          <button
+            className="btn btn-primary aq-submit"
+            data-testid="aq-submit"
+            disabled={!allPicked}
+            onClick={() => submit(picked)}
+          >
+            Submit
+          </button>
+        )}
         <div className="aq-footer-hint">You can also just type a reply in the composer below instead of picking an option.</div>
       </div>
     </div>

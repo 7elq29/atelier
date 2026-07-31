@@ -35,7 +35,6 @@ function resolveEffectiveTheme(theme: 'system' | 'light' | 'dark'): 'light' | 'd
  * right of the main area.
  */
 export default function App(): JSX.Element {
-  const [appVersion, setAppVersion] = useState<string | null>(null)
   const [date, setDate] = useState<string | null>(null)
   const { config, loaded, updateConfig } = useConfig()
   const sessions = useSessions()
@@ -68,18 +67,6 @@ export default function App(): JSX.Element {
   const [pendingJumpMessageId, setPendingJumpMessageId] = useState<number | null>(null)
 
   useEffect(() => {
-    window.gardenia
-      .getAppVersion()
-      .then((version) => {
-        setAppVersion(version)
-        window.gardenia.log('info', 'renderer received app version via IPC', { version })
-      })
-      .catch((err) => {
-        window.gardenia.log('error', 'failed to fetch app version via IPC', {
-          error: err instanceof Error ? err.message : String(err)
-        })
-      })
-
     window.gardenia.getDefaultDate().then(setDate)
   }, [])
 
@@ -477,10 +464,6 @@ export default function App(): JSX.Element {
               </div>
             </div>
           )}
-
-          <div className="app-shell__debug" data-testid="debug-corner">
-            <span className="label-caps">version</span> <span data-testid="app-version">{appVersion ?? 'loading…'}</span>
-          </div>
         </div>
 
         {date && <DailyNotesSidebar date={date} />}

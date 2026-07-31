@@ -69,6 +69,9 @@ const api = {
   // ── Sessions (02-session-lifecycle) ──────────────────────────────
   pickProjectFolder: (): Promise<string | null> => ipcRenderer.invoke('session:pickProjectFolder'),
   listHosts: (): Promise<RemoteHostOption[]> => ipcRenderer.invoke('session:listHosts'),
+  /** Recently-used project paths for a host ('local' or a RemoteHostOption.id), newest first (fix-bug-triage-jul31 / bug #49). */
+  listRecentProjectPaths: (hostId: string): Promise<string[]> =>
+    ipcRenderer.invoke('session:listRecentProjectPaths', hostId),
   listActiveSessions: (): Promise<SessionRecord[]> => ipcRenderer.invoke('session:listActive'),
   listHistorySessions: (): Promise<SessionRecord[]> => ipcRenderer.invoke('session:listHistory'),
   listSessionMessages: (sessionId: string): Promise<MessageRecord[]> =>

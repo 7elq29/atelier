@@ -35,6 +35,9 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
 
   ipcMain.handle('session:listHosts', () => manager.listHosts())
 
+  // fix-bug-triage-jul31 / bug #49: recently-used project paths for the New Session modal's history offering.
+  ipcMain.handle('session:listRecentProjectPaths', (_event, hostId: string) => manager.listRecentProjectPaths(hostId))
+
   ipcMain.handle('session:listActive', () => manager.listActive())
 
   ipcMain.handle('session:listHistory', () => manager.listHistory())

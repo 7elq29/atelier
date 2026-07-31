@@ -548,4 +548,47 @@ export class SessionStore {
       })
       .filter((hit): hit is MessageSearchHit => hit !== null)
   }
+
+  // ── Project path history (fix-bug-triage-jul31 / bug #49) ────────────
+
+  /**
+   * Records that `path` was just used to create a session on `hostId`
+   * ('local' or a RemoteHostOption.id) — upserts so re-using an existing
+   * path just bumps its `used_at` rather than creating a duplicate entry,
+   * then prunes to the 10 most-recently-used paths for that host so the
+   * table can't grow unbounded across a long-lived install.
+   */
+  recordProjectPathUsage(hostId: string, path: string): void {
+    const usedAt = new Date().toISOString()
+    const record = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO project_path_history (host_id, path, used_at) VALUES (?, ?, ?)
+           ON CONFLICT (host_id, path) DO UPDATE SET used_at = excluded.used_at`
+        )
+        .run(hostId, path, usedAt)
+      // Prune everything past the 10 most recent for this host.
+      this.db
+        .prepare(
+          `DELETE FROM project_path_history
+           WHERE host_id = ?
+             AND path NOT IN (
+               SELECT path FROM project_path_history
+               WHERE host_id = ?
+               ORDER BY used_at DESC
+               LIMIT 10
+             )`
+        )
+        .run(hostId, hostId)
+    })
+    record()
+  }
+
+  /** Most-recently-used project paths for `hostId`, newest first — capped at 10 by `recordProjectPathUsage`'s pruning. */
+  listRecentProjectPaths(hostId: string): string[] {
+    const rows = this.db
+      .prepare('SELECT path FROM project_path_history WHERE host_id = ? ORDER BY used_at DESC LIMIT 10')
+      .all(hostId) as { path: string }[]
+    return rows.map((r) => r.path)
+  }
 }
