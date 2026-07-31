@@ -3,10 +3,28 @@ import { randomUUID } from 'node:crypto'
 import type {
   MessageRecord,
   MessageRole,
+  MessageSearchHit,
   SessionGroupRecord,
   SessionMode,
   SessionRecord
 } from '../../shared/session-types'
+import { extractSearchableText, FTS_SNIPPET_START, FTS_SNIPPET_END } from '../../shared/chat-content'
+
+/**
+ * Turns free-typed search input into a safe FTS5 MATCH expression
+ * (10b-enrichment-full-text-search): tokenizes on word characters only (so
+ * FTS5 syntax characters like `"`, `*`, `:`, `-` in the raw query can never
+ * be interpreted as query-language operators), quotes each token, and
+ * appends `*` for prefix matching — tokens are ANDed together (FTS5's
+ * default when multiple quoted strings appear side by side), so multi-word
+ * queries narrow rather than broaden results. Returns null for a query with
+ * no indexable tokens (e.g. empty or punctuation-only).
+ */
+function toFtsMatchQuery(raw: string): string | null {
+  const tokens = raw.match(/[\p{L}\p{N}_]+/gu) ?? []
+  if (tokens.length === 0) return null
+  return tokens.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' ')
+}
 
 /** Raw DB row shapes (snake_case, sqlite ints for booleans). */
 interface SessionRow {
@@ -335,6 +353,13 @@ export class SessionStore {
   /** Delete: hard-removes the session row AND all its message rows (distinct from Close). */
   deleteSession(id: string): void {
     const del = this.db.transaction(() => {
+      // messages_fts isn't a real foreign-keyed child of `messages` (FTS5
+      // virtual tables can't participate in `ON DELETE CASCADE`), so its
+      // rows for this session have to be removed explicitly, and BEFORE the
+      // `messages` rows themselves since this subquery reads from them.
+      this.db
+        .prepare('DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE session_id = ?)')
+        .run(id)
       this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(id)
       this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
     })
@@ -378,11 +403,36 @@ export class SessionStore {
         `INSERT INTO messages (session_id, role, content, raw_event, created_at) VALUES (?, ?, ?, ?, ?)`
       )
       for (const m of messages) {
-        insertMessage.run(newId, m.role, m.content, m.raw_event, m.created_at)
+        const result = insertMessage.run(newId, m.role, m.content, m.raw_event, m.created_at)
+        this.indexMessageForSearch({
+          id: Number(result.lastInsertRowid),
+          sessionId: newId,
+          role: m.role as MessageRole,
+          content: m.content
+        })
       }
     })
     fork()
     return this.getSession(newId)
+  }
+
+  /**
+   * Keeps `messages_fts` (10b-enrichment-full-text-search) in sync with one
+   * message row: always deletes any prior indexed text for this id first
+   * (simplest correct thing for both a first-time insert and an in-place
+   * `updateMessage` edit — FTS5 doesn't support `INSERT OR REPLACE` on an
+   * explicit rowid the way ordinary tables do), then re-inserts only if
+   * `extractSearchableText` says this message has plain prose worth indexing
+   * (plain user/assistant text — never tool-call JSON, todo/compaction
+   * banners, prompt cards, or system rows).
+   */
+  private indexMessageForSearch(message: { id: number; sessionId: string; role: MessageRole; content: string }): void {
+    this.db.prepare('DELETE FROM messages_fts WHERE rowid = ?').run(message.id)
+    const text = extractSearchableText(message.role, message.content)
+    if (text === null) return
+    this.db
+      .prepare('INSERT INTO messages_fts (rowid, text, session_id) VALUES (?, ?, ?)')
+      .run(message.id, text, message.sessionId)
   }
 
   addMessage(input: { sessionId: string; role: MessageRole; content: string; rawEvent?: unknown }): MessageRecord {
@@ -399,7 +449,9 @@ export class SessionStore {
         createdAt
       )
     const row = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(result.lastInsertRowid) as MessageRow
-    return toMessageRecord(row)
+    const record = toMessageRecord(row)
+    this.indexMessageForSearch(record)
+    return record
   }
 
   /**
@@ -416,7 +468,9 @@ export class SessionStore {
     const rawEvent = input.rawEvent !== undefined ? JSON.stringify(input.rawEvent) : existing.raw_event
     this.db.prepare('UPDATE messages SET content = ?, raw_event = ? WHERE id = ?').run(content, rawEvent, id)
     const row = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as MessageRow
-    return toMessageRecord(row)
+    const record = toMessageRecord(row)
+    this.indexMessageForSearch(record)
+    return record
   }
 
   listMessages(sessionId: string): MessageRecord[] {
@@ -431,5 +485,43 @@ export class SessionStore {
       c: number
     }
     return row.c
+  }
+
+  /**
+   * Cross-session content search (10b-enrichment-full-text-search): matches
+   * `query` against every indexed message's plain text via the `messages_fts`
+   * FTS5 table, newest-relevance-first (`rank`), joined back to `messages`/
+   * `sessions` for the surrounding context the command palette needs to
+   * render a result row and jump to it. Returns `[]` for a query with no
+   * indexable tokens (see `toFtsMatchQuery`) rather than matching everything.
+   */
+  searchMessages(query: string, limit = 20): MessageSearchHit[] {
+    const match = toFtsMatchQuery(query)
+    if (match === null) return []
+    const rows = this.db
+      .prepare(
+        `SELECT mf.rowid AS message_id, mf.session_id AS session_id, s.name AS session_name, msg.created_at AS created_at,
+                snippet(mf, 0, ?, ?, '…', 10) AS snippet
+         FROM messages_fts mf
+         JOIN messages msg ON msg.id = mf.rowid
+         JOIN sessions s ON s.id = mf.session_id
+         WHERE mf MATCH ?
+         ORDER BY rank
+         LIMIT ?`
+      )
+      .all(FTS_SNIPPET_START, FTS_SNIPPET_END, match, limit) as {
+      message_id: number
+      session_id: string
+      session_name: string
+      created_at: string
+      snippet: string
+    }[]
+    return rows.map((row) => ({
+      sessionId: row.session_id,
+      sessionName: row.session_name,
+      messageId: row.message_id,
+      snippet: row.snippet,
+      createdAt: row.created_at
+    }))
   }
 }

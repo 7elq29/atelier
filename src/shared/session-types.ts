@@ -97,6 +97,22 @@ export interface CreateSessionOptions {
   planMode?: boolean
 }
 
+/**
+ * One cross-session content match (10b-enrichment-full-text-search), from
+ * `SessionStore.searchMessages`'s SQLite FTS5 query over `messages_fts`.
+ * Surfaced in the command palette's "Session" results alongside plain
+ * session-name matches; selecting one opens `sessionId` and scrolls/jumps to
+ * `messageId` in its transcript.
+ */
+export interface MessageSearchHit {
+  sessionId: string
+  sessionName: string
+  messageId: number
+  /** FTS5 `snippet()` output around the match, with `…` markers around each matched term (see CommandPalette's rendering). */
+  snippet: string
+  createdAt: string
+}
+
 export interface RemoteHostOption {
   id: string
   /** SSH host / devpod name, e.g. "qingqin-go.devpod-us-or". */

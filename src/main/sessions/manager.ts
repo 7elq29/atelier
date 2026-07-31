@@ -4,6 +4,7 @@ import { logger } from '../logger'
 import type {
   CreateSessionOptions,
   MessageRecord,
+  MessageSearchHit,
   PromptDecision,
   RemoteHostOption,
   SessionGroupEvent,
@@ -123,6 +124,11 @@ export class SessionManager {
 
   listMessages(sessionId: string): MessageRecord[] {
     return this.store.listMessages(sessionId)
+  }
+
+  /** Cross-session content search (10b-enrichment-full-text-search), backing the command palette's extended "Session" results. */
+  searchMessages(query: string): MessageSearchHit[] {
+    return this.store.searchMessages(query)
   }
 
   listHosts(): RemoteHostOption[] {

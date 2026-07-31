@@ -77,6 +77,27 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
     sql: `
       ALTER TABLE sessions ADD COLUMN total_cost_usd REAL NOT NULL DEFAULT 0;
     `
+  },
+  {
+    // 10b-enrichment-full-text-search: an FTS5 virtual table over each
+    // message's plain searchable text (see shared/chat-content.ts's
+    // `extractSearchableText` — user/assistant plain text only, never raw
+    // tool-call JSON or other structured-content rows). NOT an "external
+    // content" FTS5 table: rows are inserted/updated/deleted explicitly by
+    // `SessionStore` (using `rowid = messages.id`) exactly when a message is
+    // written, rather than via SQL triggers mirroring `messages` verbatim —
+    // that's the only way to apply `extractSearchableText`'s JS-side
+    // filtering (skip system rows, skip structured JSON) before indexing.
+    // Used by `SessionStore.searchMessages` for the cross-session content
+    // search surfaced in the command palette's "Session" results.
+    name: '0004_message_full_text_search',
+    sql: `
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        text,
+        session_id UNINDEXED,
+        tokenize = 'unicode61'
+      );
+    `
   }
 ]
 

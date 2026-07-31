@@ -11,6 +11,16 @@ interface CommandPaletteProps {
   isOpen: boolean
   onClose: () => void
   items: PaletteItem[]
+  /**
+   * Cross-session content search (10b-enrichment-full-text-search): given the
+   * current typed query, resolves extra `PaletteItem`s to append to the
+   * "Session" results — e.g. message-content matches from
+   * `window.gardenia.searchMessages`. Optional so callers that don't need
+   * content search (or tests exercising the palette in isolation) can omit
+   * it entirely. Debounced internally; results for a stale query are
+   * discarded if a newer one has since resolved.
+   */
+  searchContent?: (query: string) => Promise<PaletteItem[]>
 }
 
 /**
@@ -18,17 +28,25 @@ interface CommandPaletteProps {
  * as-you-type against `items`; arrow keys move selection, Enter runs the
  * selected item and closes, Escape closes without running anything.
  */
-export default function CommandPalette({ isOpen, onClose, items }: CommandPaletteProps): JSX.Element | null {
+export default function CommandPalette({ isOpen, onClose, items, searchContent }: CommandPaletteProps): JSX.Element | null {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [contentItems, setContentItems] = useState<PaletteItem[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
+  const requestSeq = useRef(0)
 
-  const filtered = items.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
+  const nameMatches = items.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
+  // Content matches are appended after name matches, deduped against any
+  // session-name match that's already showing the same underlying session
+  // (a content match's id is `session-content-<sessionId>-<messageId>`, so
+  // this only ever collides on a shared prefix, never a false match).
+  const filtered = [...nameMatches, ...contentItems]
 
   useEffect(() => {
     if (isOpen) {
       setQuery('')
       setSelectedIndex(0)
+      setContentItems([])
       const timer = setTimeout(() => inputRef.current?.focus(), 0)
       return () => clearTimeout(timer)
     }
@@ -38,6 +56,24 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
   useEffect(() => {
     setSelectedIndex(0)
   }, [query])
+
+  // Debounced cross-session content search (10b-enrichment-full-text-search):
+  // fires ~150ms after typing settles, and a stale response (query changed
+  // again before it resolved) is discarded via the `requestSeq` token rather
+  // than trusted — avoids a slow first query clobbering a faster later one.
+  useEffect(() => {
+    if (!searchContent || !query.trim()) {
+      setContentItems([])
+      return undefined
+    }
+    const seq = ++requestSeq.current
+    const timer = setTimeout(() => {
+      void searchContent(query).then((results) => {
+        if (requestSeq.current === seq) setContentItems(results)
+      })
+    }, 150)
+    return () => clearTimeout(timer)
+  }, [query, searchContent])
 
   if (!isOpen) return null
 

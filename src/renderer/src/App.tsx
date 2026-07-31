@@ -6,6 +6,7 @@ import NewSessionModal from './components/NewSessionModal'
 import SettingsPanel from './components/SettingsPanel'
 import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
 import ChatTranscript from './components/chat/ChatTranscript'
+import TranscriptSearchBar from './components/chat/TranscriptSearchBar'
 import Composer from './components/chat/Composer'
 import TrackerRail from './components/chat/TrackerRail'
 import TabBar, { type SessionTab } from './components/panels/TabBar'
@@ -16,7 +17,8 @@ import TerminalPanel from './components/panels/TerminalPanel'
 import CompanionTerminalDrawer from './components/panels/CompanionTerminalDrawer'
 import { useConfig } from './hooks/useConfig'
 import { useSessions } from './hooks/useSessions'
-import type { SessionRecord } from '../../shared/session-types'
+import type { MessageSearchHit, SessionRecord } from '../../shared/session-types'
+import { FTS_SNIPPET_START, FTS_SNIPPET_END } from '../../shared/chat-content'
 
 function resolveEffectiveTheme(theme: 'system' | 'light' | 'dark'): 'light' | 'dark' {
   if (theme !== 'system') return theme
@@ -46,6 +48,17 @@ export default function App(): JSX.Element {
   const [visitedTabs, setVisitedTabs] = useState<Set<SessionTab>>(new Set(['chat']))
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerHeight, setDrawerHeight] = useState(240)
+
+  // ── In-conversation "Find in conversation" (10b-enrichment-full-text-search) ──
+  const [transcriptSearchOpen, setTranscriptSearchOpen] = useState(false)
+  const [transcriptSearchQuery, setTranscriptSearchQuery] = useState('')
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0)
+  const [matchCount, setMatchCount] = useState(0)
+  // Cross-session content-search palette jump target (10b-enrichment-full-
+  // text-search): set when a content-match palette item runs, consumed by
+  // the effect below once that message's row actually exists in the DOM
+  // (which may be a render or two after `selectSession` resolves).
+  const [pendingJumpMessageId, setPendingJumpMessageId] = useState<number | null>(null)
 
   useEffect(() => {
     window.gardenia
@@ -131,6 +144,62 @@ export default function App(): JSX.Element {
     setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)))
   }
 
+  // Switching sessions always closes/clears the in-conversation search bar —
+  // matches (and their indices) are only meaningful for the transcript
+  // they were found in (10b-enrichment-full-text-search).
+  useEffect(() => {
+    setTranscriptSearchOpen(false)
+    setTranscriptSearchQuery('')
+    setActiveMatchIndex(0)
+    setMatchCount(0)
+  }, [activeSessionId])
+
+  function toggleTranscriptSearch(): void {
+    setTranscriptSearchOpen((open) => {
+      const next = !open
+      if (!next) {
+        setTranscriptSearchQuery('')
+        setActiveMatchIndex(0)
+      }
+      return next
+    })
+  }
+
+  function handleTranscriptSearchQueryChange(query: string): void {
+    setTranscriptSearchQuery(query)
+    setActiveMatchIndex(0)
+  }
+
+  function navigateTranscriptMatches(direction: 1 | -1): void {
+    setActiveMatchIndex((i) => {
+      if (matchCount === 0) return 0
+      return (i + direction + matchCount) % matchCount
+    })
+  }
+
+  // Cross-session content-search jump (10b-enrichment-full-text-search):
+  // opens (or switches to) `sessionId`'s transcript, then requests a
+  // scroll+flash on `messageId` once its row is actually rendered.
+  async function jumpToMessage(session: SessionRecord, messageId: number): Promise<void> {
+    await selectSession(session)
+    setPendingJumpMessageId(messageId)
+  }
+
+  // Consumes `pendingJumpMessageId` the moment the target row exists in the
+  // real DOM: real `scrollIntoView` (not a mocked scroll) plus a brief
+  // `.msg-jump-highlight` flash so the destination is visually obvious.
+  const activeMessagesForJump = activeSessionId ? sessions.messagesBySession[activeSessionId] ?? [] : []
+  useEffect(() => {
+    if (pendingJumpMessageId == null) return
+    const el = document.querySelector<HTMLElement>(`[data-testid="transcript-message"][data-message-id="${pendingJumpMessageId}"]`)
+    if (!el) return
+    el.scrollIntoView({ block: 'center' })
+    el.classList.add('msg-jump-highlight')
+    const timer = setTimeout(() => el.classList.remove('msg-jump-highlight'), 1600)
+    setPendingJumpMessageId(null)
+    return () => clearTimeout(timer)
+  }, [pendingJumpMessageId, activeMessagesForJump.length])
+
   // "Focus jumped to that session": move real DOM focus to the row, not just
   // a CSS highlight — provable from Playwright via document.activeElement.
   useEffect(() => {
@@ -179,6 +248,31 @@ export default function App(): JSX.Element {
     ],
     [config.theme, config.sidebarCollapsed, allSessions]
   )
+
+  // Cross-session content search (10b-enrichment-full-text-search): the
+  // command palette's "Session" results extended to also match message
+  // *content*, not just session name (the mock only ever defined name
+  // matching — see CommandPalette.tsx's doc comment for why this reuses the
+  // exact same `cp-item` row rather than adding a new palette page/modal).
+  // Backed by `window.gardenia.searchMessages` -> SQLite FTS5. Stripped of
+  // its `FTS_SNIPPET_START/END` markers here since `PaletteItem.label` is
+  // plain text, not markup.
+  async function searchSessionContent(query: string): Promise<PaletteItem[]> {
+    const hits: MessageSearchHit[] = await window.gardenia.searchMessages(query)
+    return hits
+      .map((hit): PaletteItem | null => {
+        const session = allSessions.find((s) => s.id === hit.sessionId)
+        if (!session) return null
+        const snippet = hit.snippet.split(FTS_SNIPPET_START).join('').split(FTS_SNIPPET_END).join('')
+        return {
+          id: `session-content-${hit.sessionId}-${hit.messageId}`,
+          label: `${snippet} — in ${hit.sessionName}`,
+          category: 'Session',
+          run: () => void jumpToMessage(session, hit.messageId)
+        }
+      })
+      .filter((item): item is PaletteItem => item !== null)
+  }
 
   function handleOnboardingFinish(identity: { name: string; email: string }): void {
     updateConfig({ onboardingCompleted: true, gitIdentity: identity })
@@ -255,6 +349,15 @@ export default function App(): JSX.Element {
                 <span className="topbar-chip" data-testid="cost-chip">
                   ${activeSession.totalCostUsd.toFixed(2)}
                 </span>
+                <TranscriptSearchBar
+                  open={transcriptSearchOpen}
+                  query={transcriptSearchQuery}
+                  matchCount={matchCount}
+                  onQueryChange={handleTranscriptSearchQueryChange}
+                  onNavigate={navigateTranscriptMatches}
+                  onToggle={toggleTranscriptSearch}
+                  onClose={toggleTranscriptSearch}
+                />
                 <button className="btn btn-sm" data-testid="toggle-companion-drawer" onClick={() => setDrawerOpen((o) => !o)}>
                   ▤ Terminal
                 </button>
@@ -277,6 +380,9 @@ export default function App(): JSX.Element {
                           <ChatTranscript
                             messages={activeMessages}
                             onRespond={(requestId, decision) => void sessions.respondToPrompt(activeSession.id, requestId, decision)}
+                            searchQuery={transcriptSearchOpen ? transcriptSearchQuery : ''}
+                            activeMatchIndex={activeMatchIndex}
+                            onMatchCount={setMatchCount}
                           />
                           {activeSession.mode === 'claude-code' && (
                             <Composer
@@ -362,7 +468,12 @@ export default function App(): JSX.Element {
         {date && <DailyNotesSidebar date={date} />}
       </div>
 
-      <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
+      <CommandPalette
+        isOpen={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        items={paletteItems}
+        searchContent={searchSessionContent}
+      />
 
       <NewSessionModal
         isOpen={newSessionOpen}

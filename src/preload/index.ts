@@ -4,6 +4,7 @@ import type { DailyNote, ReadDailyNoteResult } from '../shared/daily-note-types'
 import type {
   CreateSessionOptions,
   MessageRecord,
+  MessageSearchHit,
   PromptDecision,
   RemoteHostOption,
   SessionGroupEvent,
@@ -69,6 +70,8 @@ const api = {
   listHistorySessions: (): Promise<SessionRecord[]> => ipcRenderer.invoke('session:listHistory'),
   listSessionMessages: (sessionId: string): Promise<MessageRecord[]> =>
     ipcRenderer.invoke('session:listMessages', sessionId),
+  /** Cross-session content search (10b-enrichment-full-text-search), backed by SQLite FTS5 over plain user/assistant message text. */
+  searchMessages: (query: string): Promise<MessageSearchHit[]> => ipcRenderer.invoke('session:searchMessages', query),
   createSession: (opts: CreateSessionOptions): Promise<SessionRecord> => ipcRenderer.invoke('session:create', opts),
   resumeSession: (sessionId: string): Promise<{ session: SessionRecord; messages: MessageRecord[] }> =>
     ipcRenderer.invoke('session:resume', sessionId),

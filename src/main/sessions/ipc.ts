@@ -37,6 +37,9 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
 
   ipcMain.handle('session:listMessages', (_event, sessionId: string) => manager.listMessages(sessionId))
 
+  // 10b-enrichment-full-text-search: cross-session content search via SQLite FTS5.
+  ipcMain.handle('session:searchMessages', (_event, query: string) => manager.searchMessages(query))
+
   ipcMain.handle('session:create', async (_event, opts: CreateSessionOptions) => {
     logger.info('session:create invoked', { projectPath: opts.projectPath, mode: opts.mode, hostId: opts.hostId })
     return manager.createSession(opts)

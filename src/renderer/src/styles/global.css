@@ -177,6 +177,18 @@
   align-items: center;
   gap: 4px;
 }
+/* ===== In-conversation "Find in conversation" search bar
+   (10b-enrichment-full-text-search) — copied verbatim from
+   Features/UI-Design/mocks/index.html's `.search-bar-inline`/`.smatches`/
+   `mark.search-hit` rules; `.search-hit.active` is this task's own addition
+   (the mock never demoed keyboard navigation between matches) so the current
+   navigation target is visually distinguishable from the rest. ===== */
+.search-bar-inline { display: none; align-items: center; gap: 6px; background: var(--bg-input); border: 1px solid var(--border-default); border-radius: var(--r-md); padding: 4px 8px; margin-left: 8px; }
+.search-bar-inline.show { display: flex; }
+.search-bar-inline input { border: none; background: transparent; color: var(--text-primary); font-size: 14px; outline: none; width: 160px; }
+.search-bar-inline .smatches { font-size: 13.5px; color: var(--text-tertiary); }
+mark.search-hit { background: var(--warning); color: #241d0e; border-radius: 2px; padding: 0 1px; }
+mark.search-hit.active { outline: 2px solid var(--accent); }
 .empty-main {
   flex: 1;
   display: flex;
@@ -679,6 +691,18 @@ input[type='range'] {
 .msg-actions button { width: 22px; height: 22px; border: none; background: transparent; color: var(--text-tertiary); border-radius: 5px; cursor: pointer; font-size: 13.5px; }
 .msg-actions button:hover { background: var(--bg-hover); color: var(--text-primary); }
 .speaking-indicator { font-size: 12.5px; color: var(--accent); margin-top: 4px; display: flex; align-items: center; gap: 5px; }
+
+/* Brief flash on the message a cross-session content-search palette result
+   jumps to (10b-enrichment-full-text-search) — not defined in the mock (it
+   has no cross-session content-search UI at all, see this task's spec
+   comment in CommandPalette.tsx), so this is this task's own visual
+   treatment: reuses the same warning-toned accent as `mark.search-hit` for
+   consistency, fading out rather than disappearing abruptly. */
+@keyframes msg-jump-flash {
+  0% { background: var(--warning); }
+  100% { background: transparent; }
+}
+.msg-jump-highlight { animation: msg-jump-flash 1.6s ease-out; border-radius: var(--r-md); }
 
 /* Tool call ("code card"): tinted strip + colored left accent rule, no border box. */
 .tool-card { background: var(--bg-tint); border-left: 3px solid var(--accent); border-radius: 4px var(--r-md) var(--r-md) 4px; max-width: 84%; overflow: hidden; cursor: pointer; }
