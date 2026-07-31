@@ -490,38 +490,62 @@ export class SessionStore {
   /**
    * Cross-session content search (10b-enrichment-full-text-search): matches
    * `query` against every indexed message's plain text via the `messages_fts`
-   * FTS5 table, newest-relevance-first (`rank`), joined back to `messages`/
-   * `sessions` for the surrounding context the command palette needs to
+   * FTS5 table, newest-relevance-first (`rank`), then hydrates each hit with
+   * the surrounding session/message context the command palette needs to
    * render a result row and jump to it. Returns `[]` for a query with no
    * indexable tokens (see `toFtsMatchQuery`) rather than matching everything.
+   *
+   * Deliberately two queries, not one JOINed query: FTS5's `snippet()` aux
+   * function requires its first argument to be the literal FTS5 table
+   * reference for the row it's snippeting — verified live that this breaks
+   * ("no such column: mf") the moment `messages_fts` is JOINed under an
+   * alias, even though `rank`/`MATCH` against that same alias work fine. A
+   * plain, unaliased, JOIN-free `messages_fts` query for the snippet, then a
+   * second ordinary query for session/message metadata, sidesteps that
+   * entirely.
    */
   searchMessages(query: string, limit = 20): MessageSearchHit[] {
     const match = toFtsMatchQuery(query)
     if (match === null) return []
-    const rows = this.db
+    const ftsRows = this.db
       .prepare(
-        `SELECT mf.rowid AS message_id, mf.session_id AS session_id, s.name AS session_name, msg.created_at AS created_at,
-                snippet(mf, 0, ?, ?, '…', 10) AS snippet
-         FROM messages_fts mf
-         JOIN messages msg ON msg.id = mf.rowid
-         JOIN sessions s ON s.id = mf.session_id
-         WHERE mf MATCH ?
+        `SELECT rowid AS message_id, session_id, snippet(messages_fts, 0, ?, ?, '…', 10) AS snippet
+         FROM messages_fts
+         WHERE messages_fts MATCH ?
          ORDER BY rank
          LIMIT ?`
       )
       .all(FTS_SNIPPET_START, FTS_SNIPPET_END, match, limit) as {
       message_id: number
       session_id: string
-      session_name: string
-      created_at: string
       snippet: string
     }[]
-    return rows.map((row) => ({
-      sessionId: row.session_id,
-      sessionName: row.session_name,
-      messageId: row.message_id,
-      snippet: row.snippet,
-      createdAt: row.created_at
-    }))
+    if (ftsRows.length === 0) return []
+
+    const messageIds = ftsRows.map((r) => r.message_id)
+    const placeholders = messageIds.map(() => '?').join(',')
+    const metaRows = this.db
+      .prepare(
+        `SELECT msg.id AS message_id, msg.created_at AS created_at, s.name AS session_name
+         FROM messages msg
+         JOIN sessions s ON s.id = msg.session_id
+         WHERE msg.id IN (${placeholders})`
+      )
+      .all(...messageIds) as { message_id: number; created_at: string; session_name: string }[]
+    const metaByMessageId = new Map(metaRows.map((r) => [r.message_id, r]))
+
+    return ftsRows
+      .map((row) => {
+        const meta = metaByMessageId.get(row.message_id)
+        if (!meta) return null
+        return {
+          sessionId: row.session_id,
+          sessionName: meta.session_name,
+          messageId: row.message_id,
+          snippet: row.snippet,
+          createdAt: meta.created_at
+        }
+      })
+      .filter((hit): hit is MessageSearchHit => hit !== null)
   }
 }
