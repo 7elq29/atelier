@@ -1,7 +1,11 @@
-/** Shared pixel scale between Timeline.tsx and CurrentTimeLine.tsx. */
+/**
+ * Shared time-range helpers for Timeline.tsx. DAY_START_MIN/DAY_END_MIN
+ * bound the window in which the "now" marker is shown (a flat list has no
+ * pixel-per-minute scale to derive positioning from — see Timeline.tsx for
+ * the flat-list/no-grid layout).
+ */
 export const DAY_START_MIN = 6 * 60 // 06:00
 export const DAY_END_MIN = 23 * 60 // 23:00
-export const PX_PER_MIN = 2
 
 export function timeToMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number)

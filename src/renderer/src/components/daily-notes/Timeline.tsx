@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { DailyTask } from '../../../../shared/daily-note-types'
-import CurrentTimeLine from './CurrentTimeLine'
-import { DAY_START_MIN, DAY_END_MIN, PX_PER_MIN, parseTimeBlock, minutesToTime, roundToSlot } from './timeline-scale'
+import CurrentTimeMarker from './CurrentTimeLine'
+import { DAY_START_MIN, DAY_END_MIN, parseTimeBlock, minutesToTime, roundToSlot } from './timeline-scale'
 
-const TOTAL_HEIGHT = (DAY_END_MIN - DAY_START_MIN) * PX_PER_MIN
 const DEFAULT_DURATION_MIN = 30
+const NOW_POLL_MS = 30_000
 
 interface TimelineProps {
   tasks: DailyTask[]
@@ -14,38 +14,57 @@ interface TimelineProps {
 }
 
 interface DraftForm {
-  top: number
   timeBlock: string
   text: string
 }
 
-export default function Timeline({ tasks, onToggle, onCreate, onDropExisting }: TimelineProps): JSX.Element {
-  const bodyRef = useRef<HTMLDivElement>(null)
-  const [draft, setDraft] = useState<DraftForm | null>(null)
+function minutesNow(): number {
+  const now = new Date()
+  return now.getHours() * 60 + now.getMinutes()
+}
 
-  const yToTimeBlock = (clientY: number): { top: number; timeBlock: string } => {
-    const rect = bodyRef.current?.getBoundingClientRect()
-    const scrollTop = bodyRef.current?.scrollTop ?? 0
-    const relativeY = clientY - (rect?.top ?? 0) + scrollTop
-    const startMin = roundToSlot(DAY_START_MIN + relativeY / PX_PER_MIN)
-    const endMin = startMin + DEFAULT_DURATION_MIN
-    const top = (startMin - DAY_START_MIN) * PX_PER_MIN
-    return { top, timeBlock: `${minutesToTime(startMin)}–${minutesToTime(endMin)}` }
-  }
+/**
+ * Default time-block used for a newly created (right-click) or dropped
+ * (drag from Unscheduled) task.
+ *
+ * Deviation from the old design, documented per the UI-fix instructions:
+ * the previous absolute-grid layout derived this from the click/drop pixel
+ * Y-coordinate via a fixed px-per-minute scale. The flat-list layout has no
+ * such coordinate-to-time mapping (card position in the list is driven by
+ * chronological sort, not pixel offset), so there is nothing meaningful to
+ * derive from `e.clientY` any more. We anchor new/dropped tasks to "now"
+ * (rounded to the nearest 15-minute slot) instead, which keeps the same
+ * interaction surface (right-click to create, drag to schedule) while being
+ * well-defined for a flow layout. If real overlapping/duplicate time-blocks
+ * ever become a problem this would need a proper conflict check, but that's
+ * unchanged from the old behavior (which also didn't check for overlap).
+ */
+function defaultTimeBlock(): string {
+  const start = roundToSlot(minutesNow())
+  const end = start + DEFAULT_DURATION_MIN
+  return `${minutesToTime(start)}–${minutesToTime(end)}`
+}
+
+export default function Timeline({ tasks, onToggle, onCreate, onDropExisting }: TimelineProps): JSX.Element {
+  const [draft, setDraft] = useState<DraftForm | null>(null)
+  const [nowMinutes, setNowMinutes] = useState(() => minutesNow())
+
+  useEffect(() => {
+    const interval = setInterval(() => setNowMinutes(minutesNow()), NOW_POLL_MS)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleContextMenu = (e: React.MouseEvent): void => {
     e.preventDefault()
     if ((e.target as HTMLElement).closest('.dn-time-block')) return
-    const { top, timeBlock } = yToTimeBlock(e.clientY)
-    setDraft({ top, timeBlock, text: '' })
+    setDraft({ timeBlock: defaultTimeBlock(), text: '' })
   }
 
   const handleDrop = (e: React.DragEvent): void => {
     e.preventDefault()
     const id = e.dataTransfer.getData('text/task-id')
     if (!id) return
-    const { timeBlock } = yToTimeBlock(e.clientY)
-    onDropExisting(id, timeBlock)
+    onDropExisting(id, defaultTimeBlock())
   }
 
   const submitDraft = (): void => {
@@ -55,43 +74,67 @@ export default function Timeline({ tasks, onToggle, onCreate, onDropExisting }: 
     setDraft(null)
   }
 
+  const showNowMarker = nowMinutes >= DAY_START_MIN && nowMinutes <= DAY_END_MIN
+
+  // Flat, chronologically-ordered render list (tasks arrive pre-sorted by
+  // timeBlock from DailyNotesSidebar). The "now" marker is spliced in as a
+  // plain row between the two tasks that bracket the current time — not an
+  // absolutely-positioned overlay.
+  //
+  // If "now" falls *inside* a task's own range (an in-progress task), the
+  // marker is placed immediately after that task rather than splitting its
+  // card in two — the marker separates "started" from "not yet started",
+  // and a task that has already started (even if not finished) belongs on
+  // the "started" side. This falls out of the `block.start > nowMinutes`
+  // check below: an in-progress task's start is <= nowMinutes, so it's
+  // never treated as the "next" task the marker needs to precede.
+  const rows: JSX.Element[] = []
+  let markerInserted = !showNowMarker
+  for (const task of tasks) {
+    const block = parseTimeBlock(task.timeBlock)
+    if (!markerInserted && block && block.start > nowMinutes) {
+      rows.push(<CurrentTimeMarker key="now-marker" minutes={nowMinutes} />)
+      markerInserted = true
+    }
+    rows.push(
+      <div
+        key={task.id}
+        className={`dn-time-block${task.status === 'done' ? ' done' : ''}`}
+        data-testid="timeline-task"
+        data-task-id={task.id}
+        data-start={block ? minutesToTime(block.start) : undefined}
+        data-end={block ? minutesToTime(block.end) : undefined}
+        draggable
+        onDragStart={(e) => e.dataTransfer.setData('text/task-id', task.id)}
+        onClick={() => onToggle(task.id)}
+      >
+        <div className="dn-tb-range">
+          {task.timeBlock}
+          {block ? ` · ${block.end - block.start}m` : ''}
+        </div>
+        <div className="dn-tb-body">
+          <div className="dn-tbox" />
+          <span className="dn-tb-label">{task.text}</span>
+        </div>
+      </div>
+    )
+  }
+  if (!markerInserted) {
+    rows.push(<CurrentTimeMarker key="now-marker" minutes={nowMinutes} />)
+  }
+
   return (
     <div
-      className="dn-section-body dn-timeline-body scroll-y"
+      className="dn-section-body scroll-y"
       data-testid="timeline-body"
-      ref={bodyRef}
       onContextMenu={handleContextMenu}
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
     >
-      <div className="dn-timeline-track" style={{ height: `${TOTAL_HEIGHT}px` }}>
-        <CurrentTimeLine />
-        {tasks.map((task) => {
-          const block = parseTimeBlock(task.timeBlock)
-          if (!block) return null
-          const top = (block.start - DAY_START_MIN) * PX_PER_MIN
-          const height = Math.max(24, (block.end - block.start) * PX_PER_MIN)
-          return (
-            <div
-              key={task.id}
-              className={`dn-time-block${task.status === 'done' ? ' done' : ''}`}
-              data-testid="timeline-task"
-              data-task-id={task.id}
-              draggable
-              onDragStart={(e) => e.dataTransfer.setData('text/task-id', task.id)}
-              onClick={() => onToggle(task.id)}
-              style={{ top: `${top}px`, height: `${height}px` }}
-            >
-              <div className="dn-tb-range">{task.timeBlock}</div>
-              <div className="dn-tb-body">
-                <div className="dn-tbox" />
-                <span className="dn-tb-label">{task.text}</span>
-              </div>
-            </div>
-          )
-        })}
+      <div className="dn-timeline-list" data-testid="timeline-list">
+        {rows}
         {draft && (
-          <div className="dn-time-block dn-time-block-draft" style={{ top: `${draft.top}px` }}>
+          <div className="dn-time-block dn-time-block-draft">
             <div className="dn-tb-range">{draft.timeBlock}</div>
             <input
               autoFocus
