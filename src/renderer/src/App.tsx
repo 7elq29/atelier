@@ -6,6 +6,7 @@ import NewSessionModal from './components/NewSessionModal'
 import SettingsPanel from './components/SettingsPanel'
 import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
 import ChatTranscript from './components/chat/ChatTranscript'
+import Composer from './components/chat/Composer'
 import TrackerRail from './components/chat/TrackerRail'
 import { useConfig } from './hooks/useConfig'
 import { useSessions } from './hooks/useSessions'
@@ -158,11 +159,15 @@ export default function App(): JSX.Element {
     updateConfig({ onboardingCompleted: true })
   }
 
-  async function handleSend(): Promise<void> {
-    if (!activeSessionId || !composerText.trim()) return
-    const text = composerText.trim()
+  async function handleSend(text: string): Promise<void> {
+    if (!activeSessionId || !text.trim()) return
     setComposerText('')
-    await sessions.sendMessage(activeSessionId, text)
+    await sessions.sendMessage(activeSessionId, text.trim())
+  }
+
+  async function handleInterrupt(): Promise<void> {
+    if (!activeSessionId) return
+    await sessions.interrupt(activeSessionId)
   }
 
   const activeSession = allSessions.find((s) => s.id === activeSessionId) ?? null
@@ -222,26 +227,13 @@ export default function App(): JSX.Element {
                 <div className="chat-main-col">
                   <ChatTranscript messages={activeMessages} />
                   {activeSession.mode === 'claude-code' && (
-                    <div className="composer-wrap">
-                      <div className="composer-box">
-                        <textarea
-                          data-testid="composer-input"
-                          placeholder="Message Gardenia…"
-                          rows={1}
-                          value={composerText}
-                          onChange={(e) => setComposerText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault()
-                              void handleSend()
-                            }
-                          }}
-                        />
-                        <button className="send-btn btn btn-primary" data-testid="send-button" onClick={() => void handleSend()}>
-                          Send
-                        </button>
-                      </div>
-                    </div>
+                    <Composer
+                      value={composerText}
+                      onChange={setComposerText}
+                      onSend={(text) => void handleSend(text)}
+                      onInterrupt={() => void handleInterrupt()}
+                      busy={sessions.busyBySession[activeSession.id] ?? false}
+                    />
                   )}
                 </div>
                 <TrackerRail messages={activeMessages} />

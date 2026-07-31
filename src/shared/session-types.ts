@@ -141,3 +141,15 @@ export type SessionGroupEvent =
   | { type: 'group.deleted'; groupId: string }
   | { type: 'group.reordered'; groups: SessionGroupRecord[] }
   | { type: 'group.updated'; group: SessionGroupRecord }
+
+/**
+ * Composer Send/Stop toggle state (04-composer-core). `busy: true` from the
+ * moment a turn starts (initial prompt, a follow-up, or a message streamed
+ * live into an already-in-flight turn) until its terminal harness event
+ * (`result` / `interrupted` / `error`) lands — see
+ * `SessionManager.sendTurnState`.
+ */
+export interface SessionTurnStateEvent {
+  sessionId: string
+  busy: boolean
+}

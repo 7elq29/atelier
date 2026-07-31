@@ -46,6 +46,7 @@ interface LiveStream {
   busy: boolean
 }
 
+
 function newLiveStream(turnCount = 0): LiveStream {
   return { buffer: '', bufferMessageId: null, turnCount, pendingTools: new Map(), busy: false }
 }
@@ -138,6 +139,19 @@ export class SessionManager {
     this.getWindow()?.webContents.send('session:status', { sessionId, status: this.getStatus(sessionId) })
   }
 
+  /**
+   * Pushes the composer's Send/Stop toggle state (04-composer-core). `true`
+   * from the moment a turn is kicked off (initial prompt, a follow-up via
+   * `sendUserMessage`, or streamed live into an in-flight turn) until its
+   * terminal harness event (`result`/`interrupted`/`error`) is applied —
+   * independent of `HarnessDriver.isActive`, which now (see `normalize()`'s
+   * fix in this task) stays true across idle gaps between turns too and so
+   * can no longer be used as a busy signal on its own.
+   */
+  private sendTurnState(sessionId: string, busy: boolean): void {
+    this.getWindow()?.webContents.send('session:turnState', { sessionId, busy })
+  }
+
   private resolveHost(hostId: string): RemoteHost | undefined {
     if (hostId === 'local') return undefined
     const host = this.hosts.resolve(hostId)
@@ -186,7 +200,11 @@ export class SessionManager {
 
     const harnessSession = await this.harness.start(opts.prompt ?? '', {
       cwd: opts.projectPath,
-      host
+      host,
+      // Real interactive chat session: stays connected past its first turn
+      // so a later `sendUserMessage` can inject live via `streamInput()`
+      // instead of always reconnecting — see `HarnessStartOptions.keepAlive`.
+      keepAlive: true
     })
 
     const session = this.store.createSession({
@@ -207,8 +225,11 @@ export class SessionManager {
     this.live.set(session.id, newLiveStream())
     // A real turn is about to run only if there's an initial prompt to
     // process — an empty-prompt create just opens the connection.
-    if (opts.prompt) this.live.get(session.id)!.busy = true
-    this.sendStatus(session.id)
+    if (opts.prompt) {
+      this.live.get(session.id)!.busy = true
+      this.sendStatus(session.id)
+      this.sendTurnState(session.id, true)
+    }
     void this.consume(session.id, harnessSession.events)
     return session
   }
@@ -231,7 +252,7 @@ export class SessionManager {
     if (!session || session.mode !== 'claude-code') return
 try {
       const host = this.resolveHostFromSession(session.hostname)
-      const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host })
+      const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host, keepAlive: true })
       this.live.set(sessionId, newLiveStream())
       this.sendStatus(sessionId)
       void this.consume(sessionId, harnessSession.events)
@@ -244,17 +265,32 @@ try {
   // ── Send message into a live (or reconnected) session ──────────────
 
   /**
-   * Sends a follow-up user message. The harness's own event generator
-   * completes after each turn's terminal `result` (by design — see
-   * claude-agent-sdk-harness.ts's `normalize()`, verified against
-   * 01-harness-abstraction's own one-shot probes), which tears down that
-   * turn's internal session entry. A bare `streamInput()` call would
-   * therefore silently no-op for any message after the first turn — so
-   * every follow-up here goes through `resume()` (the SDK's own
-   * `--resume <id>` mechanism) to reconnect, then immediately pushes the
-   * new message into that fresh connection before consuming its events.
-   * Turn-count bookkeeping (for auto-naming) is preserved across these
-   * reconnects — it only resets on session close or a real app relaunch.
+   * Sends a follow-up user message.
+   *
+   * `ClaudeAgentSdkHarness.normalize()` used to complete its event generator
+   * after every turn's terminal `result`, which tore down that turn's
+   * internal session entry — so a bare `streamInput()` call would silently
+   * no-op for any message after the first turn, and every follow-up here
+   * had to go through `resume()` (a fresh `--resume <id>` reconnect) even
+   * when the previous turn's process was still sitting right there. Fixed
+   * in this task (04-composer-core) after verifying against the real SDK
+   * (see `normalize()`'s comment) that the same `query()`/subprocess
+   * happily accepts further turns pushed into its still-open input queue
+   * with no reconnect — including a message pushed WHILE the current turn
+   * is still streaming, which the SDK simply folds into that turn's own
+   * response instead of queuing it for later.
+   *
+   * So: if the harness reports this session `isActive` (its generator
+   * hasn't returned — covers both "mid-turn, still streaming" and "idle,
+   * connected, between turns"), this pushes straight into the live queue
+   * via `streamInput()` and returns — the ALREADY-RUNNING `consume()` loop
+   * from whenever this session last started/reconnected keeps delivering
+   * this turn's events, live, with no new subprocess. Only a session with
+   * no live harness entry at all (freshly reopened after being properly
+   * closed/interrupted, or after an app relaunch) falls back to the
+   * `resume()` reconnect path. Turn-count bookkeeping (for auto-naming) is
+   * preserved across a `resume()` reconnect — it only resets on session
+   * close or a real app relaunch.
    */
   async sendUserMessage(sessionId: string, text: string): Promise<void> {
     const session = this.store.getSession(sessionId)
@@ -263,9 +299,16 @@ try {
     this.sendMessage(sessionId, userMessage)
 
     if (session.mode !== 'claude-code') return
-try {
+    this.sendTurnState(sessionId, true)
+    try {
+      if (this.harness.isActive(sessionId)) {
+        logger.info('sendUserMessage: live injection (streamInput, no resume)', { sessionId })
+        await this.harness.streamInput(sessionId, text)
+        return
+      }
+      logger.info('sendUserMessage: no live harness session, reconnecting via resume()', { sessionId })
       const host = this.resolveHostFromSession(session.hostname)
-      const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host })
+      const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host, keepAlive: true })
       await this.harness.streamInput(sessionId, text)
       const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
       this.live.set(sessionId, newLiveStream(previousTurnCount))
@@ -273,6 +316,7 @@ try {
       this.sendStatus(sessionId)
       void this.consume(sessionId, harnessSession.events)
     } catch (err) {
+      this.sendTurnState(sessionId, false)
       this.reportHarnessFailure(sessionId, 'sendUserMessage', err)
       throw err
     }
@@ -331,6 +375,7 @@ try {
   closeSession(sessionId: string): SessionRecord {
     void this.harness.interrupt(sessionId).catch(() => undefined)
     this.live.delete(sessionId)
+    this.sendTurnState(sessionId, false)
     const session = this.store.closeSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
     this.sendLifecycle({ type: 'session.closed', session })
@@ -549,6 +594,7 @@ try {
         this.sendMessage(sessionId, message)
         live.busy = false
         this.sendStatus(sessionId)
+        this.sendTurnState(sessionId, false)
         return
       }
 
@@ -556,6 +602,8 @@ try {
         this.flushBuffer(sessionId, live)
         live.busy = false
         this.sendStatus(sessionId)
+        logger.info('harness event: interrupted (terminal)', { sessionId })
+        this.sendTurnState(sessionId, false)
         return
 
       case 'result': {
@@ -563,6 +611,8 @@ try {
         live.turnCount += 1
         live.busy = false
         this.sendStatus(sessionId)
+        logger.info('harness event: result (turn complete)', { sessionId, turnCount: live.turnCount, isError: event.isError })
+        this.sendTurnState(sessionId, false)
         if (live.turnCount >= AUTO_NAME_STARTING_FROM_TURN) {
           void this.maybeAutoName(sessionId).catch((err) =>
             logger.warn('auto-naming failed', { sessionId, error: err instanceof Error ? err.message : String(err) })

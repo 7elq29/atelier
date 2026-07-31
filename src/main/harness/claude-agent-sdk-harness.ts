@@ -181,6 +181,8 @@ interface ActiveSession {
   query: SdkQuery
   queue: UserMessageQueue
   interruptRequested: boolean
+  /** See `HarnessStartOptions.keepAlive`. */
+  keepAlive: boolean
   /**
    * Uber-internal task-tracking tool state. Verified for real against a live
    * turn (see 03-chat-surface-core's progress notes): this environment's
@@ -222,14 +224,35 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
   async interrupt(sessionId: string): Promise<void> {
     const active = this.sessions.get(sessionId)
     if (!active) return
+    logger.info('harness.interrupt() called', { sessionId })
     active.interruptRequested = true
     await active.query.interrupt().catch(() => undefined)
+    // Belt-and-suspenders teardown for 04-composer-core's now-persistent
+    // sessions (see normalize()'s `continue` after `result`): `query.
+    // interrupt()` only aborts a turn that's actively generating — verified
+    // for real that calling it on an IDLE session (connected, waiting
+    // between turns) does NOT make the query's for-await loop end on its
+    // own (a probe left it hanging 60s+ with no further events). Closing
+    // the input queue directly does end it cleanly either way (also
+    // verified for real: closing while idle ends the loop in ~1s with no
+    // extra event; closing while a turn is mid-flight doesn't cut that
+    // turn's own result/interrupted event short, since it only affects the
+    // NEXT `queue.next()` call, not the generation already in progress) —
+    // so both closeSession's idle teardown and a mid-stream Stop-button
+    // interrupt now terminate the session reliably.
+    active.queue.close()
+    logger.info('harness.interrupt(): input queue closed', { sessionId })
   }
 
   async streamInput(sessionId: string, message: string): Promise<void> {
     const active = this.sessions.get(sessionId)
     if (!active) return
+    logger.info('harness.streamInput() called', { sessionId, textLength: message.length })
     active.queue.push(userMessage(message))
+  }
+
+  isActive(sessionId: string): boolean {
+    return this.sessions.has(sessionId)
   }
 
   private async launch(
@@ -265,6 +288,7 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       query,
       queue,
       interruptRequested: false,
+      keepAlive: opts.keepAlive ?? false,
       taskItems: new Map(),
       pendingTaskCalls: new Map(),
     }
@@ -286,8 +310,37 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
         if (message.type === 'result') {
           if (active.interruptRequested) {
             yield { type: 'interrupted', sessionId, timestamp: new Date().toISOString() }
+            return
           }
-          return
+          if (!active.keepAlive) {
+            // Default, one-shot behavior (unchanged from before
+            // 04-composer-core): this session was never meant to accept a
+            // follow-up (e.g. the auto-naming summarizer's own internal
+            // `harness.start()` call) — nothing will ever push more input
+            // or interrupt it, so ending right after `result` here is what
+            // makes its own `for await (const event of session.events)`
+            // complete at all. A real bug caught during this task: an
+            // earlier version of this fix always fell through here
+            // unconditionally, which hung every one-shot caller forever
+            // (verified for real: `maybeAutoName()` never completed a
+            // single run once this was in place, since nothing ever closes
+            // or interrupts that particular session).
+            return
+          }
+          // Genuinely-live multi-turn session (04-composer-core), opted
+          // into via `HarnessStartOptions.keepAlive`: do NOT tear the query
+          // down here. `query` is fed by `active.queue`, a still-open
+          // `AsyncIterable` — verified for real against the SDK (a two-turn
+          // probe: push message 1, wait for its `result`, then push message
+          // 2 with no `resume()` in between) that the SAME `query()` call
+          // keeps waiting on `queue.next()` and delivers a full second turn
+          // (system/assistant/result) with no reconnect. Falling through
+          // here (instead of returning) is what lets
+          // `SessionManager.sendUserMessage` skip `resume()` for every
+          // follow-up to a session that's still connected — including one
+          // pushed mid-stream, before this turn's own `result` fires, which
+          // the SDK simply folds into the turn already in progress.
+          continue
         }
       }
     } catch (err) {
