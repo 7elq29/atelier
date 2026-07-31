@@ -52,7 +52,10 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
     return snapshot
   })
 
-  ipcMain.handle('session:sendMessage', (_event, sessionId: string, text: string) => manager.sendUserMessage(sessionId, text))
+  ipcMain.handle('session:sendMessage', (_event, sessionId: string, text: string) => {
+    logger.info('session:sendMessage invoked', { sessionId, textLength: text.length })
+    return manager.sendUserMessage(sessionId, text)
+  })
 
   ipcMain.handle('session:interrupt', (_event, sessionId: string) => manager.interrupt(sessionId))
 
