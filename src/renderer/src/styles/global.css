@@ -177,6 +177,34 @@
   align-items: center;
   gap: 4px;
 }
+/* ===== Export-conversation dropdown (10c-enrichment-export-conversation) —
+   copied verbatim from the UI mock's `.export-menu-pop`/`.smi` (lines
+   448-455 of mocks/index.html). ===== */
+.export-menu-pop {
+  position: absolute;
+  top: 40px;
+  right: 16px;
+  width: 170px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-popover);
+  z-index: 40;
+  padding: 4px;
+}
+.export-menu-pop .smi {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  font-size: 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.export-menu-pop .smi:hover {
+  background: var(--bg-hover);
+}
 .empty-main {
   flex: 1;
   display: flex;

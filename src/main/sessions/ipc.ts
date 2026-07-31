@@ -4,10 +4,14 @@
  * in index.ts.
  */
 import { ipcMain, dialog, type BrowserWindow } from 'electron'
+import { writeFile } from 'node:fs/promises'
 import type { CreateSessionOptions, PromptDecision } from '../../shared/session-types'
 import { logger } from '../logger'
 import { openDatabase } from '../db'
 import type { SessionManager } from './manager'
+import { formatTranscriptMarkdown, formatTranscriptJson } from './export-format'
+
+export type ExportFormat = 'markdown' | 'json'
 
 export function registerSessionHandlers(manager: SessionManager, getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('session:pickProjectFolder', async () => {
@@ -109,4 +113,33 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
   ipcMain.handle('session:respondToPrompt', (_event, sessionId: string, requestId: string, decision: PromptDecision) =>
     manager.respondToPrompt(sessionId, requestId, decision)
   )
+
+  // 10c-enrichment-export-conversation: real native Save dialog + real file
+  // write, same pattern as session:pickProjectFolder's showOpenDialog above.
+  // Returns the saved path, or null if the user cancelled the dialog.
+  ipcMain.handle('session:exportTranscript', async (_event, sessionId: string, format: ExportFormat) => {
+    const session = manager.getSession(sessionId)
+    if (!session) return null
+    const messages = manager.listMessages(sessionId)
+
+    const isMarkdown = format === 'markdown'
+    const defaultExt = isMarkdown ? 'md' : 'json'
+    const win = getWindow()
+    const options = {
+      defaultPath: `${session.name}.${defaultExt}`,
+      filters: isMarkdown
+        ? [{ name: 'Markdown', extensions: ['md'] }]
+        : [{ name: 'JSON', extensions: ['json'] }]
+    }
+    const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return null
+
+    const contents = isMarkdown
+      ? formatTranscriptMarkdown(session, messages)
+      : JSON.stringify(formatTranscriptJson(session, messages), null, 2)
+
+    await writeFile(result.filePath, contents, 'utf8')
+    logger.info('session:exportTranscript wrote file', { sessionId, format, filePath: result.filePath })
+    return result.filePath
+  })
 }
