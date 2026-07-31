@@ -45,6 +45,44 @@ function shQuote(value: string): string {
 }
 
 /**
+ * Escapes a value for safe interpolation inside a *double-quoted* POSIX
+ * shell string (as opposed to `shQuote`, which produces a single-quoted
+ * string). Double quotes still allow the shell to expand `$`, `` ` ``, and
+ * `\`, so those (plus the closing `"` itself) must be backslash-escaped.
+ * Single quotes need no escaping inside double quotes.
+ */
+function shDoubleQuoteEscape(value: string): string {
+  return value.replace(/[\\"$`]/g, '\\$&')
+}
+
+/**
+ * Builds the `cd` target for the remote command.
+ *
+ * `shQuote` (single-quoting) is correct for arbitrary path bytes, but it
+ * also disables the remote shell's own `~` expansion — `cd '~'` fails with
+ * "no such file or directory: ~" because a single-quoted `~` is never
+ * tilde-expanded by POSIX shells. Since Gardenia's remote-project-path
+ * field is free text (see NewSessionModal's `remote-project-path` input),
+ * a user typing the completely natural `~` or `~/projects/foo` would break
+ * remote session creation entirely.
+ *
+ * Fix: special-case paths starting with `~` and build them with `$HOME`
+ * (double-quoted, so the *remote* shell expands it) instead of relying on
+ * the shell's own tilde-parsing. Everything else keeps using the existing
+ * single-quoted `shQuote` path unchanged.
+ */
+function remoteCdTarget(cwd: string): string {
+  if (cwd === '~') {
+    return '"$HOME"'
+  }
+  if (cwd.startsWith('~/')) {
+    const rest = cwd.slice(2)
+    return `"$HOME/${shDoubleQuoteEscape(rest)}"`
+  }
+  return shQuote(cwd)
+}
+
+/**
  * Builds the SDK's `spawnClaudeCodeProcess` override for remote/devpod
  * sessions (02-session-lifecycle). Rather than inventing a bespoke remote
  * protocol, this reuses the SDK's own documented escape hatch
@@ -64,7 +102,7 @@ function shQuote(value: string): string {
 function makeRemoteSpawner(host: RemoteHost, remoteCwd: string): (opts: SpawnOptions) => SpawnedProcess {
   return (opts: SpawnOptions): SpawnedProcess => {
     const claudePath = host.remoteExecutablePath ?? 'claude'
-    const remoteCommand = `cd ${shQuote(remoteCwd)} && exec ${shQuote(claudePath)} ${opts.args
+    const remoteCommand = `cd ${remoteCdTarget(remoteCwd)} && exec ${shQuote(claudePath)} ${opts.args
       .map(shQuote)
       .join(' ')}`
     logger.info('spawning remote harness process over ssh', { sshHost: host.sshHost, remoteCwd })

@@ -141,6 +141,15 @@ test.describe('02-session-lifecycle', () => {
       })
       .toBeGreaterThan(1)
 
+    // This is the composer-driven follow-up send path (SessionManager.sendUserMessage,
+    // as opposed to the initial-prompt-driven creation path in the "create local"
+    // test above) — assert on the actual streamed content, not just the count, so
+    // a regression here (e.g. a silently-swallowed harness error, see manager.ts's
+    // reportHarnessFailure) would be caught by a missing "PONG" rather than just an
+    // assistant-message-count mismatch that could also pass via a stray error message.
+    const followUpTexts = await page.locator('[data-testid="transcript-message"][data-role="assistant"]').allTextContents()
+    expect(followUpTexts.some((t) => t.includes('PONG'))).toBe(true)
+
     // Give the fire-and-forget auto-naming call (a full separate harness
     // turn) time to complete and attempt its write.
     await expect
@@ -378,6 +387,61 @@ test.describe('02-session-lifecycle', () => {
       .toBe(true)
 
     appendMainLog(userDataDir)
+  })
+
+  // ── 8b. Remote with a literal `~` project path (tilde-expansion bug) ───
+  test('remote: project path "~" expands to $HOME on the remote host instead of breaking cd', async ({}, testInfo) => {
+    // Regression test for the bug where `cd '~'` (single-quoted, so never
+    // tilde-expanded by the remote shell) failed with
+    // "zsh:cd:1: no such file or directory: ~". The remote-project-path
+    // field is free text (see NewSessionModal), and typing a bare `~` for
+    // "home directory" is completely natural — this must work.
+    testInfo.setTimeout(180_000)
+    await openNewSessionModal(page)
+    await page.getByTestId('host-option-devpod-us-or').click()
+    await page.getByTestId('remote-project-path').fill('~')
+    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PONGTILDE')
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    let tildeSessionId: string
+    await expect
+      .poll(
+        async () => {
+          const rows = await queryDb<{ id: string }>(
+            page,
+            "SELECT id FROM sessions WHERE hostname = 'qingqin-go.devpod-us-or' AND project_path = '~' ORDER BY created_at DESC LIMIT 1"
+          )
+          tildeSessionId = rows[0]?.id
+          return tildeSessionId ?? null
+        },
+        { timeout: 15_000 }
+      )
+      .not.toBeNull()
+
+    // Real remote execution: a real response must stream back over SSH — if
+    // the old bug were present, `cd '~'` would fail before `claude` ever
+    // spawns, and no assistant message (nor any response at all) would
+    // arrive within this window.
+    await expect
+      .poll(
+        async () => {
+          const messages = await page.evaluate((id) => window.gardenia.listSessionMessages(id), tildeSessionId)
+          return messages.some((m) => m.role === 'assistant' && m.content.includes('PONGTILDE'))
+        },
+        { timeout: 90_000 }
+      )
+      .toBe(true)
+
+    await page.screenshot({ path: join(artifactsDir, '02-remote-tilde.png') })
+
+    const log = appendMainLog(userDataDir)
+    expect(log).not.toContain('no such file or directory: ~')
+
+    // Clean up so it doesn't interfere with later group/index assumptions.
+    const tildeRow = page.locator(`[data-testid="session-row"][data-session-id="${tildeSessionId!}"]`)
+    await tildeRow.getByTestId('session-menu-button').click()
+    await tildeRow.getByTestId('menu-close').click()
   })
 
   // ── UI-match: sidebar tokens ──────────────────────────────────────────

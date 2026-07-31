@@ -191,10 +191,15 @@ export class SessionManager {
   async reconnect(sessionId: string): Promise<void> {
     const session = this.store.getSession(sessionId)
     if (!session || session.mode !== 'claude-code') return
-    const host = this.resolveHostFromSession(session.hostname)
-    const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host })
-    this.live.set(sessionId, newLiveStream())
-    void this.consume(sessionId, harnessSession.events)
+try {
+      const host = this.resolveHostFromSession(session.hostname)
+      const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host })
+      this.live.set(sessionId, newLiveStream())
+      void this.consume(sessionId, harnessSession.events)
+    } catch (err) {
+      this.reportHarnessFailure(sessionId, 'reconnect', err)
+      throw err
+    }
   }
 
   // ── Send message into a live (or reconnected) session ──────────────
@@ -219,16 +224,45 @@ export class SessionManager {
     this.sendMessage(sessionId, userMessage)
 
     if (session.mode !== 'claude-code') return
-    const host = this.resolveHostFromSession(session.hostname)
-    const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host })
-    await this.harness.streamInput(sessionId, text)
-    const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
-    this.live.set(sessionId, newLiveStream(previousTurnCount))
-    void this.consume(sessionId, harnessSession.events)
+try {
+      const host = this.resolveHostFromSession(session.hostname)
+      const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host })
+      await this.harness.streamInput(sessionId, text)
+      const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
+      this.live.set(sessionId, newLiveStream(previousTurnCount))
+      void this.consume(sessionId, harnessSession.events)
+    } catch (err) {
+      this.reportHarnessFailure(sessionId, 'sendUserMessage', err)
+      throw err
+    }
   }
 
   async interrupt(sessionId: string): Promise<void> {
     await this.harness.interrupt(sessionId)
+  }
+
+  /**
+   * A thrown error from a harness call (resume/streamInput/start) used to
+   * disappear silently: the IPC promise would reject, but nothing logged it
+   * in the main process and the renderer's `handleSend`/`resumeSession`
+   * callers don't currently catch or surface a rejected
+   * `session:sendMessage`/`session:resume` call (confirmed by inspection —
+   * see App.tsx's `handleSend` and useSessions.ts's `resumeSession`, neither
+   * of which wraps its `await` in try/catch). So in addition to logging,
+   * this turns the failure into the same kind of visible system-role
+   * transcript message that `applyEvent`'s `case 'error':` produces for an
+   * in-stream harness error event — the user always sees SOMETHING in the
+   * chat, regardless of whether the renderer ever handles the rejection.
+   */
+  private reportHarnessFailure(sessionId: string, context: string, err: unknown): void {
+    const errorMessage = err instanceof Error ? err.message : String(err)
+    logger.error('harness call failed', { sessionId, context, error: errorMessage })
+    const message = this.store.addMessage({
+      sessionId,
+      role: 'system',
+      content: `Error: ${errorMessage}`
+    })
+    this.sendMessage(sessionId, message)
   }
 
   // ── Fork / Restart ──────────────────────────────────────────────────
