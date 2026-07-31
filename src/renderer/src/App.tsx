@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import CommandPalette, { type PaletteItem } from './components/CommandPalette'
 import OnboardingWizard from './components/OnboardingWizard'
-import Sidebar, { type PlaceholderSession } from './components/Sidebar'
+import Sidebar from './components/Sidebar'
+import NewSessionModal from './components/NewSessionModal'
 import SettingsPanel from './components/SettingsPanel'
 import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
 import { useConfig } from './hooks/useConfig'
-
-// TODO: replace with the real session list once 02-session-lifecycle exists.
-// This single placeholder entry exists so the command palette / sidebar
-// selection / focus-jump mechanism has something real to operate against.
-const PLACEHOLDER_SESSIONS: PlaceholderSession[] = [{ id: 'welcome', name: 'Welcome session' }]
+import { useSessions } from './hooks/useSessions'
+import type { SessionRecord } from '../../shared/session-types'
 
 function resolveEffectiveTheme(theme: 'system' | 'light' | 'dark'): 'light' | 'dark' {
   if (theme !== 'system') return theme
@@ -17,21 +15,24 @@ function resolveEffectiveTheme(theme: 'system' | 'light' | 'dark'): 'light' | 'd
 }
 
 /**
- * App shell + global nav/settings chrome for 08-global-nav-and-settings,
- * with the Daily Notes / Obsidian-integration sidebar (09) docked to the
- * right of the main area. There's no real session/chat UI yet (that starts
- * in 03-chat-surface-core), so the sidebar's session list is a single
- * placeholder entry — everything else (command palette, collapsed rail,
- * settings, onboarding, notifications, daily notes) is fully real.
+ * App shell + global nav/settings chrome (08) with the real session
+ * lifecycle (02-session-lifecycle) wired in: sidebar backed by SQLite via
+ * useSessions(), New Session flow (local + remote/devpod), a minimal
+ * transcript + composer so create/resume/fork can be verified end-to-end,
+ * plus the Daily Notes / Obsidian-integration sidebar (09) docked to the
+ * right of the main area.
  */
 export default function App(): JSX.Element {
   const [appVersion, setAppVersion] = useState<string | null>(null)
   const [date, setDate] = useState<string | null>(null)
   const { config, loaded, updateConfig } = useConfig()
+  const sessions = useSessions()
 
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [composerText, setComposerText] = useState('')
 
   useEffect(() => {
     window.gardenia
@@ -86,8 +87,16 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  function selectSession(id: string): void {
-    setActiveSessionId(id)
+  const allSessions = useMemo(
+    () => [...sessions.activeSessions, ...sessions.historySessions],
+    [sessions.activeSessions, sessions.historySessions]
+  )
+
+  async function selectSession(session: SessionRecord): Promise<void> {
+    setActiveSessionId(session.id)
+    if (session.closedAt) {
+      await sessions.resumeSession(session.id)
+    }
   }
 
   // "Focus jumped to that session": move real DOM focus to the row, not just
@@ -98,7 +107,7 @@ export default function App(): JSX.Element {
       `[data-testid="session-row"][data-session-id="${activeSessionId}"]`
     )
     row?.focus()
-  }, [activeSessionId])
+  }, [activeSessionId, allSessions.length])
 
   const paletteItems: PaletteItem[] = useMemo(
     () => [
@@ -123,17 +132,20 @@ export default function App(): JSX.Element {
         category: 'Action',
         run: () => updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })
       },
-      ...PLACEHOLDER_SESSIONS.map((session) => ({
+      {
+        id: 'new-session',
+        label: 'New Session',
+        category: 'Action',
+        run: () => setNewSessionOpen(true)
+      },
+      ...allSessions.map((session) => ({
         id: `session-${session.id}`,
         label: session.name,
         category: 'Session',
-        // TODO: replace this stub jump with real session-panel navigation once
-        // 02-session-lifecycle / 03-chat-surface-core exist — for now it just
-        // proves the palette -> selection -> focus mechanism end-to-end.
-        run: () => selectSession(session.id)
+        run: () => void selectSession(session)
       }))
     ],
-    [config.theme, config.sidebarCollapsed]
+    [config.theme, config.sidebarCollapsed, allSessions]
   )
 
   function handleOnboardingFinish(identity: { name: string; email: string }): void {
@@ -144,7 +156,15 @@ export default function App(): JSX.Element {
     updateConfig({ onboardingCompleted: true })
   }
 
-  const activeSession = PLACEHOLDER_SESSIONS.find((s) => s.id === activeSessionId) ?? null
+  async function handleSend(): Promise<void> {
+    if (!activeSessionId || !composerText.trim()) return
+    const text = composerText.trim()
+    setComposerText('')
+    await sessions.sendMessage(activeSessionId, text)
+  }
+
+  const activeSession = allSessions.find((s) => s.id === activeSessionId) ?? null
+  const activeMessages = activeSessionId ? sessions.messagesBySession[activeSessionId] ?? [] : []
   const showOnboarding = loaded && !config.onboardingCompleted
 
   return (
@@ -153,34 +173,90 @@ export default function App(): JSX.Element {
         <Sidebar
           collapsed={config.sidebarCollapsed}
           onToggleCollapse={() => updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })}
-          sessions={PLACEHOLDER_SESSIONS}
+          activeSessions={sessions.activeSessions}
+          historySessions={sessions.historySessions}
           activeSessionId={activeSessionId}
-          onSelectSession={selectSession}
+          onSelectSession={(s) => void selectSession(s)}
           onOpenPalette={() => setPaletteOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
+          onNewSession={() => setNewSessionOpen(true)}
+          onRename={(id, name) => void sessions.renameSession(id, name)}
+          onTogglePin={(id, pinned) => void sessions.setPinned(id, pinned)}
+          onClose={(id) => {
+            if (activeSessionId === id) setActiveSessionId(null)
+            void sessions.closeSession(id)
+          }}
+          onDelete={(id) => {
+            if (activeSessionId === id) setActiveSessionId(null)
+            void sessions.deleteSession(id)
+          }}
+          onFork={(id) => void sessions.forkSession(id).then((forked) => setActiveSessionId(forked.id))}
+          onRestart={(id) => void sessions.restartSession(id).then((forked) => setActiveSessionId(forked.id))}
         />
 
         <div className="main-area">
           <div className="topbar">
-            <span className="title">{activeSession ? activeSession.name : 'Gardenia'}</span>
+            <span className="title" data-testid="main-title">
+              {activeSession ? activeSession.name : 'Gardenia'}
+            </span>
           </div>
-          <div className="empty-main" data-testid="main-empty-state">
-            <div>{activeSession ? `Viewing: ${activeSession.name}` : 'No session selected'}</div>
-            <div className="preview-stack">
-              <div className="preview-block" data-testid="interface-preview">
-                Interface text preview
+
+          {activeSession ? (
+            <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <div className="transcript" data-testid="transcript">
+                {activeMessages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={m.role === 'user' ? 'msg-user' : m.role === 'system' ? 'msg-system' : 'msg-assistant'}
+                    data-testid="transcript-message"
+                    data-role={m.role}
+                  >
+                    {m.content}
+                  </div>
+                ))}
               </div>
-              <div className="preview-block agent-message-preview" data-testid="agent-message-preview">
-                Agent message preview — this is what assistant replies will look like.
-              </div>
-              <div className="preview-block terminal-preview" data-testid="terminal-preview">
-                $ echo &quot;terminal preview&quot;
+              {activeSession.mode === 'claude-code' && (
+                <div className="composer-wrap">
+                  <div className="composer-box">
+                    <textarea
+                      data-testid="composer-input"
+                      placeholder="Message Gardenia…"
+                      rows={1}
+                      value={composerText}
+                      onChange={(e) => setComposerText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          void handleSend()
+                        }
+                      }}
+                    />
+                    <button className="send-btn btn btn-primary" data-testid="send-button" onClick={() => void handleSend()}>
+                      Send
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="empty-main" data-testid="main-empty-state">
+              <div>No session selected</div>
+              <div className="preview-stack">
+                <div className="preview-block" data-testid="interface-preview">
+                  Interface text preview
+                </div>
+                <div className="preview-block agent-message-preview" data-testid="agent-message-preview">
+                  Agent message preview — this is what assistant replies will look like.
+                </div>
+                <div className="preview-block terminal-preview" data-testid="terminal-preview">
+                  $ echo &quot;terminal preview&quot;
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
           <div className="app-shell__debug" data-testid="debug-corner">
-            <span className="label-caps">version</span>{' '}
-            <span data-testid="app-version">{appVersion ?? 'loading…'}</span>
+            <span className="label-caps">version</span> <span data-testid="app-version">{appVersion ?? 'loading…'}</span>
           </div>
         </div>
 
@@ -188,6 +264,16 @@ export default function App(): JSX.Element {
       </div>
 
       <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
+
+      <NewSessionModal
+        isOpen={newSessionOpen}
+        hosts={sessions.hosts}
+        onClose={() => setNewSessionOpen(false)}
+        onCreate={async (opts) => {
+          const created = await sessions.createSession(opts)
+          setActiveSessionId(created.id)
+        }}
+      />
 
       <SettingsPanel
         isOpen={settingsOpen}

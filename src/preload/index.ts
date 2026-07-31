@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { GardeniaConfig } from '../shared/config'
 import type { DailyNote, ReadDailyNoteResult } from '../shared/daily-note-types'
+import type {
+  CreateSessionOptions,
+  MessageRecord,
+  RemoteHostOption,
+  SessionLifecycleEvent,
+  SessionRecord,
+  SessionStreamEvent
+} from '../shared/session-types'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -37,7 +45,42 @@ const api = {
     return () => ipcRenderer.removeListener('daily-note:changed', listener)
   },
   /** Test-only: delays the next write-daily-note call. No-op if not registered (test builds only). */
-  testDelayNextWrite: (ms: number): Promise<void> => ipcRenderer.invoke('daily-note:testDelayNextWrite', ms)
+  testDelayNextWrite: (ms: number): Promise<void> => ipcRenderer.invoke('daily-note:testDelayNextWrite', ms),
+
+  // ── Sessions (02-session-lifecycle) ──────────────────────────────
+  pickProjectFolder: (): Promise<string | null> => ipcRenderer.invoke('session:pickProjectFolder'),
+  listHosts: (): Promise<RemoteHostOption[]> => ipcRenderer.invoke('session:listHosts'),
+  listActiveSessions: (): Promise<SessionRecord[]> => ipcRenderer.invoke('session:listActive'),
+  listHistorySessions: (): Promise<SessionRecord[]> => ipcRenderer.invoke('session:listHistory'),
+  listSessionMessages: (sessionId: string): Promise<MessageRecord[]> =>
+    ipcRenderer.invoke('session:listMessages', sessionId),
+  createSession: (opts: CreateSessionOptions): Promise<SessionRecord> => ipcRenderer.invoke('session:create', opts),
+  resumeSession: (sessionId: string): Promise<{ session: SessionRecord; messages: MessageRecord[] }> =>
+    ipcRenderer.invoke('session:resume', sessionId),
+  sendSessionMessage: (sessionId: string, text: string): Promise<void> =>
+    ipcRenderer.invoke('session:sendMessage', sessionId, text),
+  interruptSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:interrupt', sessionId),
+  forkSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:fork', sessionId),
+  restartSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:restart', sessionId),
+  closeSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:close', sessionId),
+  deleteSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:delete', sessionId),
+  renameSession: (sessionId: string, name: string): Promise<SessionRecord> =>
+    ipcRenderer.invoke('session:rename', sessionId, name),
+  setSessionPinned: (sessionId: string, pinned: boolean): Promise<SessionRecord> =>
+    ipcRenderer.invoke('session:setPinned', sessionId, pinned),
+  onSessionMessage: (callback: (event: SessionStreamEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionStreamEvent): void => callback(payload)
+    ipcRenderer.on('session:message', listener)
+    return () => ipcRenderer.removeListener('session:message', listener)
+  },
+  onSessionLifecycle: (callback: (event: SessionLifecycleEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionLifecycleEvent): void => callback(payload)
+    ipcRenderer.on('session:lifecycle', listener)
+    return () => ipcRenderer.removeListener('session:lifecycle', listener)
+  },
+  /** Test-only: raw read-only SQL query against the real SQLite DB (see session:debugQueryDb handler). */
+  debugQueryDb: <T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> =>
+    ipcRenderer.invoke('debug:queryDb', sql, params)
 }
 
 contextBridge.exposeInMainWorld('gardenia', api)

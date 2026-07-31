@@ -5,6 +5,11 @@ import { closeDatabase, openDatabase } from './db'
 import { getLogFilePath, logger, rendererLogger } from './logger'
 import type { GardeniaConfig } from '../shared/config'
 import { registerDailyNoteHandlers } from './daily-notes-handlers'
+import { ClaudeAgentSdkHarness } from './harness'
+import { SessionStore } from './sessions/store'
+import { SessionManager } from './sessions/manager'
+import { createStaticHostResolver } from './sessions/hosts'
+import { registerSessionHandlers } from './sessions/ipc'
 
 const isDev = !app.isPackaged
 let mainWindow: BrowserWindow | null = null
@@ -41,7 +46,7 @@ function createWindow(): BrowserWindow {
   return win
 }
 
-function registerIpcHandlers(): void {
+function registerIpcHandlers(sessionManager: SessionManager): void {
   ipcMain.handle('app:getVersion', () => {
     const version = app.getVersion()
     logger.info('ipc app:getVersion invoked', { version })
@@ -86,13 +91,20 @@ function registerIpcHandlers(): void {
   })
 
   registerDailyNoteHandlers(() => mainWindow)
+  registerSessionHandlers(sessionManager, () => mainWindow)
 }
 
 app.whenReady().then(() => {
   // Initialize logging + DB helper before anything else so "app ready" is
   // always the first line every later feature's e2e proof can grep for.
-  openDatabase()
-  registerIpcHandlers()
+  const db = openDatabase()
+  const sessionStore = new SessionStore(db)
+  // Single harness instance for the app's lifetime (per 01-harness-abstraction's
+  // guidance) — sessions/turns are keyed off its own internal map, not
+  // re-created per IPC call.
+  const harness = new ClaudeAgentSdkHarness()
+  const sessionManager = new SessionManager(sessionStore, harness, createStaticHostResolver(), () => mainWindow)
+  registerIpcHandlers(sessionManager)
 
   logger.info('app ready', { version: app.getVersion(), platform: process.platform })
 

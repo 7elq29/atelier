@@ -20,14 +20,64 @@
  * via dynamic `import()`, which Node allows from CJS regardless of target
  * module format.
  */
+import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import type {
   Options as SdkOptions,
   Query as SdkQuery,
   SDKMessage,
   SDKUserMessage,
+  SpawnedProcess,
+  SpawnOptions,
 } from '@anthropic-ai/claude-agent-sdk'
-import type { HarnessDriver, HarnessEvent, HarnessSession, HarnessStartOptions } from './types'
+import type { HarnessDriver, HarnessEvent, HarnessSession, HarnessStartOptions, RemoteHost } from './types'
+import { logger } from '../logger'
+
+/**
+ * Single-quotes a value for safe interpolation into a POSIX shell command
+ * string (the remote side of the SSH command below runs through the
+ * destination's login shell, so args built locally as an argv array must be
+ * re-quoted here — unlike the local `spawn(cmd, args[])` path, which never
+ * goes through a shell at all).
+ */
+function shQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+/**
+ * Builds the SDK's `spawnClaudeCodeProcess` override for remote/devpod
+ * sessions (02-session-lifecycle). Rather than inventing a bespoke remote
+ * protocol, this reuses the SDK's own documented escape hatch
+ * ("Use this to run Claude Code in VMs, containers, or remote environments"):
+ * the SDK still builds the exact same `claude --input-format stream-json
+ * --output-format stream-json ...` argv it would for a local run, but instead
+ * of spawning it directly we spawn `ssh <host> -- <cd remoteCwd> && exec
+ * claude <args>`, with the remote host's OWN `~/.claude/settings.json`
+ * supplying auth (verified for real against qingqin-go.devpod-us-or: a
+ * plain, unauthenticated-looking `ssh` connection resolves the same
+ * `apiKeyHelper` mechanism as the local machine once `claude` is on PATH
+ * there). `ssh`'s stdio is a transparent pipe in non-interactive mode, so the
+ * SDK's stream-json protocol passes through unchanged, and Node's
+ * `ChildProcess` already satisfies the `SpawnedProcess` shape (stdin/stdout
+ * streams, kill/on/once/off, exitCode/signalCode) with no adapter needed.
+ */
+function makeRemoteSpawner(host: RemoteHost, remoteCwd: string): (opts: SpawnOptions) => SpawnedProcess {
+  return (opts: SpawnOptions): SpawnedProcess => {
+    const claudePath = host.remoteExecutablePath ?? 'claude'
+    const remoteCommand = `cd ${shQuote(remoteCwd)} && exec ${shQuote(claudePath)} ${opts.args
+      .map(shQuote)
+      .join(' ')}`
+    logger.info('spawning remote harness process over ssh', { sshHost: host.sshHost, remoteCwd })
+    const child = spawn('ssh', ['-o', 'BatchMode=yes', host.sshHost, '--', remoteCommand], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    child.stderr?.on('data', (chunk: Buffer) => {
+      logger.debug('remote harness stderr', { sshHost: host.sshHost, chunk: chunk.toString('utf-8').slice(0, 2000) })
+    })
+    // Node's ChildProcess already implements every member of SpawnedProcess.
+    return child as unknown as SpawnedProcess
+  }
+}
 
 type SdkModule = typeof import('@anthropic-ai/claude-agent-sdk')
 
@@ -141,6 +191,11 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       // contract this makes the subprocess inherit process.env verbatim,
       // which is the auth-inheritance behavior this task must prove.
       ...(opts.env ? { env: opts.env } : {}),
+      // Remote/devpod sessions: swap the local spawn for one that tunnels
+      // over SSH. `cwd` above is still required by the SDK's types but is
+      // meaningless to the (never-invoked) local spawn path in this case —
+      // the real working directory is applied inside the ssh command itself.
+      ...(opts.host ? { spawnClaudeCodeProcess: makeRemoteSpawner(opts.host, opts.cwd) } : {}),
     }
 
     const query = sdk.query({ prompt: queue, options })

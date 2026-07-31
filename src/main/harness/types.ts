@@ -11,9 +11,21 @@
  * Node and can be exercised from a standalone script (see src/e2e/).
  */
 
+/**
+ * A remote host to execute the agent process on, added in 02-session-lifecycle
+ * for devpod/SSH sessions. `cwd` on `HarnessStartOptions` is interpreted as a
+ * path on this host (not the local machine) when `host` is set.
+ */
+export interface RemoteHost {
+  /** SSH destination, e.g. "qingqin-go.devpod-us-or" (a plain `ssh <host>`-resolvable name). */
+  sshHost: string
+  /** Absolute path to the `claude` executable on the remote host. Defaults to "claude" (resolved via the remote shell's PATH). */
+  remoteExecutablePath?: string
+}
+
 /** Options accepted by `HarnessDriver.start`. */
 export interface HarnessStartOptions {
-  /** Working directory the agent should operate in. */
+  /** Working directory the agent should operate in (on `host`, if set — otherwise local). */
   cwd: string
   /** Optional model override; defaults to the harness's own default. */
   model?: string
@@ -25,9 +37,16 @@ export interface HarnessStartOptions {
    * Environment variables for the underlying process/client. When omitted,
    * the harness inherits `process.env` as-is (this is how auth — e.g.
    * `ANTHROPIC_BASE_URL` — flows through without any credential handling
-   * in Gardenia itself).
+   * in Gardenia itself). Ignored for remote sessions (the remote host's own
+   * `claude` settings supply its auth).
    */
   env?: NodeJS.ProcessEnv
+  /**
+   * When set, the agent process runs on this remote host over SSH instead of
+   * locally. Minimal, backward-compatible addition — omitted entirely for
+   * existing local-only callers.
+   */
+  host?: RemoteHost
 }
 
 /** A single todo item as reported by the agent's planning tool. */
