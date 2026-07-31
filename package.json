@@ -8,6 +8,7 @@
   "scripts": {
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "dev": "electron-vite dev",
+    "dev:full": "bash scripts/dev-full.sh",
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build && tsc -p tsconfig.e2e.json",
     "package": "npm run build && electron-builder --config electron-builder.yml",
     "test:e2e": "playwright test",
