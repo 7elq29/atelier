@@ -135,20 +135,28 @@ test.describe('02-session-lifecycle', () => {
     await page.getByTestId('composer-input').fill('Reply with exactly the single word: PONG')
     await page.getByTestId('send-button').click()
 
-    await expect
-      .poll(async () => page.locator('[data-testid="transcript-message"][data-role="assistant"]').count(), {
-        timeout: 60_000
-      })
-      .toBeGreaterThan(1)
-
     // This is the composer-driven follow-up send path (SessionManager.sendUserMessage,
     // as opposed to the initial-prompt-driven creation path in the "create local"
-    // test above) — assert on the actual streamed content, not just the count, so
-    // a regression here (e.g. a silently-swallowed harness error, see manager.ts's
-    // reportHarnessFailure) would be caught by a missing "PONG" rather than just an
-    // assistant-message-count mismatch that could also pass via a stray error message.
-    const followUpTexts = await page.locator('[data-testid="transcript-message"][data-role="assistant"]').allTextContents()
-    expect(followUpTexts.some((t) => t.includes('PONG'))).toBe(true)
+    // test above) — assert on the actual streamed content, not just the message
+    // count, so a regression here (e.g. a silently-swallowed harness error, see
+    // manager.ts's reportHarnessFailure) would be caught by a missing "PONG" rather
+    // than just an assistant-message-count mismatch that could also pass via a
+    // stray error message.
+    //
+    // Poll for the CONTENT itself, not just the row count: 03-chat-surface-core's
+    // progressive-streaming model inserts an empty placeholder message the instant
+    // the first text_delta arrives (so session:streamDelta has a stable id to
+    // target), then fills it in over that separate channel — so the assistant
+    // message count can go above 1 well before the streamed text has landed.
+    await expect
+      .poll(
+        async () => {
+          const texts = await page.locator('[data-testid="transcript-message"][data-role="assistant"]').allTextContents()
+          return texts.some((t) => t.includes('PONG'))
+        },
+        { timeout: 60_000 }
+      )
+      .toBe(true)
 
     // Give the fire-and-forget auto-naming call (a full separate harness
     // turn) time to complete and attempt its write.
