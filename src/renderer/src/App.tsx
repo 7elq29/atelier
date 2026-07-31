@@ -285,6 +285,8 @@ export default function App(): JSX.Element {
                               onSend={(text) => void handleSend(text)}
                               onInterrupt={() => void handleInterrupt()}
                               busy={sessions.busyBySession[activeSession.id] ?? false}
+                              projectPath={activeSession.projectPath}
+                              onFork={() => void sessions.forkSession(activeSession.id).then((forked) => setActiveSessionId(forked.id))}
                             />
                           )}
                         </div>
