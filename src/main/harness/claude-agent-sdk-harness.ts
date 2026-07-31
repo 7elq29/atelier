@@ -443,6 +443,42 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     // immediately after creating/reconnecting a session.
     void this.pump(sessionId, query, active)
 
+    // bug #56: seed the live slash-command registry from the SDK's own
+    // control-protocol init response. This is deliberately NOT read off the
+    // streamed `system`/`init` SDKMessage (see toHarnessEvents' 'init'
+    // handling below) — that message only carries `slash_commands: string[]`
+    // (bare names, no descriptions/argumentHint/aliases), whereas
+    // `query.initializationResult()` resolves the full
+    // `SDKControlInitializeResponse.commands: SlashCommand[]` (verified
+    // against the installed `@anthropic-ai/claude-agent-sdk`'s `sdk.d.ts`:
+    // `SDKControlInitializeResponse` at ~line 3393, `commands:
+    // coreTypes.SlashCommand[]` at ~line 3394; `SlashCommand` itself at
+    // ~line 6495: `{ name, description, argumentHint, aliases? }`). Runs
+    // fire-and-forget alongside `pump` above — whichever settles first, the
+    // consumer (SessionManager) just sees an ordinary `commands_updated`
+    // event land on the shared `eventQueue`.
+    void query
+      .initializationResult()
+      .then((initResult) => {
+        active.eventQueue.push({
+          type: 'commands_updated',
+          sessionId,
+          timestamp: new Date().toISOString(),
+          commands: initResult.commands.map((c) => ({
+            name: c.name,
+            description: c.description,
+            argumentHint: c.argumentHint,
+            aliases: c.aliases,
+          })),
+        })
+      })
+      .catch((err) => {
+        logger.warn('initializationResult() failed; live slash-command list unavailable for this session', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+
     return { sessionId, events: this.drain(active) }
   }
 
@@ -665,6 +701,28 @@ function toHarnessEvents(sessionId: string, message: SDKMessage, active: ActiveS
         model: message.model,
         cwd: message.cwd,
         apiKeySource: message.apiKeySource,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'commands_changed') {
+    // bug #56: fire-and-forget mid-session push of the FULL slash-command
+    // list (verified against `SDKCommandsChangedMessage`, sdk.d.ts ~line
+    // 2880: "Clients should REPLACE their cached command list with this
+    // payload") — e.g. new skills discovered as the agent explores a
+    // subdirectory. Same shape as the one-time `initializationResult()`
+    // seed above, so SessionManager/renderer handle both identically.
+    return [
+      {
+        type: 'commands_updated',
+        sessionId,
+        timestamp,
+        commands: message.commands.map((c) => ({
+          name: c.name,
+          description: c.description,
+          argumentHint: c.argumentHint,
+          aliases: c.aliases,
+        })),
       },
     ]
   }

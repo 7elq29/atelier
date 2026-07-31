@@ -13,7 +13,8 @@ import type {
   SessionGroupRecord,
   SessionLifecycleEvent,
   SessionRecord,
-  SessionStatus
+  SessionStatus,
+  SlashCommandInfo
 } from '../../shared/session-types'
 import type {
   AskUserQuestionContent,
@@ -214,6 +215,18 @@ export class SessionManager {
    */
   private sendTurnState(sessionId: string, busy: boolean): void {
     this.getWindow()?.webContents.send('session:turnState', { sessionId, busy })
+  }
+
+  /**
+   * Live slash-command registry push (bug #56) — see `SessionCommandsEvent`'s
+   * doc comment (shared/session-types.ts). Fired once shortly after
+   * start/resume (from the harness's `commands_updated` event, itself
+   * sourced from the SDK's `query.initializationResult()`) and again on any
+   * mid-session `commands_changed` push from the SDK. Always the FULL
+   * replacement list — never a delta.
+   */
+  private sendCommands(sessionId: string, commands: SlashCommandInfo[]): void {
+    this.getWindow()?.webContents.send('session:commands', { sessionId, commands })
   }
 
   private resolveHost(hostId: string): RemoteHost | undefined {
@@ -757,6 +770,15 @@ try {
         // `system`/`init` message (`event.model`), independent of whatever
         // string was requested via `HarnessStartOptions.model`.
         logger.info('harness event: session_started', { sessionId, model: event.model, apiKeySource: event.apiKeySource })
+        return
+
+      case 'commands_updated':
+        // bug #56: not a transcript row — a live sidecar list for the
+        // composer's slash-command autocomplete. Logged so e2e specs can
+        // grep proof the list actually came from the SDK (not a re-hardcoded
+        // client array).
+        logger.info('harness event: commands_updated', { sessionId, commandNames: event.commands.map((c) => c.name) })
+        this.sendCommands(sessionId, event.commands)
         return
 
       case 'permission_request': {

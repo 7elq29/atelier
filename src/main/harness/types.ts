@@ -110,6 +110,19 @@ export interface HarnessTodoItem {
 }
 
 /**
+ * One slash command the SDK reports as actually available for a session
+ * (bug #56). Field-for-field mirror of the installed
+ * `@anthropic-ai/claude-agent-sdk`'s own `SlashCommand` type (verified
+ * against `sdk.d.ts:6495`: `{ name, description, argumentHint, aliases? }`).
+ */
+export interface HarnessSlashCommand {
+  name: string
+  description: string
+  argumentHint?: string
+  aliases?: string[]
+}
+
+/**
  * Interactive-prompt types (05-interactive-prompts). All three interaction
  * kinds below — permission prompts, `AskUserQuestion`, and plan-mode's
  * `ExitPlanMode` — are, per the real `@anthropic-ai/claude-agent-sdk`
@@ -285,6 +298,25 @@ export type HarnessEvent =
       toolUseId: string
       plan: string
       planFilePath?: string
+    }
+  | {
+      /**
+       * Live slash-command registry for this session (bug #56). Pushed once
+       * shortly after `start()`/`resume()`, sourced from the SDK's own
+       * control-protocol `query.initializationResult()` call (richer than
+       * the plain `slash_commands: string[]` on the streamed `system`/`init`
+       * SDKMessage — that one lacks descriptions/argumentHint/aliases
+       * entirely), and again any time the SDK's own `commands_changed`
+       * system message fires (e.g. new skills discovered dynamically as the
+       * agent explores a subdirectory). `commands` is always the FULL
+       * replacement list, never a delta — see `SDKCommandsChangedMessage`'s
+       * own doc comment in `sdk.d.ts` for why a client must replace rather
+       * than merge.
+       */
+      type: 'commands_updated'
+      sessionId: string
+      timestamp: string
+      commands: HarnessSlashCommand[]
     }
 
 /** A running (or just-started) agent turn: its id plus its event stream. */

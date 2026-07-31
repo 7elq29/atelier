@@ -8,7 +8,8 @@ import type {
   RemoteHostOption,
   SessionGroupRecord,
   SessionRecord,
-  SessionStatus
+  SessionStatus,
+  SlashCommandInfo
 } from '../../../shared/session-types'
 
 export interface UseSessionsResult {
@@ -21,6 +22,8 @@ export interface UseSessionsResult {
   allTags: string[]
   /** True while a turn is in flight for that session — drives the composer's Send/Stop toggle (04-composer-core). */
   busyBySession: Record<string, boolean>
+  /** Live slash-command registry per session (bug #56) — see SessionCommandsEvent's doc comment. Empty until the harness's first push lands. */
+  commandsBySession: Record<string, SlashCommandInfo[]>
   refresh: () => Promise<void>
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
@@ -63,6 +66,7 @@ export function useSessions(): UseSessionsResult {
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>({})
   const [allTags, setAllTags] = useState<string[]>([])
   const [busyBySession, setBusyBySession] = useState<Record<string, boolean>>({})
+  const [commandsBySession, setCommandsBySession] = useState<Record<string, SlashCommandInfo[]>>({})
   const messagesRef = useRef(messagesBySession)
   messagesRef.current = messagesBySession
 
@@ -134,6 +138,13 @@ export function useSessions(): UseSessionsResult {
     const offTurnState = window.gardenia.onSessionTurnState(({ sessionId, busy }) => {
       setBusyBySession((prev) => (prev[sessionId] === busy ? prev : { ...prev, [sessionId]: busy }))
     })
+    // Live slash-command registry (bug #56): always REPLACE the cached list
+    // for this session, never merge — matches SessionCommandsEvent's own
+    // doc comment (the SDK's own commands_changed push is itself a full
+    // replacement, not a delta).
+    const offCommands = window.gardenia.onSessionCommands(({ sessionId, commands }) => {
+      setCommandsBySession((prev) => ({ ...prev, [sessionId]: commands }))
+    })
     return () => {
       offMessage()
       offDelta()
@@ -141,6 +152,7 @@ export function useSessions(): UseSessionsResult {
       offStatus()
       offGroup()
       offTurnState()
+      offCommands()
     }
   }, [refresh, refreshGroups])
 
@@ -279,6 +291,7 @@ export function useSessions(): UseSessionsResult {
     statuses,
     allTags,
     busyBySession,
+    commandsBySession,
     refresh,
     createSession,
     resumeSession,

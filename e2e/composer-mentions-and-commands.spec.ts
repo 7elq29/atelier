@@ -1,5 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -52,12 +52,14 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
   let userDataDir: string
   let projectDir: string
   let sessionId: string
+  let logPath: string
 
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-mentions-'))
     seedSkipOnboarding(userDataDir)
     projectDir = buildFixtureProject()
     ;({ app: electronApp, page } = await launchApp(userDataDir))
+    logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
   })
 
   test.afterAll(async () => {
@@ -136,22 +138,51 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
     const popover = page.getByTestId('slash-popover')
     await expect(popover).toBeVisible()
     const items = page.getByTestId('slash-item')
-    await expect(items).toHaveCount(3)
+    // Local, Gardenia-only commands (bug #56) always come first, in this
+    // fixed order, since Composer.tsx merges `[...local, ...live]`.
+    // Anything AFTER them is the harness's LIVE SDK command registry
+    // (`liveSlashCommands`, sourced from `query.initializationResult()` /
+    // `commands_changed`) — its exact contents can vary by installed SDK
+    // version and which skills/plugins are discovered, so this only pins
+    // the local prefix and a lower bound on total count, not an exact list.
     const commands = await items.evaluateAll((els) => els.map((el) => el.getAttribute('data-command')))
-    expect(commands).toEqual(['/clear', '/interrupt', '/fork'])
+    expect(commands.slice(0, 4)).toEqual(['/clear', '/interrupt', '/fork', '/model'])
+    expect(commands.length).toBeGreaterThanOrEqual(4)
 
     await page.screenshot({ path: join(artifactsDir, '10e-slash-command-popover.png') })
 
-    // Arrow-down twice to reach /fork, confirm the "selected" class tracks it.
+    // Arrow-down three times to reach /model (now at index 3).
     await textarea.press('ArrowDown')
     await textarea.press('ArrowDown')
-    await expect(items.nth(2)).toHaveClass(/selected/)
+    await textarea.press('ArrowDown')
+    await expect(items.nth(3)).toHaveClass(/selected/)
 
     // Escape dismisses without running anything.
     await textarea.press('Escape')
     await expect(popover).toHaveCount(0)
     await expect(textarea).toHaveValue('/')
     await textarea.fill('')
+  })
+
+  // ── 4b. The live registry actually came from the SDK, not a re-hardcoded
+  // 4th/5th client array — proven by grepping the main-process log for the
+  // `commands_updated` harness event this session's real `query.
+  // initializationResult()` call produced (bug #56).
+  test('live slash-command list is sourced from the real SDK registry (log evidence)', async () => {
+    await expect
+      .poll(
+        () => {
+          const raw = readFileSync(logPath, 'utf-8')
+          return raw
+            .trim()
+            .split('\n')
+            .filter(Boolean)
+            .map((l) => JSON.parse(l))
+            .some((e) => e.msg === 'harness event: commands_updated' && e.sessionId === sessionId)
+        },
+        { timeout: 15_000 }
+      )
+      .toBe(true)
   })
 
   // ── 5. Selecting a slash command runs a REAL action: /clear ────────────

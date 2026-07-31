@@ -231,3 +231,39 @@ export type PromptDecision =
   | { kind: 'permission'; decision: 'allow' | 'deny'; alwaysAllow?: boolean }
   | { kind: 'ask_user_question'; answers: Record<string, string>; freeText?: string }
   | { kind: 'plan'; decision: 'accept' | 'reject' | 'keep_planning'; feedback?: string }
+
+/**
+ * One slash command the SDK reports as actually available for a session
+ * (bug #56 — the live command registry). Field-for-field mirror of
+ * `@anthropic-ai/claude-agent-sdk`'s own `SlashCommand` type (verified
+ * against the installed `sdk.d.ts:6495`: `{ name, description,
+ * argumentHint, aliases? }`), redeclared here — rather than imported —
+ * since `shared/` is loaded by the renderer bundle, which cannot pull in
+ * the (Node/ESM-only) SDK package at all (see `EffortLevel`'s doc comment
+ * above for the same reasoning).
+ */
+export interface SlashCommandInfo {
+  name: string
+  description: string
+  argumentHint?: string
+  aliases?: string[]
+}
+
+/**
+ * Live slash-command list push (bug #56), forwarded main -> renderer
+ * whenever the harness's real command registry for a session is known or
+ * changes: once shortly after session start/resume (from the SDK's
+ * `query.initializationResult()`, i.e. `SDKControlInitializeResponse.commands`
+ * — sdk.d.ts:3394/3398) and again any time the SDK pushes a
+ * `commands_changed` system message mid-session (`SDKCommandsChangedMessage`,
+ * sdk.d.ts:2880 — e.g. new skills discovered as the agent explores a
+ * subdirectory). `commands` is the FULL replacement list each time, per
+ * that type's own doc comment ("`supportedCommands()` is captured once at
+ * initialize and never reflects mid-session changes, so a client re-fetch
+ * would return the stale init list") — consumers should replace their
+ * cached list, never merge into it.
+ */
+export interface SessionCommandsEvent {
+  sessionId: string
+  commands: SlashCommandInfo[]
+}

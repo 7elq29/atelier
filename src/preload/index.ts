@@ -9,6 +9,7 @@ import type {
   MessageSearchHit,
   PromptDecision,
   RemoteHostOption,
+  SessionCommandsEvent,
   SessionGroupEvent,
   SessionGroupRecord,
   SessionLifecycleEvent,
@@ -152,6 +153,12 @@ const api = {
     const listener = (_event: unknown, payload: SessionTurnStateEvent): void => callback(payload)
     ipcRenderer.on('session:turnState', listener)
     return () => ipcRenderer.removeListener('session:turnState', listener)
+  },
+  /** Live slash-command registry push (bug #56) — see SessionCommandsEvent. Fires once shortly after session start/resume and again on any mid-session SDK `commands_changed` push; always the FULL replacement list. */
+  onSessionCommands: (callback: (event: SessionCommandsEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionCommandsEvent): void => callback(payload)
+    ipcRenderer.on('session:commands', listener)
+    return () => ipcRenderer.removeListener('session:commands', listener)
   },
   /** Test-only: raw read-only SQL query against the real SQLite DB (see session:debugQueryDb handler). */
   debugQueryDb: <T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> =>

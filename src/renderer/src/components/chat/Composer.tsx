@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { FileTreeNode } from '../../../../shared/panel-types'
-import type { ImageAttachment, ModelSelection } from '../../../../shared/session-types'
+import type { ImageAttachment, ModelSelection, SlashCommandInfo } from '../../../../shared/session-types'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
 const MAX_TEXTAREA_HEIGHT = 160
@@ -9,18 +9,63 @@ const MAX_TEXTAREA_HEIGHT = 160
 const MAX_MENTION_MATCHES = 20
 
 /**
- * Model/effort options for the picker (10f-enrichment-model-effort-picker).
- * Every id below is a REAL model identifier — verified directly against the
- * installed `@anthropic-ai/claude-agent-sdk@0.3.212` package (grepped out of
- * its bundled `sdk.mjs`: `claude-opus-4-8`, `claude-sonnet-5`,
- * `claude-haiku-4-5` all appear verbatim as resolvable model ids), not
- * invented — and each label matches mocks/index.html's own static picker
- * list (`togglePicker()`: "Opus 4.8" / "Sonnet 5" / "Haiku 4.5").
+ * Model/effort options for the picker (10f-enrichment-model-effort-picker),
+ * re-derived (bug #53) from the installed
+ * `@anthropic-ai/claude-agent-sdk@0.3.212` package's OWN hand-maintained
+ * model catalog — the literal object in `sdk.mjs` whose own inline comment
+ * reads "Hand-maintained baked-in model catalog — the source of truth for
+ * per-model provider IDs and metadata" — not the previous 3-entry snapshot,
+ * and NOT the unverified aifx `/model` screenshot this task started from
+ * (that screenshot's "Opus 5" does not correspond to any id anywhere in the
+ * catalog; grepping the whole file for it turns up nothing, so it's treated
+ * as unreliable rather than a ground truth to chase). Per-model facts, all
+ * read directly out of that catalog object:
+ *   - claude-opus-4-8:   display_name "Opus 4.8",   family "opus",   the
+ *     catalog's own `aliases.opus.default` / `latest_per_family.opus`.
+ *   - claude-sonnet-5:   display_name "Sonnet 5",   family "sonnet", the
+ *     catalog's own `aliases.sonnet.default` / `latest_per_family.sonnet`.
+ *     Its `context` is already `{ window: 1e6, native_1m: true, ... }` —
+ *     natively 1M, not a toggle — so there is no separate "Sonnet 5 (1M
+ *     context)" id/entry to add; the aifx screenshot's extra row for that
+ *     doesn't map onto anything the catalog or `HarnessStartOptions`
+ *     (main/harness/types.ts) exposes (no context-window field there at
+ *     all), so it's left out rather than invented.
+ *   - claude-haiku-4-5:  display_name "Haiku 4.5",  family "haiku",  the
+ *     catalog's own `aliases.haiku.default` / `latest_per_family.haiku`.
+ *   - claude-fable-5:    display_name "Fable 5",    family "fable",  the
+ *     catalog's own `aliases.fable.default` / `latest_per_family.fable` —
+ *     and the catalog's own top-level `best: "fable"` flag, i.e. the SDK
+ *     considers this (not opus) its single best model overall.
+ *   - claude-mythos-5:   display_name "Mythos 5",   family "mythos". Present
+ *     in `models[]` with a real 1M-native context block but absent from
+ *     `aliases`/`latest_per_family` (no `mythos:` entry in either) — i.e. it
+ *     has no short alias, but it's still a real, resolvable id the catalog
+ *     lists, not a legacy/removed one. Included because it's exactly the
+ *     other family the picker was previously and silently omitting (see the
+ *     pre-existing `e2e/bug-model-picker-option-list.spec.ts`, whose
+ *     baseline assertions this fix is a deliberate diff against).
+ * Every other id families/generations that appear in the same catalog
+ * (claude-3-5-haiku, claude-3-5-sonnet, claude-3-7-sonnet, claude-sonnet-4-0/
+ * -4-5/-4-6, claude-opus-4-0/-4-1/-4-5/-4-6/-4-7) are deliberately left out:
+ * they're older generations within a family already represented by its own
+ * `latest_per_family` entry above, not distinct current options a picker
+ * needs to surface. This is still a hand-picked-at-fix-time snapshot (see
+ * this file's `slashCommands`/bug #56 for the live-registry alternative
+ * pattern) rather than a live catalog fetch — the SDK does expose a live
+ * alternative here too (`supportedModels(): Promise<ModelInfo[]>` /
+ * `SDKControlInitializeResponse.models`, sdk.d.ts ~1193/~3398), but wiring
+ * that through the harness was scoped OUT of this fix (unlike bug #56's
+ * slash commands) since the task's own ground truth explicitly frames this
+ * one as "update MODEL_OPTIONS to the verified real set", not as a live-list
+ * migration — left as a natural follow-up given the plumbing bug #56 adds is
+ * directly reusable for it.
  */
 const MODEL_OPTIONS: { id: string; label: string }[] = [
   { id: 'claude-opus-4-8', label: 'Opus 4.8' },
   { id: 'claude-sonnet-5', label: 'Sonnet 5' },
-  { id: 'claude-haiku-4-5', label: 'Haiku 4.5' }
+  { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
+  { id: 'claude-fable-5', label: 'Fable 5' },
+  { id: 'claude-mythos-5', label: 'Mythos 5' }
 ]
 
 /**
@@ -57,26 +102,34 @@ function labelFor(selection: ModelSelection | null): string {
  * flight, since the SDK itself only reads `model`/`effort` at its own
  * `start()`/`resume()` call time (verified — see
  * `HarnessStartOptions.model`/`.effort`'s doc comments).
+ *
+ * `open`/`onOpenChange` are lifted up into `Composer` (bug #56) rather than
+ * kept as this component's own local state, so typing `/model` and hitting
+ * Enter/Tab (or clicking the `/model` slash-command entry) can open this
+ * exact popover instead of a second, redundant "opened" state living here.
  */
 function ModelPicker({
   selection,
-  onChange
+  onChange,
+  open,
+  onOpenChange
 }: {
   selection: ModelSelection | null
   onChange: (selection: ModelSelection) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }): JSX.Element {
-  const [open, setOpen] = useState(false)
   const currentModel = selection?.model ?? MODEL_OPTIONS[0].id
   const currentEffort = selection?.effort ?? EFFORT_OPTIONS[2].id
 
   useEffect(() => {
     if (!open) return
     function handleOutsideClick(): void {
-      setOpen(false)
+      onOpenChange(false)
     }
     document.addEventListener('click', handleOutsideClick)
     return () => document.removeEventListener('click', handleOutsideClick)
-  }, [open])
+  }, [open, onOpenChange])
 
   function pickModel(model: string): void {
     onChange({ model, effort: currentEffort })
@@ -91,7 +144,7 @@ function ModelPicker({
       <button
         className="footer-btn"
         data-testid="model-picker-button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => onOpenChange(!open)}
       >
         <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z" />
@@ -108,7 +161,7 @@ function ModelPicker({
               data-testid={`model-option-${opt.id}`}
               onClick={() => {
                 pickModel(opt.id)
-                setOpen(false)
+                onOpenChange(false)
               }}
             >
               {opt.label}
@@ -122,7 +175,7 @@ function ModelPicker({
               data-testid={`effort-option-${opt.id}`}
               onClick={() => {
                 pickEffort(opt.id)
-                setOpen(false)
+                onOpenChange(false)
               }}
             >
               {opt.label}
@@ -157,6 +210,17 @@ interface ComposerProps {
   modelSelection: ModelSelection | null
   /** Fired the moment the user picks a new model/effort — applies starting with the NEXT `onSend`, never the in-flight turn. */
   onModelSelectionChange: (selection: ModelSelection) => void
+  /**
+   * Live slash-command registry for the active session (bug #56) — the REAL
+   * list the SDK itself reports (`SessionCommandsEvent`, sourced from
+   * `query.initializationResult()` / mid-session `commands_changed` pushes),
+   * not a hand-maintained client array. Empty until the harness's first push
+   * for this session lands (typically within the same tick or two as
+   * session start/resume). Gardenia's own client-only conveniences (`/clear`,
+   * `/interrupt`, `/fork`, `/model`) are added on top of this list locally —
+   * see `slashCommands` below — since the SDK has no concept of them.
+   */
+  liveSlashCommands: SlashCommandInfo[]
 }
 
 /** Flattens the Files-panel's real `fs`-backed tree (07-secondary-panels) into a flat list of `relativePath`s, files only — dirs aren't mentionable. */
@@ -171,7 +235,15 @@ function flattenFiles(nodes: FileTreeNode[], acc: string[] = []): string[] {
 interface SlashCommand {
   cmd: string
   desc: string
-  run: () => void
+  /**
+   * Local-only real action (`/clear`, `/interrupt`, `/fork`, `/model`) —
+   * selecting/submitting this command swallows the typed token and runs
+   * this instead; it is NEVER forwarded to `session:sendMessage` (bug #56's
+   * "must not regress" scenario). Omitted entirely for a live, SDK-reported
+   * command Gardenia has no special UI for — those are dispatched as a real
+   * prompt turn instead (see `selectSlash` below).
+   */
+  run?: () => void
 }
 
 type PopoverState = { kind: 'mention' | 'slash'; query: string; tokenStart: number } | null
@@ -222,15 +294,43 @@ async function readAttachedImage(file: File | Blob): Promise<AttachedImage | nul
  *
  * `/partial` only triggers when it's the very first token in the composer
  * (matches the mock's `val.trim() === lastWord` guard — a slash command is
- * the whole input, not a token mid-sentence) and opens a small, fixed set of
- * REAL actions (not a plugin/registration framework, per spec: "don't
- * over-engineer"):
- *   - `/clear`     — clears the composer (same as selecting-all + delete)
- *   - `/interrupt` — stops the current in-flight turn (same real IPC as the Stop button)
- *   - `/fork`      — forks the active session (same real IPC as the sidebar's fork action)
- * Selecting a slash command removes the typed token from the composer and
- * actually runs the action — unlike the static mock (which just inserts the
- * command text), this must be a real action per spec.
+ * the whole input, not a token mid-sentence) and opens a popover listing:
+ *   - Four LOCAL, Gardenia-only real actions Gardenia intercepts (bug #56 —
+ *     these never reach `session:sendMessage`, since the SDK has no concept
+ *     of any of them):
+ *       - `/clear`     — clears the composer (same as selecting-all + delete)
+ *       - `/interrupt` — stops the current in-flight turn (same real IPC as the Stop button)
+ *       - `/fork`      — forks the active session (same real IPC as the sidebar's fork action)
+ *       - `/model`     — opens the REAL `ModelPicker` popover (its `open` state
+ *         is lifted up into this component for exactly this reason) instead
+ *         of ever being sent as literal chat text — the bug this task fixes:
+ *         previously `/model` wasn't in the (hardcoded) list at all, so
+ *         typing it and pressing Enter fell straight through to an ordinary
+ *         `onSend`, posting "/model" as a real user message with no handler
+ *         on the other end.
+ *   - Every OTHER command the harness's live registry reports for this
+ *     session (`liveSlashCommands`, backed by the SDK's own
+ *     `query.initializationResult()` / mid-session `commands_changed` push —
+ *     see `main/harness/claude-agent-sdk-harness.ts`) — real built-ins
+ *     (`/compact`, `/cost`, `/usage`, ...), project/plugin commands, or
+ *     dynamically-discovered skills. Gardenia has no special UI for any of
+ *     these, so selecting one is NOT swallowed into a local action — it is
+ *     dispatched through `onSend` as an ordinary prompt turn, exactly like
+ *     typing it out in full and pressing Enter without ever opening this
+ *     popover (that's how the CLI/SDK's own local slash commands execute
+ *     server-side: as a real turn). This is deliberately NOT a hardcoded
+ *     4th-command re-list — see `slashCommands` below.
+ *
+ * The four local commands above are exactly the ones the SDK's own list
+ * might also legitimately report (e.g. a real Claude Code session likely
+ * has genuine `/model` and `/clear` built-ins) — when that happens they're
+ * de-duplicated in favor of Gardenia's local action, never doubled up in
+ * the popover (see `slashCommands`' `localNames` filter).
+ *
+ * Selecting a slash command always removes the typed token from the
+ * composer first; what happens next depends on whether it's local (real
+ * client-side action, never sent as text) or forwarded (dispatched as a
+ * real prompt turn) — see `selectSlash` below.
  *
  * Sending while `busy` is intentionally NOT held back client-side: per
  * spec.md/e2e-test-plan.md this must inject live into the still-streaming
@@ -264,7 +364,8 @@ export default function Composer({
   projectPath,
   onFork,
   modelSelection,
-  onModelSelectionChange
+  onModelSelectionChange,
+  liveSlashCommands
 }: ComposerProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [popover, setPopover] = useState<PopoverState>(null)
@@ -272,6 +373,10 @@ export default function Composer({
   const [fileList, setFileList] = useState<string[]>([])
   const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
+  // `/model`'s target — lifted out of ModelPicker itself (bug #56) so typing
+  // the full command and pressing Enter/Tab, or clicking its slash-item, can
+  // open the SAME real popover the footer button opens.
+  const [modelPickerOpen, setModelPickerOpen] = useState(false)
 
   // Real file list for @-mentions: same IPC the Files panel (07) already
   // uses to walk the session's real project_path on disk — no fixture/fake
@@ -290,14 +395,29 @@ export default function Composer({
     }
   }, [projectPath])
 
-  const slashCommands: SlashCommand[] = useMemo(
-    () => [
+  // bug #56: the four commands Gardenia handles itself, merged on top of
+  // whatever the harness's live registry reports. `localNames` also drives
+  // de-duplication below — if the SDK's own list happens to report one of
+  // these names too (a real session likely does report a genuine `/model`
+  // and `/clear`), Gardenia's local action wins and the live entry is
+  // dropped rather than shown twice.
+  const slashCommands: SlashCommand[] = useMemo(() => {
+    const local: SlashCommand[] = [
       { cmd: '/clear', desc: 'Clear the composer', run: () => onChange('') },
       { cmd: '/interrupt', desc: 'Stop the current in-flight turn', run: () => onInterrupt() },
-      { cmd: '/fork', desc: 'Fork this session into a new one', run: () => onFork() }
-    ],
-    [onChange, onInterrupt, onFork]
-  )
+      { cmd: '/fork', desc: 'Fork this session into a new one', run: () => onFork() },
+      { cmd: '/model', desc: 'Open the model/effort picker', run: () => setModelPickerOpen(true) }
+    ]
+    const localNames = new Set(local.map((c) => c.cmd.slice(1)))
+    // No `run` here on purpose — see `selectSlash`'s handling of a command
+    // with no `run`: it forwards the command through as a real prompt turn
+    // instead of swallowing it into a local action Gardenia doesn't have.
+    const live: SlashCommand[] = liveSlashCommands
+      .filter((c) => !localNames.has(c.name))
+      .map((c) => ({ cmd: `/${c.name}`, desc: c.description || c.argumentHint || 'Session command' }))
+    return [...local, ...live]
+  }, [onChange, onInterrupt, onFork, liveSlashCommands])
+
 
   // Auto-grow: mirrors mocks/index.html's onComposerInput exactly —
   // `height = 'auto'` first (so shrinking on delete works, not just
@@ -413,9 +533,24 @@ export default function Composer({
     const cursor = ta?.selectionStart ?? value.length
     const before = value.slice(0, popover.tokenStart)
     const after = value.slice(cursor)
-    // Unlike the static mock (which just inserts the command text), this
-    // must run a real action — so the typed `/token` is removed rather than
-    // left sitting in the composer as literal text to send.
+    if (!command.run) {
+      // A live, SDK-reported command Gardenia has no special UI for (bug
+      // #56) — do NOT swallow it. Dispatch it through as a REAL prompt turn,
+      // exactly like typing it out in full and pressing Enter without ever
+      // opening this popover (that's how the CLI/SDK's own local slash
+      // commands / custom project commands execute server-side).
+      const text = (before + command.cmd + after).trim()
+      onChange('')
+      setPopover(null)
+      onSend(text)
+      requestAnimationFrame(() => ta?.focus())
+      return
+    }
+    // Local Gardenia action (/clear, /interrupt, /fork, /model): unlike the
+    // static mock (which just inserts the command text), this must run a
+    // real action — so the typed `/token` is removed rather than left
+    // sitting in the composer as literal text to send, and it NEVER reaches
+    // `onSend`/`session:sendMessage`.
     onChange(before + after)
     setPopover(null)
     command.run()
@@ -539,7 +674,12 @@ export default function Composer({
               Working…
             </span>
           )}
-          <ModelPicker selection={modelSelection} onChange={onModelSelectionChange} />
+          <ModelPicker
+            selection={modelSelection}
+            onChange={onModelSelectionChange}
+            open={modelPickerOpen}
+            onOpenChange={setModelPickerOpen}
+          />
           {busy ? (
             <button className="stop-btn" data-testid="stop-button" onClick={onInterrupt}>
               ⏹ Stop

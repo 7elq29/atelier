@@ -408,6 +408,7 @@ export default function App(): JSX.Element {
                               onFork={() => void sessions.forkSession(activeSession.id).then((forked) => setActiveSessionId(forked.id))}
                               modelSelection={modelSelection}
                               onModelSelectionChange={setModelSelection}
+                              liveSlashCommands={sessions.commandsBySession[activeSession.id] ?? []}
                             />
                           )}
                         </div>
