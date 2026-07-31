@@ -217,6 +217,15 @@ test.describe('03-chat-surface-core', () => {
     await expect(nestedCards.first()).toBeVisible({ timeout: 30_000 })
     expect(await nestedCards.count()).toBeGreaterThan(0)
 
+    // Scroll the parent Task/Agent card + its nested subagent-wrap into view
+    // together (not just the wrap alone) so a screenshot actually shows the
+    // nesting relationship, not just an isolated card — the whole reason a
+    // human reviewer needs this shot instead of trusting the DOM assertion
+    // above (see the 09-obsidian Timeline bug this project already hit once
+    // from reviewing prose/DOM-only instead of the actual rendered pixels).
+    await taskCard.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(artifactsDir, '03-subagent-nesting-visible.png'), fullPage: true })
+
     // The nested card must NOT also appear as a top-level sibling of the
     // Task card (i.e. not flattened into the main list) — every tool-card
     // whose parent-tool-use-id equals the Task's id must live inside the
