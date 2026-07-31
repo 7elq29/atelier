@@ -89,6 +89,31 @@ export interface CreateSessionOptions {
   planMode?: boolean
 }
 
+/**
+ * Reasoning-effort levels accepted by the SDK's own `effort` option
+ * (10f-enrichment-model-effort-picker). Mirrored here — rather than importing
+ * `@anthropic-ai/claude-agent-sdk`'s own `EffortLevel` type — because
+ * `shared/` is imported by the renderer bundle, which cannot pull in the
+ * (Node/ESM-only) SDK package at all. Verified against the installed
+ * `@anthropic-ai/claude-agent-sdk@0.3.212`'s `sdk.d.ts`:
+ * `export declare type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';`
+ */
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/**
+ * Per-turn model/effort override (10f-enrichment-model-effort-picker), sent
+ * alongside a follow-up message via `session:sendMessage`. Both fields are
+ * independently optional; `undefined` on either means "leave whatever this
+ * session is already using for that field unchanged". Only takes effect for
+ * the turn(s) sent AFTER the override is applied — never the turn already in
+ * flight, since the underlying SDK only reads `model`/`effort` at its own
+ * `start()`/`resume()` call time (see `HarnessStartOptions`), not mid-turn.
+ */
+export interface ModelSelection {
+  model?: string
+  effort?: EffortLevel
+}
+
 export interface RemoteHostOption {
   id: string
   /** SSH host / devpod name, e.g. "qingqin-go.devpod-us-or". */

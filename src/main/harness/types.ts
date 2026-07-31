@@ -29,6 +29,19 @@ export interface HarnessStartOptions {
   cwd: string
   /** Optional model override; defaults to the harness's own default. */
   model?: string
+  /**
+   * Optional reasoning-effort override (10f-enrichment-model-effort-picker),
+   * passed straight through to the SDK's own `Options.effort` field —
+   * verified live against the installed `@anthropic-ai/claude-agent-sdk`
+   * 0.3.212's `sdk.d.ts`: `effort?: EffortLevel` where `EffortLevel = 'low'
+   * | 'medium' | 'high' | 'xhigh' | 'max'`. Like `model` above, this is only
+   * read by the SDK at `query()` construction time (i.e. this driver's
+   * `start()`/`resume()`) — there is no way to change it on an already-open
+   * streaming-input session, so a caller that wants a new effort level to
+   * take effect must tear down and reconnect (see `SessionManager.
+   * sendUserMessage`'s forced-reconnect-on-change logic).
+   */
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   /** Optional system prompt append/override, passed through verbatim. */
   systemPrompt?: string
   /** Restrict the built-in tool set available to the agent. */

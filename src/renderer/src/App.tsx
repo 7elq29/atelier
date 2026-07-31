@@ -16,7 +16,7 @@ import TerminalPanel from './components/panels/TerminalPanel'
 import CompanionTerminalDrawer from './components/panels/CompanionTerminalDrawer'
 import { useConfig } from './hooks/useConfig'
 import { useSessions } from './hooks/useSessions'
-import type { SessionRecord } from '../../shared/session-types'
+import type { ModelSelection, SessionRecord } from '../../shared/session-types'
 
 function resolveEffectiveTheme(theme: 'system' | 'light' | 'dark'): 'light' | 'dark' {
   if (theme !== 'system') return theme
@@ -42,6 +42,12 @@ export default function App(): JSX.Element {
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [composerText, setComposerText] = useState('')
+  // 10f-enrichment-model-effort-picker: `null` until the user touches the
+  // composer's picker — see Composer.tsx's ModelPicker doc comment for why
+  // that's what keeps every pre-existing send (no picker interaction at all)
+  // byte-for-byte identical to before this task (no override sent, harness
+  // default preserved).
+  const [modelSelection, setModelSelection] = useState<ModelSelection | null>(null)
   const [activeTab, setActiveTab] = useState<SessionTab>('chat')
   const [visitedTabs, setVisitedTabs] = useState<Set<SessionTab>>(new Set(['chat']))
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -191,7 +197,7 @@ export default function App(): JSX.Element {
   async function handleSend(text: string): Promise<void> {
     if (!activeSessionId || !text.trim()) return
     setComposerText('')
-    await sessions.sendMessage(activeSessionId, text.trim())
+    await sessions.sendMessage(activeSessionId, text.trim(), modelSelection ?? undefined)
   }
 
   async function handleInterrupt(): Promise<void> {
@@ -282,6 +288,8 @@ export default function App(): JSX.Element {
                               onSend={(text) => void handleSend(text)}
                               onInterrupt={() => void handleInterrupt()}
                               busy={sessions.busyBySession[activeSession.id] ?? false}
+                              modelSelection={modelSelection}
+                              onModelSelectionChange={setModelSelection}
                             />
                           )}
                         </div>
