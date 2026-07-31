@@ -413,6 +413,10 @@ input[type='range'] {
   flex-direction: column;
   gap: 1px;
 }
+/* Keeps an empty group a valid drag-and-drop target (06-session-organization) instead of collapsing to zero height. */
+.group-body:empty {
+  min-height: 28px;
+}
 .session-row.closed {
   opacity: 0.6;
 }
@@ -751,3 +755,155 @@ input[type='range'] {
   flex-direction: column;
   gap: 12px;
 }
+
+/* ===== Session organization (06-session-organization) =====
+   Filter chips / group-header chevron+collapsed / status classes copied
+   verbatim from mocks/index.html per spec.md's "respect the interactive UI
+   design" — see the task brief's exact CSS block. */
+.filter-row {
+  display: flex;
+  gap: 6px;
+  padding: 0 16px 10px;
+  flex-wrap: wrap;
+}
+.filter-chip {
+  font-size: 12.5px;
+  padding: 3px 9px;
+  border-radius: 100px;
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: transparent;
+}
+.filter-chip.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+}
+.group-header .chev {
+  transition: transform 0.12s;
+  font-size: 10.5px;
+}
+.group-header.collapsed .chev {
+  transform: rotate(-90deg);
+}
+.group-header .count {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--text-disabled);
+}
+.group-body.collapsed {
+  display: none;
+}
+
+/* Sidebar-row status badge (distinct from the topbar's larger .status-dot) —
+   small dot anchored to the bottom-right of the session color swatch. */
+.session-indicator .status-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-sidebar);
+  box-sizing: content-box;
+  background: var(--text-tertiary);
+}
+.session-row:hover .session-indicator .status-badge {
+  border-color: var(--bg-hover);
+}
+.session-row.active .session-indicator .status-badge {
+  border-color: var(--bg-active);
+}
+.session-indicator .status-badge.status-working {
+  background: var(--accent);
+  animation: pulse 1.6s infinite;
+}
+.session-indicator .status-badge.status-waiting {
+  background: var(--warning);
+  animation: pulse 1.6s infinite;
+}
+.session-indicator .status-badge.status-idle {
+  background: var(--text-tertiary);
+}
+.session-indicator .status-badge.status-disconnected {
+  background: var(--text-disabled);
+}
+
+/* New Group affordance, mirrors .new-session-btn's spacing. */
+.new-group-row {
+  margin: 0 16px 10px;
+}
+.new-group-row input {
+  width: 100%;
+}
+
+/* Session detail popover (06-session-organization): tags / notes / color,
+   anchored the same way as .session-menu-popup (which it's shown alongside). */
+.session-detail-popup {
+  position: absolute;
+  top: 100%;
+  right: 8px;
+  width: 240px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-popover);
+  z-index: 61;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sdp-section { display: flex; flex-direction: column; gap: 6px; }
+.sdp-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.sdp-colors { display: flex; gap: 6px; flex-wrap: wrap; }
+.sdp-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.sdp-swatch.selected {
+  border-color: var(--text-primary);
+}
+.sdp-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.sdp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sdp-tag-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+}
+.sdp-tag-remove:hover { color: var(--danger); }
+.sdp-tag-input { width: 100%; font-size: 12.5px; padding: 5px 8px; }
+.sdp-notes { width: 100%; resize: vertical; font-size: 13px; }
+

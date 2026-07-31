@@ -1,6 +1,12 @@
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
-import type { MessageRecord, MessageRole, SessionMode, SessionRecord } from '../../shared/session-types'
+import type {
+  MessageRecord,
+  MessageRole,
+  SessionGroupRecord,
+  SessionMode,
+  SessionRecord
+} from '../../shared/session-types'
 
 /** Raw DB row shapes (snake_case, sqlite ints for booleans). */
 interface SessionRow {
@@ -16,6 +22,8 @@ interface SessionRow {
   created_at: string
   closed_at: string | null
   deleted_at: string | null
+  notes: string | null
+  sort_order: number
 }
 
 interface MessageRow {
@@ -27,7 +35,25 @@ interface MessageRow {
   created_at: string
 }
 
-function toSessionRecord(row: SessionRow): SessionRecord {
+interface GroupRow {
+  id: string
+  name: string
+  sort_order: number
+  collapsed: number
+  created_at: string
+}
+
+function toGroupRecord(row: GroupRow): SessionGroupRecord {
+  return {
+    id: row.id,
+    name: row.name,
+    sortOrder: row.sort_order,
+    collapsed: row.collapsed === 1,
+    createdAt: row.created_at
+  }
+}
+
+function toSessionRecord(row: SessionRow, tags: string[] = []): SessionRecord {
   return {
     id: row.id,
     name: row.name,
@@ -39,7 +65,10 @@ function toSessionRecord(row: SessionRow): SessionRecord {
     pinned: row.pinned === 1,
     color: row.color,
     createdAt: row.created_at,
-    closedAt: row.closed_at
+    closedAt: row.closed_at,
+    tags,
+    notes: row.notes,
+    sortOrder: row.sort_order
   }
 }
 
@@ -61,6 +90,27 @@ function toMessageRecord(row: MessageRow): MessageRecord {
 export class SessionStore {
   constructor(private readonly db: Database.Database) {}
 
+  /** Batches session_tags lookups for a set of session ids into one query. */
+  private tagsFor(sessionIds: string[]): Map<string, string[]> {
+    const map = new Map<string, string[]>()
+    if (sessionIds.length === 0) return map
+    const placeholders = sessionIds.map(() => '?').join(',')
+    const rows = this.db
+      .prepare(`SELECT session_id, tag FROM session_tags WHERE session_id IN (${placeholders}) ORDER BY tag ASC`)
+      .all(...sessionIds) as { session_id: string; tag: string }[]
+    for (const row of rows) {
+      const list = map.get(row.session_id) ?? []
+      list.push(row.tag)
+      map.set(row.session_id, list)
+    }
+    return map
+  }
+
+  private hydrate(rows: SessionRow[]): SessionRecord[] {
+    const tagsBySession = this.tagsFor(rows.map((r) => r.id))
+    return rows.map((row) => toSessionRecord(row, tagsBySession.get(row.id) ?? []))
+  }
+
   createSession(input: {
     name: string
     projectPath: string
@@ -70,13 +120,14 @@ export class SessionStore {
     pinned?: boolean
     color?: string | null
     id?: string
+    sortOrder?: number
   }): SessionRecord {
     const id = input.id ?? randomUUID()
     const createdAt = new Date().toISOString()
     this.db
       .prepare(
-        `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at)
-         VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, @pinned, @color, @createdAt, NULL, NULL)`
+        `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order)
+         VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, @pinned, @color, @createdAt, NULL, NULL, @sortOrder)`
       )
       .run({
         id,
@@ -87,22 +138,24 @@ export class SessionStore {
         groupId: input.groupId ?? null,
         pinned: input.pinned ? 1 : 0,
         color: input.color ?? null,
-        createdAt
+        createdAt,
+        sortOrder: input.sortOrder ?? Date.now()
       })
     return this.getSession(id)!
   }
 
   getSession(id: string): SessionRecord | undefined {
     const row = this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow | undefined
-    return row ? toSessionRecord(row) : undefined
+    if (!row) return undefined
+    return this.hydrate([row])[0]
   }
 
   /** Active sessions: not closed. Used for the Pinned/grouped sidebar view. */
   listActiveSessions(): SessionRecord[] {
     const rows = this.db
-      .prepare('SELECT * FROM sessions WHERE closed_at IS NULL ORDER BY created_at ASC')
+      .prepare('SELECT * FROM sessions WHERE closed_at IS NULL ORDER BY sort_order ASC, created_at ASC')
       .all() as SessionRow[]
-    return rows.map(toSessionRecord)
+    return this.hydrate(rows)
   }
 
   /** Closed sessions: still resumable, shown under History. */
@@ -110,12 +163,12 @@ export class SessionStore {
     const rows = this.db
       .prepare('SELECT * FROM sessions WHERE closed_at IS NOT NULL ORDER BY closed_at DESC')
       .all() as SessionRow[]
-    return rows.map(toSessionRecord)
+    return this.hydrate(rows)
   }
 
   listAllSessions(): SessionRecord[] {
     const rows = this.db.prepare('SELECT * FROM sessions ORDER BY created_at ASC').all() as SessionRow[]
-    return rows.map(toSessionRecord)
+    return this.hydrate(rows)
   }
 
   /** Manual rename: locks the name so auto-naming can never revert it (Bug #93 regression guard). */
@@ -144,6 +197,112 @@ export class SessionStore {
   setColor(id: string, color: string): SessionRecord | undefined {
     this.db.prepare('UPDATE sessions SET color = ? WHERE id = ?').run(color, id)
     return this.getSession(id)
+  }
+
+  setNotes(id: string, notes: string): SessionRecord | undefined {
+    this.db.prepare('UPDATE sessions SET notes = ? WHERE id = ?').run(notes, id)
+    return this.getSession(id)
+  }
+
+  // ── Tags (06-session-organization) ───────────────────────────────────
+
+  addTag(sessionId: string, tag: string): SessionRecord | undefined {
+    const trimmed = tag.trim()
+    if (trimmed) {
+      this.db
+        .prepare('INSERT OR IGNORE INTO session_tags (session_id, tag) VALUES (?, ?)')
+        .run(sessionId, trimmed)
+    }
+    return this.getSession(sessionId)
+  }
+
+  removeTag(sessionId: string, tag: string): SessionRecord | undefined {
+    this.db.prepare('DELETE FROM session_tags WHERE session_id = ? AND tag = ?').run(sessionId, tag)
+    return this.getSession(sessionId)
+  }
+
+  /** All distinct tags in use, for filter-suggestion UI. */
+  listAllTags(): string[] {
+    const rows = this.db.prepare('SELECT DISTINCT tag FROM session_tags ORDER BY tag ASC').all() as { tag: string }[]
+    return rows.map((r) => r.tag)
+  }
+
+  // ── Groups (06-session-organization) ─────────────────────────────────
+
+  listGroups(): SessionGroupRecord[] {
+    const rows = this.db.prepare('SELECT * FROM session_groups ORDER BY sort_order ASC, created_at ASC').all() as GroupRow[]
+    return rows.map(toGroupRecord)
+  }
+
+  createGroup(name: string, id?: string): SessionGroupRecord {
+    const groupId = id ?? randomUUID()
+    const createdAt = new Date().toISOString()
+    // New groups sort after every existing one by default.
+    const maxOrder = this.db.prepare('SELECT MAX(sort_order) as m FROM session_groups').get() as { m: number | null }
+    this.db
+      .prepare('INSERT INTO session_groups (id, name, sort_order, collapsed, created_at) VALUES (?, ?, ?, 0, ?)')
+      .run(groupId, name, (maxOrder.m ?? 0) + 1, createdAt)
+    return toGroupRecord(
+      this.db.prepare('SELECT * FROM session_groups WHERE id = ?').get(groupId) as GroupRow
+    )
+  }
+
+  renameGroup(id: string, name: string): SessionGroupRecord | undefined {
+    this.db.prepare('UPDATE session_groups SET name = ? WHERE id = ?').run(name, id)
+    const row = this.db.prepare('SELECT * FROM session_groups WHERE id = ?').get(id) as GroupRow | undefined
+    return row ? toGroupRecord(row) : undefined
+  }
+
+  setGroupCollapsed(id: string, collapsed: boolean): SessionGroupRecord | undefined {
+    this.db.prepare('UPDATE session_groups SET collapsed = ? WHERE id = ?').run(collapsed ? 1 : 0, id)
+    const row = this.db.prepare('SELECT * FROM session_groups WHERE id = ?').get(id) as GroupRow | undefined
+    return row ? toGroupRecord(row) : undefined
+  }
+
+  /** Deletes a group and un-groups its member sessions (they fall back to "Ungrouped"), never deletes the sessions themselves. */
+  deleteGroup(id: string): void {
+    const del = this.db.transaction(() => {
+      this.db.prepare('UPDATE sessions SET group_id = NULL WHERE group_id = ?').run(id)
+      this.db.prepare('DELETE FROM session_groups WHERE id = ?').run(id)
+    })
+    del()
+  }
+
+  reorderGroups(orderedIds: string[]): SessionGroupRecord[] {
+    const reorder = this.db.transaction(() => {
+      orderedIds.forEach((id, index) => {
+        this.db.prepare('UPDATE session_groups SET sort_order = ? WHERE id = ?').run(index, id)
+      })
+    })
+    reorder()
+    return this.listGroups()
+  }
+
+  setSessionGroup(sessionId: string, groupId: string | null): SessionRecord | undefined {
+    this.db.prepare('UPDATE sessions SET group_id = ? WHERE id = ?').run(groupId, sessionId)
+    return this.getSession(sessionId)
+  }
+
+  /**
+   * Persists manual drag-drop order (06-session-organization) for a section
+   * — pinned (groupId undefined), a specific group, or ungrouped (groupId
+   * null) — by writing sequential `sort_order` values for the given ordered
+   * id list. Also moves each session into `groupId` if it isn't already
+   * there, so dragging a row into a different group's body both re-parents
+   * and re-orders in one persisted write.
+   */
+  reorderSessions(groupId: string | null | undefined, orderedIds: string[]): SessionRecord[] {
+    const reorder = this.db.transaction(() => {
+      orderedIds.forEach((id, index) => {
+        if (groupId !== undefined) {
+          this.db.prepare('UPDATE sessions SET group_id = ?, sort_order = ? WHERE id = ?').run(groupId, index, id)
+        } else {
+          this.db.prepare('UPDATE sessions SET sort_order = ? WHERE id = ?').run(index, id)
+        }
+      })
+    })
+    reorder()
+    return orderedIds.map((id) => this.getSession(id)).filter((s): s is SessionRecord => !!s)
   }
 
   /** Close: disappears from active/pinned view, auto-unpins, transcript stays for later resume. */
@@ -180,8 +339,8 @@ export class SessionStore {
     const fork = this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at)
-           VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, 0, @color, @createdAt, NULL, NULL)`
+          `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order)
+           VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, 0, @color, @createdAt, NULL, NULL, @sortOrder)`
         )
         .run({
           id: newId,
@@ -191,8 +350,12 @@ export class SessionStore {
           hostname: source.hostname,
           groupId: source.groupId,
           color: source.color,
-          createdAt
+          createdAt,
+          sortOrder: Date.now()
         })
+
+      const insertTag = this.db.prepare('INSERT OR IGNORE INTO session_tags (session_id, tag) VALUES (?, ?)')
+      for (const tag of source.tags) insertTag.run(newId, tag)
 
       const messages = this.db
         .prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC')

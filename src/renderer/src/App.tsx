@@ -194,6 +194,19 @@ export default function App(): JSX.Element {
           }}
           onFork={(id) => void sessions.forkSession(id).then((forked) => setActiveSessionId(forked.id))}
           onRestart={(id) => void sessions.restartSession(id).then((forked) => setActiveSessionId(forked.id))}
+          groups={sessions.groups}
+          statuses={sessions.statuses}
+          messagesBySession={sessions.messagesBySession}
+          onSetColor={(id, color) => void sessions.setColor(id, color)}
+          onSetNotes={(id, notes) => void sessions.setNotes(id, notes)}
+          onAddTag={(id, tag) => void sessions.addTag(id, tag)}
+          onRemoveTag={(id, tag) => void sessions.removeTag(id, tag)}
+          onReorderSessions={(groupId, orderedIds) => void sessions.reorderSessions(groupId, orderedIds)}
+          onCreateGroup={(name) => void sessions.createGroup(name)}
+          onRenameGroup={(id, name) => void sessions.renameGroup(id, name)}
+          onSetGroupCollapsed={(id, collapsed) => void sessions.setGroupCollapsed(id, collapsed)}
+          onDeleteGroup={(id) => void sessions.deleteGroup(id)}
+          onReorderGroups={(orderedIds) => void sessions.reorderGroups(orderedIds)}
         />
 
         <div className="main-area">

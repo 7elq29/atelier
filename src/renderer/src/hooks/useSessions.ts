@@ -3,7 +3,9 @@ import type {
   CreateSessionOptions,
   MessageRecord,
   RemoteHostOption,
-  SessionRecord
+  SessionGroupRecord,
+  SessionRecord,
+  SessionStatus
 } from '../../../shared/session-types'
 
 export interface UseSessionsResult {
@@ -11,6 +13,9 @@ export interface UseSessionsResult {
   historySessions: SessionRecord[]
   hosts: RemoteHostOption[]
   messagesBySession: Record<string, MessageRecord[]>
+  groups: SessionGroupRecord[]
+  statuses: Record<string, SessionStatus>
+  allTags: string[]
   refresh: () => Promise<void>
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
@@ -21,6 +26,17 @@ export interface UseSessionsResult {
   deleteSession: (sessionId: string) => Promise<void>
   renameSession: (sessionId: string, name: string) => Promise<void>
   setPinned: (sessionId: string, pinned: boolean) => Promise<void>
+  setColor: (sessionId: string, color: string) => Promise<void>
+  setNotes: (sessionId: string, notes: string) => Promise<void>
+  addTag: (sessionId: string, tag: string) => Promise<void>
+  removeTag: (sessionId: string, tag: string) => Promise<void>
+  setSessionGroup: (sessionId: string, groupId: string | null) => Promise<void>
+  reorderSessions: (groupId: string | null | undefined, orderedIds: string[]) => Promise<void>
+  createGroup: (name: string) => Promise<SessionGroupRecord>
+  renameGroup: (groupId: string, name: string) => Promise<void>
+  setGroupCollapsed: (groupId: string, collapsed: boolean) => Promise<void>
+  deleteGroup: (groupId: string) => Promise<void>
+  reorderGroups: (orderedIds: string[]) => Promise<void>
 }
 
 /**
@@ -34,21 +50,32 @@ export function useSessions(): UseSessionsResult {
   const [historySessions, setHistorySessions] = useState<SessionRecord[]>([])
   const [hosts, setHosts] = useState<RemoteHostOption[]>([])
   const [messagesBySession, setMessagesBySession] = useState<Record<string, MessageRecord[]>>({})
+  const [groups, setGroups] = useState<SessionGroupRecord[]>([])
+  const [statuses, setStatuses] = useState<Record<string, SessionStatus>>({})
+  const [allTags, setAllTags] = useState<string[]>([])
   const messagesRef = useRef(messagesBySession)
   messagesRef.current = messagesBySession
 
   const refresh = useCallback(async () => {
-    const [active, history] = await Promise.all([
+    const [active, history, tags] = await Promise.all([
       window.gardenia.listActiveSessions(),
-      window.gardenia.listHistorySessions()
+      window.gardenia.listHistorySessions(),
+      window.gardenia.listAllTags()
     ])
     setActiveSessions(active)
     setHistorySessions(history)
+    setAllTags(tags)
+  }, [])
+
+  const refreshGroups = useCallback(async () => {
+    setGroups(await window.gardenia.listGroups())
   }, [])
 
   useEffect(() => {
     refresh()
+    refreshGroups()
     window.gardenia.listHosts().then(setHosts)
+    window.gardenia.listSessionStatuses().then(setStatuses)
 
     const offMessage = window.gardenia.onSessionMessage(({ sessionId, message }) => {
       setMessagesBySession((prev) => {
@@ -84,12 +111,24 @@ export function useSessions(): UseSessionsResult {
       // correct thing is to just refetch both lists.
       refresh()
     })
+    // Concurrent per-session status (06-session-organization): pushed for
+    // EVERY session independently of which one is focused/active, so this
+    // patches statuses[sessionId] directly rather than refetching everything.
+    const offStatus = window.gardenia.onSessionStatus(({ sessionId, status }) => {
+      setStatuses((prev) => ({ ...prev, [sessionId]: status }))
+    })
+    const offGroup = window.gardenia.onGroupChanged(() => {
+      refreshGroups()
+      refresh()
+    })
     return () => {
       offMessage()
       offDelta()
       offLifecycle()
+      offStatus()
+      offGroup()
     }
-  }, [refresh])
+  }, [refresh, refreshGroups])
 
   const createSession = useCallback(
     async (opts: CreateSessionOptions): Promise<SessionRecord> => {
@@ -146,11 +185,67 @@ export function useSessions(): UseSessionsResult {
     await window.gardenia.setSessionPinned(sessionId, pinned)
   }, [])
 
+  const setColor = useCallback(async (sessionId: string, color: string): Promise<void> => {
+    await window.gardenia.setSessionColor(sessionId, color)
+  }, [])
+
+  const setNotes = useCallback(async (sessionId: string, notes: string): Promise<void> => {
+    await window.gardenia.setSessionNotes(sessionId, notes)
+  }, [])
+
+  const addTag = useCallback(async (sessionId: string, tag: string): Promise<void> => {
+    await window.gardenia.addSessionTag(sessionId, tag)
+    await refresh()
+  }, [refresh])
+
+  const removeTag = useCallback(async (sessionId: string, tag: string): Promise<void> => {
+    await window.gardenia.removeSessionTag(sessionId, tag)
+    await refresh()
+  }, [refresh])
+
+  const setSessionGroup = useCallback(async (sessionId: string, groupId: string | null): Promise<void> => {
+    await window.gardenia.setSessionGroup(sessionId, groupId)
+  }, [])
+
+  const reorderSessionsFn = useCallback(
+    async (groupId: string | null | undefined, orderedIds: string[]): Promise<void> => {
+      await window.gardenia.reorderSessions(groupId, orderedIds)
+    },
+    []
+  )
+
+  const createGroup = useCallback(async (name: string): Promise<SessionGroupRecord> => {
+    const group = await window.gardenia.createGroup(name)
+    await refreshGroups()
+    return group
+  }, [refreshGroups])
+
+  const renameGroup = useCallback(async (groupId: string, name: string): Promise<void> => {
+    await window.gardenia.renameGroup(groupId, name)
+  }, [])
+
+  const setGroupCollapsed = useCallback(async (groupId: string, collapsed: boolean): Promise<void> => {
+    await window.gardenia.setGroupCollapsed(groupId, collapsed)
+    await refreshGroups()
+  }, [refreshGroups])
+
+  const deleteGroup = useCallback(async (groupId: string): Promise<void> => {
+    await window.gardenia.deleteGroup(groupId)
+  }, [])
+
+  const reorderGroups = useCallback(async (orderedIds: string[]): Promise<void> => {
+    await window.gardenia.reorderGroups(orderedIds)
+    await refreshGroups()
+  }, [refreshGroups])
+
   return {
     activeSessions,
     historySessions,
     hosts,
     messagesBySession,
+    groups,
+    statuses,
+    allTags,
     refresh,
     createSession,
     resumeSession,
@@ -160,6 +255,17 @@ export function useSessions(): UseSessionsResult {
     closeSession,
     deleteSession,
     renameSession,
-    setPinned
+    setPinned,
+    setColor,
+    setNotes,
+    addTag,
+    removeTag,
+    setSessionGroup,
+    reorderSessions: reorderSessionsFn,
+    createGroup,
+    renameGroup,
+    setGroupCollapsed,
+    deleteGroup,
+    reorderGroups
   }
 }

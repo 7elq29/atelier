@@ -5,8 +5,11 @@ import type {
   CreateSessionOptions,
   MessageRecord,
   RemoteHostOption,
+  SessionGroupEvent,
+  SessionGroupRecord,
   SessionLifecycleEvent,
-  SessionRecord
+  SessionRecord,
+  SessionStatus
 } from '../../shared/session-types'
 import type { CompactionContent, ToolCallContent, TodoUpdateContent } from '../../shared/chat-content'
 import type { SessionStore } from './store'
@@ -35,10 +38,16 @@ interface LiveStream {
   turnCount: number
   /** Tool calls started but not yet ended, keyed by toolUseId. */
   pendingTools: Map<string, PendingToolCall>
+  /**
+   * True from the moment a prompt is sent/streamed into this session until
+   * its turn's terminal event (result/error/interrupted) — drives the
+   * 'working' status (06-session-organization).
+   */
+  busy: boolean
 }
 
 function newLiveStream(turnCount = 0): LiveStream {
-  return { buffer: '', bufferMessageId: null, turnCount, pendingTools: new Map() }
+  return { buffer: '', bufferMessageId: null, turnCount, pendingTools: new Map(), busy: false }
 }
 
 export interface RemoteHostResolver {
@@ -102,6 +111,31 @@ export class SessionManager {
   /** Live, unpersisted token-level push for the in-progress assistant text message `messageId` — see `SessionStreamDeltaEvent`. */
   private sendStreamDelta(sessionId: string, messageId: number, text: string): void {
     this.getWindow()?.webContents.send('session:streamDelta', { sessionId, messageId, text })
+  }
+
+  // ── Live status (06-session-organization) ────────────────────────────
+  //
+  // See SessionStatus's doc comment (shared/session-types.ts) for the exact
+  // definitions. Pushed to EVERY sidebar row in real time — not just the
+  // currently-viewed session — via `session:status`, independent of which
+  // session (if any) is focused in the renderer.
+
+  /** 'working'/'waiting' for any session with a live entry this app run; 'idle' otherwise (never opened, or its live entry was torn down on close). */
+  getStatus(sessionId: string): SessionStatus {
+    const live = this.live.get(sessionId)
+    if (!live) return 'idle'
+    return live.busy ? 'working' : 'waiting'
+  }
+
+  /** Snapshot of every currently-live-tracked session's status, for the renderer's initial paint (subsequent changes stream over `session:status`). */
+  listStatuses(): Record<string, SessionStatus> {
+    const result: Record<string, SessionStatus> = {}
+    for (const id of this.live.keys()) result[id] = this.getStatus(id)
+    return result
+  }
+
+  private sendStatus(sessionId: string): void {
+    this.getWindow()?.webContents.send('session:status', { sessionId, status: this.getStatus(sessionId) })
   }
 
   private resolveHost(hostId: string): RemoteHost | undefined {
@@ -171,6 +205,10 @@ export class SessionManager {
 
     this.sendLifecycle({ type: 'session.created', session })
     this.live.set(session.id, newLiveStream())
+    // A real turn is about to run only if there's an initial prompt to
+    // process — an empty-prompt create just opens the connection.
+    if (opts.prompt) this.live.get(session.id)!.busy = true
+    this.sendStatus(session.id)
     void this.consume(session.id, harnessSession.events)
     return session
   }
@@ -195,6 +233,7 @@ try {
       const host = this.resolveHostFromSession(session.hostname)
       const harnessSession = await this.harness.resume(sessionId, { cwd: session.projectPath, host })
       this.live.set(sessionId, newLiveStream())
+      this.sendStatus(sessionId)
       void this.consume(sessionId, harnessSession.events)
     } catch (err) {
       this.reportHarnessFailure(sessionId, 'reconnect', err)
@@ -230,6 +269,8 @@ try {
       await this.harness.streamInput(sessionId, text)
       const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
       this.live.set(sessionId, newLiveStream(previousTurnCount))
+      this.live.get(sessionId)!.busy = true
+      this.sendStatus(sessionId)
       void this.consume(sessionId, harnessSession.events)
     } catch (err) {
       this.reportHarnessFailure(sessionId, 'sendUserMessage', err)
@@ -263,6 +304,11 @@ try {
       content: `Error: ${errorMessage}`
     })
     this.sendMessage(sessionId, message)
+    // The harness call itself threw (never reached applyEvent's terminal
+    // cases), so 'busy' would otherwise stay stuck true forever.
+    const live = this.live.get(sessionId)
+    if (live) live.busy = false
+    this.sendStatus(sessionId)
   }
 
   // ── Fork / Restart ──────────────────────────────────────────────────
@@ -309,6 +355,100 @@ try {
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
     this.sendLifecycle({ type: 'session.updated', session })
     return session
+  }
+
+  setColor(sessionId: string, color: string): SessionRecord {
+    const session = this.store.setColor(sessionId, color)
+    if (!session) throw new Error(`Unknown session: ${sessionId}`)
+    this.sendLifecycle({ type: 'session.updated', session })
+    return session
+  }
+
+  setNotes(sessionId: string, notes: string): SessionRecord {
+    const session = this.store.setNotes(sessionId, notes)
+    if (!session) throw new Error(`Unknown session: ${sessionId}`)
+    this.sendLifecycle({ type: 'session.updated', session })
+    return session
+  }
+
+  addTag(sessionId: string, tag: string): SessionRecord {
+    const session = this.store.addTag(sessionId, tag)
+    if (!session) throw new Error(`Unknown session: ${sessionId}`)
+    this.sendLifecycle({ type: 'session.updated', session })
+    return session
+  }
+
+  removeTag(sessionId: string, tag: string): SessionRecord {
+    const session = this.store.removeTag(sessionId, tag)
+    if (!session) throw new Error(`Unknown session: ${sessionId}`)
+    this.sendLifecycle({ type: 'session.updated', session })
+    return session
+  }
+
+  listAllTags(): string[] {
+    return this.store.listAllTags()
+  }
+
+  // ── Groups (06-session-organization) ─────────────────────────────────
+
+  listGroups(): SessionGroupRecord[] {
+    return this.store.listGroups()
+  }
+
+  private sendGroupEvent(event: SessionGroupEvent): void {
+    this.getWindow()?.webContents.send('group:changed', event)
+  }
+
+  createGroup(name: string): SessionGroupRecord {
+    const group = this.store.createGroup(name)
+    this.sendGroupEvent({ type: 'group.created', group })
+    return group
+  }
+
+  renameGroup(groupId: string, name: string): SessionGroupRecord {
+    const group = this.store.renameGroup(groupId, name)
+    if (!group) throw new Error(`Unknown group: ${groupId}`)
+    this.sendGroupEvent({ type: 'group.renamed', group })
+    return group
+  }
+
+  setGroupCollapsed(groupId: string, collapsed: boolean): SessionGroupRecord {
+    const group = this.store.setGroupCollapsed(groupId, collapsed)
+    if (!group) throw new Error(`Unknown group: ${groupId}`)
+    this.sendGroupEvent({ type: 'group.updated', group })
+    return group
+  }
+
+  deleteGroup(groupId: string): void {
+    this.store.deleteGroup(groupId)
+    this.sendGroupEvent({ type: 'group.deleted', groupId })
+    // Member sessions' group_id changed to NULL underneath them — the
+    // sidebar needs to move them into "Ungrouped", so refresh via a normal
+    // lifecycle-style broadcast too (cheapest correct thing, matches how
+    // every other cross-cutting session change is surfaced).
+    for (const session of this.store.listActiveSessions()) {
+      if (session.groupId === null) this.sendLifecycle({ type: 'session.updated', session })
+    }
+  }
+
+  reorderGroups(orderedIds: string[]): SessionGroupRecord[] {
+    const groups = this.store.reorderGroups(orderedIds)
+    this.sendGroupEvent({ type: 'group.reordered', groups })
+    return groups
+  }
+
+  setSessionGroup(sessionId: string, groupId: string | null): SessionRecord {
+    const session = this.store.setSessionGroup(sessionId, groupId)
+    if (!session) throw new Error(`Unknown session: ${sessionId}`)
+    this.sendLifecycle({ type: 'session.updated', session })
+    return session
+  }
+
+  /** Persists a manual drag-drop re-order (and possible re-parent) for a section: pinned (groupId undefined), a specific group id, or ungrouped (groupId null). */
+  reorderSessions(groupId: string | null | undefined, orderedIds: string[]): SessionRecord[] {
+    const sessions = this.store.reorderSessions(groupId, orderedIds)
+    for (const session of sessions) this.sendLifecycle({ type: 'session.updated', session })
+    return sessions
   }
 
   // ── Event stream consumption ─────────────────────────────────────────
@@ -407,16 +547,22 @@ try {
           rawEvent: event
         })
         this.sendMessage(sessionId, message)
+        live.busy = false
+        this.sendStatus(sessionId)
         return
       }
 
       case 'interrupted':
         this.flushBuffer(sessionId, live)
+        live.busy = false
+        this.sendStatus(sessionId)
         return
 
       case 'result': {
         this.flushBuffer(sessionId, live)
         live.turnCount += 1
+        live.busy = false
+        this.sendStatus(sessionId)
         if (live.turnCount >= AUTO_NAME_STARTING_FROM_TURN) {
           void this.maybeAutoName(sessionId).catch((err) =>
             logger.warn('auto-naming failed', { sessionId, error: err instanceof Error ? err.message : String(err) })
