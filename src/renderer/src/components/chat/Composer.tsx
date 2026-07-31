@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { FileTreeNode } from '../../../../shared/panel-types'
-import type { ModelSelection } from '../../../../shared/session-types'
+import type { ImageAttachment, ModelSelection } from '../../../../shared/session-types'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
 const MAX_TEXTAREA_HEIGHT = 160
@@ -134,10 +134,18 @@ function ModelPicker({
   )
 }
 
+/** The only mime types the Anthropic Messages API's image content block accepts — see `ImageAttachment` in shared/session-types.ts. */
+const ACCEPTED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+
+interface AttachedImage extends ImageAttachment {
+  /** `data:<mime>;base64,<data>` — the same bytes as `data`, kept around only so the thumbnail's `<img src>` doesn't need to re-derive it. */
+  previewUrl: string
+}
+
 interface ComposerProps {
   value: string
   onChange: (text: string) => void
-  onSend: (text: string) => void
+  onSend: (text: string, image?: ImageAttachment) => void
   onInterrupt: () => void
   /** True while a turn is in flight for the active session — swaps Send for Stop, per e2e-test-plan.md/spec.md. */
   busy: boolean
@@ -167,6 +175,34 @@ interface SlashCommand {
 }
 
 type PopoverState = { kind: 'mention' | 'slash'; query: string; tokenStart: number } | null
+
+/**
+ * Reads a File/Blob into a `data:` URL via FileReader (10g-enrichment-image-attachment)
+ * — simpler than `arrayBuffer()` + manual base64 encoding, and the result
+ * already carries the mime type in the `data:<mime>;base64,` prefix, which
+ * `readAttachedImage` below splits back apart.
+ */
+function readAsDataUrl(file: File | Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'))
+    reader.readAsDataURL(file)
+  })
+}
+
+/** Returns null for anything that isn't an image the SDK's image content block actually accepts (see ACCEPTED_IMAGE_MIME_TYPES). */
+async function readAttachedImage(file: File | Blob): Promise<AttachedImage | null> {
+  if (!ACCEPTED_IMAGE_MIME_TYPES.has(file.type)) return null
+  const previewUrl = await readAsDataUrl(file)
+  const commaIndex = previewUrl.indexOf(',')
+  if (commaIndex === -1) return null
+  return {
+    mimeType: file.type as AttachedImage['mimeType'],
+    data: previewUrl.slice(commaIndex + 1),
+    previewUrl,
+  }
+}
 
 /**
  * Composer core (04-composer-core) + `@file` mention / `/` slash-command
@@ -208,6 +244,16 @@ type PopoverState = { kind: 'mention' | 'slash'; query: string; tokenStart: numb
  * hidden while busy (matching the mock's `setWorking()` toggle exactly),
  * but Enter still submits — same as the mock's `onComposerKeydown`, which
  * calls `sendMessage()` unconditionally regardless of working state.
+ *
+ * Image attachment (10g-enrichment-image-attachment): dropping or pasting an
+ * image renders a real thumbnail chip in `.attach-row`/`.attach-thumb`
+ * (matching the mock's Attach affordance markup/CSS exactly — see
+ * mocks/index.html's `attachDemoImage()` — except the thumb here shows the
+ * REAL dropped/pasted image via an `<img>`, not the mock's gradient
+ * placeholder icon) with a `.remove` (×) button to clear it before sending.
+ * `onSend` receives the image alongside whatever text was typed, single
+ * image at a time (dropping/pasting a second one replaces the first — no
+ * multi-attach UI, per spec.md's minimal scope).
  */
 export default function Composer({
   value,
@@ -224,6 +270,8 @@ export default function Composer({
   const [popover, setPopover] = useState<PopoverState>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [fileList, setFileList] = useState<string[]>([])
+  const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
 
   // Real file list for @-mentions: same IPC the Files panel (07) already
   // uses to walk the session's real project_path on disk — no fixture/fake
@@ -279,8 +327,40 @@ export default function Composer({
 
   function handleSend(): void {
     const text = value.trim()
-    if (!text) return
-    onSend(text)
+    if (!text && !attachedImage) return
+    onSend(text, attachedImage ? { mimeType: attachedImage.mimeType, data: attachedImage.data } : undefined)
+    setAttachedImage(null)
+  }
+
+  async function attachFile(file: File | null | undefined): Promise<void> {
+    if (!file) return
+    const image = await readAttachedImage(file)
+    if (image) setAttachedImage(image)
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>): void {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  function handleDragLeave(): void {
+    setIsDragOver(false)
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>): void {
+    if (e.dataTransfer.files.length === 0) return
+    e.preventDefault()
+    setIsDragOver(false)
+    void attachFile(e.dataTransfer.files[0])
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>): void {
+    const items = Array.from(e.clipboardData.items)
+    const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    if (!imageItem) return // ordinary text paste — let the default handler run
+    e.preventDefault()
+    void attachFile(imageItem.getAsFile())
   }
 
   /** Recomputes trigger state from the token immediately before the cursor — re-run on every keystroke, mirroring the mock's `onComposerInput`, but cursor-anchored rather than end-of-value-anchored so it still works if the user edits mid-string. */
@@ -376,7 +456,12 @@ export default function Composer({
 
   return (
     <div className="composer-wrap">
-      <div className="composer-box">
+      <div
+        className={`composer-box${isDragOver ? ' drag-over' : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         {popover?.kind === 'mention' && mentionMatches.length > 0 && (
           <div className="mention-popup" data-testid="mention-popover">
             {mentionMatches.map((path, idx) => {
@@ -422,6 +507,20 @@ export default function Composer({
             ))}
           </div>
         )}
+        {attachedImage && (
+          <div className="attach-row" data-testid="composer-attach-row">
+            <div className="attach-thumb" data-testid="composer-attach-thumb">
+              <img src={attachedImage.previewUrl} alt="Attached" data-testid="composer-attach-image" />
+              <span
+                className="remove"
+                data-testid="composer-attach-remove"
+                onClick={() => setAttachedImage(null)}
+              >
+                ✕
+              </span>
+            </div>
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           data-testid="composer-input"
@@ -430,6 +529,7 @@ export default function Composer({
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
         />
         <div className="composer-footer">
           <div className="spacer" />
@@ -448,7 +548,7 @@ export default function Composer({
             <button
               className="send-btn"
               data-testid="send-button"
-              disabled={!value.trim()}
+              disabled={!value.trim() && !attachedImage}
               title="Send (Enter)"
               onClick={handleSend}
             >

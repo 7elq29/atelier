@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   CreateSessionOptions,
+  ImageAttachment,
   MessageRecord,
   ModelSelection,
   PromptDecision,
@@ -23,7 +24,7 @@ export interface UseSessionsResult {
   refresh: () => Promise<void>
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
-  sendMessage: (sessionId: string, text: string, modelSelection?: ModelSelection) => Promise<void>
+  sendMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment) => Promise<void>
   interrupt: (sessionId: string) => Promise<void>
   respondToPrompt: (sessionId: string, requestId: string, decision: PromptDecision) => Promise<void>
   forkSession: (sessionId: string) => Promise<SessionRecord>
@@ -157,8 +158,8 @@ export function useSessions(): UseSessionsResult {
     setMessagesBySession((prev) => ({ ...prev, [sessionId]: messages }))
   }, [])
 
-  const sendMessage = useCallback(async (sessionId: string, text: string, modelSelection?: ModelSelection): Promise<void> => {
-    await window.gardenia.sendSessionMessage(sessionId, text, modelSelection)
+  const sendMessage = useCallback(async (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment): Promise<void> => {
+    await window.gardenia.sendSessionMessage(sessionId, text, modelSelection, image)
   }, [])
 
   const interrupt = useCallback(async (sessionId: string): Promise<void> => {

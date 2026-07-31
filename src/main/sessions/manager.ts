@@ -3,6 +3,7 @@ import type { HarnessDriver, HarnessEvent, PromptResponse, RemoteHost } from '..
 import { logger } from '../logger'
 import type {
   CreateSessionOptions,
+  ImageAttachment,
   MessageRecord,
   ModelSelection,
   PromptDecision,
@@ -16,6 +17,7 @@ import type {
 import type {
   AskUserQuestionContent,
   CompactionContent,
+  ImageAttachmentContent,
   PermissionRequestContent,
   PlanProposedContent,
   ToolCallContent,
@@ -354,10 +356,19 @@ try {
    * preserved across a `resume()` reconnect — it only resets on session
    * close or a real app relaunch.
    */
-  async sendUserMessage(sessionId: string, text: string, override?: ModelSelection): Promise<void> {
+  async sendUserMessage(sessionId: string, text: string, override?: ModelSelection, image?: ImageAttachment): Promise<void> {
     const session = this.store.getSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
-    const userMessage = this.store.addMessage({ sessionId, role: 'user', content: text })
+    // Persisted content is the plain-text string in the common (no image)
+    // case, unchanged from before this task. With an image attached, it's
+    // JSON-encoded as an ImageAttachmentContent instead — same
+    // "one row, tagged with `kind`" pattern every other StructuredContent
+    // kind already uses — purely so the transcript can render a thumbnail;
+    // the SDK call itself (below) carries the real image bytes separately.
+    const content: string = image
+      ? JSON.stringify({ kind: 'image_attachment', mimeType: image.mimeType, data: image.data, text } satisfies ImageAttachmentContent)
+      : text
+    const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
     this.sendMessage(sessionId, userMessage)
 
     if (session.mode !== 'claude-code') return
@@ -405,7 +416,7 @@ try {
       // path below, regardless of what `isActive()` reports afterward.
       if (!selectionChanged && this.harness.isActive(sessionId)) {
         logger.info('sendUserMessage: live injection (streamInput, no resume)', { sessionId })
-        await this.harness.streamInput(sessionId, text)
+        await this.harness.streamInput(sessionId, text, image)
         return
       }
       logger.info('sendUserMessage: no live harness session, reconnecting via resume()', { sessionId })
@@ -420,7 +431,7 @@ try {
         ...(modelSelection?.model ? { model: modelSelection.model } : {}),
         ...(modelSelection?.effort ? { effort: modelSelection.effort } : {})
       })
-      await this.harness.streamInput(sessionId, text)
+      await this.harness.streamInput(sessionId, text, image)
       const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
       this.live.set(sessionId, newLiveStream(previousTurnCount))
       this.live.get(sessionId)!.busy = true

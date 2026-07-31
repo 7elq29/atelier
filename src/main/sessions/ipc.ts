@@ -4,7 +4,7 @@
  * in index.ts.
  */
 import { ipcMain, dialog, type BrowserWindow } from 'electron'
-import type { CreateSessionOptions, ModelSelection, PromptDecision } from '../../shared/session-types'
+import type { CreateSessionOptions, ImageAttachment, ModelSelection, PromptDecision } from '../../shared/session-types'
 import { logger } from '../logger'
 import { openDatabase } from '../db'
 import type { SessionManager } from './manager'
@@ -52,9 +52,9 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
     return snapshot
   })
 
-  ipcMain.handle('session:sendMessage', (_event, sessionId: string, text: string, modelSelection?: ModelSelection) => {
-    logger.info('session:sendMessage invoked', { sessionId, textLength: text.length, modelSelection })
-    return manager.sendUserMessage(sessionId, text, modelSelection)
+  ipcMain.handle('session:sendMessage', (_event, sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment) => {
+    logger.info('session:sendMessage invoked', { sessionId, textLength: text.length, modelSelection, hasImage: Boolean(image) })
+    return manager.sendUserMessage(sessionId, text, modelSelection, image)
   })
 
   ipcMain.handle('session:interrupt', (_event, sessionId: string) => manager.interrupt(sessionId))

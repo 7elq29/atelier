@@ -87,6 +87,21 @@ export interface HarnessStartOptions {
   permissionMode?: 'default' | 'plan'
 }
 
+/**
+ * An image to attach to a user message (10g-enrichment-image-attachment).
+ * `mimeType` is restricted to the Anthropic Messages API's own supported set
+ * (verified against the installed `@anthropic-ai/sdk`'s `Base64ImageSource`
+ * type, re-exported through `@anthropic-ai/claude-agent-sdk`'s
+ * `SDKUserMessage.message: MessageParam`) — anything else the SDK would
+ * reject outright, so composer-side capture should normalize to one of
+ * these before ever reaching the harness. `data` is raw base64 (no
+ * `data:...;base64,` prefix).
+ */
+export interface HarnessImageInput {
+  mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+  data: string
+}
+
 /** A single todo item as reported by the agent's planning tool. */
 export interface HarnessTodoItem {
   content: string
@@ -299,9 +314,13 @@ export interface HarnessDriver {
   /**
    * Push an additional user message into a still-open, streaming-input
    * session (e.g. mid-turn steering). No-op if the session has already
-   * ended.
+   * ended. `image`, when present (10g-enrichment-image-attachment), turns
+   * the message's `content` into a real multi-block array (an optional text
+   * block followed by an image block) instead of a plain string — see
+   * `ClaudeAgentSdkHarness`'s `userMessage()` for the exact block shapes,
+   * verified against the installed SDK's types.
    */
-  streamInput(sessionId: string, message: string): Promise<void>
+  streamInput(sessionId: string, message: string, image?: HarnessImageInput): Promise<void>
 
   /**
    * True while `sessionId` still has a live, streaming-input query open

@@ -37,6 +37,7 @@ import type {
   HarnessAskQuestion,
   HarnessDriver,
   HarnessEvent,
+  HarnessImageInput,
   HarnessSession,
   HarnessStartOptions,
   HarnessTodoItem,
@@ -181,10 +182,38 @@ class UserMessageQueue implements AsyncIterable<SDKUserMessage> {
   }
 }
 
-function userMessage(text: string): SDKUserMessage {
+/**
+ * Builds an `SDKUserMessage`. Plain text (the common case, and everything
+ * before 10g-enrichment-image-attachment) keeps `content` as a bare string.
+ * When `image` is supplied, `content` becomes the real Anthropic Messages
+ * API multi-block array instead — verified against the installed
+ * `@anthropic-ai/sdk`'s `resources/messages/messages.d.ts` (which
+ * `@anthropic-ai/claude-agent-sdk`'s own `SDKUserMessage.message: MessageParam`
+ * re-exports): `MessageParam.content: string | Array<ContentBlockParam>`,
+ * where a text block is `{ type: 'text', text }` (`TextBlockParam`) and an
+ * image block is `{ type: 'image', source: { type: 'base64', media_type,
+ * data } }` (`ImageBlockParam` / `Base64ImageSource`) — not guessed, and not
+ * some other field naming (e.g. no `mime_type` or `content`-on-the-image).
+ * The text block is omitted entirely when there's no accompanying text, so a
+ * bare image attachment doesn't send an empty text block alongside it.
+ */
+function userMessage(text: string, image?: HarnessImageInput): SDKUserMessage {
+  if (!image) {
+    return {
+      type: 'user',
+      message: { role: 'user', content: text },
+      parent_tool_use_id: null,
+    }
+  }
   return {
     type: 'user',
-    message: { role: 'user', content: text },
+    message: {
+      role: 'user',
+      content: [
+        ...(text ? [{ type: 'text' as const, text }] : []),
+        { type: 'image' as const, source: { type: 'base64' as const, media_type: image.mimeType, data: image.data } },
+      ],
+    },
     parent_tool_use_id: null,
   }
 }
@@ -314,11 +343,26 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     logger.info('harness.interrupt(): input queue closed', { sessionId })
   }
 
-  async streamInput(sessionId: string, message: string): Promise<void> {
+  async streamInput(sessionId: string, message: string, image?: HarnessImageInput): Promise<void> {
     const active = this.sessions.get(sessionId)
     if (!active) return
-    logger.info('harness.streamInput() called', { sessionId, textLength: message.length })
-    active.queue.push(userMessage(message))
+    const sdkMessage = userMessage(message, image)
+    // Logged as an explicit content-block-type list (not just "hasImage")
+    // so an e2e test can grep the real, already-built SDK payload for proof
+    // an 'image' block was actually sent — not merely that the UI showed a
+    // thumbnail. `sdkMessage.message.content` is either the plain string
+    // (no image) or the real multi-block array built by userMessage() above.
+    const contentBlockTypes = Array.isArray(sdkMessage.message.content)
+      ? sdkMessage.message.content.map((block) => block.type)
+      : ['text']
+    logger.info('harness.streamInput() called', {
+      sessionId,
+      textLength: message.length,
+      hasImage: Boolean(image),
+      imageMimeType: image?.mimeType,
+      contentBlockTypes,
+    })
+    active.queue.push(sdkMessage)
   }
 
   isActive(sessionId: string): boolean {
