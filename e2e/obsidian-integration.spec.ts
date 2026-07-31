@@ -26,6 +26,13 @@ const GID_ONE_ON_ONE = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const GID_PR_DESC = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const GID_DESIGN_REVIEW = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 const GID_EXERCISE = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+// Extra seed content added for the 09-timeline.png screenshot artifact (see
+// 09-obsidian-integration UI fix notes): a couple more time-blocks spread
+// across the day (so the screenshot shows a flat, dense list rather than a
+// near-empty panel) and a second tracker.
+const GID_DEEP_WORK = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+const GID_ONCALL_HANDOFF = '99999999-9999-4999-8999-999999999999'
+const GID_READING_TRACKER = '88888888-8888-4888-8888-888888888888'
 
 function seedFixtureContent(): string {
   return `---
@@ -38,6 +45,8 @@ type: daily
 
 - [ ] 09:00–09:15 Standup [gid:: ${GID_STANDUP}]
 - [ ] 11:00–11:30 1:1 with manager [gid:: ${GID_ONE_ON_ONE}]
+- [ ] 17:45–18:30 Deep work: Terrablob failover doc [gid:: ${GID_DEEP_WORK}]
+- [ ] 20:00–20:30 Prep for oncall handoff [gid:: ${GID_ONCALL_HANDOFF}]
 
 ### ⚪ Backlog
 - [ ] Write PR description [gid:: ${GID_PR_DESC}]
@@ -48,6 +57,7 @@ type: daily
 
 > [!invisible] Trackers
 > - [ ] Exercise #tracker [gid:: ${GID_EXERCISE}]
+> - [ ] Read 20 pages #tracker [gid:: ${GID_READING_TRACKER}]
 `
 }
 
@@ -123,34 +133,73 @@ test.afterAll(async () => {
 })
 
 test('seeded tasks render correctly in Timeline/Unscheduled/Trackers', async () => {
-  await expect(page.locator('[data-testid="timeline-task"]')).toHaveCount(2)
+  await expect(page.locator('[data-testid="timeline-task"]')).toHaveCount(4)
   await expect(page.locator('[data-testid="unscheduled-task"]')).toHaveCount(2)
-  await expect(page.locator('[data-testid="tracker-task"]')).toHaveCount(1)
+  await expect(page.locator('[data-testid="tracker-task"]')).toHaveCount(2)
 
   await expect(page.locator('[data-testid="timeline-task"]', { hasText: 'Standup' })).toBeVisible()
   await expect(page.locator('[data-testid="timeline-task"]', { hasText: '1:1 with manager' })).toBeVisible()
+  await expect(
+    page.locator('[data-testid="timeline-task"]', { hasText: 'Deep work: Terrablob failover doc' })
+  ).toBeVisible()
+  await expect(page.locator('[data-testid="timeline-task"]', { hasText: 'Prep for oncall handoff' })).toBeVisible()
   await expect(page.locator('[data-testid="unscheduled-task"]', { hasText: 'Write PR description' })).toBeVisible()
   await expect(
     page.locator('[data-testid="unscheduled-task"]', { hasText: 'Reply to design review comments' })
   ).toBeVisible()
   await expect(page.locator('[data-testid="tracker-task"]', { hasText: 'Exercise' })).toBeVisible()
+  await expect(page.locator('[data-testid="tracker-task"]', { hasText: 'Read 20 pages' })).toBeVisible()
 
   await page.screenshot({ path: join(artifactsDir, '09-timeline.png') })
 })
 
-test('current-time indicator renders at a plausible vertical position', async () => {
+test('current-time indicator is a plain list row in chronological order (not an absolute overlay)', async () => {
+  // Timeline is now a flat list (see 09-obsidian-integration UI fix): the
+  // "now" marker is a plain row spliced between the tasks that bracket the
+  // current time, not an absolutely-positioned overlay line on a 24h grid.
+  // Outside the displayed window (06:00-23:00) it isn't rendered at all, so
+  // this test is written to be correct regardless of the real wall-clock
+  // time it happens to run at.
   const line = page.locator('[data-testid="current-time-line"]')
+  const count = await line.count()
+  if (count === 0) return
+
   await expect(line).toBeAttached()
+
+  // Not absolutely positioned: no inline `top` style (that was the old,
+  // now-fixed grid-overlay design).
+  const style = await line.evaluate((el) => (el as HTMLElement).getAttribute('style'))
+  expect(style ?? '').not.toMatch(/top\s*:/)
+
   const minutesAttr = await line.getAttribute('data-minutes')
   const minutes = Number(minutesAttr)
   expect(minutes).toBeGreaterThanOrEqual(0)
   expect(minutes).toBeLessThan(24 * 60)
 
-  const top = await line.evaluate((el) => (el as HTMLElement).style.top)
-  const topPx = parseFloat(top)
-  // DAY_START_MIN=360 (06:00), PX_PER_MIN=2 (see timeline-scale.ts)
-  const expectedTop = (minutes - 360) * 2
-  expect(Math.abs(topPx - expectedTop)).toBeLessThan(1)
+  // Chronological bracketing: every timeline-task rendered *before* the
+  // marker in DOM order must start at or before "now", and every one
+  // rendered *after* must start after "now".
+  const rows = page.locator('[data-testid="timeline-list"] > *')
+  const rowCount = await rows.count()
+  let seenMarker = false
+  for (let i = 0; i < rowCount; i++) {
+    const row = rows.nth(i)
+    const testId = await row.getAttribute('data-testid')
+    if (testId === 'current-time-line') {
+      seenMarker = true
+      continue
+    }
+    if (testId !== 'timeline-task') continue
+    const start = await row.getAttribute('data-start')
+    if (!start) continue
+    const [h, m] = start.split(':').map(Number)
+    const startMin = h * 60 + m
+    if (!seenMarker) {
+      expect(startMin).toBeLessThanOrEqual(minutes)
+    } else {
+      expect(startMin).toBeGreaterThan(minutes)
+    }
+  }
 })
 
 test('creating a task from a timeline right-click writes a [gid:: ...] field and round-trips', async () => {
@@ -158,9 +207,13 @@ test('creating a task from a timeline right-click writes a [gid:: ...] field and
   const box = await timelineBody.boundingBox()
   if (!box) throw new Error('timeline body not visible')
 
-  // Right-click somewhere in the middle of the timeline (well after existing
-  // blocks) to open the inline creation form.
-  await timelineBody.click({ button: 'right', position: { x: 40, y: 400 } })
+  // Right-click near the bottom of the *actual* rendered timeline body,
+  // well clear of the existing (short) cards near the top. Flat-list layout
+  // sizes the body to its flex share of the panel, not to a fixed 24h-grid
+  // pixel height, so unlike the old design we can't assume an arbitrary
+  // large y-offset (e.g. 400px) is still inside the element — clamp to its
+  // real bounding box instead.
+  await timelineBody.click({ button: 'right', position: { x: 40, y: Math.max(20, box.height - 15) } })
   const input = page.locator('[data-testid="timeline-new-task-input"]')
   await expect(input).toBeVisible()
   await input.fill('Deep work: token refresh fix')
@@ -323,4 +376,200 @@ test('regression: external delete racing an in-flight write does not resurrect t
     'tombstone-diff decision (regression test)',
     JSON.stringify({ delayedEntry, tombstoneEntry }, null, 2)
   )
+})
+
+// ── Real-world content shapes (Unscheduled/Trackers rendering empty) ───────
+//
+// Added in response to a user report against their real vault: Unscheduled
+// and Trackers appeared empty even though the underlying file had real
+// content in these exact shapes. Kept as an ADDITIONAL, separately-launched
+// suite (own Electron instance + own fixture vault/date) rather than folded
+// into the fixture above, so both the original simple-fixture coverage and
+// this real-world-shape coverage exist independently going forward. A
+// separate launch is needed because the displayed date is fixed for the
+// whole Electron session (via GARDENIA_TEST_DATE), so a second date's
+// fixture needs a second session.
+test.describe('real-world content shapes (multi-link tasks, no-link tasks, single tracker, emoji heading)', () => {
+  const SHAPES_DATE = '2026-07-30'
+  const GID_MULTI_LINK = '11111111-1111-4111-8111-111111111111'
+  const GID_NO_LINK = '22222222-2222-4222-8222-222222222222'
+  const GID_PLACEHOLDER_MULTI_LINK = '33333333-3333-4333-8333-333333333333'
+  const GID_SINGLE_TRACKER = '44444444-4444-4444-8444-444444444444'
+
+  let shapesApp: ElectronApplication
+  let shapesPage: Page
+  let shapesUserDataDir: string
+  let shapesVaultRoot: string
+
+  function seedShapesFixtureContent(): string {
+    return `---
+date: ${SHAPES_DATE}
+day: Thursday
+type: daily
+---
+
+## 📋 Tasks
+
+- [ ] 09:00–09:15 Standup [gid:: aaaa0000-0000-4000-8000-000000000000]
+
+### ⚪ Backlog
+- [ ] Logging Failover Runbook ( / ) [SAW-7068](https://t3.uberinternal.com/browse/SAW-7068) [LOG-1167](https://linear.app/uber/issue/LOG-1167) [gid:: ${GID_PLACEHOLDER_MULTI_LINK}]
+- [ ] Smooth logcollector -> Terrablob traffic [gid:: ${GID_NO_LINK}]
+- [ ] Add high urgency alerts for increase in total number of tables experiencing ingestion lag per cluster ( / ) [SAW-7067](https://t3.uberinternal.com/browse/SAW-7067) [LOG-1166](https://linear.app/uber/issue/LOG-1166) [gid:: ${GID_MULTI_LINK}]
+
+### 🤝 Delegated
+-
+
+> [!invisible] Trackers
+> - [ ] Exercise #tracker [gid:: ${GID_SINGLE_TRACKER}]
+`
+  }
+
+  test.beforeAll(async () => {
+    shapesUserDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-shapes-'))
+    mkdirSync(join(shapesUserDataDir, 'data'), { recursive: true })
+    writeFileSync(join(shapesUserDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+
+    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-shapes-'))
+    shapesVaultRoot = join(vaultParent, 'vault')
+    const noteDir = join(shapesVaultRoot, '01.dailynotes', '2026', 'Jul', '31')
+    mkdirSync(noteDir, { recursive: true })
+    writeFileSync(join(noteDir, `${SHAPES_DATE}.md`), seedShapesFixtureContent(), 'utf-8')
+
+    shapesApp = await electron.launch({
+      args: [mainEntry, `--user-data-dir=${shapesUserDataDir}`],
+      env: {
+        ...process.env,
+        GARDENIA_TEST_VAULT_ROOT: shapesVaultRoot,
+        GARDENIA_TEST_DATE: SHAPES_DATE
+      }
+    })
+    shapesPage = await shapesApp.firstWindow()
+    await shapesPage.waitForLoadState('domcontentloaded')
+    await expect(shapesPage.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+  })
+
+  test.afterAll(async () => {
+    await shapesApp.close()
+  })
+
+  test('Unscheduled renders all three real-world Backlog shapes (multi-link, no-link, placeholder text)', async () => {
+    const unscheduled = shapesPage.locator('[data-testid="unscheduled-task"]')
+    await expect(unscheduled).toHaveCount(3)
+
+    // Multi-link task with a literal "( / )" placeholder in the text itself
+    // (not something the parser should strip or choke on).
+    await expect(
+      unscheduled.filter({ hasText: 'Logging Failover Runbook ( / )' })
+    ).toBeVisible()
+    await expect(
+      unscheduled.filter({
+        hasText: 'Add high urgency alerts for increase in total number of tables experiencing ingestion lag per cluster ( / )'
+      })
+    ).toBeVisible()
+
+    // Plain task with no bracketed links at all.
+    await expect(unscheduled.filter({ hasText: 'Smooth logcollector -> Terrablob traffic' })).toBeVisible()
+  })
+
+  test('Trackers renders correctly with only a single tracker item', async () => {
+    const trackers = shapesPage.locator('[data-testid="tracker-task"]')
+    await expect(trackers).toHaveCount(1)
+    await expect(trackers.filter({ hasText: 'Exercise' })).toBeVisible()
+  })
+
+  test('"### ⚪ Backlog" (emoji-prefixed heading) is recognized as the Unscheduled bucket', async () => {
+    // If detectSection() only matched a literal "Backlog" without accounting
+    // for the emoji prefix, none of the above would render at all — this is
+    // a belt-and-suspenders check tying the visible count back to the exact
+    // heading text used in real vaults.
+    await expect(shapesPage.locator('[data-testid="unscheduled-task"]')).toHaveCount(3)
+  })
+})
+
+// ── Current-time marker vs. an in-progress task ─────────────────────────
+//
+// The flat-list "now" marker (see Timeline.tsx) is spliced between the two
+// tasks that bracket "now" by comparing `task.start > nowMinutes`. This only
+// exercises the case where "now" falls strictly *between* two tasks; it
+// doesn't exercise "now" falling *inside* a task's own range (task already
+// started, not yet finished). Seed a task whose time-block is computed at
+// setup time to straddle the real "now" (±15 minutes), so this is verified
+// against the actual wall clock rather than a fixed fictional time.
+test.describe('current-time marker relative to an in-progress task', () => {
+  const DATE = '2026-07-30'
+  const GID_IN_PROGRESS = '55555555-5555-4555-8555-555555555555'
+  const DAY_START_MIN = 6 * 60 // matches timeline-scale.ts
+  const DAY_END_MIN = 23 * 60
+
+  let inProgressApp: ElectronApplication
+  let inProgressPage: Page
+
+  function pad(n: number): string {
+    return String(n).padStart(2, '0')
+  }
+  function toHHMM(mins: number): string {
+    return `${pad(Math.floor(mins / 60))}:${pad(mins % 60)}`
+  }
+
+  const now = new Date()
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  const inDisplayWindow = nowMinutes >= DAY_START_MIN + 15 && nowMinutes <= DAY_END_MIN - 15
+  const rangeStart = toHHMM(nowMinutes - 15)
+  const rangeEnd = toHHMM(nowMinutes + 15)
+
+  test.beforeAll(async () => {
+    test.skip(!inDisplayWindow, 'real wall-clock time is outside the displayed 06:00-23:00 window (with margin)')
+
+    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-inprogress-'))
+    mkdirSync(join(userDataDir, 'data'), { recursive: true })
+    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+
+    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-inprogress-'))
+    const vaultRoot = join(vaultParent, 'vault')
+    const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31')
+    mkdirSync(noteDir, { recursive: true })
+    const content = `---
+date: ${DATE}
+day: Thursday
+type: daily
+---
+
+## 📋 Tasks
+
+- [ ] ${rangeStart}–${rangeEnd} In-progress task spanning now [gid:: ${GID_IN_PROGRESS}]
+
+### ⚪ Backlog
+-
+
+### 🤝 Delegated
+-
+`
+    writeFileSync(join(noteDir, `${DATE}.md`), content, 'utf-8')
+
+    inProgressApp = await electron.launch({
+      args: [mainEntry, `--user-data-dir=${userDataDir}`],
+      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: DATE }
+    })
+    inProgressPage = await inProgressApp.firstWindow()
+    await inProgressPage.waitForLoadState('domcontentloaded')
+    await expect(inProgressPage.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+  })
+
+  test.afterAll(async () => {
+    if (inProgressApp) await inProgressApp.close()
+  })
+
+  test('marker renders after (not before) a task whose range currently contains "now"', async () => {
+    test.skip(!inDisplayWindow, 'real wall-clock time is outside the displayed 06:00-23:00 window (with margin)')
+
+    const marker = inProgressPage.locator('[data-testid="current-time-line"]')
+    await expect(marker).toBeAttached()
+
+    const rows = inProgressPage.locator('[data-testid="timeline-list"] > *')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.nth(0)).toHaveAttribute('data-testid', 'timeline-task')
+    await expect(rows.nth(0)).toContainText('In-progress task spanning now')
+    await expect(rows.nth(1)).toHaveAttribute('data-testid', 'current-time-line')
+  })
 })

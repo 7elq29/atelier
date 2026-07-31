@@ -1,5 +1,5 @@
-{"ts":"2026-07-30T23:46:41.328Z","level":"info","process":"main","msg":"database opened","dbPath":"/private/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-JZ8MQ1/data/gardenia.sqlite"}
-{"ts":"2026-07-30T23:46:41.332Z","level":"info","process":"main","msg":"app ready","version":"32.3.3","platform":"darwin"}
-{"ts":"2026-07-30T23:46:41.502Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
-{"ts":"2026-07-30T23:46:41.557Z","level":"info","process":"renderer","msg":"renderer received app version via IPC","version":"32.3.3"}
-{"ts":"2026-07-30T23:46:41.623Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
+{"ts":"2026-07-31T01:16:18.690Z","level":"info","process":"main","msg":"database opened","dbPath":"/private/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-fNJqZR/data/gardenia.sqlite"}
+{"ts":"2026-07-31T01:16:18.692Z","level":"info","process":"main","msg":"app ready","version":"32.3.3","platform":"darwin"}
+{"ts":"2026-07-31T01:16:18.870Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
+{"ts":"2026-07-31T01:16:18.914Z","level":"info","process":"renderer","msg":"renderer received app version via IPC","version":"32.3.3"}
+{"ts":"2026-07-31T01:16:19.007Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}

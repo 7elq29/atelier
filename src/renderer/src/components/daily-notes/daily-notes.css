@@ -71,30 +71,32 @@
   align-items: flex-start;
 }
 
-/* ---- Timeline ---- */
+/* ---- Timeline ----
+   Flat vertical list of compact cards (mirrors the mock's `.time-block` /
+   `.timeline-now-marker`) — NOT an absolutely-positioned 24-hour grid. Each
+   card carries its own time range as text; ordering comes from the
+   pre-sorted `tasks` array, not from pixel position. */
 
-.dn-timeline-body {
-  position: relative;
-}
-.dn-timeline-track {
-  position: relative;
+.dn-timeline-list {
+  display: flex;
+  flex-direction: column;
 }
 
 .dn-time-block {
-  position: absolute;
-  left: 0;
-  right: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 10px 13px;
+  margin-bottom: 9px;
   background: var(--bg-panel-raised);
   border: 1px solid var(--border-subtle);
   border-left: 3px solid var(--accent);
   border-radius: var(--r-sm);
   cursor: pointer;
   box-sizing: border-box;
-  overflow: hidden;
+}
+.dn-time-block:last-child {
+  margin-bottom: 0;
 }
 .dn-time-block.done {
   opacity: 0.55;
@@ -117,7 +119,6 @@
   color: var(--text-tertiary);
 }
 .dn-time-block-draft {
-  z-index: 5;
   border-left-color: var(--warning);
 }
 .dn-draft-input {
@@ -141,28 +142,27 @@
   border-color: var(--accent);
 }
 
-.dn-current-time-line {
-  position: absolute;
-  left: 0;
-  right: 0;
+/* Current-time marker: a plain row inserted between the two time-blocks
+   that bracket "now" — an accent-colored dot/label plus a horizontal rule
+   (via ::after), not an absolutely-positioned overlay line. */
+.dn-timeline-now-marker {
   display: flex;
   align-items: center;
   gap: 8px;
-  z-index: 10;
-  pointer-events: none;
-}
-.dn-current-time-label {
+  margin: 4px 0 10px;
   color: var(--accent);
   font-size: 13.5px;
   font-weight: 600;
-  font-family: var(--font-mono);
-  white-space: nowrap;
 }
-.dn-current-time-track {
+.dn-timeline-now-marker::after {
+  content: '';
   flex: 1;
-  height: 2px;
+  height: 1px;
   background: var(--accent);
-  border-radius: 2px;
+  opacity: 0.5;
+}
+.dn-now-dot {
+  font-size: 10px;
 }
 
 /* ---- Unscheduled ---- */
