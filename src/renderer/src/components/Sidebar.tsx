@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { SessionRecord } from '../../../shared/session-types'
+import { useEffect, useState } from 'react'
+import type { MessageRecord, SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
 
 interface SidebarProps {
   collapsed: boolean
@@ -17,9 +17,27 @@ interface SidebarProps {
   onDelete: (sessionId: string) => void
   onFork: (sessionId: string) => void
   onRestart: (sessionId: string) => void
+
+  // ── 06-session-organization ──────────────────────────────────────────
+  groups: SessionGroupRecord[]
+  statuses: Record<string, SessionStatus>
+  messagesBySession: Record<string, MessageRecord[]>
+  onSetColor: (sessionId: string, color: string) => void
+  onSetNotes: (sessionId: string, notes: string) => void
+  onAddTag: (sessionId: string, tag: string) => void
+  onRemoveTag: (sessionId: string, tag: string) => void
+  onReorderSessions: (groupId: string | null | undefined, orderedIds: string[]) => void
+  onCreateGroup: (name: string) => void
+  onRenameGroup: (groupId: string, name: string) => void
+  onSetGroupCollapsed: (groupId: string, collapsed: boolean) => void
+  onDeleteGroup: (groupId: string) => void
+  onReorderGroups: (orderedIds: string[]) => void
 }
 
 const SESSION_COLORS = ['--sc-blue', '--sc-green', '--sc-purple', '--sc-amber', '--sc-rose', '--sc-cyan', '--sc-indigo', '--sc-teal']
+
+/** Quick filter chip ids, matching mocks/index.html's filter-row exactly ("All" / "Waiting" / "Needs attention"). */
+type QuickFilter = 'all' | 'waiting' | 'attention'
 
 function colorVar(session: SessionRecord): string {
   if (session.color && SESSION_COLORS.includes(session.color)) return `var(${session.color})`
@@ -35,42 +53,202 @@ function hashCode(s: string): number {
   return h
 }
 
-function groupSessions(sessions: SessionRecord[]): {
-  pinned: SessionRecord[]
-  grouped: Map<string, SessionRecord[]>
-  ungrouped: SessionRecord[]
-} {
-  const pinned = sessions.filter((s) => s.pinned)
-  const rest = sessions.filter((s) => !s.pinned)
-  const grouped = new Map<string, SessionRecord[]>()
-  const ungrouped: SessionRecord[] = []
-  for (const s of rest) {
-    if (s.groupId) {
-      const list = grouped.get(s.groupId) ?? []
-      list.push(s)
-      grouped.set(s.groupId, list)
-    } else {
-      ungrouped.push(s)
+/**
+ * 06-session-organization concurrent status: a session's DISPLAY status
+ * folds SessionManager's live 'working'/'waiting'/'idle' (see
+ * shared/session-types.ts's SessionStatus doc comment) together with two
+ * things the manager doesn't track: terminal-mode sessions (no harness at
+ * all) and closed sessions both display as 'disconnected'.
+ */
+function displayStatus(session: SessionRecord, closed: boolean, statuses: Record<string, SessionStatus>): SessionStatus {
+  if (closed || session.mode === 'terminal') return 'disconnected'
+  return statuses[session.id] ?? 'idle'
+}
+
+/**
+ * "Needs attention" (06-session-organization) = status is 'waiting' (the
+ * agent finished a turn and is waiting on the user's next instruction) OR
+ * the session's most recent message is an error (a harness failure
+ * surfaced as a `system` "Error: ..." message, or a tool call that ended
+ * with status 'error') — documented in Features/06-session-organization/progress.md.
+ */
+function isErrorMessage(m: MessageRecord): boolean {
+  if (m.role === 'system' && m.content.startsWith('Error:')) return true
+  if (m.role === 'assistant') {
+    try {
+      const parsed = JSON.parse(m.content) as { kind?: string; status?: string }
+      if (parsed && parsed.kind === 'tool_call' && parsed.status === 'error') return true
+    } catch {
+      /* not JSON content — ordinary assistant text, not an error */
     }
   }
-  return { pinned, grouped, ungrouped }
+  return false
+}
+
+function needsAttention(status: SessionStatus, messages: MessageRecord[] | undefined): boolean {
+  if (status === 'waiting') return true
+  const last = messages && messages.length > 0 ? messages[messages.length - 1] : undefined
+  return !!last && isErrorMessage(last)
+}
+
+/** Subsequence fuzzy match (case-insensitive) — matches if every character of `query` appears in `text`, in order. */
+function fuzzyMatch(query: string, text: string): boolean {
+  if (!query) return true
+  const q = query.toLowerCase()
+  const t = text.toLowerCase()
+  let qi = 0
+  for (let i = 0; i < t.length && qi < q.length; i++) {
+    if (t[i] === q[qi]) qi++
+  }
+  return qi === q.length
+}
+
+function searchableText(session: SessionRecord): string {
+  return [session.name, ...session.tags, session.notes ?? ''].join(' ')
+}
+
+function groupSessions(
+  sessions: SessionRecord[],
+  groups: SessionGroupRecord[]
+): { pinned: SessionRecord[]; byGroup: Map<string, SessionRecord[]>; ungrouped: SessionRecord[] } {
+  const pinned = sessions.filter((s) => s.pinned)
+  const rest = sessions.filter((s) => !s.pinned)
+  const byGroup = new Map<string, SessionRecord[]>()
+  for (const g of groups) byGroup.set(g.id, [])
+  const ungrouped: SessionRecord[] = []
+  for (const s of rest) {
+    if (s.groupId && byGroup.has(s.groupId)) byGroup.get(s.groupId)!.push(s)
+    else ungrouped.push(s)
+  }
+  return { pinned, byGroup, ungrouped }
+}
+
+/** Detail popover (06-session-organization): tags, notes, and color — all in one place, anchored under the row's menu button. */
+function SessionDetailPopover({
+  session,
+  onAddTag,
+  onRemoveTag,
+  onSetNotes,
+  onSetColor,
+  onClose
+}: {
+  session: SessionRecord
+  onAddTag: (tag: string) => void
+  onRemoveTag: (tag: string) => void
+  onSetNotes: (notes: string) => void
+  onSetColor: (color: string) => void
+  onClose: () => void
+}): JSX.Element {
+  const [tagDraft, setTagDraft] = useState('')
+  const [notesDraft, setNotesDraft] = useState(session.notes ?? '')
+
+  function commitTag(): void {
+    const trimmed = tagDraft.trim()
+    if (trimmed) onAddTag(trimmed)
+    setTagDraft('')
+  }
+
+  return (
+    <div className="session-detail-popup" data-testid="session-detail-popover" onClick={(e) => e.stopPropagation()}>
+      <div className="sdp-section">
+        <div className="sdp-label">Color</div>
+        <div className="sdp-colors">
+          {SESSION_COLORS.map((c) => (
+            <button
+              key={c}
+              className={'sdp-swatch' + (session.color === c ? ' selected' : '')}
+              data-testid={`color-swatch-${c.replace('--sc-', '')}`}
+              style={{ background: `var(${c})` }}
+              title={c}
+              onClick={() => onSetColor(c)}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="sdp-section">
+        <div className="sdp-label">Tags</div>
+        <div className="sdp-tags">
+          {session.tags.map((tag) => (
+            <span className="row-tag sdp-tag" key={tag} data-testid="tag-pill">
+              {tag}
+              <button
+                className="sdp-tag-remove"
+                data-testid={`remove-tag-${tag}`}
+                onClick={() => onRemoveTag(tag)}
+                aria-label={`Remove tag ${tag}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+        <input
+          className="input sdp-tag-input"
+          data-testid="tag-input"
+          placeholder="Add a tag…"
+          value={tagDraft}
+          onChange={(e) => setTagDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitTag()
+            }
+          }}
+        />
+      </div>
+
+      <div className="sdp-section">
+        <div className="sdp-label">Notes</div>
+        <textarea
+          className="input sdp-notes"
+          data-testid="notes-textarea"
+          rows={3}
+          value={notesDraft}
+          onChange={(e) => setNotesDraft(e.target.value)}
+        />
+        <button
+          className="btn btn-sm btn-primary"
+          data-testid="save-notes-button"
+          style={{ marginTop: 6 }}
+          onClick={() => {
+            onSetNotes(notesDraft)
+            onClose()
+          }}
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function SessionRow({
   session,
   active,
   closed,
+  status,
+  draggable,
   onSelect,
   onRename,
   onTogglePin,
   onClose,
   onDelete,
   onFork,
-  onRestart
+  onRestart,
+  onAddTag,
+  onRemoveTag,
+  onSetNotes,
+  onSetColor,
+  onDragStart,
+  onDragOver,
+  onDrop
 }: {
   session: SessionRecord
   active: boolean
   closed: boolean
+  status: SessionStatus
+  draggable: boolean
   onSelect: () => void
   onRename: (name: string) => void
   onTogglePin: () => void
@@ -78,10 +256,31 @@ function SessionRow({
   onDelete: () => void
   onFork: () => void
   onRestart: () => void
+  onAddTag: (tag: string) => void
+  onRemoveTag: (tag: string) => void
+  onSetNotes: (notes: string) => void
+  onSetColor: (color: string) => void
+  onDragStart: (e: React.DragEvent) => void
+  onDragOver: (e: React.DragEvent) => void
+  onDrop: (e: React.DragEvent) => void
 }): JSX.Element {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
+
+  // Outside-click closes the row menu / detail popover (their own onClick
+  // already stopPropagation()s, so this only fires for genuine outside
+  // clicks — see SessionDetailPopover's/session-menu-popup's onClick).
+  useEffect(() => {
+    if (!menuOpen && !detailOpen) return
+    function handleOutsideClick(): void {
+      setMenuOpen(false)
+      setDetailOpen(false)
+    }
+    document.addEventListener('click', handleOutsideClick)
+    return () => document.removeEventListener('click', handleOutsideClick)
+  }, [menuOpen, detailOpen])
 
   function commitRename(): void {
     setEditing(false)
@@ -97,11 +296,17 @@ function SessionRow({
       data-session-id={session.id}
       data-active={active}
       data-pinned={session.pinned}
+      data-status={status}
+      draggable={draggable}
       tabIndex={-1}
       onClick={onSelect}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
     >
-      <span className="session-indicator" title="Session color">
+      <span className="session-indicator" title={`Color: custom · Status: ${status}`}>
         <span className="color-core" data-testid="session-dot" style={{ background: colorVar(session) }} />
+        <span className={'status-badge status-' + status} data-testid="session-status-badge" />
       </span>
       <div className="session-main hide-on-collapse">
         {editing ? (
@@ -129,6 +334,11 @@ function SessionRow({
         <div className="session-meta">
           <span>{session.hostname ?? session.projectPath.split('/').filter(Boolean).pop()}</span>
           {closed && <span className="row-tag">closed</span>}
+          {session.tags.map((tag) => (
+            <span className="row-tag" key={tag} data-testid="tag-pill">
+              {tag}
+            </span>
+          ))}
         </div>
       </div>
       {closed && (
@@ -150,6 +360,7 @@ function SessionRow({
         onClick={(e) => {
           e.stopPropagation()
           setMenuOpen((v) => !v)
+          setDetailOpen(false)
         }}
       >
         ⋯
@@ -178,6 +389,16 @@ function SessionRow({
               {session.pinned ? 'Unpin' : 'Pin'}
             </div>
           )}
+          <div
+            className="smi"
+            data-testid="menu-details"
+            onClick={() => {
+              setMenuOpen(false)
+              setDetailOpen(true)
+            }}
+          >
+            Tags / Notes / Color…
+          </div>
           <div
             className="smi"
             data-testid="menu-fork"
@@ -223,14 +444,25 @@ function SessionRow({
           </div>
         </div>
       )}
+      {detailOpen && (
+        <SessionDetailPopover
+          session={session}
+          onAddTag={onAddTag}
+          onRemoveTag={onRemoveTag}
+          onSetNotes={onSetNotes}
+          onSetColor={onSetColor}
+          onClose={() => setDetailOpen(false)}
+        />
+      )}
     </div>
   )
 }
 
 /**
- * Real session sidebar (02-session-lifecycle), replacing 08's single
- * placeholder row. Pinned section, named groups, History (closed sessions,
- * resumable), New Session button — matches mocks/index.html's structure.
+ * Real session sidebar (02-session-lifecycle), extended with session
+ * organization (06-session-organization): tags/notes/color detail popover,
+ * search + quick filters, named/collapsible/reorderable groups, manual
+ * drag-drop ordering, and live per-session status badges.
  */
 export default function Sidebar({
   collapsed,
@@ -247,17 +479,110 @@ export default function Sidebar({
   onClose,
   onDelete,
   onFork,
-  onRestart
+  onRestart,
+  groups,
+  statuses,
+  messagesBySession,
+  onSetColor,
+  onSetNotes,
+  onAddTag,
+  onRemoveTag,
+  onReorderSessions,
+  onCreateGroup,
+  onRenameGroup,
+  onSetGroupCollapsed,
+  onDeleteGroup,
+  onReorderGroups
 }: SidebarProps): JSX.Element {
-  const { pinned, grouped, ungrouped } = groupSessions(activeSessions)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all')
+  const [newGroupOpen, setNewGroupOpen] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
+  const [groupMenuOpenId, setGroupMenuOpenId] = useState<string | null>(null)
+  const [dragSessionId, setDragSessionId] = useState<string | null>(null)
+  const [dragGroupId, setDragGroupId] = useState<string | null>(null)
 
-  function row(session: SessionRecord, closed: boolean): JSX.Element {
+  useEffect(() => {
+    if (!groupMenuOpenId) return
+    function handleOutsideClick(): void {
+      setGroupMenuOpenId(null)
+    }
+    document.addEventListener('click', handleOutsideClick)
+    return () => document.removeEventListener('click', handleOutsideClick)
+  }, [groupMenuOpenId])
+
+  const bySearch = activeSessions.filter((s) => fuzzyMatch(searchQuery, searchableText(s)))
+  const byFilter = bySearch.filter((s) => {
+    if (quickFilter === 'all') return true
+    const status = displayStatus(s, false, statuses)
+    if (quickFilter === 'waiting') return status === 'waiting'
+    return needsAttention(status, messagesBySession[s.id])
+  })
+  const filteredHistory = historySessions.filter((s) => fuzzyMatch(searchQuery, searchableText(s)))
+
+  const { pinned, byGroup, ungrouped } = groupSessions(byFilter, groups)
+
+  function makeDragHandlers(sectionGroupId: string | null | undefined, sectionIds: string[], sessionId: string): {
+    onDragStart: (e: React.DragEvent) => void
+    onDragOver: (e: React.DragEvent) => void
+    onDrop: (e: React.DragEvent) => void
+  } {
+    return {
+      onDragStart: (e) => {
+        e.dataTransfer.setData('text/plain', sessionId)
+        e.dataTransfer.effectAllowed = 'move'
+        setDragSessionId(sessionId)
+      },
+      onDragOver: (e) => {
+        if (dragSessionId) e.preventDefault()
+      },
+      onDrop: (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const draggedId = dragSessionId ?? e.dataTransfer.getData('text/plain')
+        if (!draggedId || draggedId === sessionId) return
+        const withoutDragged = sectionIds.filter((id) => id !== draggedId)
+        const targetIndex = withoutDragged.indexOf(sessionId)
+        const nextOrder = [...withoutDragged]
+        nextOrder.splice(targetIndex === -1 ? nextOrder.length : targetIndex, 0, draggedId)
+        onReorderSessions(sectionGroupId, nextOrder)
+        setDragSessionId(null)
+      }
+    }
+  }
+
+  function sectionDropZone(sectionGroupId: string | null | undefined, sectionIds: string[]): {
+    onDragOver: (e: React.DragEvent) => void
+    onDrop: (e: React.DragEvent) => void
+  } {
+    return {
+      onDragOver: (e) => {
+        if (dragSessionId) e.preventDefault()
+      },
+      onDrop: (e) => {
+        e.preventDefault()
+        const draggedId = dragSessionId ?? e.dataTransfer.getData('text/plain')
+        if (!draggedId) return
+        const withoutDragged = sectionIds.filter((id) => id !== draggedId)
+        onReorderSessions(sectionGroupId, [...withoutDragged, draggedId])
+        setDragSessionId(null)
+      }
+    }
+  }
+
+  function row(session: SessionRecord, closed: boolean, sectionGroupId: string | null | undefined, sectionIds: string[]): JSX.Element {
+    const dragHandlers = closed
+      ? { onDragStart: () => undefined, onDragOver: () => undefined, onDrop: () => undefined }
+      : makeDragHandlers(sectionGroupId, sectionIds, session.id)
     return (
       <SessionRow
         key={session.id}
         session={session}
         active={session.id === activeSessionId}
         closed={closed}
+        status={displayStatus(session, closed, statuses)}
+        draggable={!closed}
         onSelect={() => onSelectSession(session)}
         onRename={(name) => onRename(session.id, name)}
         onTogglePin={() => onTogglePin(session.id, !session.pinned)}
@@ -265,9 +590,16 @@ export default function Sidebar({
         onDelete={() => onDelete(session.id)}
         onFork={() => onFork(session.id)}
         onRestart={() => onRestart(session.id)}
+        onAddTag={(tag) => onAddTag(session.id, tag)}
+        onRemoveTag={(tag) => onRemoveTag(session.id, tag)}
+        onSetNotes={(notes) => onSetNotes(session.id, notes)}
+        onSetColor={(color) => onSetColor(session.id, color)}
+        {...dragHandlers}
       />
     )
   }
+
+  const groupList = Array.from(byGroup.entries())
 
   return (
     <div className={'sidebar' + (collapsed ? ' collapsed' : '')} data-testid="sidebar">
@@ -276,11 +608,41 @@ export default function Sidebar({
         <div className="app-name hide-on-collapse">Gardenia</div>
       </div>
       <div className="sidebar-search-row hide-on-collapse">
-        <button className="sidebar-search" data-testid="open-palette-button" onClick={onOpenPalette}>
-          <span>Search sessions…</span>
-          <kbd>⌘K</kbd>
+        <input
+          className="sidebar-search"
+          data-testid="sidebar-search-input"
+          placeholder="Search sessions…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      </div>
+      <div className="filter-row hide-on-collapse" data-testid="filter-row">
+        <button
+          className={'filter-chip' + (quickFilter === 'all' ? ' active' : '')}
+          data-testid="filter-all"
+          onClick={() => setQuickFilter('all')}
+        >
+          All
+        </button>
+        <button
+          className={'filter-chip' + (quickFilter === 'waiting' ? ' active' : '')}
+          data-testid="filter-waiting"
+          onClick={() => setQuickFilter('waiting')}
+        >
+          Waiting
+        </button>
+        <button
+          className={'filter-chip' + (quickFilter === 'attention' ? ' active' : '')}
+          data-testid="filter-attention"
+          onClick={() => setQuickFilter('attention')}
+        >
+          Needs attention
         </button>
       </div>
+      <button className="sidebar-search hide-on-collapse" data-testid="open-palette-button" onClick={onOpenPalette} style={{ margin: '0 16px 10px', width: 'calc(100% - 32px)' }}>
+        <span>Command palette…</span>
+        <kbd>⌘K</kbd>
+      </button>
       <div className="new-session-btn hide-on-collapse">
         <button
           className="btn btn-primary"
@@ -291,6 +653,40 @@ export default function Sidebar({
           + New Session
         </button>
       </div>
+      <div className="new-group-row hide-on-collapse">
+        {newGroupOpen ? (
+          <input
+            className="input"
+            autoFocus
+            data-testid="new-group-input"
+            placeholder="Group name…"
+            value={newGroupName}
+            onChange={(e) => setNewGroupName(e.target.value)}
+            onBlur={() => {
+              const trimmed = newGroupName.trim()
+              if (trimmed) onCreateGroup(trimmed)
+              setNewGroupName('')
+              setNewGroupOpen(false)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const trimmed = newGroupName.trim()
+                if (trimmed) onCreateGroup(trimmed)
+                setNewGroupName('')
+                setNewGroupOpen(false)
+              }
+              if (e.key === 'Escape') {
+                setNewGroupName('')
+                setNewGroupOpen(false)
+              }
+            }}
+          />
+        ) : (
+          <button className="btn btn-ghost btn-sm" data-testid="new-group-button" onClick={() => setNewGroupOpen(true)}>
+            + New Group
+          </button>
+        )}
+      </div>
 
       <div className="session-list" data-testid="session-list">
         {activeSessions.length === 0 && historySessions.length === 0 && (
@@ -300,50 +696,139 @@ export default function Sidebar({
         {pinned.length > 0 && (
           <>
             <div className="group-header" data-testid="group-header-pinned">
+              <span className="chev">▾</span>
               <span className="hide-on-collapse">📌 Pinned</span>
               <span className="count hide-on-collapse">{pinned.length}</span>
             </div>
-            <div className="group-body" data-group="pinned">
-              {pinned.map((s) => row(s, false))}
+            <div className="group-body" data-group="pinned" {...sectionDropZone(undefined, pinned.map((s) => s.id))}>
+              {pinned.map((s) => row(s, false, undefined, pinned.map((x) => x.id)))}
             </div>
           </>
         )}
 
-        {Array.from(grouped.entries()).map(([groupId, sessions]) => (
-          <div key={groupId}>
-            <div className="group-header" data-testid={`group-header-${groupId}`} style={{ marginTop: 8 }}>
-              <span className="hide-on-collapse">{groupId}</span>
-              <span className="count hide-on-collapse">{sessions.length}</span>
+        {groupList.map(([groupId, sessions]) => {
+          const group = groups.find((g) => g.id === groupId)
+          if (!group) return null
+          return (
+            <div
+              key={groupId}
+              draggable
+              onDragStart={() => setDragGroupId(groupId)}
+              onDragOver={(e) => {
+                if (dragGroupId) e.preventDefault()
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (!dragGroupId || dragGroupId === groupId) return
+                const ids = groups.map((g) => g.id)
+                const without = ids.filter((id) => id !== dragGroupId)
+                const targetIndex = without.indexOf(groupId)
+                without.splice(targetIndex, 0, dragGroupId)
+                onReorderGroups(without)
+                setDragGroupId(null)
+              }}
+            >
+              <div
+                className={'group-header' + (group.collapsed ? ' collapsed' : '')}
+                data-testid={`group-header-${groupId}`}
+                style={{ marginTop: 8 }}
+                onClick={() => onSetGroupCollapsed(groupId, !group.collapsed)}
+              >
+                <span className="chev">▾</span>
+                {renamingGroupId === groupId ? (
+                  <input
+                    className="session-name-input hide-on-collapse"
+                    autoFocus
+                    defaultValue={group.name}
+                    data-testid="group-rename-input"
+                    onClick={(e) => e.stopPropagation()}
+                    onBlur={(e) => {
+                      const trimmed = e.target.value.trim()
+                      if (trimmed && trimmed !== group.name) onRenameGroup(groupId, trimmed)
+                      setRenamingGroupId(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                      if (e.key === 'Escape') setRenamingGroupId(null)
+                    }}
+                  />
+                ) : (
+                  <span className="hide-on-collapse">{group.name}</span>
+                )}
+                <span className="count hide-on-collapse">{sessions.length}</span>
+                <button
+                  className="row-menu-btn hide-on-collapse"
+                  data-testid={`group-menu-button-${groupId}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setGroupMenuOpenId((v) => (v === groupId ? null : groupId))
+                  }}
+                >
+                  ⋯
+                </button>
+                {groupMenuOpenId === groupId && (
+                  <div className="session-menu-popup" data-testid="group-menu" onClick={(e) => e.stopPropagation()}>
+                    <div
+                      className="smi"
+                      data-testid="group-menu-rename"
+                      onClick={() => {
+                        setGroupMenuOpenId(null)
+                        setRenamingGroupId(groupId)
+                      }}
+                    >
+                      Rename
+                    </div>
+                    <div
+                      className="smi danger"
+                      data-testid="group-menu-delete"
+                      onClick={() => {
+                        setGroupMenuOpenId(null)
+                        onDeleteGroup(groupId)
+                      }}
+                    >
+                      Delete
+                    </div>
+                  </div>
+                )}
+              </div>
+              {!group.collapsed && (
+                <div
+                  className="group-body"
+                  data-group={groupId}
+                  {...sectionDropZone(groupId, sessions.map((s) => s.id))}
+                >
+                  {sessions.map((s) => row(s, false, groupId, sessions.map((x) => x.id)))}
+                </div>
+              )}
             </div>
-            <div className="group-body" data-group={groupId}>
-              {sessions.map((s) => row(s, false))}
-            </div>
-          </div>
-        ))}
+          )
+        })}
 
         {ungrouped.length > 0 && (
           <div
             className="group-body"
             data-group="ungrouped"
-            style={{ marginTop: pinned.length || grouped.size ? 8 : 0 }}
+            style={{ marginTop: pinned.length || groupList.length ? 8 : 0 }}
+            {...sectionDropZone(null, ungrouped.map((s) => s.id))}
           >
-            {ungrouped.map((s) => row(s, false))}
+            {ungrouped.map((s) => row(s, false, null, ungrouped.map((x) => x.id)))}
           </div>
         )}
 
         <div className="group-header" data-testid="group-header-history" style={{ marginTop: 8 }}>
+          <span className="chev">▾</span>
           <span className="hide-on-collapse">History (closed)</span>
           <span className="count hide-on-collapse" data-testid="history-count">
-            {historySessions.length}
+            {filteredHistory.length}
           </span>
         </div>
         <div className="group-body" data-group="history">
-          {historySessions.length === 0 && (
+          {filteredHistory.length === 0 && (
             <div className="history-empty-hint hide-on-collapse">
               Closed sessions land here — click Resume to reopen with full context restored.
             </div>
           )}
-          {historySessions.map((s) => row(s, true))}
+          {filteredHistory.map((s) => row(s, true, undefined, []))}
         </div>
       </div>
 

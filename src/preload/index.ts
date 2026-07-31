@@ -5,8 +5,12 @@ import type {
   CreateSessionOptions,
   MessageRecord,
   RemoteHostOption,
+  SessionGroupEvent,
+  SessionGroupRecord,
   SessionLifecycleEvent,
   SessionRecord,
+  SessionStatus,
+  SessionStatusEvent,
   SessionStreamDeltaEvent,
   SessionStreamEvent
 } from '../shared/session-types'
@@ -69,6 +73,43 @@ const api = {
     ipcRenderer.invoke('session:rename', sessionId, name),
   setSessionPinned: (sessionId: string, pinned: boolean): Promise<SessionRecord> =>
     ipcRenderer.invoke('session:setPinned', sessionId, pinned),
+
+  // ── Session organization (06-session-organization) ────────────────
+  setSessionColor: (sessionId: string, color: string): Promise<SessionRecord> =>
+    ipcRenderer.invoke('session:setColor', sessionId, color),
+  setSessionNotes: (sessionId: string, notes: string): Promise<SessionRecord> =>
+    ipcRenderer.invoke('session:setNotes', sessionId, notes),
+  addSessionTag: (sessionId: string, tag: string): Promise<SessionRecord> =>
+    ipcRenderer.invoke('session:addTag', sessionId, tag),
+  removeSessionTag: (sessionId: string, tag: string): Promise<SessionRecord> =>
+    ipcRenderer.invoke('session:removeTag', sessionId, tag),
+  listAllTags: (): Promise<string[]> => ipcRenderer.invoke('session:listAllTags'),
+  listSessionStatuses: (): Promise<Record<string, SessionStatus>> => ipcRenderer.invoke('session:listStatuses'),
+  setSessionGroup: (sessionId: string, groupId: string | null): Promise<SessionRecord> =>
+    ipcRenderer.invoke('session:setGroup', sessionId, groupId),
+  reorderSessions: (groupId: string | null | undefined, orderedIds: string[]): Promise<SessionRecord[]> =>
+    ipcRenderer.invoke('session:reorder', groupId, orderedIds),
+  listGroups: (): Promise<SessionGroupRecord[]> => ipcRenderer.invoke('group:list'),
+  createGroup: (name: string): Promise<SessionGroupRecord> => ipcRenderer.invoke('group:create', name),
+  renameGroup: (groupId: string, name: string): Promise<SessionGroupRecord> =>
+    ipcRenderer.invoke('group:rename', groupId, name),
+  setGroupCollapsed: (groupId: string, collapsed: boolean): Promise<SessionGroupRecord> =>
+    ipcRenderer.invoke('group:setCollapsed', groupId, collapsed),
+  deleteGroup: (groupId: string): Promise<void> => ipcRenderer.invoke('group:delete', groupId),
+  reorderGroups: (orderedIds: string[]): Promise<SessionGroupRecord[]> =>
+    ipcRenderer.invoke('group:reorder', orderedIds),
+  /** Fires whenever any session's live status (working/waiting) changes — pushed for EVERY session, not just the active one. */
+  onSessionStatus: (callback: (event: SessionStatusEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionStatusEvent): void => callback(payload)
+    ipcRenderer.on('session:status', listener)
+    return () => ipcRenderer.removeListener('session:status', listener)
+  },
+  onGroupChanged: (callback: (event: SessionGroupEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionGroupEvent): void => callback(payload)
+    ipcRenderer.on('group:changed', listener)
+    return () => ipcRenderer.removeListener('group:changed', listener)
+  },
+
   onSessionMessage: (callback: (event: SessionStreamEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: SessionStreamEvent): void => callback(payload)
     ipcRenderer.on('session:message', listener)

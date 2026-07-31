@@ -14,11 +14,53 @@ export interface SessionRecord {
   mode: SessionMode
   /** null for local sessions; the devpod/SSH host name for remote ones. */
   hostname: string | null
+  /** References SessionGroupRecord.id (06-session-organization), or null (ungrouped). */
   groupId: string | null
   pinned: boolean
   color: string | null
   createdAt: string
   closedAt: string | null
+  /** Free-form tags (06-session-organization), stored in the session_tags join table. */
+  tags: string[]
+  /** Freeform per-session note shown in a detail popover (06-session-organization). */
+  notes: string | null
+  /** Manual drag-drop position within its section (pinned / a group / ungrouped) — lower sorts first. */
+  sortOrder: number
+}
+
+/** A named, collapsible, reorderable session group (06-session-organization). */
+export interface SessionGroupRecord {
+  id: string
+  name: string
+  sortOrder: number
+  collapsed: boolean
+  createdAt: string
+}
+
+/**
+ * Concurrent per-session status (06-session-organization), tracked for EVERY
+ * session at once (not just the active one) — see SessionManager's `live`
+ * map and `getStatus`.
+ *
+ * Definitions (documented in Features/06-session-organization/progress.md):
+ *  - 'working': a claude-code session with a turn actively in flight (from
+ *    the moment a prompt is sent/streamed until its terminal result/error/
+ *    interrupted event).
+ *  - 'waiting': a claude-code session that has an open live connection this
+ *    app run, isn't currently mid-turn, and whose most recent message is
+ *    NOT a user message — i.e. the agent finished a turn and is waiting on
+ *    the user's next instruction ("waiting for input").
+ *  - 'idle': a claude-code session with no open live connection this app
+ *    run (never opened, or its most recent message IS a user message with
+ *    no live turn yet observed).
+ *  - 'disconnected': terminal-mode sessions (no harness at all) and closed
+ *    sessions.
+ */
+export type SessionStatus = 'working' | 'waiting' | 'idle' | 'disconnected'
+
+export interface SessionStatusEvent {
+  sessionId: string
+  status: SessionStatus
 }
 
 export type MessageRole = 'user' | 'assistant' | 'system'
@@ -91,3 +133,11 @@ export type SessionLifecycleEvent =
   | { type: 'session.forked'; session: SessionRecord; sourceId: string }
   | { type: 'session.deleted'; sessionId: string }
   | { type: 'session.updated'; session: SessionRecord }
+
+/** Group-management notifications (06-session-organization), analogous to SessionLifecycleEvent. */
+export type SessionGroupEvent =
+  | { type: 'group.created'; group: SessionGroupRecord }
+  | { type: 'group.renamed'; group: SessionGroupRecord }
+  | { type: 'group.deleted'; groupId: string }
+  | { type: 'group.reordered'; groups: SessionGroupRecord[] }
+  | { type: 'group.updated'; group: SessionGroupRecord }

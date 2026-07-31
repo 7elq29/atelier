@@ -70,4 +70,38 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
   ipcMain.handle('session:rename', (_event, sessionId: string, name: string) => manager.renameSession(sessionId, name))
 
   ipcMain.handle('session:setPinned', (_event, sessionId: string, pinned: boolean) => manager.setPinned(sessionId, pinned))
+
+  ipcMain.handle('session:setColor', (_event, sessionId: string, color: string) => manager.setColor(sessionId, color))
+
+  ipcMain.handle('session:setNotes', (_event, sessionId: string, notes: string) => manager.setNotes(sessionId, notes))
+
+  ipcMain.handle('session:addTag', (_event, sessionId: string, tag: string) => manager.addTag(sessionId, tag))
+
+  ipcMain.handle('session:removeTag', (_event, sessionId: string, tag: string) => manager.removeTag(sessionId, tag))
+
+  ipcMain.handle('session:listAllTags', () => manager.listAllTags())
+
+  ipcMain.handle('session:listStatuses', () => manager.listStatuses())
+
+  ipcMain.handle('session:setGroup', (_event, sessionId: string, groupId: string | null) =>
+    manager.setSessionGroup(sessionId, groupId)
+  )
+
+  ipcMain.handle('session:reorder', (_event, groupId: string | null | undefined, orderedIds: string[]) =>
+    manager.reorderSessions(groupId, orderedIds)
+  )
+
+  ipcMain.handle('group:list', () => manager.listGroups())
+
+  ipcMain.handle('group:create', (_event, name: string) => manager.createGroup(name))
+
+  ipcMain.handle('group:rename', (_event, groupId: string, name: string) => manager.renameGroup(groupId, name))
+
+  ipcMain.handle('group:setCollapsed', (_event, groupId: string, collapsed: boolean) =>
+    manager.setGroupCollapsed(groupId, collapsed)
+  )
+
+  ipcMain.handle('group:delete', (_event, groupId: string) => manager.deleteGroup(groupId))
+
+  ipcMain.handle('group:reorder', (_event, orderedIds: string[]) => manager.reorderGroups(orderedIds))
 }

@@ -39,6 +39,35 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
       CREATE INDEX IF NOT EXISTS idx_sessions_closed_at ON sessions(closed_at);
       CREATE INDEX IF NOT EXISTS idx_sessions_group_id ON sessions(group_id);
     `
+  },
+  {
+    // 06-session-organization: tags (free-form, many-to-many via join table),
+    // notes (freeform text per session), a real `session_groups` table
+    // (group_id on `sessions` previously held an arbitrary caller-chosen
+    // string used directly as the display label — now it's a foreign id into
+    // this table, with its own name/order/collapsed state), and a
+    // `sort_order` column on `sessions` for manual drag-drop ordering within
+    // a group (or within the ungrouped/pinned sections).
+    name: '0002_tags_notes_groups_ordering',
+    sql: `
+      ALTER TABLE sessions ADD COLUMN notes TEXT;
+      ALTER TABLE sessions ADD COLUMN sort_order REAL NOT NULL DEFAULT 0;
+
+      CREATE TABLE IF NOT EXISTS session_tags (
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        tag TEXT NOT NULL,
+        PRIMARY KEY (session_id, tag)
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_tags_tag ON session_tags(tag);
+
+      CREATE TABLE IF NOT EXISTS session_groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        sort_order REAL NOT NULL DEFAULT 0,
+        collapsed INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+    `
   }
 ]
 
