@@ -252,6 +252,9 @@ export default function App(): JSX.Element {
               <>
                 <TabBar activeTab={activeTab} onSelect={selectTab} showPorts={Boolean(activeSession.hostname)} />
                 <div className="topbar-spacer" />
+                <span className="topbar-chip" data-testid="cost-chip">
+                  ${activeSession.totalCostUsd.toFixed(2)}
+                </span>
                 <button className="btn btn-sm" data-testid="toggle-companion-drawer" onClick={() => setDrawerOpen((o) => !o)}>
                   ▤ Terminal
                 </button>

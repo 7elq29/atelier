@@ -749,6 +749,11 @@ try {
         live.busy = false
         this.sendStatus(sessionId)
         logger.info('harness event: result (turn complete)', { sessionId, turnCount: live.turnCount, isError: event.isError })
+        const costUpdated = this.store.addCost(sessionId, event.totalCostUsd)
+        if (costUpdated) {
+          logger.info('session cost updated', { sessionId, totalCostUsd: costUpdated.totalCostUsd })
+          this.sendLifecycle({ type: 'session.updated', session: costUpdated })
+        }
         this.sendTurnState(sessionId, false)
         if (live.turnCount >= AUTO_NAME_STARTING_FROM_TURN) {
           void this.maybeAutoName(sessionId).catch((err) =>

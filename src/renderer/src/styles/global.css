@@ -167,6 +167,16 @@
   font-size: var(--font-interface-size);
   font-weight: 600;
 }
+/* ===== Topbar metadata chip (10a-enrichment-cost-tracking) — matches the
+   UI mock's `.topbar-chip` (Features/UI-Design/mocks/index.html) used for
+   small topbar badges like model/branch/host. ===== */
+.topbar-chip {
+  font-size: 14px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .empty-main {
   flex: 1;
   display: flex;

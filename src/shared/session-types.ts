@@ -26,6 +26,14 @@ export interface SessionRecord {
   notes: string | null
   /** Manual drag-drop position within its section (pinned / a group / ungrouped) — lower sorts first. */
   sortOrder: number
+  /**
+   * Running total dollar cost for this session (10a-enrichment-cost-tracking),
+   * accumulated from every harness `result` event's real `totalCostUsd`
+   * (sourced directly from the SDK — never independently computed from token
+   * counts). Persisted in SQLite so it survives relaunch. `0` until the
+   * session's first turn completes.
+   */
+  totalCostUsd: number
 }
 
 /** A named, collapsible, reorderable session group (06-session-organization). */
