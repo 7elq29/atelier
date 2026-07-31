@@ -370,6 +370,7 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       includePartialMessages: true,
       ...(resumeSessionId ? { resume: resumeSessionId } : { sessionId }),
       ...(opts.model ? { model: opts.model } : {}),
+      ...(opts.effort ? { effort: opts.effort } : {}),
       ...(opts.systemPrompt ? { systemPrompt: opts.systemPrompt } : {}),
       ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
       // Deliberately omitted when opts.env is undefined: per the SDK's

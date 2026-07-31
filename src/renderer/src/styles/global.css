@@ -813,6 +813,13 @@ input[type='range'] {
 .slash-item .cmddesc { color: var(--text-tertiary); font-size: 12.5px; }
 .send-btn:disabled { opacity: .4; cursor: not-allowed; }
 
+/* Model/effort picker (10f-enrichment-model-effort-picker) — quoted verbatim
+   from mocks/index.html's `.picker-pop`/`.picker-item` rules. */
+.picker-pop { position: absolute; bottom: 100%; right: 8px; margin-bottom: 6px; width: 190px; background: var(--bg-panel-raised); border: 1px solid var(--border-default); border-radius: var(--r-md); box-shadow: var(--shadow-popover); overflow: hidden; padding: 4px; z-index: 6; }
+.picker-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; font-size: 13.5px; border-radius: 6px; cursor: pointer; }
+.picker-item:hover { background: var(--bg-hover); }
+.picker-item.sel { color: var(--accent); }
+
 /* Onboarding */
 .onboarding-dialog {
   width: 480px;

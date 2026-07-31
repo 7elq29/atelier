@@ -4,6 +4,7 @@ import { logger } from '../logger'
 import type {
   CreateSessionOptions,
   MessageRecord,
+  ModelSelection,
   PromptDecision,
   RemoteHostOption,
   SessionGroupEvent,
@@ -105,6 +106,19 @@ export class SessionManager {
    * `respondToPrompt` below), mirroring the real SDK-side state transition.
    */
   private readonly permissionModes = new Map<string, 'default' | 'plan'>()
+
+  /**
+   * Tracks the model/effort override currently applied to a session's live
+   * harness connection (10f-enrichment-model-effort-picker), across
+   * `resume()` reconnects — same "sticky, re-passed on every reconnect"
+   * pattern as `permissionModes` above. Populated the first time
+   * `sendUserMessage` is called with an explicit override; absent entirely
+   * for a session whose composer never touched the model/effort picker (in
+   * which case every `resume()`/`start()` call omits `model`/`effort`
+   * altogether, preserving the harness's own default — unchanged from every
+   * caller that predates this task).
+   */
+  private readonly modelSelections = new Map<string, ModelSelection>()
 
   constructor(
     private readonly store: SessionStore,
@@ -292,11 +306,14 @@ export class SessionManager {
 try {
       const host = this.resolveHostFromSession(session.hostname)
       const permissionMode = this.permissionModes.get(sessionId)
+      const modelSelection = this.modelSelections.get(sessionId)
       const harnessSession = await this.harness.resume(sessionId, {
         cwd: session.projectPath,
         host,
         keepAlive: true,
-        ...(permissionMode ? { permissionMode } : {})
+        ...(permissionMode ? { permissionMode } : {}),
+        ...(modelSelection?.model ? { model: modelSelection.model } : {}),
+        ...(modelSelection?.effort ? { effort: modelSelection.effort } : {})
       })
       this.live.set(sessionId, newLiveStream())
       this.sendStatus(sessionId)
@@ -337,7 +354,7 @@ try {
    * preserved across a `resume()` reconnect — it only resets on session
    * close or a real app relaunch.
    */
-  async sendUserMessage(sessionId: string, text: string): Promise<void> {
+  async sendUserMessage(sessionId: string, text: string, override?: ModelSelection): Promise<void> {
     const session = this.store.getSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
     const userMessage = this.store.addMessage({ sessionId, role: 'user', content: text })
@@ -346,7 +363,47 @@ try {
     if (session.mode !== 'claude-code') return
     this.sendTurnState(sessionId, true)
     try {
-      if (this.harness.isActive(sessionId)) {
+      // 10f-enrichment-model-effort-picker: a caller (the composer's model
+      // picker) can ask for THIS message onward to use a different
+      // model/effort than the session's live connection is currently
+      // running with. `override === undefined` (the composer never touched
+      // the picker) preserves every pre-existing caller's behavior exactly.
+      // A genuinely NEW selection, though, can only take effect on a fresh
+      // start()/resume() call (see HarnessStartOptions.model/.effort) — an
+      // already-open streaming-input query has no live setter for either —
+      // so if the session is currently live, it must be torn down first via
+      // `harness.interrupt()` (verified safe to immediately follow with a
+      // resume(): see the pump()/finally race comment in
+      // claude-agent-sdk-harness.ts) before falling into the same
+      // `resume()` path already used below for a session with no live
+      // connection at all.
+      const previousSelection = this.modelSelections.get(sessionId)
+      const selectionChanged = override !== undefined && !modelSelectionsEqual(override, previousSelection)
+      if (selectionChanged) {
+        logger.info('sendUserMessage: model/effort selection changed, applying from next turn', {
+          sessionId,
+          previous: previousSelection,
+          next: override
+        })
+        this.modelSelections.set(sessionId, override)
+        if (this.harness.isActive(sessionId)) {
+          await this.harness.interrupt(sessionId)
+        }
+      }
+
+      // NOTE: `harness.isActive()` can still report `true` immediately after
+      // the `interrupt()` above — the underlying session map entry is only
+      // cleared once `pump()`'s `finally` block finishes draining (see
+      // claude-agent-sdk-harness.ts), which is asynchronous and hasn't
+      // necessarily run yet by the time `interrupt()`'s own promise
+      // resolves. Checking `isActive()` again here would then wrongly take
+      // the streamInput fast path against a queue that's already `closed`
+      // (queue.push() on a closed UserMessageQueue silently no-ops) — a real
+      // bug caught here during this task: the message would vanish with no
+      // error and the turn would hang forever, Stop button stuck. So a
+      // `selectionChanged` reconnect ALWAYS falls through to the `resume()`
+      // path below, regardless of what `isActive()` reports afterward.
+      if (!selectionChanged && this.harness.isActive(sessionId)) {
         logger.info('sendUserMessage: live injection (streamInput, no resume)', { sessionId })
         await this.harness.streamInput(sessionId, text)
         return
@@ -354,11 +411,14 @@ try {
       logger.info('sendUserMessage: no live harness session, reconnecting via resume()', { sessionId })
       const host = this.resolveHostFromSession(session.hostname)
       const permissionMode = this.permissionModes.get(sessionId)
+      const modelSelection = this.modelSelections.get(sessionId)
       const harnessSession = await this.harness.resume(sessionId, {
         cwd: session.projectPath,
         host,
         keepAlive: true,
-        ...(permissionMode ? { permissionMode } : {})
+        ...(permissionMode ? { permissionMode } : {}),
+        ...(modelSelection?.model ? { model: modelSelection.model } : {}),
+        ...(modelSelection?.effort ? { effort: modelSelection.effort } : {})
       })
       await this.harness.streamInput(sessionId, text)
       const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
@@ -668,7 +728,14 @@ try {
       }
 
       case 'session_started':
-        return // structural event only; not rendered as its own transcript row
+        // Not rendered as its own transcript row, but logged (10f-enrichment-
+        // model-effort-picker) so e2e specs — and anyone debugging a "did my
+        // model/effort change actually take" question — can grep the REAL
+        // model the SDK resolved for this connection, straight from its own
+        // `system`/`init` message (`event.model`), independent of whatever
+        // string was requested via `HarnessStartOptions.model`.
+        logger.info('harness event: session_started', { sessionId, model: event.model, apiKeySource: event.apiKeySource })
+        return
 
       case 'permission_request': {
         this.flushBuffer(sessionId, live)
@@ -858,4 +925,9 @@ function applyDecision(
 /** Translates the renderer-facing `PromptDecision` into the harness's own `PromptResponse` shape (kept as separate types — see PromptDecision's doc comment). */
 function toHarnessPromptResponse(decision: PromptDecision): PromptResponse {
   return decision
+}
+
+/** Field-wise equality for `ModelSelection` (10f-enrichment-model-effort-picker) — `undefined` on both sides counts as equal, so an override that only sets one field doesn't spuriously read as "changed" against a `Map` entry missing entirely. */
+function modelSelectionsEqual(a?: ModelSelection, b?: ModelSelection): boolean {
+  return (a?.model ?? undefined) === (b?.model ?? undefined) && (a?.effort ?? undefined) === (b?.effort ?? undefined)
 }
