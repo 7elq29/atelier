@@ -805,14 +805,22 @@ export default function Sidebar({
         })}
 
         {ungrouped.length > 0 && (
-          <div
-            className="group-body"
-            data-group="ungrouped"
-            style={{ marginTop: pinned.length || groupList.length ? 8 : 0 }}
-            {...sectionDropZone(null, ungrouped.map((s) => s.id))}
-          >
-            {ungrouped.map((s) => row(s, false, null, ungrouped.map((x) => x.id)))}
-          </div>
+          <>
+            {(pinned.length > 0 || groupList.length > 0) && (
+              <div className="group-header" data-testid="group-header-ungrouped" style={{ marginTop: 8 }}>
+                <span className="chev">▾</span>
+                <span className="hide-on-collapse">Ungrouped</span>
+                <span className="count hide-on-collapse">{ungrouped.length}</span>
+              </div>
+            )}
+            <div
+              className="group-body"
+              data-group="ungrouped"
+              {...sectionDropZone(null, ungrouped.map((s) => s.id))}
+            >
+              {ungrouped.map((s) => row(s, false, null, ungrouped.map((x) => x.id)))}
+            </div>
+          </>
         )}
 
         <div className="group-header" data-testid="group-header-history" style={{ marginTop: 8 }}>
