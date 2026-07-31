@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 
 const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
 const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
@@ -19,10 +19,49 @@ function configPath(userDataDir: string): string {
   return join(userDataDir, 'data', 'config.json')
 }
 
+/** Stubs Electron's native folder-picker dialog to return a fixed path, so New Session can be driven headlessly (same pattern as session-lifecycle.spec.ts). */
+async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
+  await app.evaluate(({ dialog }, folderPath) => {
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
+  }, path)
+}
+
+/**
+ * Creates a real terminal-mode session (no agent/harness call, so it's fast
+ * and network-free) rooted at `projectDir`, and returns its real session id.
+ * The 08-global-nav-and-settings command palette originally shipped against
+ * a single hardcoded placeholder session ("Welcome session" / id "welcome");
+ * once 02-session-lifecycle landed real multi-session data, that id never
+ * existed, so palette tests need to create genuine sessions the same way
+ * a user would (via the New Session modal) rather than assuming a seeded
+ * placeholder.
+ */
+async function createTerminalSession(app: ElectronApplication, page: Page, projectDir: string): Promise<string> {
+  await stubProjectFolder(app, projectDir)
+  await page.getByTestId('new-session-button').click()
+  await expect(page.getByTestId('new-session-modal')).toBeVisible()
+  await page.getByTestId('pick-project-folder').click()
+  await expect(page.getByTestId('pick-project-folder')).toContainText(projectDir)
+  await page.getByTestId('mode-terminal').click()
+  await page.getByTestId('start-session-button').click()
+  await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+  const row = page.locator('[data-testid="session-row"]', { hasText: basename(projectDir) })
+  await expect(row).toBeVisible({ timeout: 15_000 })
+  return (await row.getAttribute('data-session-id')) as string
+}
+
 test.describe('command palette', () => {
   let electronApp: ElectronApplication
   let page: Page
   let userDataDir: string
+  // Two real sessions with a deliberately overlapping name substring
+  // ("invoice") so the palette tests below cover both a clean single-match
+  // lookup and fuzzy-match disambiguation between similarly named sessions.
+  let primarySessionId: string
+  let secondarySessionId: string
+  const primaryName = 'invoice-service'
+  const secondaryName = 'billing-invoice-tool'
 
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-palette-'))
@@ -30,6 +69,14 @@ test.describe('command palette', () => {
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
+
+    const primaryProjectDir = join(userDataDir, primaryName)
+    const secondaryProjectDir = join(userDataDir, secondaryName)
+    mkdirSync(primaryProjectDir, { recursive: true })
+    mkdirSync(secondaryProjectDir, { recursive: true })
+
+    primarySessionId = await createTerminalSession(electronApp, page, primaryProjectDir)
+    secondarySessionId = await createTerminalSession(electronApp, page, secondaryProjectDir)
   })
 
   test.afterAll(async () => {
@@ -65,16 +112,47 @@ test.describe('command palette', () => {
 
   test('typing a session name and pressing Enter jumps focus to that session', async () => {
     const input = page.getByTestId('command-palette-input')
-    await input.fill('Welcome session')
+    // Full name of the *primary* session only — "billing-invoice-tool" does
+    // not contain this substring, so this must resolve to exactly one item.
+    await input.fill(primaryName)
     await expect(page.getByTestId('command-palette-item')).toHaveCount(1)
+    mkdirSync(artifactsDir, { recursive: true })
+    await page.screenshot({ path: join(artifactsDir, 'palette-jump-fix.png') })
     await page.keyboard.press('Enter')
 
     await expect(page.getByTestId('command-palette')).toHaveCount(0)
 
-    const row = page.locator('[data-testid="session-row"][data-session-id="welcome"]')
+    const row = page.locator(`[data-testid="session-row"][data-session-id="${primarySessionId}"]`)
     await expect(row).toHaveAttribute('data-active', 'true')
     const isFocused = await row.evaluate((el) => el === document.activeElement)
     expect(isFocused).toBe(true)
+  })
+
+  test('fuzzy-matching a shared substring shows both similarly named sessions, then narrowing jumps to the right one', async () => {
+    await page.keyboard.press('ControlOrMeta+k')
+    const input = page.getByTestId('command-palette-input')
+
+    // Both session names share "invoice" — a real multi-session disambiguation
+    // case that a single hardcoded placeholder session could never exercise.
+    await input.fill('invoice')
+    await expect(page.getByTestId('command-palette-item')).toHaveCount(2)
+
+    // Narrow to a substring unique to the *secondary* session and confirm
+    // Enter jumps to that one specifically, not "any session".
+    await input.fill('billing')
+    await expect(page.getByTestId('command-palette-item')).toHaveCount(1)
+    await expect(page.getByTestId('command-palette-item').first()).toContainText(secondaryName)
+    await page.keyboard.press('Enter')
+
+    await expect(page.getByTestId('command-palette')).toHaveCount(0)
+
+    const targetRow = page.locator(`[data-testid="session-row"][data-session-id="${secondarySessionId}"]`)
+    await expect(targetRow).toHaveAttribute('data-active', 'true')
+    const isFocused = await targetRow.evaluate((el) => el === document.activeElement)
+    expect(isFocused).toBe(true)
+
+    const otherRow = page.locator(`[data-testid="session-row"][data-session-id="${primarySessionId}"]`)
+    await expect(otherRow).toHaveAttribute('data-active', 'false')
   })
 
   test('theme toggle from the palette flips data-theme and re-renders', async () => {
