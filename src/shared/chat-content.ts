@@ -150,3 +150,32 @@ export function parseStructuredContent(content: string): StructuredContent | nul
   }
   return null
 }
+
+/**
+ * The plain, human-readable text a message contributes to search
+ * (10b-enrichment-full-text-search) — used both by the main-process SQLite
+ * FTS5 index (`SessionStore.searchMessages`) and the renderer's in-conversation
+ * highlighter (`ChatTranscript`'s "Find in conversation" bar), so the two
+ * features always agree on exactly what's searchable: plain user/assistant
+ * text only. Excludes `system` rows and every `StructuredContent` kind (tool
+ * calls, todo/compaction banners, permission/question/plan cards) since none
+ * of those carry prose worth indexing — reuses `parseStructuredContent`
+ * rather than re-deriving that classification. Returns null when there's
+ * nothing searchable.
+ */
+export function extractSearchableText(role: string, content: string): string | null {
+  if (role !== 'user' && role !== 'assistant') return null
+  if (parseStructuredContent(content) !== null) return null
+  return content.trim().length > 0 ? content : null
+}
+
+/**
+ * Markers `SessionStore.searchMessages`' FTS5 `snippet()` call wraps each
+ * matched term in, so the renderer (CommandPalette) can turn a plain-text
+ * snippet back into `<mark>` spans without either side re-deriving where the
+ * matches are. Unicode Private Use Area code points — can never collide with
+ * real typed/indexed text. Shared here (not in main-only `store.ts`) because
+ * both the main process (writer) and renderer (reader) need the same values.
+ */
+export const FTS_SNIPPET_START = String.fromCharCode(0xe000)
+export const FTS_SNIPPET_END = String.fromCharCode(0xe001)

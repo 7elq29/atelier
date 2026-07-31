@@ -6,6 +6,7 @@ import type {
   ImageAttachment,
   MessageRecord,
   ModelSelection,
+  MessageSearchHit,
   PromptDecision,
   RemoteHostOption,
   SessionGroupEvent,
@@ -144,6 +145,11 @@ export class SessionManager {
   /** Looks up a single session record by id (10c-enrichment-export-conversation), undefined if it doesn't exist. */
   getSession(sessionId: string): SessionRecord | undefined {
     return this.store.getSession(sessionId)
+  }
+
+  /** Cross-session content search (10b-enrichment-full-text-search), backing the command palette's extended "Session" results. */
+  searchMessages(query: string): MessageSearchHit[] {
+    return this.store.searchMessages(query)
   }
 
   listHosts(): RemoteHostOption[] {
