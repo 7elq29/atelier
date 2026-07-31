@@ -99,6 +99,25 @@ export interface PlanProposedContent {
   status: PlanStatus
 }
 
+/**
+ * A user message that included a dropped/pasted image
+ * (10g-enrichment-image-attachment). Persisted as this message's whole
+ * `content` (JSON-encoded, same as every other StructuredContent kind) in
+ * place of the plain-text string an ordinary user message would have —
+ * `text` carries whatever was typed alongside the image, if anything.
+ * `data`/`mimeType` are the exact same base64 bytes sent to the SDK as the
+ * message's image content block (see ClaudeAgentSdkHarness's `userMessage`),
+ * reused here purely for the transcript's thumbnail — small enough (a single
+ * dropped/pasted image) that storing it twice (SQLite content column +
+ * whatever the harness/SDK does with its own copy) is not a concern.
+ */
+export interface ImageAttachmentContent {
+  kind: 'image_attachment'
+  mimeType: string
+  data: string
+  text?: string
+}
+
 export type StructuredContent =
   | ToolCallContent
   | TodoUpdateContent
@@ -106,6 +125,7 @@ export type StructuredContent =
   | PermissionRequestContent
   | AskUserQuestionContent
   | PlanProposedContent
+  | ImageAttachmentContent
 
 const STRUCTURED_KINDS = new Set<string>([
   'tool_call',
@@ -114,6 +134,7 @@ const STRUCTURED_KINDS = new Set<string>([
   'permission_request',
   'ask_user_question',
   'plan_proposed',
+  'image_attachment',
 ])
 
 /** Best-effort parse: returns null for plain-text message content (the common case). */

@@ -3,6 +3,7 @@ import type { GardeniaConfig } from '../shared/config'
 import type { DailyNote, ReadDailyNoteResult } from '../shared/daily-note-types'
 import type {
   CreateSessionOptions,
+  ImageAttachment,
   MessageRecord,
   PromptDecision,
   RemoteHostOption,
@@ -72,8 +73,8 @@ const api = {
   createSession: (opts: CreateSessionOptions): Promise<SessionRecord> => ipcRenderer.invoke('session:create', opts),
   resumeSession: (sessionId: string): Promise<{ session: SessionRecord; messages: MessageRecord[] }> =>
     ipcRenderer.invoke('session:resume', sessionId),
-  sendSessionMessage: (sessionId: string, text: string): Promise<void> =>
-    ipcRenderer.invoke('session:sendMessage', sessionId, text),
+  sendSessionMessage: (sessionId: string, text: string, image?: ImageAttachment): Promise<void> =>
+    ipcRenderer.invoke('session:sendMessage', sessionId, text, image),
   interruptSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:interrupt', sessionId),
   forkSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:fork', sessionId),
   restartSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:restart', sessionId),

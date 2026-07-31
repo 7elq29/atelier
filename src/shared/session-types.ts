@@ -65,6 +65,21 @@ export interface SessionStatusEvent {
 
 export type MessageRole = 'user' | 'assistant' | 'system'
 
+/**
+ * An image dropped/pasted into the composer (10g-enrichment-image-attachment),
+ * passed over IPC alongside the typed text on `session:sendMessage`.
+ * `mimeType` is restricted to what the Anthropic Messages API's image content
+ * block actually accepts (see `HarnessImageInput` in
+ * `main/harness/types.ts`, verified against the installed SDK's types) —
+ * anything else read off a dropped/pasted file is rejected before it ever
+ * reaches IPC (see Composer's file-handling).
+ */
+export interface ImageAttachment {
+  mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+  /** Raw base64 (no `data:...;base64,` prefix). */
+  data: string
+}
+
 export interface MessageRecord {
   id: number
   sessionId: string
