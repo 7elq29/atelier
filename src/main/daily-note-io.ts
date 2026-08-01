@@ -259,7 +259,7 @@ export function parseDailyNote(content: string, date: string): { note: DailyNote
 
 // ── serializer ────────────────────────────────────────────────────
 
-function serializeTaskLine(task: DailyTask): string {
+export function serializeTaskLine(task: DailyTask): string {
   const parts: string[] = []
   if (task.timeBlock) parts.push(task.timeBlock)
   if (task.text) parts.push(task.text)
@@ -350,7 +350,15 @@ export function getDayOfWeek(date: string): string {
   return DAY_NAMES[d.getDay()]!
 }
 
-export function generateNewNote(date: string): string {
+/**
+ * Generate the markdown body for a brand-new daily note. `carriedTasks` (see
+ * findMostRecentNoteDate / the carry-over scan in daily-notes-handlers.ts)
+ * are serialized directly under the `## Tasks` heading, before the Backlog
+ * subsection — preserving each task's original `gid` (serializeTaskLine
+ * always emits `[gid:: ...]`) so it's recognizably the same task across
+ * days rather than a freshly-minted duplicate.
+ */
+export function generateNewNote(date: string, carriedTasks: DailyTask[] = []): string {
   const dayName = getDayOfWeek(date)
   const lines: string[] = [
     '---',
@@ -361,6 +369,8 @@ export function generateNewNote(date: string): string {
     '',
     '## \u{1F4CB} Tasks',
     '',
+    ...carriedTasks.map((task) => serializeTaskLine(task)),
+    ...(carriedTasks.length > 0 ? [''] : []),
     '### ⚪ Backlog',
     '- ',
     '',

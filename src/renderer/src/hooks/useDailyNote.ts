@@ -70,10 +70,35 @@ export function useDailyNote(date: string): UseDailyNoteResult {
       setExists(true)
     })
 
+    // UC-18: on window focus regain, re-read the note from disk so external
+    // edits made while the app was unfocused (e.g. editing the file directly
+    // in Obsidian) show up immediately rather than waiting on the fs.watch
+    // debounce round-trip. Skipped entirely if a debounced local write is
+    // currently pending — checked at focus time (writeTimerRef.current is a
+    // ref precisely so this read is always fresh, not stale from effect
+    // setup) — since in that case the pending write + its eventual watcher
+    // echo already handle reconciliation; racing a resync against it here
+    // would just replay the same "stale local edit briefly flashes over
+    // fresher disk state" problem this hook otherwise avoids.
+    const onFocus = (): void => {
+      if (cancelled) return
+      if (writeTimerRef.current !== null) return
+      window.gardenia
+        .readDailyNote(date)
+        .then((result) => {
+          if (cancelled) return
+          setNote(result.note)
+          setExists(result.exists)
+        })
+        .catch(() => {})
+    }
+    window.addEventListener('focus', onFocus)
+
     return () => {
       cancelled = true
       window.gardenia.unwatchDailyNote().catch(() => {})
       unsub()
+      window.removeEventListener('focus', onFocus)
       if (writeTimerRef.current) clearTimeout(writeTimerRef.current)
     }
   }, [date])

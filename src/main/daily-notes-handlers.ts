@@ -17,11 +17,56 @@ import { ipcMain, type BrowserWindow } from 'electron'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, watch, type FSWatcher } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, basename } from 'node:path'
-import type { DailyNote } from '../shared/daily-note-types'
+import type { DailyNote, DailyTask } from '../shared/daily-note-types'
 import { parseDailyNote, serializeDailyNote, resolveNotePath, generateNewNote, getTaskIds } from './daily-note-io'
 import { logger } from './logger'
 
 const WATCH_DEBOUNCE_MS = 300
+
+/** How many days back to scan for the most recent existing prior note (UC-2 carry-over). */
+const CARRY_OVER_LOOKBACK_DAYS = 14
+
+/**
+ * `date` minus `n` days, formatted as `YYYY-MM-DD`. Constructs with an
+ * explicit `T00:00:00` local-time suffix — same convention as
+ * `getDayOfWeek`/`resolveNotePath` in daily-note-io.ts — to avoid UTC/local
+ * timezone drift shifting the computed day.
+ */
+function subtractDays(date: string, n: number): string {
+  const d = new Date(`${date}T00:00:00`)
+  d.setDate(d.getDate() - n)
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+/**
+ * Scan backward from (but not including) `date`, up to `CARRY_OVER_LOOKBACK_DAYS`
+ * days, for the most recent daily note file that actually exists on disk.
+ * Returns its date string, or null if none was found within the window.
+ */
+function findMostRecentNoteDate(date: string, vaultRoot: string): string | null {
+  for (let n = 1; n <= CARRY_OVER_LOOKBACK_DAYS; n++) {
+    const candidateDate = subtractDays(date, n)
+    const candidatePath = resolveNotePath(candidateDate, vaultRoot)
+    if (existsSync(candidatePath)) return candidateDate
+  }
+  return null
+}
+
+/**
+ * Collect the tasks from a prior note that should carry forward into a new
+ * note (UC-2): open or in-progress, non-tracker. In-progress tasks are
+ * normalized back to open on carry-forward (a task can't still be "in
+ * progress" on a day that hasn't started yet), and any stale completion
+ * date is cleared.
+ */
+function collectCarryOverTasks(note: DailyNote): DailyTask[] {
+  return note.tasks
+    .filter((t) => (t.status === 'open' || t.status === 'in-progress') && !t.isTracker && t.section !== 'tracker')
+    .map((t) => ({ ...t, status: 'open' as const, completion: undefined }))
+}
 
 /**
  * Per-path "ever known" task-id sets: every id we've ever observed in a
@@ -118,7 +163,22 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
       return { note, raw, exists: true }
     }
 
-    const content = generateNewNote(date)
+    let carriedTasks: DailyTask[] = []
+    const priorDate = findMostRecentNoteDate(date, vaultRoot)
+    if (priorDate) {
+      const priorPath = resolveNotePath(priorDate, vaultRoot)
+      const priorContent = await readFile(priorPath, 'utf-8')
+      const { note: priorNote } = parseDailyNote(priorContent, priorDate)
+      carriedTasks = collectCarryOverTasks(priorNote)
+      logger.info('daily-note create: carrying tasks forward', {
+        path,
+        priorDate,
+        priorPath,
+        carriedIds: carriedTasks.map((t) => t.id)
+      })
+    }
+
+    const content = generateNewNote(date, carriedTasks)
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, content, 'utf-8')
     const { note, raw } = parseDailyNote(content, date)

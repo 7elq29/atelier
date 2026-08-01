@@ -416,6 +416,35 @@ test('regression: external delete racing an in-flight write does not resurrect t
   )
 })
 
+test('UC-18: window focus regain re-reads the note from disk, distinct from (and faster than) the fs.watch debounce path', async () => {
+  const externalGid = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+  const uniqueText = 'Focus-regain external edit marker'
+
+  // Real atomic write-temp+rename external edit, same pattern as the
+  // tombstone-diff regression test above and as Obsidian's own save
+  // behavior — insert a brand-new task directly under the Backlog heading.
+  const before = readFileSync(notePath, 'utf-8')
+  expect(before).toMatch(/###\s*.*Backlog\n/i)
+  const updated = before.replace(/(###\s*.*Backlog\n)/i, `$1- [ ] ${uniqueText} [gid:: ${externalGid}]\n`)
+  expect(updated).not.toBe(before)
+
+  const tmpPath = `${notePath}.tmp`
+  writeFileSync(tmpPath, updated, 'utf-8')
+  renameSync(tmpPath, notePath)
+  appendSyncLog('external edit before focus-regain test', updated)
+
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+
+  // The focus handler re-reads immediately on the 'focus' event, bypassing
+  // the fs.watch path's WATCH_DEBOUNCE_MS (300ms) entirely plus whatever
+  // fs-event delivery latency precedes it. A tight timeout here is a
+  // deliberate way to demonstrate this is a genuinely distinct mechanism
+  // rather than incidentally re-testing the existing watcher.
+  await expect(page.locator('[data-testid="unscheduled-task"]', { hasText: uniqueText })).toBeVisible({
+    timeout: 250
+  })
+})
+
 // ── Real-world content shapes (Unscheduled/Trackers rendering empty) ───────
 //
 // Added in response to a user report against their real vault: Unscheduled
@@ -609,5 +638,135 @@ type: daily
     await expect(rows.nth(0)).toHaveAttribute('data-testid', 'timeline-task')
     await expect(rows.nth(0)).toContainText('In-progress task spanning now')
     await expect(rows.nth(1)).toHaveAttribute('data-testid', 'current-time-line')
+  })
+})
+
+// ── Carry-over on note creation (UC-2) ──────────────────────────────────
+//
+// Own launch + own fixture vault (like the describe blocks above), since the
+// displayed date is fixed per-Electron-session via GARDENIA_TEST_DATE and
+// this scenario inherently needs two dates: a prior day with an existing
+// note (seeded on disk) and a not-yet-existing "today" whose creation should
+// pull that prior day's still-open tasks forward. Both dates stay in ISO
+// week 31 (same as the main suite's 2026-07-31 fixture) to keep
+// resolveNotePath's path segment predictable.
+test.describe('carry-over on note creation (UC-2)', () => {
+  const PRIOR_DATE = '2026-07-28'
+  const NEW_DATE = '2026-07-29'
+  const GID_CARRY_OPEN = '66666666-6666-4666-8666-666666666666'
+  const GID_CARRY_IN_PROGRESS = '77777777-7777-4777-8777-777777777777'
+  const GID_DONE_NOT_CARRIED = '6a6a6a6a-6a6a-46a6-86a6-6a6a6a6a6a6a'
+  const GID_TRACKER_NOT_CARRIED = '7b7b7b7b-7b7b-47b7-87b7-7b7b7b7b7b7b'
+
+  let carryApp: ElectronApplication
+  let carryPage: Page
+  let carryVaultRoot: string
+  let priorNotePath: string
+  let newNotePath: string
+
+  function seedPriorNoteContent(): string {
+    return `---
+date: ${PRIOR_DATE}
+day: Tuesday
+type: daily
+---
+
+## 📋 Tasks
+
+- [ ] 09:00–09:15 Standup carryover check [gid:: ${GID_CARRY_OPEN}]
+- [x] 10:00–10:30 Already-done task [gid:: ${GID_DONE_NOT_CARRIED}]
+
+### ⚪ Backlog
+- [/] In-progress backlog task [gid:: ${GID_CARRY_IN_PROGRESS}]
+
+### 🤝 Delegated
+-
+
+> [!invisible] Trackers
+> - [ ] Exercise #tracker [gid:: ${GID_TRACKER_NOT_CARRIED}]
+`
+  }
+
+  test.beforeAll(async () => {
+    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-carryover-'))
+    mkdirSync(join(userDataDir, 'data'), { recursive: true })
+    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+
+    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-carryover-'))
+    carryVaultRoot = join(vaultParent, 'vault')
+    const noteDir = join(carryVaultRoot, '01.dailynotes', '2026', 'Jul', '31')
+    mkdirSync(noteDir, { recursive: true })
+    priorNotePath = join(noteDir, `${PRIOR_DATE}.md`)
+    newNotePath = join(noteDir, `${NEW_DATE}.md`)
+    writeFileSync(priorNotePath, seedPriorNoteContent(), 'utf-8')
+    // NEW_DATE's note is deliberately NOT created yet — that's the point.
+
+    carryApp = await electron.launch({
+      args: [mainEntry, `--user-data-dir=${userDataDir}`],
+      env: {
+        ...process.env,
+        GARDENIA_TEST_VAULT_ROOT: carryVaultRoot,
+        GARDENIA_TEST_DATE: NEW_DATE
+      }
+    })
+    carryPage = await carryApp.firstWindow()
+    await carryPage.waitForLoadState('domcontentloaded')
+    await expect(carryPage.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+  })
+
+  test.afterAll(async () => {
+    await carryApp.close()
+  })
+
+  test('creating a not-yet-existing note carries forward open/in-progress non-tracker tasks from the most recent prior note', async () => {
+    // NEW_DATE's note doesn't exist yet, so the panel is in its empty/"create
+    // note" state (DailyNotesSidebar.tsx renders `data-testid="create-daily-note"`
+    // when `exists` is false) — drive the real UI affordance rather than
+    // reaching around it via IPC directly.
+    const createButton = carryPage.locator('[data-testid="create-daily-note"]')
+    await expect(createButton).toBeVisible()
+    await createButton.click()
+
+    await expect(carryPage.locator('[data-testid="daily-notes-panel"]')).toBeVisible()
+    expect(existsSync(newNotePath), 'new note file should now exist on disk').toBe(true)
+
+    const content = readFileSync(newNotePath, 'utf-8')
+
+    // Carried tasks live under the new note's Tasks section, before Backlog.
+    const lines = content.split('\n')
+    const tasksHeaderIdx = lines.findIndex((l) => /^##\s+.*Tasks/i.test(l))
+    const backlogHeaderIdx = lines.findIndex((l) => /^###\s+.*Backlog/i.test(l))
+    expect(tasksHeaderIdx).toBeGreaterThanOrEqual(0)
+    expect(backlogHeaderIdx).toBeGreaterThan(tasksHeaderIdx)
+
+    const carryOpenLine = lines.find((l) => l.includes(GID_CARRY_OPEN))
+    const carryInProgressLine = lines.find((l) => l.includes(GID_CARRY_IN_PROGRESS))
+    expect(carryOpenLine, 'originally-open task should carry over').toBeTruthy()
+    expect(carryInProgressLine, 'originally-in-progress task should carry over').toBeTruthy()
+
+    // Both land under Tasks (before Backlog), preserve their original gid,
+    // and are normalized to open ("- [ ]") regardless of original status.
+    expect(lines.indexOf(carryOpenLine!)).toBeGreaterThan(tasksHeaderIdx)
+    expect(lines.indexOf(carryOpenLine!)).toBeLessThan(backlogHeaderIdx)
+    expect(carryOpenLine).toMatch(/^\s*-\s*\[ \]/)
+    expect(carryOpenLine).toContain(`[gid:: ${GID_CARRY_OPEN}]`)
+
+    expect(lines.indexOf(carryInProgressLine!)).toBeGreaterThan(tasksHeaderIdx)
+    expect(lines.indexOf(carryInProgressLine!)).toBeLessThan(backlogHeaderIdx)
+    expect(carryInProgressLine).toMatch(/^\s*-\s*\[ \]/)
+    expect(carryInProgressLine).toContain(`[gid:: ${GID_CARRY_IN_PROGRESS}]`)
+
+    // A done task and a tracker task must NOT carry forward.
+    expect(content).not.toContain(GID_DONE_NOT_CARRIED)
+    expect(content).not.toContain(GID_TRACKER_NOT_CARRIED)
+
+    // The carried tasks are also reflected in the live UI (rendered under
+    // Tasks/Timeline, since that's where the new note places them).
+    await expect(
+      carryPage.locator('[data-testid="timeline-task"]', { hasText: 'Standup carryover check' })
+    ).toBeVisible()
+    await expect(
+      carryPage.locator('[data-testid="timeline-task"]', { hasText: 'In-progress backlog task' })
+    ).toBeVisible()
   })
 })
