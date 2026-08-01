@@ -206,23 +206,16 @@ test('creating a task from a timeline right-click writes a [gid:: ...] field and
   const box = await timelineBody.boundingBox()
   if (!box) throw new Error('timeline body not visible')
 
-  // Right-click just below the last rendered row (time-block or "now"
-  // marker), clamped inside the container — Timeline.tsx's context-menu
-  // handler ignores right-clicks that land ON a `.dn-time-block` (see
-  // `handleContextMenu`'s `.closest('.dn-time-block')` guard), so the click
-  // must land in the gap *after* the last real row, not at a fixed offset
-  // from the container's bottom edge. That fixed-offset approach broke when
-  // 54b's header (progress bar/Big Three block) added height above the
-  // Timeline section, shrinking the section's flex share enough that the
-  // rows filled the container almost exactly, leaving no slack near the
-  // bottom. Deriving the click position from the *content* (last row's own
-  // bounding box) instead of the container's fixed height makes this robust
-  // regardless of how much vertical space sibling header content takes.
-  const rows = page.locator('[data-testid="timeline-list"] > *')
-  const lastRowBox = await rows.last().boundingBox()
-  const clickY = lastRowBox
-    ? Math.min(lastRowBox.y + lastRowBox.height + 5 - box.y, box.height - 2)
-    : Math.max(20, box.height - 15)
+  // The 54a grid rewrite replaced the flat, content-flow list (where a click
+  // needed to land in the gap *after* the last row) with an absolute-position
+  // hour grid (`data-testid="timeline-grid"`, 6am-10pm): a right-click just
+  // needs to land on an empty part of the grid, not on top of a
+  // `.dn-time-block` (Timeline.tsx's `handleContextMenu` ignores clicks on
+  // one). The fixture's earliest seeded task starts at 09:00, so clicking
+  // near the grid's very top (~06:15, well before any seeded block) is
+  // reliably empty regardless of how many tasks other tests have since added
+  // later in the day.
+  const clickY = Math.min(20, box.height - 2)
   await timelineBody.click({ button: 'right', position: { x: 40, y: clickY } })
   const input = page.locator('[data-testid="timeline-new-task-input"]')
   await expect(input).toBeVisible()
