@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useDailyNote } from '../../hooks/useDailyNote'
 import { useSectionResize } from './section-resize'
 import Timeline from './Timeline'
@@ -6,6 +6,70 @@ import TaskItem from './TaskItem'
 
 export interface DailyNotesSidebarProps {
   date: string
+  onClose: () => void
+}
+
+type CollapsibleSection = 'unscheduled' | 'tracker'
+
+interface AddTaskInputProps {
+  testId: string
+  buttonLabel?: string
+  onAdd: (text: string) => void
+}
+
+/** Shared inline "+ New task" affordance (UC-12/14): collapsed state shows a
+ * button; clicking reveals an autofocused text input. Enter/blur with
+ * content commits via `onAdd`; Escape/blur with empty content cancels back
+ * to the button. */
+function AddTaskInput({ testId, buttonLabel = '+ New task', onAdd }: AddTaskInputProps): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus()
+  }, [open])
+
+  function commit(): void {
+    const trimmed = text.trim()
+    if (trimmed) onAdd(trimmed)
+    setText('')
+    setOpen(false)
+  }
+
+  function cancel(): void {
+    setText('')
+    setOpen(false)
+  }
+
+  if (!open) {
+    return (
+      <button type="button" className="btn btn-sm dn-add-task-button" data-testid={testId} onClick={() => setOpen(true)}>
+        {buttonLabel}
+      </button>
+    )
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      className="dn-add-task-input"
+      data-testid={`${testId}-input`}
+      value={text}
+      placeholder="New task…"
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          commit()
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          cancel()
+        }
+      }}
+    />
+  )
 }
 
 /**
@@ -16,17 +80,40 @@ export interface DailyNotesSidebarProps {
  * sizing (`.dn-head`, `.dn-section`, `.dn-section-head`, `.dn-resize-handle`,
  * `.dn-section-body`).
  */
-export default function DailyNotesSidebar({ date }: DailyNotesSidebarProps): JSX.Element {
-  const { note, loading, exists, vaultConfigured, createNote, toggleTask, addTask, deleteTask, moveTask } =
-    useDailyNote(date)
+export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarProps): JSX.Element {
+  const {
+    note,
+    loading,
+    exists,
+    vaultConfigured,
+    createNote,
+    toggleTask,
+    addTask,
+    deleteTask,
+    moveTask,
+    updateTask
+  } = useDailyNote(date)
   const containerRef = useRef<HTMLDivElement>(null)
   const { weights, startResize } = useSectionResize(containerRef)
+  const [collapsedSections, setCollapsedSections] = useState<Set<CollapsibleSection>>(new Set())
+
+  function toggleSection(section: CollapsibleSection): void {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(section)) next.delete(section)
+      else next.add(section)
+      return next
+    })
+  }
 
   if (!vaultConfigured) {
     return (
       <div className="daily-notes-panel" data-testid="daily-notes-panel">
         <div className="dn-head">
           <span className="dtitle">Daily Notes</span>
+          <button className="btn btn-icon btn-sm dn-close-button" data-testid="daily-notes-close" onClick={onClose}>
+            ×
+          </button>
         </div>
         <div className="dn-empty-state" data-testid="vault-not-configured">
           No vault configured. Set GARDENIA_VAULT_ROOT (or GARDENIA_TEST_VAULT_ROOT for tests).
@@ -40,6 +127,9 @@ export default function DailyNotesSidebar({ date }: DailyNotesSidebarProps): JSX
       <div className="daily-notes-panel" data-testid="daily-notes-panel">
         <div className="dn-head">
           <span className="dtitle">Daily Notes</span>
+          <button className="btn btn-icon btn-sm dn-close-button" data-testid="daily-notes-close" onClick={onClose}>
+            ×
+          </button>
         </div>
         <div className="dn-empty-state">Loading…</div>
       </div>
@@ -51,6 +141,9 @@ export default function DailyNotesSidebar({ date }: DailyNotesSidebarProps): JSX
       <div className="daily-notes-panel" data-testid="daily-notes-panel">
         <div className="dn-head">
           <span className="dtitle">Daily Notes — {date}</span>
+          <button className="btn btn-icon btn-sm dn-close-button" data-testid="daily-notes-close" onClick={onClose}>
+            ×
+          </button>
         </div>
         <div className="dn-empty-state">
           <p>No note for {date} yet.</p>
@@ -68,11 +161,46 @@ export default function DailyNotesSidebar({ date }: DailyNotesSidebarProps): JSX
   const unscheduledTasks = note.tasks.filter((t) => t.section === 'unscheduled')
   const trackerTasks = note.tasks.filter((t) => t.section === 'tracker')
 
+  const totalActionable = note.tasks.filter(
+    (t) => !t.isNote && t.status !== 'forwarded' && t.status !== 'cancelled'
+  ).length
+  const doneCount = note.tasks.filter((t) => !t.isNote && t.status === 'done').length
+  const progressPct = totalActionable > 0 ? (doneCount / totalActionable) * 100 : 0
+
+  const unscheduledCollapsed = collapsedSections.has('unscheduled')
+  const trackerCollapsed = collapsedSections.has('tracker')
+
   return (
     <div className="daily-notes-panel" data-testid="daily-notes-panel" ref={containerRef}>
       <div className="dn-head">
-        <span className="dtitle">Daily Notes — {date}</span>
+        <div className="dn-head-info">
+          <span className="dtitle">Daily Notes — {date}</span>
+          <div className="dn-progress-row" data-testid="dn-progress">
+            <span className="dn-progress-label">
+              {doneCount}/{totalActionable} tasks done
+            </span>
+            <div className="dn-progress-bar">
+              <div className="dn-progress-fill" style={{ width: `${progressPct}%` }} />
+            </div>
+          </div>
+        </div>
+        <button className="btn btn-icon btn-sm dn-close-button" data-testid="daily-notes-close" onClick={onClose}>
+          ×
+        </button>
       </div>
+
+      {note.bigThree.length > 0 && (
+        <div className="dn-focus-block" data-testid="dn-big-three">
+          <div className="dn-focus-heading">Today's Focus</div>
+          <ul className="dn-focus-list">
+            {note.bigThree.map((item, idx) => (
+              <li key={idx} data-testid="dn-big-three-item">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="dn-section" style={{ flexGrow: weights.timeline }} data-testid="timeline-section">
         <div className="dn-section-head">Timeline</div>
@@ -85,42 +213,91 @@ export default function DailyNotesSidebar({ date }: DailyNotesSidebarProps): JSX
         />
       </div>
 
-      <div className="dn-resize-handle" onMouseDown={startResize('timeline', 'unscheduled')} />
+      {!unscheduledCollapsed && (
+        <div className="dn-resize-handle" onMouseDown={startResize('timeline', 'unscheduled')} />
+      )}
 
-      <div className="dn-section" style={{ flexGrow: weights.unscheduled }} data-testid="unscheduled-section">
-        <div className="dn-section-head">Unscheduled</div>
-        <div
-          className="dn-section-body scroll-y"
-          data-testid="unscheduled-body"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault()
-            const id = e.dataTransfer.getData('text/task-id')
-            if (id) moveTask(id, 'unscheduled', undefined)
-          }}
+      <div
+        className="dn-section"
+        style={{ flexGrow: unscheduledCollapsed ? 0 : weights.unscheduled }}
+        data-testid="unscheduled-section"
+      >
+        <button
+          type="button"
+          className="dn-section-head dn-section-head-toggle"
+          data-testid="unscheduled-collapse-toggle"
+          onClick={() => toggleSection('unscheduled')}
         >
-          {unscheduledTasks.map((task) => (
-            <TaskItem key={task.id} task={task} onToggle={toggleTask} onDelete={deleteTask} />
-          ))}
-        </div>
+          <span className={`dn-chevron${unscheduledCollapsed ? '' : ' expanded'}`}>▶</span>
+          Unscheduled
+        </button>
+        {!unscheduledCollapsed && (
+          <>
+            <div
+              className="dn-section-body scroll-y"
+              data-testid="unscheduled-body"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault()
+                const id = e.dataTransfer.getData('text/task-id')
+                if (id) moveTask(id, 'unscheduled', undefined)
+              }}
+            >
+              {unscheduledTasks.map((task) => (
+                <TaskItem
+                  key={task.id}
+                  task={task}
+                  onToggle={toggleTask}
+                  onDelete={deleteTask}
+                  onUpdateText={(id, text) => updateTask(id, { text })}
+                  onUpdateTags={(id, tags) => updateTask(id, { tags })}
+                />
+              ))}
+            </div>
+            <div className="dn-add-task-footer">
+              <AddTaskInput testId="add-unscheduled-task" onAdd={(text) => addTask(text, 'unscheduled')} />
+            </div>
+          </>
+        )}
       </div>
 
-      <div className="dn-resize-handle" onMouseDown={startResize('unscheduled', 'trackers')} />
+      {!unscheduledCollapsed && !trackerCollapsed && (
+        <div className="dn-resize-handle" onMouseDown={startResize('unscheduled', 'trackers')} />
+      )}
 
-      <div className="dn-section" style={{ flexGrow: weights.trackers }} data-testid="trackers-section">
-        <div className="dn-section-head">Trackers</div>
-        <div className="dn-section-body scroll-y" data-testid="trackers-body">
-          {trackerTasks.map((task) => (
-            <div className="dn-tracker-mini" key={task.id} data-testid="tracker-task" data-task-id={task.id}>
-              <span>{task.text}</span>
-              <div
-                className={`dn-tbox${task.status === 'done' ? ' done' : ''}`}
-                style={{ marginLeft: 'auto' }}
-                onClick={() => toggleTask(task.id)}
-              />
+      <div
+        className="dn-section"
+        style={{ flexGrow: trackerCollapsed ? 0 : weights.trackers }}
+        data-testid="trackers-section"
+      >
+        <button
+          type="button"
+          className="dn-section-head dn-section-head-toggle"
+          data-testid="trackers-collapse-toggle"
+          onClick={() => toggleSection('tracker')}
+        >
+          <span className={`dn-chevron${trackerCollapsed ? '' : ' expanded'}`}>▶</span>
+          Trackers
+        </button>
+        {!trackerCollapsed && (
+          <>
+            <div className="dn-section-body scroll-y" data-testid="trackers-body">
+              {trackerTasks.map((task) => (
+                <div className="dn-tracker-mini" key={task.id} data-testid="tracker-task" data-task-id={task.id}>
+                  <span>{task.text}</span>
+                  <div
+                    className={`dn-tbox${task.status === 'done' ? ' done' : ''}`}
+                    style={{ marginLeft: 'auto' }}
+                    onClick={() => toggleTask(task.id)}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+            <div className="dn-add-task-footer">
+              <AddTaskInput testId="add-tracker-task" onAdd={(text) => addTask(text, 'tracker')} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

@@ -206,13 +206,24 @@ test('creating a task from a timeline right-click writes a [gid:: ...] field and
   const box = await timelineBody.boundingBox()
   if (!box) throw new Error('timeline body not visible')
 
-  // Right-click near the bottom of the *actual* rendered timeline body,
-  // well clear of the existing (short) cards near the top. Flat-list layout
-  // sizes the body to its flex share of the panel, not to a fixed 24h-grid
-  // pixel height, so unlike the old design we can't assume an arbitrary
-  // large y-offset (e.g. 400px) is still inside the element — clamp to its
-  // real bounding box instead.
-  await timelineBody.click({ button: 'right', position: { x: 40, y: Math.max(20, box.height - 15) } })
+  // Right-click just below the last rendered row (time-block or "now"
+  // marker), clamped inside the container — Timeline.tsx's context-menu
+  // handler ignores right-clicks that land ON a `.dn-time-block` (see
+  // `handleContextMenu`'s `.closest('.dn-time-block')` guard), so the click
+  // must land in the gap *after* the last real row, not at a fixed offset
+  // from the container's bottom edge. That fixed-offset approach broke when
+  // 54b's header (progress bar/Big Three block) added height above the
+  // Timeline section, shrinking the section's flex share enough that the
+  // rows filled the container almost exactly, leaving no slack near the
+  // bottom. Deriving the click position from the *content* (last row's own
+  // bounding box) instead of the container's fixed height makes this robust
+  // regardless of how much vertical space sibling header content takes.
+  const rows = page.locator('[data-testid="timeline-list"] > *')
+  const lastRowBox = await rows.last().boundingBox()
+  const clickY = lastRowBox
+    ? Math.min(lastRowBox.y + lastRowBox.height + 5 - box.y, box.height - 2)
+    : Math.max(20, box.height - 15)
+  await timelineBody.click({ button: 'right', position: { x: 40, y: clickY } })
   const input = page.locator('[data-testid="timeline-new-task-input"]')
   await expect(input).toBeVisible()
   await input.fill('Deep work: token refresh fix')
@@ -971,5 +982,203 @@ type: daily
     // otherwise edits it) inherited from the reference design, not a defect
     // introduced by this carry-over feature — asserting the disk state above
     // is what actually proves UC-2 carry-over works.
+  })
+})
+
+// ── List-management affordances (54b): add-task, inline edit, tags, Big
+// Three/progress header, section collapse, close panel ──────────────────
+//
+// Own isolated Electron instance + own fixture vault/date, same pattern as
+// "real-world content shapes" above, so these tests (which mutate on-disk
+// state and eventually close the panel entirely) never interact with the
+// main suite's shared page/fixture or its test ordering.
+test.describe('list-management affordances (add-task, edit, tags, Big Three, collapse, close)', () => {
+  const AFFORDANCES_DATE = '2026-07-29'
+  const GID_STANDUP = 'a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0'
+  const GID_FOCUS_BLOCK = 'b0b0b0b0-b0b0-4b0b-8b0b-b0b0b0b0b0b0'
+  const GID_EXISTING_BACKLOG = 'c0c0c0c0-c0c0-4c0c-8c0c-c0c0c0c0c0c0'
+  const GID_TAG_TARGET = 'd0d0d0d0-d0d0-4d0d-8d0d-d0d0d0d0d0d0'
+  const GID_TRACKER = 'e0e0e0e0-e0e0-4e0e-8e0e-e0e0e0e0e0e0'
+
+  let affApp: ElectronApplication
+  let affPage: Page
+  let affUserDataDir: string
+  let affVaultRoot: string
+  let affNotePath: string
+
+  function seedAffordancesFixtureContent(): string {
+    return `---
+date: ${AFFORDANCES_DATE}
+day: Wednesday
+type: daily
+---
+
+## \u{1F5D3}\u{FE0F} Daily Big Three
+
+* Ship the list-affordances PR
+* Review teammate's diff
+* Write weekly update
+
+## 📋 Tasks
+
+- [x] 09:00–09:30 Standup [gid:: ${GID_STANDUP}]
+- [ ] 14:00–15:00 Focus block [gid:: ${GID_FOCUS_BLOCK}]
+
+### ⚪ Backlog
+- [ ] Existing backlog task [gid:: ${GID_EXISTING_BACKLOG}]
+- [ ] Task to tag [gid:: ${GID_TAG_TARGET}]
+
+### 🤝 Delegated
+-
+
+> [!invisible] Trackers
+> - [ ] Water plants #tracker [gid:: ${GID_TRACKER}]
+`
+  }
+
+  test.beforeAll(async () => {
+    affUserDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-affordances-'))
+    mkdirSync(join(affUserDataDir, 'data'), { recursive: true })
+    writeFileSync(join(affUserDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+
+    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-affordances-'))
+    affVaultRoot = join(vaultParent, 'vault')
+    // Folder is the ISO WEEK number (`ww` in resolveNotePath), not the
+    // day-of-month — Jul 29 2026 falls in ISO week 31, same as the other
+    // fixtures' dates in this file.
+    const noteDir = join(affVaultRoot, '01.dailynotes', '2026', 'Jul', '31')
+    mkdirSync(noteDir, { recursive: true })
+    affNotePath = join(noteDir, `${AFFORDANCES_DATE}.md`)
+    writeFileSync(affNotePath, seedAffordancesFixtureContent(), 'utf-8')
+
+    affApp = await electron.launch({
+      args: [mainEntry, `--user-data-dir=${affUserDataDir}`],
+      env: {
+        ...process.env,
+        GARDENIA_TEST_VAULT_ROOT: affVaultRoot,
+        GARDENIA_TEST_DATE: AFFORDANCES_DATE
+      }
+    })
+    affPage = await affApp.firstWindow()
+    await affPage.waitForLoadState('domcontentloaded')
+    await expect(affPage.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+  })
+
+  test.afterAll(async () => {
+    if (affApp) await affApp.close()
+  })
+
+  test('add-task: "+ New task" under Unscheduled creates a task that round-trips to disk under Backlog', async () => {
+    await affPage.locator('[data-testid="add-unscheduled-task"]').click()
+    const input = affPage.locator('[data-testid="add-unscheduled-task-input"]')
+    await expect(input).toBeVisible()
+    await input.fill('Write the 54b report')
+    await input.press('Enter')
+
+    await expect(
+      affPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Write the 54b report' })
+    ).toBeVisible()
+
+    await affPage.waitForTimeout(1200)
+    const content = readFileSync(affNotePath, 'utf-8')
+    const lines = content.split('\n')
+    const backlogHeaderIdx = lines.findIndex((l) => /^###\s+.*Backlog/i.test(l))
+    const delegatedHeaderIdx = lines.findIndex((l) => /^###\s+.*Delegated/i.test(l))
+    const taskLineIdx = lines.findIndex((l) => l.includes('Write the 54b report'))
+    expect(taskLineIdx).toBeGreaterThan(backlogHeaderIdx)
+    expect(taskLineIdx).toBeLessThan(delegatedHeaderIdx)
+    expect(lines[taskLineIdx]).toMatch(/^\s*-\s*\[.]\s*Write the 54b report/)
+  })
+
+  test('double-click edit: changing an existing task\'s text updates it on disk', async () => {
+    const chip = affPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Existing backlog task' })
+    await chip.locator('span').first().dblclick()
+
+    const editInput = affPage.locator('[data-testid="task-edit-input"]')
+    await expect(editInput).toBeVisible()
+    await editInput.fill('Existing backlog task (edited)')
+    await editInput.blur()
+
+    await expect(
+      affPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Existing backlog task (edited)' })
+    ).toBeVisible()
+
+    await affPage.waitForTimeout(1200)
+    const content = readFileSync(affNotePath, 'utf-8')
+    expect(content).toContain('Existing backlog task (edited)')
+    expect(content).not.toMatch(/Existing backlog task(?! \(edited\))/)
+  })
+
+  test('tag UI: adding a tag round-trips to disk as #tagname, removing it clears it from disk', async () => {
+    const chip = affPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Task to tag' })
+    await chip.hover()
+    await chip.locator('[data-testid="add-tag-button"]').click()
+
+    const tagInput = chip.locator('[data-testid="tag-input"]')
+    await expect(tagInput).toBeVisible()
+    await tagInput.fill('ktlo')
+    await tagInput.press('Enter')
+
+    await expect(chip.locator('[data-testid="task-tag-chip"]', { hasText: '#ktlo' })).toBeVisible()
+
+    await affPage.waitForTimeout(1200)
+    let content = readFileSync(affNotePath, 'utf-8')
+    const taggedLine = content.split('\n').find((l) => l.includes(GID_TAG_TARGET))
+    expect(taggedLine).toContain('#ktlo')
+
+    await chip.hover()
+    await chip.locator('[data-testid="task-tag-chip"]', { hasText: '#ktlo' }).locator('[data-testid="task-tag-remove"]').click()
+    await expect(chip.locator('[data-testid="task-tag-chip"]', { hasText: '#ktlo' })).toHaveCount(0)
+
+    await affPage.waitForTimeout(1200)
+    content = readFileSync(affNotePath, 'utf-8')
+    const untaggedLine = content.split('\n').find((l) => l.includes(GID_TAG_TARGET))
+    expect(untaggedLine).not.toContain('#ktlo')
+  })
+
+  test('Big Three + progress header: renders seeded focus items and the real done/total count', async () => {
+    const focusItems = affPage.locator('[data-testid="dn-big-three-item"]')
+    await expect(focusItems).toHaveCount(3)
+    await expect(focusItems.nth(0)).toHaveText('Ship the list-affordances PR')
+    await expect(focusItems.nth(1)).toHaveText("Review teammate's diff")
+    await expect(focusItems.nth(2)).toHaveText('Write weekly update')
+
+    // Real done/total count from the fixture: seeded actionable tasks are
+    // Standup(done), Focus block(open), Existing backlog task(open),
+    // Task to tag(open), Water plants tracker(open) = 1/5. The earlier
+    // add-task test added one more open unscheduled task, so by this point
+    // it's 1/6.
+    await expect(affPage.locator('[data-testid="dn-progress"]')).toContainText('1/6 tasks done')
+  })
+
+  test('section collapse: clicking a chevron hides the section body and the sibling grows to reclaim space', async () => {
+    const trackersSection = affPage.locator('[data-testid="trackers-section"]')
+    const unscheduledSection = affPage.locator('[data-testid="unscheduled-section"]')
+    const beforeBox = await unscheduledSection.boundingBox()
+    if (!beforeBox) throw new Error('unscheduled section not visible')
+
+    await affPage.locator('[data-testid="trackers-collapse-toggle"]').click()
+
+    await expect(affPage.locator('[data-testid="trackers-body"]')).toHaveCount(0)
+    await expect(trackersSection).toBeVisible()
+
+    const afterBox = await unscheduledSection.boundingBox()
+    if (!afterBox) throw new Error('unscheduled section not visible after collapse')
+    expect(afterBox.height).toBeGreaterThan(beforeBox.height)
+
+    await affPage.screenshot({ path: join(artifactsDir, '54b-collapsed-section.png') })
+
+    // Re-expand for the header/progress screenshot below.
+    await affPage.locator('[data-testid="trackers-collapse-toggle"]').click()
+    await expect(affPage.locator('[data-testid="trackers-body"]')).toBeVisible()
+  })
+
+  test('header/progress/Big Three screenshot', async () => {
+    await affPage.screenshot({ path: join(artifactsDir, '54b-list-affordances.png') })
+  })
+
+  test('close panel: clicking the close button hides the daily-notes panel', async () => {
+    await affPage.locator('[data-testid="daily-notes-close"]').click()
+    await expect(affPage.locator('[data-testid="daily-notes-panel"]')).toHaveCount(0)
   })
 })

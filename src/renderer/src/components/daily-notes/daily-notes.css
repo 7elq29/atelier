@@ -25,6 +25,74 @@
   flex: 1;
 }
 
+.dn-head-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dn-close-button {
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+/* ---- Header progress (UC-3) ---- */
+
+.dn-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dn-progress-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.dn-progress-bar {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-subtle);
+  overflow: hidden;
+}
+
+.dn-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 150ms ease;
+}
+
+/* ---- Today's Focus / Big Three (UC-3) ---- */
+
+.dn-focus-block {
+  padding: 10px 18px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.dn-focus-heading {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.dn-focus-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+
 .dn-section {
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
@@ -50,6 +118,112 @@
   flex: 1;
   min-height: 0;
 }
+
+/* ---- Section collapse (UC-15) ---- */
+
+.dn-section-head-toggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  gap: 6px;
+  text-align: left;
+}
+
+.dn-chevron {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 120ms ease;
+  transform: rotate(0deg);
+}
+.dn-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+/* ---- Add-task input (UC-12/14) ----
+   Rendered as a footer sibling *below* the scrollable `.dn-section-body`
+   (not inside it) — keeping it out of the scrollable list means the last
+   real item, not this affordance, is what "scrolled to bottom" surfaces
+   (see e2e/audit-scroll-experience.spec.ts's scroll-to-bottom assertions). */
+
+.dn-add-task-footer {
+  padding: 6px 18px 14px;
+  flex-shrink: 0;
+}
+
+.dn-add-task-button {
+  color: var(--text-tertiary);
+  align-self: flex-start;
+}
+
+.dn-add-task-input {
+  width: 100%;
+  font-size: 14px;
+}
+
+/* ---- Inline text edit (UC-12/14) ---- */
+
+.dn-task-edit-input {
+  flex: 1;
+  font-size: 15px;
+}
+
+/* ---- Tags (UC-12/14) ---- */
+
+.dn-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+}
+
+.dn-tag-chip-remove {
+  opacity: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  line-height: 1;
+  padding: 0;
+}
+.dn-tag-chip:hover .dn-tag-chip-remove {
+  opacity: 1;
+}
+
+.dn-task-tag-add {
+  opacity: 0;
+  font-size: 12px;
+}
+.dn-task-chip:hover .dn-task-tag-add {
+  opacity: 1;
+}
+
+.dn-tag-picker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.dn-tag-input {
+  font-size: 12px;
+  width: 90px;
+}
+
+.dn-tag-suggestion {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-panel-raised);
+  cursor: pointer;
+}
+
 
 .dn-resize-handle {
   height: 5px;
