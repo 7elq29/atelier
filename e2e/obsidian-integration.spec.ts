@@ -153,48 +153,47 @@ test('seeded tasks render correctly in Timeline/Unscheduled/Trackers', async () 
   await page.screenshot({ path: join(artifactsDir, '09-timeline.png') })
 })
 
-test('current-time indicator is a plain list row in chronological order (not an absolute overlay)', async () => {
-  // Timeline is now a flat list (see 09-obsidian-integration UI fix): the
-  // "now" marker is a plain row spliced between the tasks that bracket the
-  // current time, not an absolutely-positioned overlay line on a 24h grid.
-  // Outside the displayed window (06:00-23:00) it isn't rendered at all, so
-  // this test is written to be correct regardless of the real wall-clock
-  // time it happens to run at.
+test('current-time indicator is an absolutely-positioned overlay line on the hour grid (54a rewrite)', async () => {
+  // Timeline is now an absolute-positioned hour grid (see the 54a rewrite):
+  // the "now" marker is an absolutely-positioned overlay line at
+  // `top: minutesToPx(minutes - TIMELINE_START_HOUR*60)`, not a row spliced
+  // into a flat list. Outside the displayed window (06:00-22:00) it isn't
+  // rendered at all, so this test is written to be correct regardless of the
+  // real wall-clock time it happens to run at.
   const line = page.locator('[data-testid="current-time-line"]')
   const count = await line.count()
   if (count === 0) return
 
   await expect(line).toBeAttached()
 
-  // Not absolutely positioned: no inline `top` style (that was the old,
-  // now-fixed grid-overlay design).
+  // Absolutely positioned: must carry an inline `top` style consistent with
+  // minutesToPx(minutes - 360) at HOUR_HEIGHT_PX=60.
   const style = await line.evaluate((el) => (el as HTMLElement).getAttribute('style'))
-  expect(style ?? '').not.toMatch(/top\s*:/)
+  expect(style ?? '').toMatch(/top\s*:/)
 
   const minutesAttr = await line.getAttribute('data-minutes')
   const minutes = Number(minutesAttr)
-  expect(minutes).toBeGreaterThanOrEqual(0)
-  expect(minutes).toBeLessThan(24 * 60)
+  expect(minutes).toBeGreaterThanOrEqual(6 * 60)
+  expect(minutes).toBeLessThanOrEqual(22 * 60)
 
-  // Chronological bracketing: every timeline-task rendered *before* the
-  // marker in DOM order must start at or before "now", and every one
-  // rendered *after* must start after "now".
-  const rows = page.locator('[data-testid="timeline-list"] > *')
-  const rowCount = await rows.count()
-  let seenMarker = false
-  for (let i = 0; i < rowCount; i++) {
-    const row = rows.nth(i)
-    const testId = await row.getAttribute('data-testid')
-    if (testId === 'current-time-line') {
-      seenMarker = true
-      continue
-    }
-    if (testId !== 'timeline-task') continue
-    const start = await row.getAttribute('data-start')
+  const top = await line.evaluate((el) => parseFloat((el as HTMLElement).style.top))
+  const expectedTop = ((minutes - 6 * 60) / 60) * 60
+  expect(top).toBeCloseTo(expectedTop, 0)
+
+  // Pixel-position bracketing: every timeline-task block whose top is above
+  // the marker's top must have a start time at or before "now", and every
+  // one below must start after "now" (grid position, not DOM order, is what
+  // determines "before/after" now).
+  const blocks = page.locator('[data-testid="timeline-task"]')
+  const blockCount = await blocks.count()
+  for (let i = 0; i < blockCount; i++) {
+    const block = blocks.nth(i)
+    const blockTop = await block.evaluate((el) => parseFloat((el as HTMLElement).style.top))
+    const start = await block.getAttribute('data-start')
     if (!start) continue
     const [h, m] = start.split(':').map(Number)
     const startMin = h * 60 + m
-    if (!seenMarker) {
+    if (blockTop <= top) {
       expect(startMin).toBeLessThanOrEqual(minutes)
     } else {
       expect(startMin).toBeGreaterThan(minutes)
@@ -527,18 +526,19 @@ type: daily
 
 // ── Current-time marker vs. an in-progress task ─────────────────────────
 //
-// The flat-list "now" marker (see Timeline.tsx) is spliced between the two
-// tasks that bracket "now" by comparing `task.start > nowMinutes`. This only
-// exercises the case where "now" falls strictly *between* two tasks; it
-// doesn't exercise "now" falling *inside* a task's own range (task already
-// started, not yet finished). Seed a task whose time-block is computed at
-// setup time to straddle the real "now" (±15 minutes), so this is verified
-// against the actual wall clock rather than a fixed fictional time.
+// The absolute-grid "now" line (see Timeline.tsx, 54a rewrite) is positioned
+// at `top: minutesToPx(minutes - TIMELINE_START_HOUR*60)`, independent of
+// task rows. This exercises the case where "now" falls *inside* a task's own
+// range (task already started, not yet finished): the marker's pixel top
+// should land within that task block's [top, top+height) span. Seed a task
+// whose time-block is computed at setup time to straddle the real "now"
+// (±15 minutes), so this is verified against the actual wall clock rather
+// than a fixed fictional time.
 test.describe('current-time marker relative to an in-progress task', () => {
   const DATE = '2026-07-30'
   const GID_IN_PROGRESS = '55555555-5555-4555-8555-555555555555'
-  const DAY_START_MIN = 6 * 60 // matches timeline-scale.ts
-  const DAY_END_MIN = 23 * 60
+  const DAY_START_MIN = 6 * 60 // matches timeline-scale.ts TIMELINE_START_HOUR
+  const DAY_END_MIN = 22 * 60 // matches timeline-scale.ts TIMELINE_END_HOUR
 
   let inProgressApp: ElectronApplication
   let inProgressPage: Page
@@ -557,7 +557,7 @@ test.describe('current-time marker relative to an in-progress task', () => {
   const rangeEnd = toHHMM(nowMinutes + 15)
 
   test.beforeAll(async () => {
-    test.skip(!inDisplayWindow, 'real wall-clock time is outside the displayed 06:00-23:00 window (with margin)')
+    test.skip(!inDisplayWindow, 'real wall-clock time is outside the displayed 06:00-22:00 window (with margin)')
 
     const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-inprogress-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
@@ -598,16 +598,209 @@ type: daily
     if (inProgressApp) await inProgressApp.close()
   })
 
-  test('marker renders after (not before) a task whose range currently contains "now"', async () => {
-    test.skip(!inDisplayWindow, 'real wall-clock time is outside the displayed 06:00-23:00 window (with margin)')
+  test('marker\'s pixel position lands within the span of a task whose range currently contains "now"', async () => {
+    test.skip(!inDisplayWindow, 'real wall-clock time is outside the displayed 06:00-22:00 window (with margin)')
 
     const marker = inProgressPage.locator('[data-testid="current-time-line"]')
     await expect(marker).toBeAttached()
 
-    const rows = inProgressPage.locator('[data-testid="timeline-list"] > *')
-    await expect(rows).toHaveCount(2)
-    await expect(rows.nth(0)).toHaveAttribute('data-testid', 'timeline-task')
-    await expect(rows.nth(0)).toContainText('In-progress task spanning now')
-    await expect(rows.nth(1)).toHaveAttribute('data-testid', 'current-time-line')
+    const blocks = inProgressPage.locator('[data-testid="timeline-task"]')
+    await expect(blocks).toHaveCount(1)
+    await expect(blocks.nth(0)).toContainText('In-progress task spanning now')
+
+    const markerTop = await marker.evaluate((el) => parseFloat((el as HTMLElement).style.top))
+    const blockTop = await blocks.nth(0).evaluate((el) => parseFloat((el as HTMLElement).style.top))
+    const blockHeight = await blocks.nth(0).evaluate((el) => parseFloat((el as HTMLElement).style.height))
+
+    expect(markerTop).toBeGreaterThanOrEqual(blockTop)
+    expect(markerTop).toBeLessThanOrEqual(blockTop + blockHeight)
+  })
+})
+
+// ── 54a: absolute-grid Timeline rewrite (drag-move, resize, delete, overlap
+// columns, pixel-Y create) ──────────────────────────────────────────────
+//
+// Own isolated Electron instance + fixture vault/date, following the same
+// pattern as the "real-world content shapes" and "current-time marker"
+// describes above, so these interaction tests don't depend on (or disturb)
+// the ordering/mutations already baked into the main describe block above
+// (e.g. the regression test's assumption that GID_STANDUP's time-block is
+// still "09:00–09:15" after only being toggled, not moved).
+test.describe('54a: absolute-grid interactions', () => {
+  const DATE = '2026-07-29'
+  const GID_MOVE = '66666666-6666-4666-8666-666666666666'
+  const GID_RESIZE = '77777777-7777-4777-8777-777777777777'
+  const GID_DELETE = 'a6a6a6a6-a6a6-4a6a-8a6a-a6a6a6a6a6a6'
+  const GID_OVERLAP_A = 'b7b7b7b7-b7b7-4b7b-8b7b-b7b7b7b7b7b7'
+  const GID_OVERLAP_B = 'c8c8c8c8-c8c8-4c8c-8c8c-c8c8c8c8c8c8'
+
+  let gridApp: ElectronApplication
+  let gridPage: Page
+  let gridVaultRoot: string
+  let gridNotePath: string
+
+  function seedGridFixtureContent(): string {
+    return `---
+date: ${DATE}
+day: Wednesday
+type: daily
+---
+
+## 📋 Tasks
+
+- [ ] 09:00–09:15 Standup [gid:: ${GID_MOVE}]
+- [ ] 13:00–13:30 Resize target [gid:: ${GID_RESIZE}]
+- [ ] 15:00–15:30 Delete target [gid:: ${GID_DELETE}]
+- [ ] 10:00–11:00 Overlap A [gid:: ${GID_OVERLAP_A}]
+- [ ] 10:00–11:00 Overlap B [gid:: ${GID_OVERLAP_B}]
+
+### ⚪ Backlog
+-
+
+### 🤝 Delegated
+-
+`
+  }
+
+  test.beforeAll(async () => {
+    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-grid-'))
+    mkdirSync(join(userDataDir, 'data'), { recursive: true })
+    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+
+    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-grid-'))
+    gridVaultRoot = join(vaultParent, 'vault')
+    // Path uses the ISO week number (see resolveNotePath in
+    // daily-note-io.ts), not the day-of-month — 2026-07-29 falls in ISO
+    // week 31, same as the other fixture dates in this file.
+    const noteDir = join(gridVaultRoot, '01.dailynotes', '2026', 'Jul', '31')
+    mkdirSync(noteDir, { recursive: true })
+    gridNotePath = join(noteDir, `${DATE}.md`)
+    writeFileSync(gridNotePath, seedGridFixtureContent(), 'utf-8')
+
+    gridApp = await electron.launch({
+      args: [mainEntry, `--user-data-dir=${userDataDir}`],
+      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: gridVaultRoot, GARDENIA_TEST_DATE: DATE }
+    })
+    gridPage = await gridApp.firstWindow()
+    await gridPage.waitForLoadState('domcontentloaded')
+    await expect(gridPage.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+    await expect(gridPage.locator('[data-testid="timeline-task"]')).toHaveCount(5)
+  })
+
+  test.afterAll(async () => {
+    await gridApp.close()
+  })
+
+  test('renders the new grid Timeline with several tasks, including two overlapping ones, side-by-side', async () => {
+    // Requirement 5: two overlapping 10:00-11:00 blocks (UC-10 overlap-column
+    // layout) must render side-by-side (non-overlapping x-ranges), not
+    // stacked on top of one another.
+    const blockA = gridPage.locator('[data-testid="timeline-task"][data-task-id="' + GID_OVERLAP_A + '"]')
+    const blockB = gridPage.locator('[data-testid="timeline-task"][data-task-id="' + GID_OVERLAP_B + '"]')
+    const boxA = await blockA.boundingBox()
+    const boxB = await blockB.boundingBox()
+    if (!boxA || !boxB) throw new Error('overlap blocks not visible')
+
+    // Same time range -> same vertical span.
+    expect(boxA.y).toBeCloseTo(boxB.y, 0)
+    expect(boxA.height).toBeCloseTo(boxB.height, 0)
+
+    // Non-overlapping x-ranges: one block's right edge must be at/left of
+    // the other's left edge (or vice versa) — i.e. rendered in separate
+    // columns, not stacked at the same x position.
+    const aRightAtOrBeforeBLeft = boxA.x + boxA.width <= boxB.x + 1
+    const bRightAtOrBeforeALeft = boxB.x + boxB.width <= boxA.x + 1
+    expect(aRightAtOrBeforeBLeft || bRightAtOrBeforeALeft).toBe(true)
+
+    await gridPage.screenshot({ path: join(artifactsDir, '54a-timeline-grid.png') })
+  })
+
+  test('right-clicking at a specific pixel Y creates a task at the corresponding snapped time, not "now" (the actual #54 fix)', async () => {
+    const timelineBody = gridPage.locator('[data-testid="timeline-body"]')
+    const box = await timelineBody.boundingBox()
+    if (!box) throw new Error('timeline body not visible')
+
+    // y=50px from the top of the (unscrolled) grid is well clear of every
+    // seeded block (the earliest, Standup, starts at 09:00 -> top=180px).
+    // Per timeline-scale.ts: TIMELINE_START_HOUR=6 (360min), HOUR_HEIGHT_PX=60
+    // (1px/min), SNAP_MINUTES=15 -> snapMinutes(360 + 50) = snapMinutes(410)
+    // = 405min = 06:45. Default duration is 30min -> end = 07:15.
+    await timelineBody.click({ button: 'right', position: { x: 40, y: 50 } })
+    const input = gridPage.locator('[data-testid="timeline-new-task-input"]')
+    await expect(input).toBeVisible()
+    await input.fill('Pixel-Y right-click task')
+    await input.press('Enter')
+
+    await expect(gridPage.locator('[data-testid="timeline-task"]', { hasText: 'Pixel-Y right-click task' })).toBeVisible()
+    await gridPage.waitForTimeout(1200)
+
+    const content = readFileSync(gridNotePath, 'utf-8')
+    appendSyncLog('54a: after pixel-Y right-click creation', content)
+    const line = content.split('\n').find((l) => l.includes('Pixel-Y right-click task'))
+    expect(line).toBeTruthy()
+    expect(line).toMatch(/06:45[–-]07:15/)
+  })
+
+  test('drag-moving a scheduled block via real mouse events shifts its on-disk time-block, duration preserved', async () => {
+    const block = gridPage.locator('[data-testid="timeline-task"][data-task-id="' + GID_MOVE + '"]')
+    const box = await block.boundingBox()
+    if (!box) throw new Error('move-target block not visible')
+
+    const startX = box.x + box.width / 2
+    const startY = box.y + box.height / 2
+    const deltaY = 120 // 120px == 120 minutes at HOUR_HEIGHT_PX=60 (1px/min); 09:00+120min = 11:00
+
+    await gridPage.mouse.move(startX, startY)
+    await gridPage.mouse.down()
+    await gridPage.mouse.move(startX, startY + deltaY, { steps: 10 })
+    await gridPage.mouse.up()
+
+    await gridPage.waitForTimeout(1200)
+    const content = readFileSync(gridNotePath, 'utf-8')
+    appendSyncLog('54a: after drag-move', content)
+    const line = content.split('\n').find((l) => l.includes(GID_MOVE))
+    expect(line, 'moved task line should still exist').toBeTruthy()
+    // Original was 09:00-09:15 (15min duration); shifted by 120min -> 11:00-11:15.
+    expect(line).toMatch(/11:00[–-]11:15/)
+  })
+
+  test('dragging a resize handle changes only the start OR only the end, not both', async () => {
+    const bottomHandle = gridPage.locator('[data-testid="timeline-resize-bottom"][data-task-id="' + GID_RESIZE + '"]')
+    const handleBox = await bottomHandle.boundingBox()
+    if (!handleBox) throw new Error('resize handle not visible')
+
+    const startX = handleBox.x + handleBox.width / 2
+    const startY = handleBox.y + handleBox.height / 2
+    const deltaY = 30 // extend the end by 30 minutes: 13:30 -> 14:00
+
+    await gridPage.mouse.move(startX, startY)
+    await gridPage.mouse.down()
+    await gridPage.mouse.move(startX, startY + deltaY, { steps: 10 })
+    await gridPage.mouse.up()
+
+    await gridPage.waitForTimeout(1200)
+    const content = readFileSync(gridNotePath, 'utf-8')
+    appendSyncLog('54a: after resize (bottom handle)', content)
+    const line = content.split('\n').find((l) => l.includes(GID_RESIZE))
+    expect(line, 'resized task line should still exist').toBeTruthy()
+    // Start (13:00) must be unchanged; only the end (13:30 -> 14:00) moves.
+    expect(line).toMatch(/13:00[–-]14:00/)
+  })
+
+  test('clicking a block\'s delete button removes it from disk', async () => {
+    const block = gridPage.locator('[data-testid="timeline-task"][data-task-id="' + GID_DELETE + '"]')
+    await expect(block).toBeVisible()
+    await block.hover()
+
+    const deleteButton = gridPage.locator('[data-testid="timeline-task-delete"][data-task-id="' + GID_DELETE + '"]')
+    await deleteButton.click()
+
+    await expect(gridPage.locator('[data-testid="timeline-task"]', { hasText: 'Delete target' })).toHaveCount(0)
+
+    await gridPage.waitForTimeout(1200)
+    const content = readFileSync(gridNotePath, 'utf-8')
+    appendSyncLog('54a: after delete', content)
+    expect(content).not.toContain(GID_DELETE)
+    expect(content).not.toContain('Delete target')
   })
 })

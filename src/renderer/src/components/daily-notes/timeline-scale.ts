@@ -1,11 +1,95 @@
 /**
- * Shared time-range helpers for Timeline.tsx. DAY_START_MIN/DAY_END_MIN
- * bound the window in which the "now" marker is shown (a flat list has no
- * pixel-per-minute scale to derive positioning from — see Timeline.tsx for
- * the flat-list/no-grid layout).
+ * Shared time-range helpers for Timeline.tsx, which renders an
+ * absolute-positioned hour grid (06:00-22:00) rather than a flat list.
+ * TIMELINE_START_HOUR/TIMELINE_END_HOUR bound the displayed grid window;
+ * HOUR_HEIGHT_PX/SNAP_MINUTES/LABEL_WIDTH drive the px<->minutes conversion
+ * and drag-snap behavior.
  */
-export const DAY_START_MIN = 6 * 60 // 06:00
-export const DAY_END_MIN = 23 * 60 // 23:00
+export const TIMELINE_START_HOUR = 6
+export const TIMELINE_END_HOUR = 22
+export const HOUR_HEIGHT_PX = 60
+export const SNAP_MINUTES = 15
+export const LABEL_WIDTH = 36
+
+// Kept for any remaining callers expecting the display-window bounds in
+// minutes (equal to TIMELINE_START_HOUR*60 / TIMELINE_END_HOUR*60).
+export const DAY_START_MIN = TIMELINE_START_HOUR * 60
+export const DAY_END_MIN = TIMELINE_END_HOUR * 60
+
+/** Convert a minutes offset into a pixel offset at HOUR_HEIGHT_PX px/hour. */
+export function minutesToPx(minutes: number): number {
+  return (minutes / 60) * HOUR_HEIGHT_PX
+}
+
+/** Convert a pixel offset back into a minutes offset at HOUR_HEIGHT_PX px/hour. */
+export function pxToMinutes(px: number): number {
+  return (px / HOUR_HEIGHT_PX) * 60
+}
+
+/** Snap a minutes value to the nearest SNAP_MINUTES increment. */
+export function snapMinutes(minutes: number): number {
+  return Math.round(minutes / SNAP_MINUTES) * SNAP_MINUTES
+}
+
+export interface LayoutEntry {
+  taskId: string
+  startMin: number
+  endMin: number
+  column: number
+  totalColumns: number
+}
+
+/**
+ * Overlap-column layout (UC-10): groups mutually-overlapping items and
+ * assigns each a column index + the group's total column count, so the
+ * caller can render side-by-side (rather than stacked) blocks for
+ * overlapping time ranges.
+ */
+export function computeColumns(
+  items: { taskId: string; startMin: number; endMin: number }[]
+): Map<string, LayoutEntry> {
+  if (items.length === 0) return new Map()
+  const sorted = [...items].sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin)
+  const groups: (typeof sorted)[] = []
+  let currentGroup: typeof sorted = []
+  let groupEnd = -1
+  for (const item of sorted) {
+    if (currentGroup.length === 0 || item.startMin < groupEnd) {
+      currentGroup.push(item)
+      groupEnd = Math.max(groupEnd, item.endMin)
+    } else {
+      groups.push(currentGroup)
+      currentGroup = [item]
+      groupEnd = item.endMin
+    }
+  }
+  if (currentGroup.length > 0) groups.push(currentGroup)
+
+  const result = new Map<string, LayoutEntry>()
+  for (const group of groups) {
+    const columns: number[] = new Array(group.length).fill(0)
+    const endTimes: number[] = []
+    for (let i = 0; i < group.length; i++) {
+      const item = group[i]!
+      let col = 0
+      while (col < endTimes.length && endTimes[col]! > item.startMin) col++
+      columns[i] = col
+      endTimes[col] = item.endMin
+    }
+    const totalCols = Math.max(...columns) + 1
+    for (let i = 0; i < group.length; i++) {
+      const item = group[i]!
+      result.set(item.taskId, {
+        taskId: item.taskId,
+        startMin: item.startMin,
+        endMin: item.endMin,
+        column: columns[i]!,
+        totalColumns: totalCols
+      })
+    }
+  }
+  return result
+}
 
 export function timeToMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number)

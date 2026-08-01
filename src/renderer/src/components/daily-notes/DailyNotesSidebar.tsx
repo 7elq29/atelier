@@ -81,6 +81,7 @@ export default function DailyNotesSidebar({ date }: DailyNotesSidebarProps): JSX
           onToggle={toggleTask}
           onCreate={(text, timeBlock) => addTask(text, 'day-plan', timeBlock)}
           onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
+          onDelete={deleteTask}
         />
       </div>
 
