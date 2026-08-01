@@ -97,7 +97,14 @@
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  min-height: 40px;
+  /* Enough for the header row plus at least one real item row, so a section
+     given a small flex-grow share (e.g. Trackers, at a short window height)
+     doesn't get squeezed below the point where its own content can ever be
+     fully scrolled into view. 40px (header-only) was enough before the 54b
+     progress/Big Three header added extra height above the 3-way split;
+     bumping it keeps the min-usable guarantee intact regardless of how much
+     sibling content grows above this panel. */
+  min-height: 72px;
   overflow: hidden;
 }
 
