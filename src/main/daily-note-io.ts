@@ -168,10 +168,19 @@ function parseBulletLine(
 
 // ── section detection ────────────────────────────────────────────
 
-type SectionKind = 'frontmatter' | 'before-tasks' | 'tasks' | 'backlog' | 'delegated' | 'trackers' | 'after-tasks'
+type SectionKind =
+  | 'frontmatter'
+  | 'before-tasks'
+  | 'tasks'
+  | 'backlog'
+  | 'delegated'
+  | 'trackers'
+  | 'after-tasks'
+  | 'big-three'
 
 function detectSection(line: string): SectionKind | null {
   const trimmed = line.trim()
+  if (/^##\s+.*(Big\s*Three|Day\s*Plan)/i.test(trimmed)) return 'big-three'
   if (/^##\s+.*Tasks/i.test(trimmed)) return 'tasks'
   if (/^###\s+.*Backlog/i.test(trimmed)) return 'backlog'
   if (/^###\s+.*Delegated/i.test(trimmed)) return 'delegated'
@@ -185,6 +194,7 @@ function detectSection(line: string): SectionKind | null {
 export function parseDailyNote(content: string, date: string): { note: DailyNote; raw: RawSections } {
   const lines = content.split('\n')
   const tasks: DailyTask[] = []
+  const bigThreeItems: string[] = []
   const raw: RawSections = { frontmatter: [], beforeTasks: [], afterTasks: [] }
 
   let currentSection: SectionKind = 'frontmatter'
@@ -251,10 +261,16 @@ export function parseDailyNote(content: string, date: string): { note: DailyNote
         if (detected === 'trackers') break
         raw.afterTasks.push(line)
         break
+      case 'big-three': {
+        if (detected === 'big-three') break
+        const bulletMatch = line.match(/^\s*\*\s+(.+)$/)
+        if (bulletMatch) bigThreeItems.push(bulletMatch[1]!.trim())
+        break
+      }
     }
   }
 
-  return { note: { date, dayOfWeek, tasks, bigThree: [] }, raw }
+  return { note: { date, dayOfWeek, tasks, bigThree: bigThreeItems }, raw }
 }
 
 // ── serializer ────────────────────────────────────────────────────
@@ -289,6 +305,13 @@ export function serializeDailyNote(note: DailyNote, raw: RawSections): string {
   if (raw.beforeTasks.length > 0) {
     sections.push('')
     sections.push(...raw.beforeTasks)
+  }
+
+  if (note.bigThree.length > 0) {
+    sections.push('')
+    sections.push('## \u{1F5D3}\u{FE0F} Daily Big Three')
+    sections.push('')
+    for (const item of note.bigThree) sections.push(`* ${item}`)
   }
 
   sections.push('')

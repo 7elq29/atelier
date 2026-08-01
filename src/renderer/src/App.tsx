@@ -466,7 +466,7 @@ export default function App(): JSX.Element {
           )}
         </div>
 
-        {date && <DailyNotesSidebar date={date} />}
+        {date && <DailyNotesSidebar date={date} onClose={() => setDate(null)} />}
       </div>
 
       <CommandPalette
