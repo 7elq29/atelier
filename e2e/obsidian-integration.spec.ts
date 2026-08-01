@@ -272,6 +272,44 @@ test('dragging a task from Unscheduled onto the timeline updates the on-disk tim
   expect(line).toMatch(/^\s*-\s*\[.]\s*\d{1,2}:\d{2}[–-]\d{1,2}:\d{2}\s+Write PR description/)
 })
 
+test('dragging a task from the timeline back onto Unscheduled clears its time-block and updates the on-disk section', async () => {
+  const block = page.locator('[data-testid="timeline-task"]', { hasText: 'Prep for oncall handoff' })
+  const taskId = await block.getAttribute('data-task-id')
+  expect(taskId).toBeTruthy()
+
+  // Same synthetic DragEvent approach as the Unscheduled -> Timeline test
+  // above, targeting the reverse drop zone (`unscheduled-body`). Both
+  // directions read/write the same `text/task-id` dataTransfer key
+  // (Timeline.tsx's task rows are `draggable` with `onDragStart` setting it;
+  // DailyNotesSidebar's Unscheduled body has `onDrop` calling
+  // `moveTask(id, 'unscheduled', undefined)`).
+  await page.evaluate((id) => {
+    const target = document.querySelector('[data-testid="unscheduled-body"]')
+    if (!target) throw new Error('unscheduled body not found')
+    const dt = new DataTransfer()
+    dt.setData('text/task-id', id as string)
+    target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+  }, taskId)
+
+  await expect(page.locator('[data-testid="unscheduled-task"]', { hasText: 'Prep for oncall handoff' })).toBeVisible()
+  await expect(page.locator('[data-testid="timeline-task"]', { hasText: 'Prep for oncall handoff' })).toHaveCount(0)
+
+  await page.waitForTimeout(1200)
+  const content = readFileSync(notePath, 'utf-8')
+  appendSyncLog('after drag timeline -> unscheduled', content)
+
+  // The task's gid line should now live under Backlog with no time-block
+  // prefix.
+  const lines = content.split('\n')
+  const backlogHeaderIdx = lines.findIndex((l) => /^###\s+.*Backlog/i.test(l))
+  const line = lines.find((l) => l.includes(GID_ONCALL_HANDOFF))
+  expect(line).toBeTruthy()
+  expect(line).toMatch(/^\s*-\s*\[.]\s*Prep for oncall handoff/)
+  expect(line).not.toMatch(/\d{1,2}:\d{2}[–-]\d{1,2}:\d{2}/)
+  expect(lines.indexOf(line!)).toBeGreaterThan(backlogHeaderIdx)
+})
+
 test('resizing sections keeps independent scroll and persists weights', async () => {
   const handle = page.locator('.dn-resize-handle').first()
   const handleBox = await handle.boundingBox()
