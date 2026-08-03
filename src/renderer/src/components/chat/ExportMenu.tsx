@@ -31,7 +31,7 @@ export default function ExportMenu({
   }
 
   return (
-    <div style={{ position: 'relative' }} ref={rootRef}>
+    <div className="export-menu" style={{ position: 'relative' }} ref={rootRef}>
       <button
         className="btn btn-icon btn-sm"
         title="Export conversation"
