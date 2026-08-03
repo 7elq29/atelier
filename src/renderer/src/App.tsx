@@ -44,12 +44,14 @@ export default function App(): JSX.Element {
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [composerText, setComposerText] = useState('')
-  // 10f-enrichment-model-effort-picker: `null` until the user touches the
-  // composer's picker — see Composer.tsx's ModelPicker doc comment for why
-  // that's what keeps every pre-existing send (no picker interaction at all)
-  // byte-for-byte identical to before this task (no override sent, harness
-  // default preserved).
-  const [modelSelection, setModelSelection] = useState<ModelSelection | null>(null)
+  // Defaults to Sonnet 5 (explicit override, always sent) rather than `null`
+  // (no override, harness/SDK picks its own default) — the app's default
+  // model must be Sonnet 5 even when the user never touches the composer's
+  // picker, including in e2e tests that never interact with it.
+  const [modelSelection, setModelSelection] = useState<ModelSelection | null>({
+    model: 'claude-sonnet-5',
+    effort: 'high'
+  })
   const [activeTab, setActiveTab] = useState<SessionTab>('chat')
   const [visitedTabs, setVisitedTabs] = useState<Set<SessionTab>>(new Set(['chat']))
   const [drawerOpen, setDrawerOpen] = useState(false)

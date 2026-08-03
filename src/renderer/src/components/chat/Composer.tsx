@@ -99,8 +99,8 @@ const EFFORT_OPTIONS: { id: NonNullable<ModelSelection['effort']>; label: string
   { id: 'high', label: 'High' }
 ]
 
-/** Purely cosmetic placeholder shown before the user ever touches the picker — matches mocks/index.html's own static default ("Opus 4.8 · High ▾"). Selecting nothing keeps `modelSelection` `null`, so no override is ever sent until the user actually picks something (see ModelPicker's doc comment). */
-const DEFAULT_LABEL = 'Opus 4.8 · High'
+/** Fallback label only reached if `modelSelection` is ever `null` (defensive — `App.tsx` now always initializes it to Sonnet 5 · High, the app's real default, so this normally never renders). */
+const DEFAULT_LABEL = 'Sonnet 5 · High'
 
 function labelFor(selection: ModelSelection | null): string {
   if (!selection) return DEFAULT_LABEL

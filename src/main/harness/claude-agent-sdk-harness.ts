@@ -48,6 +48,16 @@ import { logger } from '../logger'
 import type { PermissionModeValue } from '../../shared/session-types'
 
 /**
+ * The app's real default model, applied whenever a caller doesn't specify
+ * one explicitly — session creation, resume, and every turn that never
+ * touched the composer's model picker (i.e. `opts.model` is `undefined`)
+ * all get this instead of silently falling through to whatever the SDK's
+ * own baked-in default happens to be. Applies uniformly, including in e2e
+ * tests, which almost never interact with the model picker.
+ */
+const DEFAULT_MODEL = 'claude-sonnet-5'
+
+/**
  * Single-quotes a value for safe interpolation into a POSIX shell command
  * string (the remote side of the SSH command below runs through the
  * destination's login shell, so args built locally as an argv array must be
@@ -435,7 +445,7 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       cwd: opts.cwd,
       includePartialMessages: true,
       ...(resumeSessionId ? { resume: resumeSessionId } : { sessionId }),
-      ...(opts.model ? { model: opts.model } : {}),
+      model: opts.model ?? DEFAULT_MODEL,
       ...(opts.effort ? { effort: opts.effort } : {}),
       ...(opts.systemPrompt ? { systemPrompt: opts.systemPrompt } : {}),
       ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
