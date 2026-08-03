@@ -8,6 +8,10 @@ interface TaskItemProps {
   onUpdateText: (id: string, text: string) => void
   onUpdateTags: (id: string, tags: string[]) => void
   draggable?: boolean
+  /** Root element's data-testid — defaults to "unscheduled-task"; the
+   * Trackers section (UC-14, identical mechanics to Unscheduled's UC-12)
+   * passes "tracker-task" to match its existing test/selector convention. */
+  testId?: string
 }
 
 /** Fixed tag suggestion list (54b list affordances). */
@@ -36,7 +40,8 @@ export default function TaskItem({
   onDelete,
   onUpdateText,
   onUpdateTags,
-  draggable = true
+  draggable = true,
+  testId = 'unscheduled-task'
 }: TaskItemProps): JSX.Element {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
@@ -90,7 +95,7 @@ export default function TaskItem({
   return (
     <div
       className={`dn-task-chip${task.status === 'done' ? ' done' : ''}`}
-      data-testid="unscheduled-task"
+      data-testid={testId}
       data-task-id={task.id}
       draggable={draggable}
       onDragStart={(e) => e.dataTransfer.setData('text/task-id', task.id)}

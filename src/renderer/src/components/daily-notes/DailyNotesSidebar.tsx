@@ -283,14 +283,16 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
           <>
             <div className="dn-section-body scroll-y" data-testid="trackers-body">
               {trackerTasks.map((task) => (
-                <div className="dn-tracker-mini" key={task.id} data-testid="tracker-task" data-task-id={task.id}>
-                  <span>{task.text}</span>
-                  <div
-                    className={`dn-tbox${task.status === 'done' ? ' done' : ''}`}
-                    style={{ marginLeft: 'auto' }}
-                    onClick={() => toggleTask(task.id)}
-                  />
-                </div>
+                <TaskItem
+                  key={task.id}
+                  task={task}
+                  testId="tracker-task"
+                  draggable={false}
+                  onToggle={toggleTask}
+                  onDelete={deleteTask}
+                  onUpdateText={(id, text) => updateTask(id, { text })}
+                  onUpdateTags={(id, tags) => updateTask(id, { tags })}
+                />
               ))}
             </div>
             <div className="dn-add-task-footer">

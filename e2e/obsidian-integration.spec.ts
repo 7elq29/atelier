@@ -1189,6 +1189,70 @@ type: daily
     expect(untaggedLine).not.toContain('#ktlo')
   })
 
+  test('regression: Trackers get the same edit/tag/delete affordances as Unscheduled (UC-14 parity)', async () => {
+    // Root cause: the 54b commit ("Add Unscheduled/Tracker add-task,
+    // edit-text, tag UI... Covers UC-14") only wired up the "+ New task"
+    // add affordance for Trackers — the tracker list itself still rendered
+    // a bespoke `<div className="dn-tracker-mini">` with nothing but a
+    // toggle checkbox, so double-click-to-edit, tag add/remove, and delete
+    // were all silently missing for Trackers even though UC-14 explicitly
+    // claims "identical mechanics to UC-12" (Unscheduled). Fixed by
+    // rendering Trackers rows through the same `TaskItem` component as
+    // Unscheduled (draggable=false, testId="tracker-task" to keep the
+    // existing selector convention).
+    const tracker = affPage.locator('[data-testid="tracker-task"]', { hasText: 'Water plants' })
+    await expect(tracker).toBeVisible()
+    await tracker.hover()
+
+    // Delete affordance exists (structural check only — not invoked, so the
+    // later Big Three/progress-header test's task counts stay valid).
+    await expect(tracker.locator('.dn-task-chip-remove')).toBeVisible()
+
+    // Tag add/remove round-trips to disk, same as Unscheduled.
+    await tracker.locator('[data-testid="add-tag-button"]').click()
+    const tagInput = tracker.locator('[data-testid="tag-input"]')
+    await expect(tagInput).toBeVisible()
+    await tagInput.fill('ktlo')
+    await tagInput.press('Enter')
+    await expect(tracker.locator('[data-testid="task-tag-chip"]', { hasText: '#ktlo' })).toBeVisible()
+
+    await affPage.waitForTimeout(1200)
+    let content = readFileSync(affNotePath, 'utf-8')
+    let trackerLine = content.split('\n').find((l) => l.includes(GID_TRACKER))
+    expect(trackerLine).toContain('#ktlo')
+    // The structural #tracker tag must still round-trip too, so the task
+    // stays classified as a tracker after the write-back.
+    expect(trackerLine).toContain('#tracker')
+
+    await tracker.hover()
+    await tracker.locator('[data-testid="task-tag-chip"]', { hasText: '#ktlo' }).locator('[data-testid="task-tag-remove"]').click()
+    await expect(tracker.locator('[data-testid="task-tag-chip"]', { hasText: '#ktlo' })).toHaveCount(0)
+    await affPage.waitForTimeout(1200)
+
+    // Double-click-to-edit text round-trips to disk. Query the edit input
+    // at the page level (not chip-scoped): the chip locator's `hasText`
+    // filter re-evaluates on each use, and an <input>'s value isn't counted
+    // toward an element's text content, so a chip-scoped locator stops
+    // resolving once the text row is replaced by the edit input — same
+    // reason the pre-existing Unscheduled double-click-edit test above
+    // queries `affPage.locator('[data-testid="task-edit-input"]')` directly.
+    await tracker.locator('span', { hasText: 'Water plants' }).dblclick()
+    const editInput = affPage.locator('[data-testid="task-edit-input"]')
+    await expect(editInput).toBeVisible()
+    await editInput.fill('Water plants (edited)')
+    await editInput.press('Enter')
+    await expect(affPage.locator('[data-testid="tracker-task"]', { hasText: 'Water plants (edited)' })).toBeVisible()
+
+    await affPage.waitForTimeout(1200)
+    content = readFileSync(affNotePath, 'utf-8')
+    trackerLine = content.split('\n').find((l) => l.includes(GID_TRACKER))
+    expect(trackerLine).toContain('Water plants (edited)')
+    expect(trackerLine).not.toContain('#ktlo')
+    expect(trackerLine).toContain('#tracker')
+
+    await affPage.screenshot({ path: join(artifactsDir, 'fix-tracker-taskitem-parity-regression.png') })
+  })
+
   test('Big Three + progress header: renders seeded focus items and the real done/total count', async () => {
     const focusItems = affPage.locator('[data-testid="dn-big-three-item"]')
     await expect(focusItems).toHaveCount(3)
