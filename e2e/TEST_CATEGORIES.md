@@ -12,18 +12,18 @@ iterating.
    ```bash
    npx playwright test e2e/composer-core.spec.ts e2e/composer-mentions-and-commands.spec.ts
    ```
-3. **This is a development-speed aid only.** Per `CLAUDE.md` §3, a change is
-   not validated until the **full** suite passes:
-   ```bash
-   npm run test:e2e
-   ```
-   Category runs catch regressions in the area you touched fast; they do
-   *not* catch cross-feature state bleed (shared sidebar/session state,
-   global CSS, IPC plumbing shared across features) that only the full suite
-   exercises. Never skip the full run before calling a change "done."
+3. **This is the validation step itself, not just a speed aid.** Per
+   `CLAUDE.md` §3, a change is validated by running every spec file in the
+   matched categor(ies) — including ones you didn't add — not by running the
+   full suite. Category runs catch regressions in the area you touched; they
+   do not catch cross-feature state bleed (shared sidebar/session state,
+   global CSS, IPC plumbing shared across features) the way a full run would,
+   but CLAUDE.md deliberately accepts that tradeoff for faster iteration —
+   don't run the full suite as a default "just to be safe."
 4. If a spec touches multiple areas (several do — most launch through the
    same New Session Modal / Composer flow as setup), it's listed under every
-   category it meaningfully covers, not just its "primary" one.
+   category it meaningfully covers, not just its "primary" one. When your
+   change overlaps several categories, run all of them together.
 
 ---
 
@@ -142,5 +142,7 @@ Nearly every spec launches through the same New Session Modal boilerplate
 `mode-claude-code`/`mode-terminal` -> `initial-prompt` -> `start-session-button`),
 so a regression in `NewSessionModal.tsx` or `src/main/sessions/*` can show up
 as failures across nearly all categories above, not just category 2. If
-you're touching session-creation/bootstrap code, don't rely on a single
-category's specs — run the full suite.
+you're touching session-creation/bootstrap code, run category 2 plus at
+least a couple of other categories whose specs rely on that same setup path
+(e.g. category 4 and category 6) to get a wider signal — still targeted,
+not the full suite.
