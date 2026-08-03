@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import CommandPalette, { type PaletteItem } from './components/CommandPalette'
 import OnboardingWizard from './components/OnboardingWizard'
 import Sidebar from './components/Sidebar'
@@ -90,7 +90,13 @@ export default function App(): JSX.Element {
   }, [config.fontSizes.agentMessage])
 
   // Keyboard-only trigger for the command palette + a global Escape to close
-  // whichever overlay is open.
+  // whichever overlay is open. CommandPalette also closes itself on Escape
+  // via its own input's onKeyDown (its input auto-focuses on open), but
+  // Settings and New Session don't auto-focus anything inside themselves —
+  // focus stays on whatever sidebar button opened them — so an
+  // Escape-closes-modal handler scoped to those dialogs never actually saw
+  // the keydown. Closing all three here, globally, fixes that without
+  // depending on where focus happens to be.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
       const mod = e.metaKey || e.ctrlKey
@@ -101,6 +107,8 @@ export default function App(): JSX.Element {
       }
       if (e.key === 'Escape') {
         setPaletteOpen(false)
+        setSettingsOpen(false)
+        setNewSessionOpen(false)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -296,9 +304,43 @@ export default function App(): JSX.Element {
   const activeMessages = activeSessionId ? sessions.messagesBySession[activeSessionId] ?? [] : []
   const showOnboarding = loaded && !config.onboardingCompleted
 
+  // Every overlay in this app (Onboarding, Command Palette, Settings, New
+  // Session) is a `.modal-backdrop`/`.modal-dialog` rendered as a *sibling*
+  // of `#app`, not an ancestor — so none of them naturally contain focus.
+  // None of them install a focus trap either, which meant Tab could escape
+  // any open modal into the sidebar/topbar underneath (still visually
+  // dimmed, but fully live), and pressing Enter on a focused background
+  // button would actually activate it — e.g. opening a second modal on top
+  // of the first, or (worst case) escaping the mandatory first-run
+  // onboarding gate entirely via keyboard. Confirmed via manual Playwright
+  // probes for all four overlays before this fix.
+  //
+  // Rather than build a bespoke focus trap per dialog, `#app` (sidebar +
+  // main area — the entire surface every overlay sits in front of) is made
+  // genuinely unfocusable/unclickable via the `inert` DOM attribute whenever
+  // any overlay is open. React 18's JSX typings don't know `inert`, so it's
+  // set imperatively via a ref.
+  const anyModalOpen = showOnboarding || paletteOpen || settingsOpen || newSessionOpen
+  const appBodyRef = useRef<HTMLDivElement>(null)
+  // A layout effect, not a plain effect: it must remove `inert` *before* the
+  // "focus jumped to that session" effect below (declared earlier, but a
+  // passive effect) tries to call `.focus()` on a session row — a `.focus()`
+  // call on an element still inside an inert container is a no-op, which
+  // broke the command palette's "Enter jumps focus to that session" behavior
+  // when closing the palette and jumping sessions in the same tick.
+  useLayoutEffect(() => {
+    const el = appBodyRef.current
+    if (!el) return
+    if (anyModalOpen) {
+      el.setAttribute('inert', '')
+    } else {
+      el.removeAttribute('inert')
+    }
+  }, [anyModalOpen])
+
   return (
     <div className="app-root">
-      <div id="app" className="app-body">
+      <div id="app" className="app-body" ref={appBodyRef}>
         <Sidebar
           collapsed={config.sidebarCollapsed}
           onToggleCollapse={() => updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })}
