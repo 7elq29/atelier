@@ -691,12 +691,17 @@ input[type='range'] {
    Selectors/values copied verbatim from Features/UI-Design/mocks/index.html
    (+shared.css tokens) — see spec.md's "respect the interactive UI design". */
 .chat-tab-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
-.chat-body-row { flex: 1; display: flex; min-height: 0; }
-.chat-main-col { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+/* 15-conversation-scrollbar-outer-edge: .chat-body-row is the single
+   scrolling container for the transcript + tracker rail, so the native
+   scrollbar renders at the true outer-right edge of the window instead of
+   at the transcript/rail boundary. min-height:0 stays removed so the row
+   can grow to its natural (overflowing) content height rather than being
+   clipped by the flex parent. */
+.chat-body-row { flex: 1; display: flex; overflow-y: auto; }
+.chat-main-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
 .transcript {
   flex: 1;
-  overflow-y: auto;
   padding: 24px 28px 14px;
   display: flex;
   flex-direction: column;
@@ -901,7 +906,12 @@ input[type='range'] {
 
 
 /* ---- Tracker rail (Todos/Subagents) ---- */
-.tracker-rail { width: 244px; flex-shrink: 0; padding: 8px 20px 20px 8px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; transition: width .12s ease, padding .12s ease; }
+/* 15-conversation-scrollbar-outer-edge: the rail no longer scrolls itself —
+   .chat-body-row is the single scroll container now. position: sticky
+   keeps the rail pinned in the viewport while the transcript scrolls
+   beneath it (standard sticky-sidebar pattern). Per-card .tracker-body
+   internal scrolling (max-height: 220px; overflow-y: auto) is unchanged. */
+.tracker-rail { width: 244px; flex-shrink: 0; padding: 8px 20px 20px 8px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; transition: width .12s ease, padding .12s ease; }
 .tracker-rail.collapsed { width: 40px; padding: 12px 6px; align-items: center; }
 .tracker-rail.collapsed .tracker-card { display: none; }
 .tracker-rail-toggle { width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; color: var(--text-tertiary); background: transparent; border: 1px solid var(--border-default); border-radius: var(--r-md); padding: 5px; cursor: pointer; flex-shrink: 0; }

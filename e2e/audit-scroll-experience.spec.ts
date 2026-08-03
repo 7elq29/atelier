@@ -285,19 +285,34 @@ test.describe('audit: real scroll-experience verification (not just overflow met
     const transcript = page.getByTestId('transcript')
     await expect(transcript).toBeVisible({ timeout: 15_000 })
 
+    // 15-conversation-scrollbar-outer-edge: `.chat-body-row` (the flex row
+    // containing the transcript column AND the Tracker Rail) is now the
+    // single scrolling container, so its native scrollbar sits at the
+    // window's true outer-right edge, past the rail — `.transcript` itself
+    // no longer scrolls independently. Assert against `.chat-body-row`, not
+    // `[data-testid="transcript"]`.
+    const scrollContainer = page.locator('.chat-body-row')
+    await expect(scrollContainer).toBeVisible()
+
     // Wait for the long real reply to land, forcing real overflow.
     await expect
-      .poll(async () => transcript.evaluate((el) => el.scrollHeight > el.clientHeight), { timeout: 30_000 })
+      .poll(async () => scrollContainer.evaluate((el) => el.scrollHeight > el.clientHeight), { timeout: 30_000 })
       .toBe(true)
 
-    const overflowY = await computedOverflowY(page, '[data-testid="transcript"]')
-    expect(overflowY, 'transcript should have overflow-y auto').toMatch(/auto|scroll/)
+    const bodyRowOverflowY = await computedOverflowY(page, '.chat-body-row')
+    expect(bodyRowOverflowY, '.chat-body-row should have overflow-y auto (the new single scroll container)').toMatch(/auto|scroll/)
+
+    const transcriptOverflowY = await computedOverflowY(page, '[data-testid="transcript"]')
+    expect(
+      transcriptOverflowY,
+      '.transcript itself should no longer be an auto/scroll container — .chat-body-row owns scrolling now'
+    ).not.toMatch(/^(auto|scroll)$/)
 
     // Send one more short real message and observe whether the transcript
     // follows it to the bottom WITHOUT any manual scroll — this is the "real
     // scroll experience" claim from the task brief, verified rather than
-    // assumed.
-    const beforeScrollTop = await transcript.evaluate((el) => el.scrollTop)
+    // assumed. `scrollTop`/`scrollHeight` are now read off `.chat-body-row`.
+    const beforeScrollTop = await scrollContainer.evaluate((el) => el.scrollTop)
     await page.getByTestId('composer-input').fill('Thanks — now just reply with exactly: DONE.')
     await page.getByTestId('send-button').click()
     await expect
@@ -313,7 +328,11 @@ test.describe('audit: real scroll-experience verification (not just overflow met
       .toBe(true)
     await page.waitForTimeout(300)
 
-    const afterAppend = await transcript.evaluate((el) => ({ scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }))
+    const afterAppend = await scrollContainer.evaluate((el) => ({
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight
+    }))
     const distanceFromBottom = afterAppend.scrollHeight - afterAppend.clientHeight - afterAppend.scrollTop
     // eslint-disable-next-line no-console
     console.log(
@@ -323,13 +342,122 @@ test.describe('audit: real scroll-experience verification (not just overflow met
     await page.screenshot({ path: join(artifactsDir, 'scroll-audit-transcript-after-new-message.png') })
 
     // This assertion documents the ACTUAL behavior rather than assuming it
-    // works: if ChatTranscript.tsx has no scroll-to-bottom effect (it does
-    // not, as of this audit — see the written findings for
-    // TRANSCRIPT-NO-AUTOSCROLL), this will fail, and the console log above
+    // works: if ChatTranscript.tsx's auto-scroll effect weren't wired to the
+    // new scroll container, this would fail, and the console log above
     // carries the exact pixel distance from the bottom the view was left at.
     expect(
       distanceFromBottom,
-      `transcript should auto-follow to the bottom on new messages; it was left ${distanceFromBottom}px above the bottom instead`
+      `.chat-body-row should auto-follow to the bottom on new messages; it was left ${distanceFromBottom}px above the bottom instead`
     ).toBeLessThanOrEqual(4)
+  })
+
+  // ── 15-conversation-scrollbar-outer-edge: sticky Tracker Rail ────────────
+  test('tracker rail: stays pinned/visible via position:sticky while the transcript scrolls past it, and has no scrollbar of its own', async ({}, testInfo) => {
+    testInfo.setTimeout(120_000)
+    // A dedicated fresh session (not a continuation of the earlier
+    // transcript test's session) so this test's TodoWrite call isn't
+    // affected by whatever conversation state/model that other session
+    // accumulated — same session-creation pattern as chat-surface-core's
+    // own passing "todo rail renders and updates live from TodoWrite" test.
+    await stubProjectFolder(electronApp, projectDir)
+    await openNewSessionModal(page)
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('initial-prompt').fill(
+      'Use the TodoWrite tool now to create a todo list with exactly eight items: "Todo 1" through "Todo 8", ' +
+        'with "Todo 1" as in_progress and the rest pending. Do not use any other tools. Then reply with a one-sentence summary.'
+    )
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    const todoCard = page.getByTestId('todo-tracker-card')
+    await expect(todoCard).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('todo-item')).toHaveCount(8, { timeout: 30_000 })
+
+    const trackerRail = page.locator('.tracker-rail')
+    await expect(trackerRail).toBeVisible()
+
+    // (a) The rail itself must NOT have its own edge-of-column scrollbar —
+    // `.chat-body-row` is the one and only scrolling container now.
+    const railOverflowY = await computedOverflowY(page, '.tracker-rail')
+    expect(railOverflowY, '.tracker-rail should not be an auto/scroll container by design').not.toMatch(/^(auto|scroll)$/)
+    const railMetrics = await trackerRail.evaluate((el) => ({ clientHeight: el.clientHeight, scrollHeight: el.scrollHeight }))
+    expect(
+      railMetrics.scrollHeight,
+      `.tracker-rail should not have accumulated its own internal scrollbar (scrollHeight ${railMetrics.scrollHeight} vs clientHeight ${railMetrics.clientHeight})`
+    ).toBeLessThanOrEqual(railMetrics.clientHeight + 2)
+
+    // (b) ...while the per-card `.tracker-body` (the Todos card, with 8 real
+    // items) still scrolls internally, unchanged.
+    const todoBody = page.locator('[data-testid="todo-tracker-card"] .tracker-body')
+    const todoBodyMetrics = await todoBody.evaluate((el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }))
+    // eslint-disable-next-line no-console
+    console.log('SCROLL-AUDIT[tracker-body]', JSON.stringify(todoBodyMetrics))
+    expect(todoBodyMetrics.scrollHeight, '.tracker-body with 8 todos should overflow its 220px max-height').toBeGreaterThan(
+      todoBodyMetrics.clientHeight
+    )
+    const todoBodyOverflowY = await computedOverflowY(page, '[data-testid="todo-tracker-card"] .tracker-body')
+    expect(todoBodyOverflowY, '.tracker-body should keep its own overflow-y auto (unchanged)').toMatch(/auto|scroll/)
+
+    // (c) Force enough real transcript content to make `.chat-body-row`
+    // overflow well past the rail's own height, then scroll it down and
+    // assert the rail is STILL on screen (proving position: sticky; top: 0
+    // actually pins it, rather than it just happening to be short enough to
+    // never need pinning).
+    await page.getByTestId('composer-input').fill(
+      'Reply with a numbered list from 1 to 60, one short line per number (e.g. "1. one"), and nothing else.'
+    )
+    await page.getByTestId('send-button').click()
+
+    const scrollContainer = page.locator('.chat-body-row')
+    await expect
+      .poll(
+        async () => {
+          const [bodyRow, rail] = await Promise.all([
+            scrollContainer.evaluate((el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight })),
+            trackerRail.evaluate((el) => el.clientHeight)
+          ])
+          return bodyRow.scrollHeight > bodyRow.clientHeight + rail
+        },
+        { timeout: 30_000 }
+      )
+      .toBe(true)
+
+    const railRectBeforeScroll = await trackerRail.evaluate((el) => el.getBoundingClientRect().toJSON())
+
+    await scrollContainer.evaluate((el) => {
+      el.scrollTop = el.scrollHeight
+    })
+    await page.waitForTimeout(200)
+
+    const railRectAfterScroll = await trackerRail.evaluate((el) => el.getBoundingClientRect().toJSON())
+    const viewportHeight = await page.evaluate(() => window.innerHeight)
+
+    // eslint-disable-next-line no-console
+    console.log(
+      'SCROLL-AUDIT[tracker-rail-sticky]',
+      JSON.stringify({ railRectBeforeScroll, railRectAfterScroll, viewportHeight })
+    )
+
+    expect(railRectAfterScroll.top, 'sticky tracker rail should still be within the viewport after scrolling the transcript').toBeGreaterThanOrEqual(0)
+    expect(
+      railRectAfterScroll.top,
+      'sticky tracker rail should still be within the viewport after scrolling the transcript'
+    ).toBeLessThan(viewportHeight)
+    expect(railRectAfterScroll.height, 'sticky tracker rail should still render at (roughly) its normal height, not be clipped to nothing').toBeGreaterThan(
+      50
+    )
+
+    // Close the Daily Notes side panel (open since `beforeAll` seeded a real
+    // vault for the other tests in this file) so the screenshot shows the
+    // chat area at its full width — the clearest demonstration of the
+    // scrollbar sitting at the window's true outer-right edge, past the
+    // Tracker Rail, rather than squeezed by an unrelated side panel.
+    const dailyNotesClose = page.getByTestId('daily-notes-close')
+    if (await dailyNotesClose.isVisible().catch(() => false)) {
+      await dailyNotesClose.click()
+      await page.waitForTimeout(150)
+    }
+    await page.screenshot({ path: join(artifactsDir, '15-conversation-scrollbar-outer-edge.png') })
   })
 })
