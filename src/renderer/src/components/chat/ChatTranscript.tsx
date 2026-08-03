@@ -278,16 +278,32 @@ export default function ChatTranscript({
   // content, which change `messages`' identity via useSessions' immutable
   // setState — as long as the user was already at (or very near) the
   // bottom. If they've scrolled up to read history, we never yank the view
-  // out from under them; `isNearBottomRef` is kept current by the `onScroll`
-  // handler below on every real scroll event (including the programmatic
+  // out from under them; `isNearBottomRef` is kept current by the scroll
+  // listener below on every real scroll event (including the programmatic
   // ones this effect itself performs), so it always reflects the position
   // as of just before the latest render.
+  //
+  // 15-conversation-scrollbar-outer-edge: `.transcript` itself no longer
+  // scrolls — `.chat-body-row` (rendered by App.tsx, an ancestor of this
+  // component, not a descendant) is the single scrolling container now, so
+  // its native scrollbar sits at the outer-right edge past the Tracker
+  // Rail. `.chat-body-row` isn't reachable via a prop/ref passed down from
+  // App.tsx without threading a ref through `App.tsx` -> `ChatTranscript`,
+  // so instead we keep `containerRef` on `.transcript` (still a valid,
+  // stable DOM node) and resolve the actual scroll container via
+  // `closest('.chat-body-row')` at the moment we need it. This keeps the
+  // scroll logic self-contained in this component and robust to any further
+  // DOM nesting changes between `.transcript` and `.chat-body-row`.
   const containerRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
   const NEAR_BOTTOM_THRESHOLD_PX = 48
 
+  function getScrollContainer(): HTMLElement | null {
+    return containerRef.current?.closest<HTMLElement>('.chat-body-row') ?? null
+  }
+
   useLayoutEffect(() => {
-    const el = containerRef.current
+    const el = getScrollContainer()
     if (!el) return
     if (isNearBottomRef.current) {
       el.scrollTop = el.scrollHeight
@@ -295,14 +311,25 @@ export default function ChatTranscript({
   }, [messages])
 
   function handleScroll(): void {
-    const el = containerRef.current
+    const el = getScrollContainer()
     if (!el) return
     const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop
     isNearBottomRef.current = distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_PX
   }
 
+  // `.transcript` no longer scrolls, so a React `onScroll` prop on it would
+  // never fire — the scroll events happen on `.chat-body-row` instead.
+  // Attach a real listener to that ancestor directly.
+  useEffect(() => {
+    const el = getScrollContainer()
+    if (!el) return
+    el.addEventListener('scroll', handleScroll)
+    return () => el.removeEventListener('scroll', handleScroll)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
-    <div className="transcript" data-testid="transcript" ref={containerRef} onScroll={handleScroll}>
+    <div className="transcript" data-testid="transcript" ref={containerRef}>
       {rows}
     </div>
   )
