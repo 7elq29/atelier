@@ -162,10 +162,45 @@
   align-items: center;
   gap: 10px;
   padding: 0 24px;
+  min-width: 0;
 }
+/* Bug: fix-topbar-small-window-overflow — at small/extra-narrow window
+   widths, `.topbar`'s children (title + tab-strip + cost chip + export menu
+   + search bar + terminal toggle) had a combined intrinsic width (~543px)
+   that didn't change with window size, so once the window shrank below that,
+   the title (no min-width:0/nowrap) wrapped onto multiple lines and blew
+   past the topbar's fixed 56px height, colliding with the tab row and
+   whatever sat below/beside it. Fix: the title ellipsizes instead of
+   wrapping, and the tab-strip (the only other genuinely flexible child) can
+   shrink and, if still too tight, scroll horizontally within itself — it is
+   deliberately not in the e2e audit's NON_SCROLLABLE_SELECTORS list, unlike
+   `.topbar` itself, which must never need scrolling. Everything else
+   (chip/export/search bar/terminal toggle) stays flex-shrink:0 so those
+   controls remain fully legible/clickable; the title and tab-strip absorb
+   all the squeeze. */
 .topbar .title {
   font-size: var(--font-interface-size);
   font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topbar > .topbar-chip,
+.topbar > .export-menu,
+.topbar > .search-bar-inline,
+.topbar > button {
+  flex-shrink: 0;
+}
+/* The tab row is the other genuinely flexible child: it shrinks along with
+   the title, and once its buttons no longer fit it scrolls horizontally
+   in place rather than forcing `.topbar` itself to overflow (see comment
+   above `.topbar .title`). */
+.tab-strip {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 /* ===== Topbar metadata chip (10a-enrichment-cost-tracking) — matches the
    UI mock's `.topbar-chip` (Features/UI-Design/mocks/index.html) used for
