@@ -33,6 +33,17 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
     return openDatabase().prepare(sql).all(...params)
   })
 
+  // Test-only sibling of `debug:queryDb` for statements that mutate rather
+  // than select (INSERT/UPDATE/DELETE) — needed so e2e specs can seed
+  // deliberately-corrupted fixture rows (e.g.
+  // bug-session-cost-historical-backfill.spec.ts simulating a pre-fix
+  // compounded `total_cost_usd`) directly against the app's real, already-
+  // open SQLite connection, for the same "no separate ABI, no mock DB"
+  // reason `debug:queryDb` exists.
+  ipcMain.handle('debug:execDb', (_event, sql: string, params: unknown[] = []) => {
+    return openDatabase().prepare(sql).run(...params)
+  })
+
   ipcMain.handle('session:listHosts', () => manager.listHosts())
 
   // fix-bug-triage-jul31 / bug #49: recently-used project paths for the New Session modal's history offering.
