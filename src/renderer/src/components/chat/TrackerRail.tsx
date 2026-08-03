@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { MessageRecord } from '../../../../shared/session-types'
 import { parseStructuredContent } from '../../../../shared/chat-content'
 
@@ -15,8 +16,18 @@ interface SubagentEntry {
  * reconstructs the exact same rail from SQLite. Markup/classes match
  * `.tracker-rail`/`.tracker-card`/`.todo-item`/`.subagent-item` in
  * mocks/index.html exactly.
+ *
+ * Collapse/expand: mocks/index.html ships a `.tracker-rail-toggle` button
+ * (id `toggleTrackerRail`) as the rail's first child that toggles a
+ * `collapsed` class on the rail, plus a `.rail-mini-badges` summary shown
+ * only while collapsed (see global.css `.tracker-rail.collapsed` /
+ * `.rail-mini-badges` rules). That affordance was previously missing here —
+ * the CSS existed but no button ever rendered it reachable (see
+ * e2e/audit-window-resize-layout.spec.ts "(h) tracker rail collapsed state"
+ * comment). This wires up the same button/behavior.
  */
 export default function TrackerRail({ messages }: { messages: MessageRecord[] }): JSX.Element {
+  const [collapsed, setCollapsed] = useState(false)
   let todos: { content: string; status: string }[] = []
   const subagentOrder: string[] = []
   const subagentByToolUseId = new Map<string, SubagentEntry>()
@@ -48,7 +59,17 @@ export default function TrackerRail({ messages }: { messages: MessageRecord[] })
   }
 
   return (
-    <div className="tracker-rail" data-testid="tracker-rail">
+    <div className={`tracker-rail${collapsed ? ' collapsed' : ''}`} data-testid="tracker-rail">
+      <button
+        type="button"
+        className="tracker-rail-toggle"
+        data-testid="tracker-rail-toggle"
+        title={collapsed ? 'Expand Todos/Subagents' : 'Collapse Todos/Subagents'}
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        <span>{collapsed ? '▸' : '◂'}</span>
+        <span className="rail-label">Collapse</span>
+      </button>
       {todos.length > 0 && (
         <div className="tracker-card" data-testid="todo-tracker-card">
           <div className="tracker-head">
@@ -87,6 +108,20 @@ export default function TrackerRail({ messages }: { messages: MessageRecord[] })
           </div>
         </div>
       )}
+      <div className="rail-mini-badges" data-testid="tracker-rail-mini-badges">
+        {todos.length > 0 && (
+          <div className="rail-mini-badge" title={`Todos ${doneCount}/${todos.length}`}>
+            <b>
+              {doneCount}/{todos.length}
+            </b>
+          </div>
+        )}
+        {subagents.length > 0 && (
+          <div className="rail-mini-badge" title={`Subagents: ${runningCount} running`}>
+            <b>{runningCount}</b>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
