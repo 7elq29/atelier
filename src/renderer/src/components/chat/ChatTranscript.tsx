@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef } from 'react'
 import type { MessageRecord } from '../../../../shared/session-types'
 import type { PromptDecision } from '../../../../shared/session-types'
 import { parseStructuredContent, type ToolCallContent } from '../../../../shared/chat-content'
@@ -258,8 +258,36 @@ export default function ChatTranscript({
     el?.scrollIntoView({ block: 'center' })
   }, [query, activeMatchIndex, totalMatches])
 
+  // Auto-scroll-to-bottom (standard chat-UI pattern): the transcript follows
+  // new content — including streamed deltas patched into the last message's
+  // content, which change `messages`' identity via useSessions' immutable
+  // setState — as long as the user was already at (or very near) the
+  // bottom. If they've scrolled up to read history, we never yank the view
+  // out from under them; `isNearBottomRef` is kept current by the `onScroll`
+  // handler below on every real scroll event (including the programmatic
+  // ones this effect itself performs), so it always reflects the position
+  // as of just before the latest render.
+  const containerRef = useRef<HTMLDivElement>(null)
+  const isNearBottomRef = useRef(true)
+  const NEAR_BOTTOM_THRESHOLD_PX = 48
+
+  useLayoutEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    if (isNearBottomRef.current) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [messages])
+
+  function handleScroll(): void {
+    const el = containerRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop
+    isNearBottomRef.current = distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_PX
+  }
+
   return (
-    <div className="transcript" data-testid="transcript">
+    <div className="transcript" data-testid="transcript" ref={containerRef} onScroll={handleScroll}>
       {rows}
     </div>
   )
