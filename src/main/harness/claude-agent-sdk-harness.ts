@@ -45,6 +45,7 @@ import type {
   RemoteHost,
 } from './types'
 import { logger } from '../logger'
+import type { PermissionModeValue } from '../../shared/session-types'
 
 /**
  * Single-quotes a value for safe interpolation into a POSIX shell command
@@ -383,6 +384,27 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     active.pendingPrompts.delete(requestId)
     resolve(response)
     logger.info('respondToPrompt: resolved', { sessionId, requestId, kind: response.kind })
+  }
+
+  /**
+   * 11-composer-mode-indicator: same `query.setPermissionMode()` call this
+   * file already makes after an accepted `ExitPlanMode` (see `makeCanUseTool`
+   * below), now exposed as a reusable driver method for the composer's
+   * Shift+Tab cycle. A no-op when the session has no live connection right
+   * now (e.g. cycled while idle/disconnected) — `SessionManager.cycleMode`
+   * still records the new mode in its own tracked map either way, so it's
+   * re-passed as `permissionMode` on this session's next `resume()`.
+   */
+  async setPermissionMode(sessionId: string, mode: PermissionModeValue): Promise<void> {
+    const active = this.sessions.get(sessionId)
+    if (!active) {
+      logger.info('setPermissionMode: no live session, mode will apply on next resume', { sessionId, mode })
+      return
+    }
+    await active.query.setPermissionMode(mode).catch((err) => {
+      logger.warn('setPermissionMode: SDK call failed', { sessionId, mode, error: err instanceof Error ? err.message : String(err) })
+    })
+    logger.info('setPermissionMode: applied to live session', { sessionId, mode })
   }
 
   private async launch(

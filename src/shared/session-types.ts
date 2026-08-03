@@ -6,6 +6,19 @@
 
 export type SessionMode = 'terminal' | 'claude-code'
 
+/**
+ * SDK permission-mode values Gardenia exposes to the user (11-composer-mode-
+ * indicator). Deliberately a SUBSET of the real SDK's own `PermissionMode`
+ * (verified against the installed `@anthropic-ai/claude-agent-sdk@0.3.212`'s
+ * `sdk.d.ts`: `'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' |
+ * 'dontAsk' | 'auto'`) — `bypassPermissions`/`dontAsk` are out of scope per
+ * spec.md's scope decision and are never surfaced by the composer's cycle.
+ * Single source of truth for both the main process (`HarnessStartOptions.
+ * permissionMode`, `SessionManager`'s tracked map) and the renderer (the
+ * composer's mode pill) — this file is imported by both.
+ */
+export type PermissionModeValue = 'default' | 'plan' | 'acceptEdits' | 'auto'
+
 export interface SessionRecord {
   id: string
   name: string
@@ -34,6 +47,15 @@ export interface SessionRecord {
    * session's first turn completes.
    */
   totalCostUsd: number
+  /**
+   * Current SDK permission mode for this session (11-composer-mode-indicator),
+   * decorated onto the DB row at read time by `SessionManager` (not itself a
+   * DB column — same "tracked in-memory, re-passed on every resume/follow-up"
+   * mechanism as the pre-existing plan-mode tracking this generalizes, see
+   * `SessionManager.permissionModes`). Always `'default'` for a session that
+   * was never started in plan mode and has never had its mode cycled.
+   */
+  permissionMode: PermissionModeValue
 }
 
 /** A named, collapsible, reorderable session group (06-session-organization). */

@@ -11,6 +11,8 @@
  * Node and can be exercised from a standalone script (see src/e2e/).
  */
 
+import type { PermissionModeValue } from '../../shared/session-types'
+
 /**
  * A remote host to execute the agent process on, added in 02-session-lifecycle
  * for devpod/SSH sessions. `cwd` on `HarnessStartOptions` is interpreted as a
@@ -78,13 +80,16 @@ export interface HarnessStartOptions {
    */
   keepAlive?: boolean
   /**
-   * SDK permission mode (05-interactive-prompts). `'plan'` starts the
-   * session in the SDK's own plan mode: Claude explores/plans without
-   * auto-approved file edits until a proposed plan (`ExitPlanMode`) is
-   * accepted via the plan card. Omitted entirely preserves the existing
-   * `'default'` behavior for every caller that predates this task.
+   * SDK permission mode (05-interactive-prompts; widened to 4 values in
+   * 11-composer-mode-indicator). `'plan'` starts the session in the SDK's
+   * own plan mode: Claude explores/plans without auto-approved file edits
+   * until a proposed plan (`ExitPlanMode`) is accepted via the plan card.
+   * `'acceptEdits'`/`'auto'` are reachable only via the composer's Shift+Tab
+   * cycle (see `ClaudeAgentSdkHarness.setPermissionMode`), never as a
+   * `session:create` starting option. Omitted entirely preserves the
+   * existing `'default'` behavior for every caller that predates this task.
    */
-  permissionMode?: 'default' | 'plan'
+  permissionMode?: PermissionModeValue
 }
 
 /**
@@ -378,4 +383,16 @@ export interface HarnessDriver {
    * resolved (e.g. a stale double-click).
    */
   respondToPrompt(sessionId: string, requestId: string, response: PromptResponse): Promise<void>
+
+  /**
+   * Flips a LIVE session's SDK permission mode immediately
+   * (11-composer-mode-indicator), via the same `query.setPermissionMode()`
+   * call already used after an accepted `ExitPlanMode` (see
+   * `ClaudeAgentSdkHarness`'s `canUseTool` handler). No-op (resolves without
+   * effect) if `sessionId` has no live connection right now — the caller
+   * (`SessionManager.cycleMode`) is responsible for also updating its own
+   * tracked mode so the NEXT `start()`/`resume()` call re-passes it, exactly
+   * like the pre-existing plan-mode tracking.
+   */
+  setPermissionMode(sessionId: string, mode: PermissionModeValue): Promise<void>
 }

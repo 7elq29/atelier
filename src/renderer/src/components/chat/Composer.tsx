@@ -1,12 +1,30 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { FileTreeNode } from '../../../../shared/panel-types'
-import type { ImageAttachment, ModelSelection, SlashCommandInfo } from '../../../../shared/session-types'
+import type { ImageAttachment, ModelSelection, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
 const MAX_TEXTAREA_HEIGHT = 160
 
 /** Cap on how many `@file` matches are rendered at once — the underlying file walk is already capped (files.ts's MAX_ENTRIES), this just keeps the popover itself short and scannable. */
 const MAX_MENTION_MATCHES = 20
+
+/**
+ * Icon + label per permission mode (11-composer-mode-indicator), quoted
+ * verbatim from mocks/index.html's `composer-mode-row` markup — same glyphs,
+ * same copy, same cycle order as `MODE_CYCLE` in `main/sessions/manager.ts`.
+ */
+const MODE_ICON: Record<PermissionModeValue, string> = {
+  default: '●',
+  plan: '⏸',
+  acceptEdits: '⏵⏵',
+  auto: '⚡'
+}
+const MODE_LABEL: Record<PermissionModeValue, string> = {
+  default: 'Default',
+  plan: 'Plan mode',
+  acceptEdits: 'Accept edits',
+  auto: 'Auto'
+}
 
 /**
  * Model/effort options for the picker (10f-enrichment-model-effort-picker),
@@ -221,6 +239,10 @@ interface ComposerProps {
    * see `slashCommands` below — since the SDK has no concept of them.
    */
   liveSlashCommands: SlashCommandInfo[]
+  /** Current SDK permission mode for the active session (11-composer-mode-indicator) — always defined, defaulting to 'default' for a session that's never been cycled. */
+  mode: PermissionModeValue
+  /** Fired on Shift+Tab (composer focused) or a click on the mode pill — cycles default -> plan -> acceptEdits -> auto -> default via a real IPC round-trip to SessionManager.cycleMode. */
+  onCycleMode: () => void
 }
 
 /** Flattens the Files-panel's real `fs`-backed tree (07-secondary-panels) into a flat list of `relativePath`s, files only — dirs aren't mentionable. */
@@ -365,7 +387,9 @@ export default function Composer({
   onFork,
   modelSelection,
   onModelSelectionChange,
-  liveSlashCommands
+  liveSlashCommands,
+  mode,
+  onCycleMode
 }: ComposerProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [popover, setPopover] = useState<PopoverState>(null)
@@ -558,6 +582,18 @@ export default function Composer({
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
+    // 11-composer-mode-indicator: checked BEFORE the mention/slash-popover
+    // Tab-select branch below (deliberately, not merely "happens to run
+    // first") so Shift+Tab always cycles the mode, even while a popover
+    // happens to be open — never falls through to select a popover match.
+    // Bare Tab (no shift) is completely untouched by this branch, so the
+    // existing Tab-to-select-popover behavior/tests below are unaffected.
+    if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault()
+      onCycleMode()
+      return
+    }
+
     if (popover && activeMatches.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -699,6 +735,19 @@ export default function Composer({
               Send
             </button>
           )}
+        </div>
+        <div className="composer-mode-row" data-testid="composer-mode-row">
+          <span
+            className={`mode-pill mode-${mode}`}
+            data-testid="composer-mode-pill"
+            data-mode={mode}
+            title="Click or press Shift+Tab to cycle mode"
+            onClick={onCycleMode}
+          >
+            <span className="mode-icon">{MODE_ICON[mode]}</span>
+            <span>{MODE_LABEL[mode]}</span>
+          </span>
+          <span className="mode-hint">Shift+Tab to switch mode</span>
         </div>
       </div>
     </div>
