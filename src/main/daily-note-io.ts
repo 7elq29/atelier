@@ -360,6 +360,14 @@ export function getISOWeek(d: Date): number {
   return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
 }
 
+/** ISO week-numbering year (moment/Obsidian's `gggg`) — the Thursday-shifted year, not the calendar year. */
+export function getISOWeekYear(d: Date): number {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  const dayNum = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum)
+  return date.getUTCFullYear()
+}
+
 export function resolveNotePath(date: string, vaultRoot: string): string {
   const d = new Date(`${date}T00:00:00`)
   const yyyy = d.getFullYear().toString()
@@ -373,15 +381,47 @@ export function getDayOfWeek(date: string): string {
   return DAY_NAMES[d.getDay()]!
 }
 
+/** `{{date:TOKEN}}` substitution for the subset of Obsidian/moment.js format tokens the vault template actually uses. */
+function fillDateTokens(template: string, date: string): string {
+  const d = new Date(`${date}T00:00:00`)
+  const tokenValues: Record<string, string> = {
+    'YYYY-MM-DD': date,
+    dddd: getDayOfWeek(date),
+    gggg: String(getISOWeekYear(d)),
+    WW: String(getISOWeek(d)).padStart(2, '0')
+  }
+  return template.replace(/\{\{date:([^}]+)\}\}/g, (match, token: string) => tokenValues[token] ?? match)
+}
+
 /**
- * Generate the markdown body for a brand-new daily note. `carriedTasks` (see
- * findMostRecentNoteDate / the carry-over scan in daily-notes-handlers.ts)
- * are serialized directly under the `## Tasks` heading, before the Backlog
- * subsection — preserving each task's original `gid` (serializeTaskLine
- * always emits `[gid:: ...]`) so it's recognizably the same task across
- * days rather than a freshly-minted duplicate.
+ * Fill a vault template (e.g. `92.templates/Daily Note Template.md`) in for a
+ * brand-new daily note: substitute its `{{date:...}}` tokens, then insert
+ * `carriedTasks` (see findMostRecentNoteDate / the carry-over scan in
+ * daily-notes-handlers.ts) directly under the `## Tasks` heading —
+ * preserving each task's original `gid` (serializeTaskLine always emits
+ * `[gid:: ...]`) so it's recognizably the same task across days rather than
+ * a freshly-minted duplicate.
  */
-export function generateNewNote(date: string, carriedTasks: DailyTask[] = []): string {
+export function fillDailyNoteTemplate(template: string, date: string, carriedTasks: DailyTask[] = []): string {
+  const filled = fillDateTokens(template, date)
+  const lines = filled.split('\n')
+  const tasksHeaderIdx = lines.findIndex((l) => /^##\s+.*Tasks/i.test(l))
+  if (tasksHeaderIdx === -1 || carriedTasks.length === 0) return filled
+
+  lines.splice(tasksHeaderIdx + 1, 0, ...carriedTasks.map((task) => serializeTaskLine(task)))
+  return lines.join('\n')
+}
+
+/**
+ * Generate the markdown body for a brand-new daily note. When `template` is
+ * given (the real vault `92.templates/Daily Note Template.md` content, read
+ * by the caller), the note is built from it via `fillDailyNoteTemplate`.
+ * Otherwise falls back to a minimal built-in skeleton — used only for vaults
+ * that don't have that template file.
+ */
+export function generateNewNote(date: string, carriedTasks: DailyTask[] = [], template: string | null = null): string {
+  if (template !== null) return fillDailyNoteTemplate(template, date, carriedTasks)
+
   const dayName = getDayOfWeek(date)
   const lines: string[] = [
     '---',
