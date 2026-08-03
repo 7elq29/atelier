@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DailyTask } from '../../../../shared/daily-note-types'
 import CurrentTimeMarker from './CurrentTimeLine'
+import TaskMoveContextMenu from './TaskMoveContextMenu'
+import type { MoveDateOptions } from './move-date-options'
 import {
   TIMELINE_START_HOUR,
   TIMELINE_END_HOUR,
@@ -27,6 +29,9 @@ interface TimelineProps {
   onCreate: (text: string, timeBlock: string) => void
   onDropExisting: (id: string, timeBlock: string) => void
   onDelete: (id: string) => void
+  /** 16-task-move-to-date: right-click a `.dn-tblock` -> "Move to..." menu. */
+  moveDateOptions: MoveDateOptions
+  onMoveToDate: (id: string, targetDate: string) => void
 }
 
 interface DraftForm {
@@ -63,10 +68,19 @@ function formatHourLabel(hour: number): string {
   return `${h12}${period}`
 }
 
-export default function Timeline({ tasks, onToggle, onCreate, onDropExisting, onDelete }: TimelineProps): JSX.Element {
+export default function Timeline({
+  tasks,
+  onToggle,
+  onCreate,
+  onDropExisting,
+  onDelete,
+  moveDateOptions,
+  onMoveToDate
+}: TimelineProps): JSX.Element {
   const [draft, setDraft] = useState<DraftForm | null>(null)
   const [nowMinutes, setNowMinutes] = useState(() => minutesNow())
   const containerRef = useRef<HTMLDivElement>(null)
+  const [moveMenu, setMoveMenu] = useState<{ x: number; y: number; taskId: string } | null>(null)
 
   const dragRef = useRef<DragInfo | null>(null)
   const [dragActive, setDragActive] = useState(false)
@@ -257,6 +271,11 @@ export default function Timeline({ tasks, onToggle, onCreate, onDropExisting, on
                 width: `calc((100% - ${LABEL_WIDTH}px) * ${colFrac} - 4px)`
               }}
               onMouseDown={(e) => startDrag('move', task, { start, end }, e)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setMoveMenu({ x: e.clientX, y: e.clientY, taskId: task.id })
+              }}
             >
               <div
                 className="dn-tblock-resize dn-tblock-resize-top"
@@ -335,6 +354,16 @@ export default function Timeline({ tasks, onToggle, onCreate, onDropExisting, on
 
         <CurrentTimeMarker minutes={nowMinutes} />
       </div>
+
+      {moveMenu && (
+        <TaskMoveContextMenu
+          x={moveMenu.x}
+          y={moveMenu.y}
+          options={moveDateOptions}
+          onSelect={(targetDate) => onMoveToDate(moveMenu.taskId, targetDate)}
+          onClose={() => setMoveMenu(null)}
+        />
+      )}
     </div>
   )
 }

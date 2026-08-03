@@ -14,6 +14,8 @@ export interface UseDailyNoteResult {
   addTask: (text: string, section: TaskSection, timeBlock?: string) => void
   deleteTask: (id: string) => void
   moveTask: (id: string, section: 'day-plan' | 'unscheduled', timeBlock?: string) => void
+  /** 16-task-move-to-date: cross-file move — sends the task to `targetDate`'s note's Backlog, unlike `moveTask` above (same-note section move). */
+  moveTaskToDate: (id: string, targetDate: string) => void
 }
 
 /**
@@ -187,5 +189,42 @@ export function useDailyNote(date: string): UseDailyNoteResult {
     [mutate]
   )
 
-  return { note, loading, exists, vaultConfigured, createNote, updateTask, toggleTask, addTask, deleteTask, moveTask }
+  // 16-task-move-to-date: a genuinely new, cross-file operation — this is NOT
+  // built on `mutate`/`scheduleWrite` (those only ever touch THIS date's
+  // file). The main-process `daily-note:move-task` handler reads/rewrites
+  // both files directly, so any pending debounced write for this note is
+  // flushed and AWAITED first (its timer cancelled) before the move call
+  // fires, so the move's fresh-disk-read of the source file can't race a
+  // still-in-flight write and resurrect the just-moved task or drop the
+  // pending edit.
+  const moveTaskToDate = useCallback(
+    (id: string, targetDate: string) => {
+      const run = async (): Promise<void> => {
+        if (writeTimerRef.current) {
+          clearTimeout(writeTimerRef.current)
+          writeTimerRef.current = null
+          if (note) await window.gardenia.writeDailyNote(date, note).catch(() => {})
+        }
+        const result = await window.gardenia.moveTaskToDate(date, id, targetDate)
+        setNote(result.sourceNote)
+        setExists(true)
+      }
+      run().catch(() => {})
+    },
+    [date, note]
+  )
+
+  return {
+    note,
+    loading,
+    exists,
+    vaultConfigured,
+    createNote,
+    updateTask,
+    toggleTask,
+    addTask,
+    deleteTask,
+    moveTask,
+    moveTaskToDate
+  }
 }
