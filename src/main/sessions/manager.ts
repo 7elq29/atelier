@@ -7,6 +7,7 @@ import type {
   MessageRecord,
   ModelSelection,
   MessageSearchHit,
+  PermissionModeValue,
   PromptDecision,
   RemoteHostOption,
   SessionGroupEvent,
@@ -29,6 +30,14 @@ import type { SessionStore } from './store'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
 const AUTO_NAME_PROMPT = 'Summarize this conversation topic in under 6 words. Reply with ONLY the title, no punctuation, no quotes.'
+
+/**
+ * The composer's Shift+Tab cycle order (11-composer-mode-indicator) — matches
+ * Claude Code's own CLI cycle exactly (spec.md's scope decision). NOT the
+ * full set of SDK-supported permission modes: `bypassPermissions`/`dontAsk`
+ * are deliberately excluded from this app-level cycle.
+ */
+const MODE_CYCLE: PermissionModeValue[] = ['default', 'plan', 'acceptEdits', 'auto']
 
 /** Bookkeeping for one still-running tool call, keyed by its toolUseId. */
 interface PendingToolCall {
@@ -97,19 +106,25 @@ export interface RemoteHostResolver {
 export class SessionManager {
   private readonly live = new Map<string, LiveStream>()
   /**
-   * Tracks whether a session is currently "in plan mode" (05-interactive-prompts),
-   * across `resume()` reconnects. The SDK's `permissionMode` is per-`query()`
-   * call, NOT restored automatically from a `--resume`d session's history —
-   * verified live: without re-passing `permissionMode: 'plan'` on every
-   * `harness.resume()` call while a plan is still un-approved, a follow-up
-   * composer message reconnects in the SDK's default mode, and a REJECTED
-   * plan's `ExitPlanMode` retry then fails outright ("I'm no longer in plan
-   * mode") because the CLI itself short-circuits the tool before `canUseTool`
-   * is ever invoked. Only sessions started with `planMode: true` are tracked
-   * here; flips to `'default'` the moment a plan is genuinely accepted (see
-   * `respondToPrompt` below), mirroring the real SDK-side state transition.
+   * Tracks the current SDK permission mode for a session (05-interactive-
+   * prompts; generalized from plan-only to all 4 `MODE_CYCLE` values in
+   * 11-composer-mode-indicator), across `resume()` reconnects. The SDK's
+   * `permissionMode` is per-`query()` call, NOT restored automatically from a
+   * `--resume`d session's history — verified live: without re-passing
+   * `permissionMode: 'plan'` on every `harness.resume()` call while a plan is
+   * still un-approved, a follow-up composer message reconnects in the SDK's
+   * default mode, and a REJECTED plan's `ExitPlanMode` retry then fails
+   * outright ("I'm no longer in plan mode") because the CLI itself
+   * short-circuits the tool before `canUseTool` is ever invoked. Populated
+   * for sessions started with `planMode: true` (-> `'plan'`) and any session
+   * whose composer has cycled its mode at least once; absent (treated as
+   * `'default'` via `decorate()` below) for every other session, unchanged
+   * from before this task. Flips to `'default'` the moment a plan is
+   * genuinely accepted (see `respondToPrompt` below), mirroring the real
+   * SDK-side state transition — a cycle initiated after that starts counting
+   * from `'default'` again, same as a session that was never in plan mode.
    */
-  private readonly permissionModes = new Map<string, 'default' | 'plan'>()
+  private readonly permissionModes = new Map<string, PermissionModeValue>()
 
   /**
    * Tracks the model/effort override currently applied to a session's live
@@ -131,12 +146,25 @@ export class SessionManager {
     private readonly getWindow: () => BrowserWindow | null
   ) {}
 
+  /**
+   * Overlays the tracked-in-memory `permissionModes` entry (or `'default'`)
+   * onto a DB-sourced `SessionRecord` (11-composer-mode-indicator) — mode is
+   * NOT a DB column (same non-persisted-across-a-real-app-relaunch tradeoff
+   * the pre-existing plan-mode tracking already made; see `permissionModes`'
+   * doc comment), so every read path that hands a `SessionRecord` to the
+   * renderer must go through this rather than returning the store's row
+   * as-is.
+   */
+  private decorate(session: SessionRecord): SessionRecord {
+    return { ...session, permissionMode: this.permissionModes.get(session.id) ?? 'default' }
+  }
+
   listActive(): SessionRecord[] {
-    return this.store.listActiveSessions()
+    return this.store.listActiveSessions().map((s) => this.decorate(s))
   }
 
   listHistory(): SessionRecord[] {
-    return this.store.listHistorySessions()
+    return this.store.listHistorySessions().map((s) => this.decorate(s))
   }
 
   listMessages(sessionId: string): MessageRecord[] {
@@ -145,7 +173,8 @@ export class SessionManager {
 
   /** Looks up a single session record by id (10c-enrichment-export-conversation), undefined if it doesn't exist. */
   getSession(sessionId: string): SessionRecord | undefined {
-    return this.store.getSession(sessionId)
+    const session = this.store.getSession(sessionId)
+    return session ? this.decorate(session) : undefined
   }
 
   /** Cross-session content search (10b-enrichment-full-text-search), backing the command palette's extended "Session" results. */
@@ -298,14 +327,16 @@ export class SessionManager {
     })
     if (opts.planMode) this.permissionModes.set(harnessSession.sessionId, 'plan')
 
-    const session = this.store.createSession({
-      id: harnessSession.sessionId,
-      name: defaultName,
-      projectPath: opts.projectPath,
-      mode: 'claude-code',
-      hostname: hostOption?.sshHost ?? null,
-      groupId: opts.groupId ?? null
-    })
+    const session = this.decorate(
+      this.store.createSession({
+        id: harnessSession.sessionId,
+        name: defaultName,
+        projectPath: opts.projectPath,
+        mode: 'claude-code',
+        hostname: hostOption?.sshHost ?? null,
+        groupId: opts.groupId ?? null
+      })
+    )
 
     if (opts.prompt) {
       const userMessage = this.store.addMessage({ sessionId: session.id, role: 'user', content: opts.prompt })
@@ -331,7 +362,7 @@ export class SessionManager {
   resumeSnapshot(sessionId: string): { session: SessionRecord; messages: MessageRecord[] } {
     const existing = this.store.getSession(sessionId)
     if (!existing) throw new Error(`Unknown session: ${sessionId}`)
-    const session = this.store.reopenSession(sessionId) ?? existing
+    const session = this.decorate(this.store.reopenSession(sessionId) ?? existing)
     const messages = this.store.listMessages(sessionId)
     this.sendLifecycle({ type: 'session.resumed', session })
     return { session, messages }
@@ -514,10 +545,48 @@ try {
     // in plan mode for the next reconnect.
     if (decision.kind === 'plan' && decision.decision === 'accept') {
       this.permissionModes.set(sessionId, 'default')
+      // 11-composer-mode-indicator: the mode pill must reflect this
+      // automatic flip the same way it reflects a manual Shift+Tab cycle —
+      // without this broadcast the pill would keep showing "Plan mode" until
+      // some UNRELATED lifecycle event happened to trigger a refetch.
+      const session = this.store.getSession(sessionId)
+      if (session) this.sendLifecycle({ type: 'session.updated', session: this.decorate(session) })
     }
 
     logger.info('respondToPrompt: dispatching to harness', { sessionId, requestId, kind: decision.kind })
     await this.harness.respondToPrompt(sessionId, requestId, toHarnessPromptResponse(decision))
+  }
+
+  // ── Mode cycling (11-composer-mode-indicator) ─────────────────────────
+
+  /**
+   * Cycles a session's SDK permission mode through `MODE_CYCLE`
+   * (default -> plan -> acceptEdits -> auto -> default), triggered by the
+   * composer's Shift+Tab handler or a click on the mode pill. Updates the
+   * tracked mode immediately (so it's re-passed on the session's next
+   * `resume()`/follow-up, exactly like the pre-existing plan-mode tracking)
+   * and, if the session has a live harness connection right now, also flips
+   * it on that connection immediately via `harness.setPermissionMode()` —
+   * the same real `query.setPermissionMode()` call already used after an
+   * accepted `ExitPlanMode` — so the change takes effect for the CURRENT
+   * turn/session, not just the next reconnect.
+   */
+  async cycleMode(sessionId: string): Promise<SessionRecord> {
+    const existing = this.store.getSession(sessionId)
+    if (!existing) throw new Error(`Unknown session: ${sessionId}`)
+
+    const current = this.permissionModes.get(sessionId) ?? 'default'
+    const next = MODE_CYCLE[(MODE_CYCLE.indexOf(current) + 1) % MODE_CYCLE.length]
+    this.permissionModes.set(sessionId, next)
+    logger.info('cycleMode: mode changed', { sessionId, from: current, to: next })
+
+    if (existing.mode === 'claude-code') {
+      await this.harness.setPermissionMode(sessionId, next)
+    }
+
+    const session = this.decorate(existing)
+    this.sendLifecycle({ type: 'session.updated', session })
+    return session
   }
 
   /**

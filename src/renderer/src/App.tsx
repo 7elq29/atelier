@@ -438,6 +438,8 @@ export default function App(): JSX.Element {
                               modelSelection={modelSelection}
                               onModelSelectionChange={setModelSelection}
                               liveSlashCommands={sessions.commandsBySession[activeSession.id] ?? []}
+                              mode={activeSession.permissionMode}
+                              onCycleMode={() => void sessions.cycleMode(activeSession.id)}
                             />
                           )}
                         </div>

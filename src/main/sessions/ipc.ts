@@ -120,6 +120,10 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
     manager.respondToPrompt(sessionId, requestId, decision)
   )
 
+  // 11-composer-mode-indicator: Shift+Tab / mode-pill click cycles
+  // default -> plan -> acceptEdits -> auto -> default.
+  ipcMain.handle('session:cycleMode', (_event, sessionId: string) => manager.cycleMode(sessionId))
+
   // 10c-enrichment-export-conversation: real native Save dialog + real file
   // write, same pattern as session:pickProjectFolder's showOpenDialog above.
   // Returns the saved path, or null if the user cancelled the dialog.

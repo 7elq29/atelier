@@ -135,6 +135,8 @@ const api = {
   /** Resolves a permission/AskUserQuestion/plan card (05-interactive-prompts). */
   respondToPrompt: (sessionId: string, requestId: string, decision: PromptDecision): Promise<void> =>
     ipcRenderer.invoke('session:respondToPrompt', sessionId, requestId, decision),
+  /** Shift+Tab / mode-pill click cycles default -> plan -> acceptEdits -> auto -> default (11-composer-mode-indicator). */
+  cycleSessionMode: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:cycleMode', sessionId),
   onSessionMessage: (callback: (event: SessionStreamEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: SessionStreamEvent): void => callback(payload)
     ipcRenderer.on('session:message', listener)

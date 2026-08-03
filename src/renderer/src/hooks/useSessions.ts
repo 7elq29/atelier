@@ -30,6 +30,8 @@ export interface UseSessionsResult {
   sendMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment) => Promise<void>
   interrupt: (sessionId: string) => Promise<void>
   respondToPrompt: (sessionId: string, requestId: string, decision: PromptDecision) => Promise<void>
+  /** Shift+Tab / mode-pill click cycles default -> plan -> acceptEdits -> auto -> default (11-composer-mode-indicator). */
+  cycleMode: (sessionId: string) => Promise<void>
   forkSession: (sessionId: string) => Promise<SessionRecord>
   restartSession: (sessionId: string) => Promise<SessionRecord>
   closeSession: (sessionId: string) => Promise<void>
@@ -187,6 +189,11 @@ export function useSessions(): UseSessionsResult {
     []
   )
 
+  /** Shift+Tab / mode-pill click cycles default -> plan -> acceptEdits -> auto -> default (11-composer-mode-indicator). The main process broadcasts `session.updated` itself, so — same pattern as setPinned/setColor/etc. above — this doesn't need to patch local state or call refresh() itself. */
+  const cycleMode = useCallback(async (sessionId: string): Promise<void> => {
+    await window.gardenia.cycleSessionMode(sessionId)
+  }, [])
+
   const forkSession = useCallback(async (sessionId: string): Promise<SessionRecord> => {
     const forked = await window.gardenia.forkSession(sessionId)
     const messages = await window.gardenia.listSessionMessages(forked.id)
@@ -298,6 +305,7 @@ export function useSessions(): UseSessionsResult {
     sendMessage,
     interrupt,
     respondToPrompt,
+    cycleMode,
     forkSession,
     restartSession,
     closeSession,

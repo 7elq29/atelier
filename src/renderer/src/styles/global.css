@@ -906,6 +906,25 @@ input[type='range'] {
 .attach-thumb img { width: 100%; height: 100%; border-radius: 6px; object-fit: cover; }
 .composer-box.drag-over { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 
+/* Mode indicator (11-composer-mode-indicator) — quoted verbatim from mocks/
+   index.html's `.composer-mode-row`/`.mode-pill*` rules. Sits below
+   `.composer-footer`, above nothing else (last element in the composer box).
+   Always visible (not just when non-default) so the current mode never
+   requires opening a menu to check. Shift+Tab (or a click on the pill)
+   cycles default -> plan -> acceptEdits -> auto -> default, matching Claude
+   Code's own CLI cycle order. Color-coded by how permissive the mode is:
+   default is quiet/neutral, plan is informational blue, acceptEdits is the
+   app's own trusted-accent green, auto is the most permissive so it gets the
+   "hottest" color (warning amber). */
+.composer-mode-row { display: flex; align-items: center; gap: 8px; padding: 6px 14px 0; font-size: 12.5px; color: var(--text-tertiary); }
+.mode-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 500; padding: 3px 9px; border-radius: 100px; border: 1px solid var(--border-subtle); white-space: nowrap; cursor: pointer; }
+.mode-pill .mode-icon { font-size: 12px; line-height: 1; }
+.mode-hint { color: var(--text-disabled); }
+.mode-pill.mode-default { background: transparent; border-color: var(--border-subtle); color: var(--text-tertiary); }
+.mode-pill.mode-plan { background: var(--info-dim, rgba(127,168,193,0.15)); border-color: transparent; color: var(--info, #7fa8c1); }
+.mode-pill.mode-acceptEdits { background: var(--accent-dim); border-color: transparent; color: var(--accent); }
+.mode-pill.mode-auto { background: rgba(217,179,116,0.16); border-color: transparent; color: var(--warning); }
+
 /* Model/effort picker (10f-enrichment-model-effort-picker) — quoted verbatim
    from mocks/index.html's `.picker-pop`/`.picker-item` rules. */
 .picker-pop { position: absolute; bottom: 100%; right: 8px; margin-bottom: 6px; width: 190px; background: var(--bg-panel-raised); border: 1px solid var(--border-default); border-radius: var(--r-md); box-shadow: var(--shadow-popover); overflow: hidden; padding: 4px; z-index: 6; }

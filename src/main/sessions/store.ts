@@ -88,7 +88,14 @@ function toSessionRecord(row: SessionRow, tags: string[] = []): SessionRecord {
     tags,
     notes: row.notes,
     sortOrder: row.sort_order,
-    totalCostUsd: row.total_cost_usd
+    totalCostUsd: row.total_cost_usd,
+    // Not a real DB column (11-composer-mode-indicator) — this is just a
+    // type-satisfying placeholder for every raw store read. SessionManager's
+    // `decorate()` always overwrites this with the real tracked value
+    // (defaulting to 'default' itself) before a record reaches IPC/the
+    // renderer; nothing reads a store-returned SessionRecord's
+    // `permissionMode` directly without going through that.
+    permissionMode: 'default'
   }
 }
 
