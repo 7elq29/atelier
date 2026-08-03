@@ -98,6 +98,33 @@ function recordKnownIds(path: string, ids: Set<string>): void {
   for (const id of ids) existing.add(id)
 }
 
+/**
+ * Per-path record of the exact file content this process most recently wrote
+ * (via `daily-note:create` or `daily-note:write`), used to suppress
+ * self-triggered fs.watch echoes.
+ *
+ * Root cause (see fix-note-content-reverts-to-template-on-edit): on macOS,
+ * an `fs.watch()` armed on a directory immediately after this process writes
+ * a file into it can still receive a coalesced notification for that
+ * already-completed write. If the watcher's debounced reparse fires before a
+ * concurrent user edit's own debounced write lands, it pushes a stale
+ * `daily-note:changed` snapshot to the renderer, which both stomps in-memory
+ * state AND cancels the pending write — silently discarding the edit.
+ *
+ * The fix compares the freshly-read disk content against exactly what this
+ * process itself last wrote to that path: if they're identical, the fs event
+ * was just an echo of our own write and must not be pushed to the renderer.
+ * Only a genuine content difference — a real external edit, e.g. an actual
+ * Obsidian save — should propagate. This is content-based rather than a
+ * boolean flag or timer so it stays correct regardless of timing: a
+ * flag/timer would just relocate the race to a different deadline.
+ */
+const lastWrittenContent = new Map<string, string>()
+
+function recordWrittenContent(path: string, content: string): void {
+  lastWrittenContent.set(path, content)
+}
+
 let activeWatcher: FSWatcher | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let watchedPath: string | null = null
@@ -190,6 +217,7 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
     const content = generateNewNote(date, carriedTasks, loadNoteTemplate(vaultRoot))
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, content, 'utf-8')
+    recordWrittenContent(path, content)
     const { note, raw } = parseDailyNote(content, date)
     recordKnownIds(path, getTaskIds(note))
     logger.info('daily-note created', { path })
@@ -258,6 +286,7 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(tmpPath, serialized, 'utf-8')
     renameSync(tmpPath, path)
+    recordWrittenContent(path, serialized)
 
     // Prune confirmed-gone ids, then record everything we just wrote as known.
     for (const id of tombstoned) everKnown.delete(id)
@@ -293,6 +322,20 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
         try {
           if (!existsSync(path)) return
           const content = readFileSync(path, 'utf-8')
+
+          // Self-write echo suppression: if the content on disk is exactly
+          // what this process itself most recently wrote to this path, this
+          // fs event is a stale/coalesced notification for our own write
+          // (e.g. the create-then-immediately-watch race), not a genuine
+          // external edit. Pushing it anyway would stomp any newer in-memory
+          // edit and cancel its pending write — see
+          // fix-note-content-reverts-to-template-on-edit. Skip the push (and
+          // leave any pending renderer write timer alone) in that case.
+          if (lastWrittenContent.get(path) === content) {
+            logger.info('daily-note watcher: suppressed self-write echo', { path })
+            return
+          }
+
           const { note } = parseDailyNote(content, date)
           recordKnownIds(path, getTaskIds(note))
           logger.info('daily-note watcher: reparsed after change', { path, taskCount: note.tasks.length })
