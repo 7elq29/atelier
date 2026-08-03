@@ -257,7 +257,6 @@ export default function Timeline({ tasks, onToggle, onCreate, onDropExisting, on
                 width: `calc((100% - ${LABEL_WIDTH}px) * ${colFrac} - 4px)`
               }}
               onMouseDown={(e) => startDrag('move', task, { start, end }, e)}
-              onClick={() => onToggle(task.id)}
             >
               <div
                 className="dn-tblock-resize dn-tblock-resize-top"
@@ -282,7 +281,16 @@ export default function Timeline({ tasks, onToggle, onCreate, onDropExisting, on
                 {` · ${end - start}m`}
               </div>
               <div className="dn-tb-body">
-                <div className="dn-tbox" />
+                <div
+                  className="dn-tbox"
+                  data-testid="timeline-task-toggle"
+                  data-task-id={task.id}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggle(task.id)
+                  }}
+                />
                 <span className="dn-tb-label">{task.text}</span>
               </div>
               <div

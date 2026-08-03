@@ -357,7 +357,17 @@ test('regression: external delete racing an in-flight write does not resurrect t
   // this schedules a debounced write (500ms) whose captured payload still
   // includes the "1:1 with manager" task, since the renderer hasn't heard
   // about the upcoming external delete yet.
-  await page.locator('[data-testid="timeline-task"]', { hasText: 'Standup' }).click()
+  //
+  // Uses the dedicated toggle checkbox (data-testid="timeline-task-toggle"),
+  // not a click anywhere on the block: after the fix-timeline-drag-toggle
+  // fix, clicking the block body starts a move-drag instead of toggling
+  // done (see `fix-timeline-drag-toggle-regression` in
+  // e2e/obsidian-integration.spec.ts's "54a" describe block) — only the
+  // small checkbox itself is a real click-to-toggle target now.
+  await page
+    .locator('[data-testid="timeline-task"]', { hasText: 'Standup' })
+    .locator('[data-testid="timeline-task-toggle"]')
+    .click()
 
   // ~700ms after the click (so: after the 500ms write debounce fires and the
   // write handler has entered its artificial 1500ms delay, but well before
@@ -836,6 +846,56 @@ type: daily
     expect(content).not.toContain(GID_DELETE)
     expect(content).not.toContain('Delete target')
   })
+
+  test('regression: dragging a block to move it does not toggle its done status, and the dedicated checkbox still does', async () => {
+    // Root cause: the whole `.dn-tblock` div carried both `onMouseDown`
+    // (starts a move-drag) and `onClick` (toggles done). Browsers fire a
+    // native `click` on mouseup even after a real drag (as long as mouseup
+    // lands on the same element the mousedown started on), so every
+    // drag-to-move also flipped the task to done as an unintended side
+    // effect. Fixed by moving the toggle's onClick onto the small `.dn-tbox`
+    // checkbox only (data-testid="timeline-task-toggle"), with its own
+    // onMouseDown stopPropagation so clicking it doesn't also start a drag —
+    // mirroring the same pattern already used by TaskItem.tsx (Unscheduled)
+    // and the Trackers row.
+    const block = gridPage.locator('[data-testid="timeline-task"][data-task-id="' + GID_OVERLAP_A + '"]')
+    await expect(block).toBeVisible()
+    await expect(block).not.toHaveClass(/done/)
+
+    // Drag from the range label (top of the block, well clear of the tiny
+    // checkbox) — a real user grabbing the block body to reposition it.
+    const rangeLabel = block.locator('.dn-tb-range')
+    const rangeBox = await rangeLabel.boundingBox()
+    if (!rangeBox) throw new Error('range label not visible')
+    const startX = rangeBox.x + rangeBox.width / 2
+    const startY = rangeBox.y + rangeBox.height / 2
+
+    await gridPage.mouse.move(startX, startY)
+    await gridPage.mouse.down()
+    await gridPage.mouse.move(startX, startY + 60, { steps: 10 })
+    await gridPage.mouse.up()
+
+    await gridPage.waitForTimeout(1200)
+    const content = readFileSync(gridNotePath, 'utf-8')
+    appendSyncLog('54a: after drag-move (done-status regression check)', content)
+    const line = content.split('\n').find((l) => l.includes(GID_OVERLAP_A))
+    expect(line, 'moved task line should still exist').toBeTruthy()
+    // The block moved (on-disk time shifted 60min later) ...
+    expect(line).toMatch(/^- \[ \]/)
+    // ... but its checkbox status must still be open, not accidentally done.
+    await expect(block).not.toHaveClass(/done/)
+
+    // The dedicated toggle checkbox still works as a real done-toggle.
+    const toggle = block.locator('[data-testid="timeline-task-toggle"]')
+    await toggle.click()
+    await expect(block).toHaveClass(/done/)
+    await gridPage.waitForTimeout(1200)
+    const doneContent = readFileSync(gridNotePath, 'utf-8')
+    const doneLine = doneContent.split('\n').find((l) => l.includes(GID_OVERLAP_A))
+    expect(doneLine).toMatch(/^- \[x\]/)
+
+    await gridPage.screenshot({ path: join(artifactsDir, 'fix-timeline-drag-toggle-regression.png') })
+  })
 })
 
 // ── Carry-over on note creation (UC-2) ──────────────────────────────────
@@ -1127,6 +1187,70 @@ type: daily
     content = readFileSync(affNotePath, 'utf-8')
     const untaggedLine = content.split('\n').find((l) => l.includes(GID_TAG_TARGET))
     expect(untaggedLine).not.toContain('#ktlo')
+  })
+
+  test('regression: Trackers get the same edit/tag/delete affordances as Unscheduled (UC-14 parity)', async () => {
+    // Root cause: the 54b commit ("Add Unscheduled/Tracker add-task,
+    // edit-text, tag UI... Covers UC-14") only wired up the "+ New task"
+    // add affordance for Trackers — the tracker list itself still rendered
+    // a bespoke `<div className="dn-tracker-mini">` with nothing but a
+    // toggle checkbox, so double-click-to-edit, tag add/remove, and delete
+    // were all silently missing for Trackers even though UC-14 explicitly
+    // claims "identical mechanics to UC-12" (Unscheduled). Fixed by
+    // rendering Trackers rows through the same `TaskItem` component as
+    // Unscheduled (draggable=false, testId="tracker-task" to keep the
+    // existing selector convention).
+    const tracker = affPage.locator('[data-testid="tracker-task"]', { hasText: 'Water plants' })
+    await expect(tracker).toBeVisible()
+    await tracker.hover()
+
+    // Delete affordance exists (structural check only — not invoked, so the
+    // later Big Three/progress-header test's task counts stay valid).
+    await expect(tracker.locator('.dn-task-chip-remove')).toBeVisible()
+
+    // Tag add/remove round-trips to disk, same as Unscheduled.
+    await tracker.locator('[data-testid="add-tag-button"]').click()
+    const tagInput = tracker.locator('[data-testid="tag-input"]')
+    await expect(tagInput).toBeVisible()
+    await tagInput.fill('ktlo')
+    await tagInput.press('Enter')
+    await expect(tracker.locator('[data-testid="task-tag-chip"]', { hasText: '#ktlo' })).toBeVisible()
+
+    await affPage.waitForTimeout(1200)
+    let content = readFileSync(affNotePath, 'utf-8')
+    let trackerLine = content.split('\n').find((l) => l.includes(GID_TRACKER))
+    expect(trackerLine).toContain('#ktlo')
+    // The structural #tracker tag must still round-trip too, so the task
+    // stays classified as a tracker after the write-back.
+    expect(trackerLine).toContain('#tracker')
+
+    await tracker.hover()
+    await tracker.locator('[data-testid="task-tag-chip"]', { hasText: '#ktlo' }).locator('[data-testid="task-tag-remove"]').click()
+    await expect(tracker.locator('[data-testid="task-tag-chip"]', { hasText: '#ktlo' })).toHaveCount(0)
+    await affPage.waitForTimeout(1200)
+
+    // Double-click-to-edit text round-trips to disk. Query the edit input
+    // at the page level (not chip-scoped): the chip locator's `hasText`
+    // filter re-evaluates on each use, and an <input>'s value isn't counted
+    // toward an element's text content, so a chip-scoped locator stops
+    // resolving once the text row is replaced by the edit input — same
+    // reason the pre-existing Unscheduled double-click-edit test above
+    // queries `affPage.locator('[data-testid="task-edit-input"]')` directly.
+    await tracker.locator('span', { hasText: 'Water plants' }).dblclick()
+    const editInput = affPage.locator('[data-testid="task-edit-input"]')
+    await expect(editInput).toBeVisible()
+    await editInput.fill('Water plants (edited)')
+    await editInput.press('Enter')
+    await expect(affPage.locator('[data-testid="tracker-task"]', { hasText: 'Water plants (edited)' })).toBeVisible()
+
+    await affPage.waitForTimeout(1200)
+    content = readFileSync(affNotePath, 'utf-8')
+    trackerLine = content.split('\n').find((l) => l.includes(GID_TRACKER))
+    expect(trackerLine).toContain('Water plants (edited)')
+    expect(trackerLine).not.toContain('#ktlo')
+    expect(trackerLine).toContain('#tracker')
+
+    await affPage.screenshot({ path: join(artifactsDir, 'fix-tracker-taskitem-parity-regression.png') })
   })
 
   test('Big Three + progress header: renders seeded focus items and the real done/total count', async () => {
