@@ -41,6 +41,13 @@ const GID_TRACKER = 'a1000000-0000-4000-8000-000000000003'
 const GID_WED_EXISTING_TASK = 'a1000000-0000-4000-8000-000000000004'
 const GID_WED_EXISTING_BACKLOG = 'a1000000-0000-4000-8000-000000000005'
 const GID_WED_TRACKER = 'a1000000-0000-4000-8000-000000000006'
+// fix-move-task-creates-note-with-carryover: an extra open task that is
+// deliberately NEVER moved by any test in this file, so it's still open in
+// today's note at the moment "Move to tomorrow" triggers tomorrow's note's
+// creation. If ensureNoteExists's carry-over scan incorrectly runs for the
+// move-task path, this task would leak into tomorrow's newly-created note
+// alongside the one task the user actually chose to move.
+const GID_UNRELATED_OPEN = 'a1000000-0000-4000-8000-000000000007'
 
 function seedTodayContent(): string {
   return `---
@@ -55,6 +62,7 @@ type: daily
 
 ### ⚪ Backlog
 - [ ] Write PR description #ktlo [gid:: ${GID_UNSCHEDULED}]
+- [ ] Unrelated open task not being moved [gid:: ${GID_UNRELATED_OPEN}]
 
 ### 🤝 Delegated
 -
@@ -245,6 +253,12 @@ test.describe('16-task-move-to-date: right-click "Move to..." context menu', () 
   test('selecting "Move to tomorrow" on the Unscheduled task creates tomorrow\'s (absent) note from the template and files it under Backlog', async () => {
     expect(existsSync(tomorrowNotePath)).toBe(false)
 
+    // Sanity check on the reproduction setup: the unrelated open task is
+    // still present (and open) in today's note right before tomorrow's note
+    // gets created via the move.
+    const beforeToday = readFileSync(todayNotePath, 'utf-8')
+    expect(beforeToday).toContain(GID_UNRELATED_OPEN)
+
     const chip = page.locator('[data-testid="unscheduled-task"]', { hasText: 'Write PR description' })
     await expect(chip).toBeVisible()
     await chip.click({ button: 'right' })
@@ -260,6 +274,8 @@ test.describe('16-task-move-to-date: right-click "Move to..." context menu', () 
     const afterToday = readFileSync(todayNotePath, 'utf-8')
     expect(afterToday).not.toContain(GID_UNSCHEDULED)
     expect(afterToday).not.toContain('Write PR description')
+    // The unrelated task stays behind in today's note, untouched by the move.
+    expect(afterToday).toContain(GID_UNRELATED_OPEN)
 
     const tomorrowContent = readFileSync(tomorrowNotePath, 'utf-8')
     const lines = tomorrowContent.split('\n')
@@ -275,6 +291,16 @@ test.describe('16-task-move-to-date: right-click "Move to..." context menu', () 
     expect(movedLine).toContain('#ktlo')
     expect(movedLine).toMatch(/^\s*-\s*\[ \]/)
     expect(movedLine).not.toMatch(/\d{1,2}:\d{2}[–-]\d{1,2}:\d{2}/)
+
+    // fix-move-task-creates-note-with-carryover: tomorrow's note must be
+    // created purely from the template with the ONE moved task appended —
+    // no carry-over scan against today's (or any other prior) note. The
+    // still-open, never-moved unrelated task must NOT have leaked in.
+    expect(tomorrowContent).not.toContain(GID_UNRELATED_OPEN)
+    expect(tomorrowContent).not.toContain('Unrelated open task not being moved')
+    // Exactly one task line should exist in the Backlog section: the moved one.
+    const backlogSection = lines.slice(backlogHeaderIdx + 1, delegatedHeaderIdx).filter((l) => l.trim())
+    expect(backlogSection).toHaveLength(1)
   })
 })
 
@@ -311,6 +337,13 @@ test.describe('16-task-move-to-date: visual confirmation on the target date', ()
       await expect(movedTask).toBeVisible()
       await expect(movedTask.locator('[data-testid="task-tag-chip"]', { hasText: '#ktlo' })).toBeVisible()
       await expect(movedTask).not.toHaveClass(/done/)
+
+      // fix-move-task-creates-note-with-carryover: the unrelated task that
+      // was never moved (still open in today's note) must NOT have been
+      // carried over into this newly-created target note.
+      await expect(
+        verifyPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Unrelated open task not being moved' })
+      ).toHaveCount(0)
 
       // The daily-notes panel's flex sections don't shrink below their
       // content's intrinsic height (the Timeline grid alone is ~960px of

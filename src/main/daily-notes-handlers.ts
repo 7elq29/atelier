@@ -170,24 +170,28 @@ function sleep(ms: number): Promise<void> {
  * Shared "read-or-create-from-template" path used by both `daily-note:create`
  * and `daily-note:move-task` (16-task-move-to-date): if `date`'s note already
  * exists, reads/parses it as-is; otherwise scaffolds it via the same
- * template-fill + carry-over logic `daily-note:create` has always used
- * (`generateNewNote`/`loadNoteTemplate`/`findMostRecentNoteDate`/
- * `collectCarryOverTasks`) — extracted here so the move-task path doesn't
- * duplicate/diverge from normal note-creation behavior.
+ * template-fill logic `daily-note:create` has always used
+ * (`generateNewNote`/`loadNoteTemplate`), optionally running the UC-2
+ * carry-over scan (`findMostRecentNoteDate`/`collectCarryOverTasks`) —
+ * extracted here so the move-task path doesn't duplicate/diverge from normal
+ * note-creation behavior.
  *
- * Design note (spec-flagged): creating a target note purely to receive a
- * moved task still runs the normal UC-2 carry-over scan against ITS OWN
- * most-recent prior note. This is deliberate, not an oversight — it's
- * exactly what happens any time that date's note gets created for the first
- * time (e.g. the user navigates there directly tomorrow), so a task-move
- * triggering it early isn't a new or "spurious" side effect, just the
- * ordinary note-creation behavior happening a little sooner than it
- * otherwise would have.
+ * `carryOver` (default `true`) controls whether that scan runs when the note
+ * has to be created. `daily-note:create` always wants it (that's the
+ * existing, correct UC-2 behavior for "navigate to a date"). `daily-note:move-task`
+ * passes `{ carryOver: false }`: per
+ * fix-move-task-creates-note-with-carryover, creating a target note purely to
+ * receive one explicitly-moved task must NOT also drag forward every other
+ * open task from the source note — the user only asked to move the one task
+ * they right-clicked. The target note should come from the template with
+ * empty sections, with just that one task appended afterward by the caller.
  */
 async function ensureNoteExists(
   date: string,
-  vaultRoot: string
+  vaultRoot: string,
+  options?: { carryOver?: boolean }
 ): Promise<{ note: DailyNote; raw: RawSections; path: string; created: boolean }> {
+  const carryOver = options?.carryOver ?? true
   const path = resolveNotePath(date, vaultRoot)
   if (existsSync(path)) {
     const content = await readFile(path, 'utf-8')
@@ -197,18 +201,20 @@ async function ensureNoteExists(
   }
 
   let carriedTasks: DailyTask[] = []
-  const priorDate = findMostRecentNoteDate(date, vaultRoot)
-  if (priorDate) {
-    const priorPath = resolveNotePath(priorDate, vaultRoot)
-    const priorContent = await readFile(priorPath, 'utf-8')
-    const { note: priorNote } = parseDailyNote(priorContent, priorDate)
-    carriedTasks = collectCarryOverTasks(priorNote)
-    logger.info('daily-note create: carrying tasks forward', {
-      path,
-      priorDate,
-      priorPath,
-      carriedIds: carriedTasks.map((t) => t.id)
-    })
+  if (carryOver) {
+    const priorDate = findMostRecentNoteDate(date, vaultRoot)
+    if (priorDate) {
+      const priorPath = resolveNotePath(priorDate, vaultRoot)
+      const priorContent = await readFile(priorPath, 'utf-8')
+      const { note: priorNote } = parseDailyNote(priorContent, priorDate)
+      carriedTasks = collectCarryOverTasks(priorNote)
+      logger.info('daily-note create: carrying tasks forward', {
+        path,
+        priorDate,
+        priorPath,
+        carriedIds: carriedTasks.map((t) => t.id)
+      })
+    }
   }
 
   const content = generateNewNote(date, carriedTasks, loadNoteTemplate(vaultRoot))
@@ -217,9 +223,10 @@ async function ensureNoteExists(
   recordWrittenContent(path, content)
   const { note, raw } = parseDailyNote(content, date)
   recordKnownIds(path, getTaskIds(note))
-  logger.info('daily-note created', { path })
+  logger.info('daily-note created', { path, carryOver })
   return { note, raw, path, created: true }
 }
+
 
 export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | null): void {
   const isTestMode = process.env.GARDENIA_TEST_VAULT_ROOT !== undefined
@@ -283,14 +290,12 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
       }
 
       // Write the source note FIRST, with the task already removed, before
-      // touching the target. This ordering matters: if the target note
-      // doesn't exist yet, ensureNoteExists's UC-2 carry-over scan may find
-      // the SOURCE note as the "most recent prior note" (e.g. moving to
-      // tomorrow) and independently carry the still-open task forward on its
-      // own — landing it in the target's day-plan section AND then having
-      // this handler append it again to Backlog, duplicating it. Persisting
-      // the removal first means any carry-over scan the target's creation
-      // triggers only ever sees the task already gone.
+      // touching the target. fix-move-task-creates-note-with-carryover: the
+      // target note's creation below now runs with carry-over disabled
+      // entirely, so this ordering is no longer load-bearing for duplicate
+      // prevention — but it's still the more sensible sequencing (the
+      // source's mutation is unconditional, the target's creation may fail
+      // independently) so it's kept as-is.
       const updatedSourceNote: DailyNote = {
         ...sourceNote,
         tasks: sourceNote.tasks.filter((t) => t.id !== taskId)
@@ -303,7 +308,14 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
       recordWrittenContent(sourcePath, sourceSerialized)
       recordKnownIds(sourcePath, getTaskIds(updatedSourceNote))
 
-      const { note: targetNoteBefore, raw: targetRaw } = await ensureNoteExists(targetDate, vaultRoot)
+      // fix-move-task-creates-note-with-carryover: creating the target note
+      // via this side door must NOT run the UC-2 carry-over scan — only the
+      // one task the user explicitly chose to move should land in it. If the
+      // target note doesn't exist yet, it's scaffolded purely from the vault
+      // template with empty sections, and the moved task is appended below.
+      const { note: targetNoteBefore, raw: targetRaw } = await ensureNoteExists(targetDate, vaultRoot, {
+        carryOver: false
+      })
 
       // Backlog items aren't scheduled to a time slot — strip the time-block.
       // Text, tags, and done-state carry over unchanged.
