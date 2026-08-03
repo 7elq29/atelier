@@ -447,11 +447,17 @@ export default function Composer({
   // `height = 'auto'` first (so shrinking on delete works, not just
   // growing), then clamp to the 160px cap; beyond that the textarea's own
   // `overflow` (default for a textarea) scrolls instead of growing further.
+  // `overflow-y` is set explicitly (not left to the CSS default `auto`)
+  // because `scrollHeight` can exceed `clientHeight` by a stray sub-pixel
+  // even when content fits on screen, which made the native scrollbar
+  // flash in briefly with nothing to actually scroll to.
   useEffect(() => {
     const ta = textareaRef.current
     if (!ta) return
     ta.style.height = 'auto'
+    const capped = ta.scrollHeight > MAX_TEXTAREA_HEIGHT
     ta.style.height = `${Math.min(ta.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
+    ta.style.overflowY = capped ? 'auto' : 'hidden'
   }, [value])
 
   const mentionMatches = useMemo(() => {
