@@ -871,7 +871,7 @@ input[type='range'] {
 .composer-wrap { padding: 12px 28px 20px; }
 .composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; }
 .composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
-.composer-box textarea { width: 100%; border: none; background: transparent; color: var(--text-primary); padding: 11px 13px 4px; font-family: var(--font-ui); font-size: var(--text-base); resize: none; outline: none; min-height: 22px; max-height: 160px; line-height: 1.5; }
+.composer-box textarea { width: 100%; border: none; border-top-left-radius: var(--r-xl); border-top-right-radius: var(--r-xl); background: transparent; color: var(--text-primary); padding: 11px 13px 4px; font-family: var(--font-ui); font-size: var(--text-base); resize: none; outline: none; min-height: 22px; max-height: 160px; line-height: 1.5; }
 .composer-footer { display: flex; align-items: center; gap: 8px; padding: 8px 14px 12px; flex-wrap: wrap; }
 .composer-footer .spacer { flex: 1; }
 .footer-btn { display: flex; align-items: center; gap: 6px; font-size: 14.5px; color: var(--text-tertiary); background: transparent; border: none; cursor: pointer; padding: 5px 8px; border-radius: 6px; }
@@ -906,20 +906,22 @@ input[type='range'] {
 .attach-thumb img { width: 100%; height: 100%; border-radius: 6px; object-fit: cover; }
 .composer-box.drag-over { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 
-/* Mode indicator (11-composer-mode-indicator) — quoted verbatim from mocks/
-   index.html's `.composer-mode-row`/`.mode-pill*` rules. Sits below
-   `.composer-footer`, above nothing else (last element in the composer box).
-   Always visible (not just when non-default) so the current mode never
-   requires opening a menu to check. Shift+Tab (or a click on the pill)
-   cycles default -> plan -> acceptEdits -> auto -> default, matching Claude
-   Code's own CLI cycle order. Color-coded by how permissive the mode is:
+/* Mode indicator (11-composer-mode-indicator) — lives inline in
+   `.composer-footer` (left of the spacer, before Model/Send), not its own
+   row — moved there per follow-up feedback so it doesn't crowd the
+   composer's bottom rounded border. Always visible (not just when
+   non-default) so the current mode never requires opening a menu to check.
+   Shift+Tab (or a click on the pill) cycles default -> plan -> acceptEdits
+   -> auto -> default, matching Claude Code's own CLI cycle order. The
+   always-visible "Shift+Tab to switch mode" hint text was dropped when this
+   moved into the compact footer row — discoverability now comes from the
+   pill's own `title` tooltip, same as the model-picker button has no
+   always-visible hint either. Color-coded by how permissive the mode is:
    default is quiet/neutral, plan is informational blue, acceptEdits is the
    app's own trusted-accent green, auto is the most permissive so it gets the
    "hottest" color (warning amber). */
-.composer-mode-row { display: flex; align-items: center; gap: 8px; padding: 6px 14px 0; font-size: 12.5px; color: var(--text-tertiary); }
 .mode-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 500; padding: 3px 9px; border-radius: 100px; border: 1px solid var(--border-subtle); white-space: nowrap; cursor: pointer; }
 .mode-pill .mode-icon { font-size: 12px; line-height: 1; }
-.mode-hint { color: var(--text-disabled); }
 .mode-pill.mode-default { background: transparent; border-color: var(--border-subtle); color: var(--text-tertiary); }
 .mode-pill.mode-plan { background: var(--info-dim, rgba(127,168,193,0.15)); border-color: transparent; color: var(--info, #7fa8c1); }
 .mode-pill.mode-acceptEdits { background: var(--accent-dim); border-color: transparent; color: var(--accent); }

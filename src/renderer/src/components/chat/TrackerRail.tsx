@@ -26,7 +26,7 @@ interface SubagentEntry {
  * e2e/audit-window-resize-layout.spec.ts "(h) tracker rail collapsed state"
  * comment). This wires up the same button/behavior.
  */
-export default function TrackerRail({ messages }: { messages: MessageRecord[] }): JSX.Element {
+export default function TrackerRail({ messages }: { messages: MessageRecord[] }): JSX.Element | null {
   const [collapsed, setCollapsed] = useState(false)
   let todos: { content: string; status: string }[] = []
   const subagentOrder: string[] = []
@@ -55,7 +55,12 @@ export default function TrackerRail({ messages }: { messages: MessageRecord[] })
   const runningCount = subagents.filter((s) => s.running).length
 
   if (todos.length === 0 && subagents.length === 0) {
-    return <div className="tracker-rail" data-testid="tracker-rail" />
+    // Render nothing at all (not an empty-but-present rail) — `.tracker-rail`
+    // has a fixed width in global.css, so an empty div here would still
+    // reserve that width from `.chat-main-col`'s flex space, leaving the
+    // transcript/composer narrower than full width for no reason. The mock
+    // never shows an empty rail; this matches that.
+    return null
   }
 
   return (

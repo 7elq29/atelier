@@ -234,11 +234,22 @@ test.describe('audit: window-resize layout integrity across sizes and states', (
     await openNewSessionModal(page)
     await page.getByTestId('pick-project-folder').click()
     await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('initial-prompt').fill('Reply with exactly: READY.')
+    // Must actually populate the tracker rail (real TodoWrite call), not
+    // just "Reply with exactly: READY." — TrackerRail.tsx now renders
+    // nothing at all when there's nothing to track (see
+    // fix-empty-tracker-rail-reserves-width), so a rail-less session would
+    // make every `tracker-rail` assertion below fail outright instead of
+    // exercising the "(b) active chat session with TrackerRail visible"
+    // state this setup exists for.
+    await page.getByTestId('initial-prompt').fill(
+      'Use the TodoWrite tool now to create a todo list with exactly two items: "Step one" (in_progress) and ' +
+        '"Step two" (pending). Do not do anything else. After calling TodoWrite once, reply with exactly: DONE.'
+    )
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
     await expect(page.locator('[data-testid="session-row"]').first()).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTestId('tracker-rail')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('todo-tracker-card')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('todo-item')).toHaveCount(2, { timeout: 30_000 })
   })
 
   for (const size of SIZES) {

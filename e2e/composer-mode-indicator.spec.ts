@@ -74,13 +74,11 @@ test.describe('11-composer-mode-indicator', () => {
     const row = page.locator('[data-testid="session-row"]').first()
     await expect(row).toBeVisible({ timeout: 15_000 })
 
-    const modeRow = page.getByTestId('composer-mode-row')
-    await expect(modeRow).toBeVisible()
     const pill = page.getByTestId('composer-mode-pill')
     await expect(pill).toBeVisible()
     await expect(pill).toHaveAttribute('data-mode', 'default')
     await expect(pill).toContainText('Default')
-    await expect(modeRow).toContainText('Shift+Tab to switch mode')
+    await expect(pill).toHaveAttribute('title', 'Click or press Shift+Tab to cycle mode')
 
     await page.screenshot({ path: join(artifactsDir, '11-mode-default.png') })
   })

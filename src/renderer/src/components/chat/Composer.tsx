@@ -703,6 +703,16 @@ export default function Composer({
           onPaste={handlePaste}
         />
         <div className="composer-footer">
+          <span
+            className={`mode-pill mode-${mode}`}
+            data-testid="composer-mode-pill"
+            data-mode={mode}
+            title="Click or press Shift+Tab to cycle mode"
+            onClick={onCycleMode}
+          >
+            <span className="mode-icon">{MODE_ICON[mode]}</span>
+            <span>{MODE_LABEL[mode]}</span>
+          </span>
           <div className="spacer" />
           {busy && (
             <span className="working-pill" data-testid="composer-working-pill">
@@ -735,19 +745,6 @@ export default function Composer({
               Send
             </button>
           )}
-        </div>
-        <div className="composer-mode-row" data-testid="composer-mode-row">
-          <span
-            className={`mode-pill mode-${mode}`}
-            data-testid="composer-mode-pill"
-            data-mode={mode}
-            title="Click or press Shift+Tab to cycle mode"
-            onClick={onCycleMode}
-          >
-            <span className="mode-icon">{MODE_ICON[mode]}</span>
-            <span>{MODE_LABEL[mode]}</span>
-          </span>
-          <span className="mode-hint">Shift+Tab to switch mode</span>
         </div>
       </div>
     </div>
