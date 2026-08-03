@@ -91,6 +91,18 @@ test.describe('command palette', () => {
     await page.screenshot({ path: join(artifactsDir, '08-palette.png') })
   })
 
+  // Bug: full-app-audit-onboarding-nav. The palette (like every other modal
+  // in this app) is rendered as a sibling of the sidebar, not an ancestor —
+  // nothing stopped Tab from leaving the dialog and landing on live sidebar
+  // buttons (e.g. "open-palette-button") behind the still-open palette.
+  test('Tab cannot escape the palette into the sidebar behind it', async () => {
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press('Tab')
+      const testId = await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))
+      expect(testId).toBe('command-palette-input')
+    }
+  })
+
   test('search/filter-as-you-type narrows results', async () => {
     const input = page.getByTestId('command-palette-input')
     await expect(input).toBeFocused()
@@ -300,6 +312,82 @@ test.describe('settings: theme + independent font sizes', () => {
   })
 })
 
+// Bug: full-app-audit-onboarding-nav. The Command Palette closes itself on
+// Escape (its search input auto-focuses on open, so its own keydown handler
+// sees the key). Settings and New Session never auto-focus anything inside
+// themselves — focus stays on whichever sidebar button opened them — so
+// Escape silently did nothing for those two overlays, even though clicking
+// the backdrop closes all three. Fixed by having App.tsx's existing global
+// Escape listener close all three overlay states, not just the palette.
+test.describe('Escape key closes any open overlay, not just the command palette', () => {
+  let electronApp: ElectronApplication
+  let page: Page
+  let userDataDir: string
+
+  test.beforeAll(async () => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-escape-'))
+    mkdirSync(join(userDataDir, 'data'), { recursive: true })
+    writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+  })
+
+  test.afterAll(async () => {
+    await electronApp.close()
+  })
+
+  test('Escape closes Settings even though nothing inside the dialog ever received focus', async () => {
+    await page.getByTestId('open-settings-button').click()
+    await expect(page.getByTestId('settings-panel')).toBeVisible()
+
+    // Confirm the real-world condition that broke this: the dialog never
+    // auto-focused any control inside itself (unlike the command palette's
+    // search input), so an Escape handler scoped to "whatever has focus
+    // inside the dialog" would never fire.
+    const focusedInsideDialog = await page.evaluate(() => {
+      const dialog = document.querySelector('[data-testid="settings-panel"]')
+      return Boolean(dialog && document.activeElement && dialog.contains(document.activeElement))
+    })
+    expect(focusedInsideDialog).toBe(false)
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('settings-panel')).toHaveCount(0)
+  })
+
+  test('Escape closes New Session even though nothing inside the dialog ever received focus', async () => {
+    await page.getByTestId('new-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toBeVisible()
+
+    const focusedInsideDialog = await page.evaluate(() => {
+      const dialog = document.querySelector('[data-testid="new-session-modal"]')
+      return Boolean(dialog && document.activeElement && dialog.contains(document.activeElement))
+    })
+    expect(focusedInsideDialog).toBe(false)
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+  })
+
+  // Bug: full-app-audit-onboarding-nav. Same root cause as the onboarding
+  // and command-palette focus-escape bugs — New Session is also a sibling
+  // overlay, not an ancestor of the sidebar, and had no focus trap.
+  test('Tab cannot escape New Session into the sidebar behind it', async () => {
+    await page.getByTestId('new-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toBeVisible()
+
+    for (let i = 0; i < 10; i++) {
+      await page.keyboard.press('Tab')
+      const testId = await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))
+      expect(
+        testId,
+        `Tab press #${i} moved focus to "${testId}", which lives in the sidebar behind the modal`
+      ).not.toBe('new-group-button')
+    }
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+  })
+})
+
 test.describe('desktop notification debug trigger', () => {
   let electronApp: ElectronApplication
   let page: Page
@@ -373,5 +461,37 @@ test.describe('onboarding — first-run wizard shows once', () => {
     const { app: app2, page: page2 } = await launchApp(userDataDir)
     await expect(page2.getByTestId('onboarding-wizard')).toHaveCount(0)
     await app2.close()
+  })
+
+  // Bug: full-app-audit-onboarding-nav. Onboarding is the mandatory first-run
+  // gate (spec 08-global-nav-and-settings: "Onboarding flow: first-run
+  // wizard" — App.tsx only renders the rest of the app behind it while
+  // `!config.onboardingCompleted`). Nothing trapped keyboard focus inside the
+  // dialog, so Tab escaped the modal into the (visually dimmed but still
+  // live) sidebar underneath, and Enter on a focused sidebar button actually
+  // activated it — e.g. opening the Command Palette *on top of* the
+  // still-open, unfinished onboarding wizard.
+  test('keyboard focus cannot escape the onboarding modal into the sidebar behind it', async () => {
+    const freshDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-onboarding-focus-'))
+    const { app, page } = await launchApp(freshDir)
+    await expect(page.getByTestId('onboarding-wizard')).toBeVisible()
+
+    // Tab repeatedly from the top of the dialog — with a real focus trap this
+    // should only ever cycle through onboarding's own controls (name input,
+    // email input, skip, next), never reach sidebar chrome.
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.press('Tab')
+      const testId = await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))
+      expect(
+        testId,
+        `Tab press #${i} moved focus to "${testId}", which lives in the sidebar behind the modal, not inside onboarding`
+      ).not.toBe('open-palette-button')
+    }
+
+    mkdirSync(artifactsDir, { recursive: true })
+    await page.screenshot({ path: join(artifactsDir, 'bug-onboarding-focus-escape.png') })
+
+    await app.close()
+    rmSync(freshDir, { recursive: true, force: true })
   })
 })
