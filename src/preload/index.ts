@@ -175,6 +175,9 @@ const api = {
   /** Test-only: raw read-only SQL query against the real SQLite DB (see session:debugQueryDb handler). */
   debugQueryDb: <T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> =>
     ipcRenderer.invoke('debug:queryDb', sql, params),
+  /** Test-only: raw mutating SQL statement (INSERT/UPDATE/DELETE) against the real SQLite DB (see debug:execDb handler). */
+  debugExecDb: (sql: string, params: unknown[] = []): Promise<{ changes: number }> =>
+    ipcRenderer.invoke('debug:execDb', sql, params),
 
   // ── Secondary panels (07-secondary-panels) ──────────────────────────
   gitDiff: (projectPath: string): Promise<DiffSummary> => ipcRenderer.invoke('panel:git:diff', projectPath),

@@ -3,6 +3,7 @@ import { app } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { logger } from './logger'
+import { runHistoricalCostBackfill } from './sessions/historical-cost-recompute'
 
 let db: Database.Database | undefined
 
@@ -161,6 +162,44 @@ export function openDatabase(): Database.Database {
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   runMigrations(db)
+  // fix-session-cost-historical-backfill (one-time, tracked as
+  // '0006_historical_cost_recompute_from_jsonl' in the same `migrations`
+  // table `runMigrations` uses — not a plain-SQL entry in MIGRATIONS above
+  // because it needs real file/SSH I/O): `0003_session_cost_tracking`'s
+  // `total_cost_usd` was populated by SessionManager additively summing the
+  // SDK's ALREADY-cumulative `result.total_cost_usd` every turn (fixed
+  // going-forward in fix-session-cost-total-overcounted, not retroactively).
+  // Sessions that compounded before that fix landed are stuck with a
+  // permanently inflated `total_cost_usd` (confirmed for real: session
+  // f93a2566-846d-4e89-b23b-b7ca7016d493 showing $365.24 against a real
+  // cross-session total of ~$293) with no durable record of the true figure
+  // anywhere in THIS db (`result` events only ever reach it via a bare
+  // `SessionStore.addCost` UPDATE, and no persisted `messages.raw_event`
+  // carries per-turn usage/token counts either — spot-checked: zero rows
+  // match `raw_event LIKE '%total_cost%'`).
+  //
+  // BUT the SDK's own on-disk JSONL transcript for the session (written by
+  // the `claude` CLI, keyed by the exact same session id Gardenia uses as
+  // `sessions.id` — see `ClaudeAgentSdkHarness.launch`'s `sessionId`/`resume`
+  // option — at `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`,
+  // locally or on the session's remote host) DOES durably retain every
+  // turn's raw `usage` untouched by this bug. Verified for real against the
+  // actual corrupted session's transcript on its remote host
+  // (qingqin-go.devpod-us-or): recomputing cost from that transcript's usage
+  // (deduping repeated streaming `assistant` JSONL lines that share
+  // identical cumulative usage per API call, per known per-model rates)
+  // gives $27.13 — matching this same spec's own note that the session's
+  // total "climbed from ~$27" before compounding to $365.24. So the true
+  // historical cost IS recoverable — just not from this DB.
+  //
+  // `runHistoricalCostBackfill` (see `historical-cost-recompute.ts`)
+  // recomputes every already-corrupted session's `total_cost_usd` from its
+  // JSONL transcript where one can still be found, and falls back to
+  // resetting to 0 — rather than leaving a confidently-wrong number in
+  // place — only for sessions whose transcript is genuinely gone. Runs at
+  // most once ever per DB file (gated on `migrations`, synchronous to match
+  // better-sqlite3's sync API).
+  runHistoricalCostBackfill(db)
   logger.info('database opened', { dbPath })
   return db
 }
