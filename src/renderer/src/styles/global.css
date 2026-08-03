@@ -212,6 +212,15 @@
   align-items: center;
   gap: 4px;
 }
+/* ===== "Connecting…" status pill (fix-session-resume-stale-sigterm-and-
+   no-connect-indicator) — reuses .topbar-chip's layout and the same
+   spinner/tertiary-text visual language as the composer's .working-pill;
+   absence of this pill IS the "connected" state, no separate badge. ===== */
+.connecting-pill {
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  gap: 5px;
+}
 /* ===== Export-conversation dropdown (10c-enrichment-export-conversation) —
    copied verbatim from the UI mock's `.export-menu-pop`/`.smi` (lines
    448-455 of mocks/index.html). ===== */

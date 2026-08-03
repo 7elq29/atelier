@@ -548,13 +548,27 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
         }
       }
     } catch (err) {
-      active.eventQueue.push({
-        type: 'error',
-        sessionId,
-        timestamp: new Date().toISOString(),
-        message: err instanceof Error ? err.message : String(err),
-      })
-      if (active.interruptRequested) {
+      // Bug fix (fix-session-resume-stale-sigterm-and-no-connect-indicator):
+      // when `active.interruptRequested` is already true here, this throw is
+      // an EXPECTED side effect of OUR OWN close()/interrupt() call (e.g.
+      // closeSession() -> harness.interrupt() closes the SDK's internal
+      // input queue, which can make query()'s async iterator reject instead
+      // of completing cleanly) — not a genuine crash. Pushing an 'error'
+      // event in that case used to get persisted by manager.ts's applyEvent
+      // as a permanent system-role "Error: ..." chat message, which then
+      // replayed on every future resume looking exactly like the reconnect
+      // itself had just failed, even though the live reconnect never
+      // actually failed. Only push 'error' (and therefore only ever surface
+      // a system-role error message) for a termination NOT caused by our own
+      // interrupt request — i.e. a genuine unexpected failure.
+      if (!active.interruptRequested) {
+        active.eventQueue.push({
+          type: 'error',
+          sessionId,
+          timestamp: new Date().toISOString(),
+          message: err instanceof Error ? err.message : String(err),
+        })
+      } else {
         active.eventQueue.push({ type: 'interrupted', sessionId, timestamp: new Date().toISOString() })
       }
     } finally {

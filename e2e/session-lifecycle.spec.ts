@@ -1,5 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -519,5 +519,163 @@ test.describe('02-session-lifecycle', () => {
     expect(hoverBg).toBe(bgHoverResolved)
 
     await page.screenshot({ path: join(artifactsDir, '02-sidebar-ui-match.png') })
+  })
+
+  // ── Bug repro: resume replays a stale close-time SIGTERM error, and
+  // there's no connect indicator during the reconnect gap ────────────────
+  //
+  // Root cause (per Bugs/fix-session-resume-stale-sigterm-and-no-connect-
+  // indicator/spec.md): closeSession() calls harness.interrupt(), which
+  // closes the SDK's internal queue and makes query()'s async iterator
+  // throw. pump()'s catch block used to push an unconditional 'error' event
+  // even when active.interruptRequested was already true (i.e. even though
+  // this "error" is just the expected side effect of OUR OWN close) —
+  // manager.ts's applyEvent persisted that as a permanent system-role
+  // message, which then replays on every future resume as if the reconnect
+  // itself had just failed. Separately, there was no "connecting" UI at all.
+  test('bug: resume after close does not replay a stale SIGTERM error, and no connect indicator gets stuck visible', async () => {
+    const bugProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug-sigterm-project-'))
+    writeFileSync(join(bugProjectDir, 'README.md'), '# test project\n')
+
+    await stubProjectFolder(electronApp, bugProjectDir)
+    await openNewSessionModal(page)
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-claude-code').click()
+    // A prompt that keeps the turn actively streaming for a bit — closing
+    // WHILE a turn is in flight is the path that actually makes the SDK's
+    // query() iterator throw (query.interrupt() only aborts a turn that's
+    // actively generating, per claude-agent-sdk-harness.ts's interrupt()
+    // doc comment; closing an already-idle session ends the loop cleanly
+    // with no thrown error at all — verified for real below).
+    await page.getByTestId('initial-prompt').fill('Write a very long, detailed 1500-word essay about the history of gardening. Do not use any tools, just write the essay directly as your response.')
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    const row = page.locator('[data-testid="session-row"]').first()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    const sessionId = (await row.getAttribute('data-session-id')) as string
+    expect(sessionId).toBeTruthy()
+
+    // Wait for the turn to actually be in flight and starting to stream real
+    // content — a probe against the raw SDK (verified separately, out of
+    // tree) confirmed that interrupting a query WHILE it's actively emitting
+    // stream events (not before, not after 'result') is exactly what makes
+    // the SDK's query() iterator throw — the precondition for pump()'s catch
+    // block (claude-agent-sdk-harness.ts) to fire at all. The very first
+    // assistant placeholder row appears the instant the first text_delta
+    // arrives (see applyEvent's 'text_delta' case), which is the earliest
+    // reliable, UI-observable proxy for "actively streaming" available here.
+    await expect(page.getByTestId('composer-working-pill')).toBeVisible({ timeout: 15_000 })
+    await expect
+      .poll(async () => page.locator('[data-testid="transcript-message"][data-role="assistant"]').count(), {
+        timeout: 30_000
+      })
+      .toBeGreaterThan(0)
+
+    // Close via the session menu — this is the live harness.interrupt() path
+    // (not a full app relaunch) that, per the bug hypothesis, writes the
+    // bogus SIGTERM 'error' system message into permanent history.
+    await row.getByTestId('session-menu-button').click()
+    await row.getByTestId('menu-close').click()
+
+    const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
+    await expect(historyRow).toBeVisible({ timeout: 10_000 })
+
+    // Give any async close-time teardown (interrupt()/queue-close, and — pre
+    // fix — a possible bogus 'error' event) a moment to settle before
+    // resuming, so the reproduction isn't racing it.
+    await page.waitForTimeout(2000)
+
+    await historyRow.getByTestId('resume-button').click()
+
+    const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+    await expect(activeRow).toBeVisible({ timeout: 10_000 })
+
+    // Part B: a "Connecting…" indicator must show up during the reconnect
+    // gap (fails on main — no such element exists at all).
+    await expect(page.getByTestId('connecting-pill')).toBeVisible({ timeout: 5_000 })
+    // ...and must not be stuck visible once the session is interactive again.
+    await expect(page.getByTestId('connecting-pill')).toHaveCount(0, { timeout: 15_000 })
+
+    // Part A: no bogus system-role "Error: ..." message — persisted by
+    // applyEvent's `case 'error':` as `Error: ${event.message}` — should be
+    // sitting in the resumed transcript as a result of OUR OWN close/
+    // interrupt.
+    const rowsAfterClose = await queryDb<{ role: string; content: string }>(
+      page,
+      "SELECT role, content FROM messages WHERE session_id = ? AND role = 'system' AND content LIKE 'Error:%'",
+      [sessionId]
+    )
+    expect(rowsAfterClose).toEqual([])
+
+    const texts = await page.locator('[data-testid="transcript-message"]').allTextContents()
+    expect(texts.some((t) => t.startsWith('Error:'))).toBe(false)
+
+    await page.screenshot({ path: join(artifactsDir, 'bug-session-resume-sigterm-after-resume.png') })
+
+    // Log evidence: the real reconnect path itself must not have logged a
+    // failure — confirming any visible error is stale/replayed, not a live
+    // reconnect failure.
+    appendMainLog(userDataDir)
+    const log = readFileSync(lifecycleLogPath, 'utf-8')
+    expect(log).not.toContain('"context":"reconnect"')
+
+    await row.getByTestId('session-menu-button').click()
+    await row.getByTestId('menu-close').click()
+  })
+
+  // ── Bug repro (Part A safety net): a GENUINE reconnect failure (not our
+  // own interrupt) must still surface visibly — proves the fix doesn't
+  // swallow real errors along with the fake one. Deleting the project
+  // directory before resume makes the real SDK subprocess spawn/run fail
+  // for a real reason, unrelated to closeSession()'s interrupt.
+  test('bug repro safety net: a genuine reconnect failure (not caused by our own interrupt) still surfaces an error', async () => {
+    const doomedProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug-genuine-fail-'))
+    writeFileSync(join(doomedProjectDir, 'README.md'), '# test project\n')
+
+    await stubProjectFolder(electronApp, doomedProjectDir)
+    await openNewSessionModal(page)
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: ACK')
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    const row = page.locator('[data-testid="session-row"]').first()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    const sessionId = (await row.getAttribute('data-session-id')) as string
+
+    await expect
+      .poll(async () => page.locator('[data-testid="transcript-message"][data-role="assistant"]').count(), {
+        timeout: 60_000
+      })
+      .toBeGreaterThan(0)
+
+    await row.getByTestId('session-menu-button').click()
+    await row.getByTestId('menu-close').click()
+
+    const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
+    await expect(historyRow).toBeVisible({ timeout: 10_000 })
+
+    // Now genuinely break resume: the project directory the session will
+    // try to reconnect with no longer exists.
+    rmSync(doomedProjectDir, { recursive: true, force: true })
+
+    await historyRow.getByTestId('resume-button').click()
+
+    const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+    await expect(activeRow).toBeVisible({ timeout: 10_000 })
+
+    // A genuine failure must still surface as a visible system error message
+    // — Part A only suppresses the bogus SIGTERM-from-our-own-interrupt case.
+    await expect
+      .poll(
+        async () => {
+          const texts = await page.locator('[data-testid="transcript-message"]').allTextContents()
+          return texts.some((t) => t.toLowerCase().includes('error'))
+        },
+        { timeout: 20_000 }
+      )
+      .toBe(true)
   })
 })

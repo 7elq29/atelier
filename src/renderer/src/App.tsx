@@ -387,6 +387,12 @@ export default function App(): JSX.Element {
               <>
                 <TabBar activeTab={activeTab} onSelect={selectTab} showPorts={Boolean(activeSession.hostname)} />
                 <div className="topbar-spacer" />
+                {sessions.statuses[activeSession.id] === 'connecting' && (
+                  <span className="topbar-chip connecting-pill" data-testid="connecting-pill">
+                    <span className="spinner" />
+                    Connecting…
+                  </span>
+                )}
                 <span className="topbar-chip" data-testid="cost-chip">
                   ${activeSession.totalCostUsd.toFixed(2)}
                 </span>

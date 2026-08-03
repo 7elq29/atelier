@@ -105,6 +105,8 @@ export interface RemoteHostResolver {
  */
 export class SessionManager {
   private readonly live = new Map<string, LiveStream>()
+  /** Sessions currently between a triggered `reconnect()` and the live harness connection actually being (re)established — see `getStatus()`'s 'connecting' case (fix-session-resume-stale-sigterm-and-no-connect-indicator). */
+  private readonly connecting = new Set<string>()
   /**
    * Tracks the current SDK permission mode for a session (05-interactive-
    * prompts; generalized from plan-only to all 4 `MODE_CYCLE` values in
@@ -220,8 +222,9 @@ export class SessionManager {
   // currently-viewed session — via `session:status`, independent of which
   // session (if any) is focused in the renderer.
 
-  /** 'working'/'waiting' for any session with a live entry this app run; 'idle' otherwise (never opened, or its live entry was torn down on close). */
+  /** 'connecting' while `reconnect()` is in flight for `sessionId` (fix-session-resume-stale-sigterm-and-no-connect-indicator); 'working'/'waiting' for any session with a live entry this app run; 'idle' otherwise (never opened, or its live entry was torn down on close). */
   getStatus(sessionId: string): SessionStatus {
+    if (this.connecting.has(sessionId)) return 'connecting'
     const live = this.live.get(sessionId)
     if (!live) return 'idle'
     return live.busy ? 'working' : 'waiting'
@@ -372,6 +375,13 @@ export class SessionManager {
   async reconnect(sessionId: string): Promise<void> {
     const session = this.store.getSession(sessionId)
     if (!session || session.mode !== 'claude-code') return
+    // Fix (fix-session-resume-stale-sigterm-and-no-connect-indicator): mark
+    // this session as 'connecting' for the topbar's "Connecting…" pill for
+    // the whole gap between triggering this reconnect and the harness
+    // actually being (re)established below — cleared in both the success
+    // and failure paths so the pill never gets stuck visible.
+    this.connecting.add(sessionId)
+    this.sendStatus(sessionId)
 try {
       const host = this.resolveHostFromSession(session.hostname)
       const permissionMode = this.permissionModes.get(sessionId)
@@ -384,10 +394,19 @@ try {
         ...(modelSelection?.model ? { model: modelSelection.model } : {}),
         ...(modelSelection?.effort ? { effort: modelSelection.effort } : {})
       })
+      // NOT cleared here — `harness.resume()` resolving only means the SDK
+      // `query()` call was constructed, not that the subprocess has actually
+      // spawned/handshaken yet. `connecting` is cleared in applyEvent() the
+      // moment the first real harness event arrives (see its comment).
       this.live.set(sessionId, newLiveStream())
       this.sendStatus(sessionId)
       void this.consume(sessionId, harnessSession.events)
     } catch (err) {
+      this.connecting.delete(sessionId)
+      // A genuine reconnect failure must still surface distinctly — this is
+      // unrelated to Part A's fix above (which only suppresses the bogus
+      // error a graceful CLOSE causes); reportHarnessFailure logs it AND
+      // persists a visible system-role error message, same as before.
       this.reportHarnessFailure(sessionId, 'reconnect', err)
       throw err
     }
@@ -638,6 +657,10 @@ try {
   closeSession(sessionId: string): SessionRecord {
     void this.harness.interrupt(sessionId).catch(() => undefined)
     this.live.delete(sessionId)
+    // A session can be closed again while a previous reconnect() is still in
+    // flight (e.g. rapid resume/close) — don't leave a stale 'connecting'
+    // pill visible for a session that's no longer even open.
+    this.connecting.delete(sessionId)
     this.sendTurnState(sessionId, false)
     const session = this.store.closeSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
@@ -647,6 +670,7 @@ try {
 
   deleteSession(sessionId: string): void {
     this.live.delete(sessionId)
+    this.connecting.delete(sessionId)
     this.store.deleteSession(sessionId)
     this.sendLifecycle({ type: 'session.deleted', sessionId })
   }
@@ -770,6 +794,20 @@ try {
   private applyEvent(sessionId: string, event: HarnessEvent): void {
     const live = this.live.get(sessionId) ?? newLiveStream()
     this.live.set(sessionId, live)
+    // Any real event arriving from the harness means the live connection is
+    // genuinely established — clears the 'connecting' status (and its
+    // topbar pill) here rather than the instant `harness.resume()`'s promise
+    // resolves in reconnect(), since that resolves as soon as the SDK's
+    // `query()` call is constructed, well before the underlying subprocess
+    // has actually spawned/handshaken (verified for real: `session_started`
+    // — from the SDK's own system/init message — routinely arrives 1-3s
+    // after `resume()` returns). Clearing on the FIRST event of ANY type
+    // (not just 'session_started') is also a safety net against a session
+    // that fails before ever producing one.
+    if (this.connecting.has(sessionId)) {
+      this.connecting.delete(sessionId)
+      this.sendStatus(sessionId)
+    }
 
     switch (event.type) {
       case 'text_delta': {

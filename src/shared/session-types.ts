@@ -85,8 +85,12 @@ export interface SessionGroupRecord {
  *    no live turn yet observed).
  *  - 'disconnected': terminal-mode sessions (no harness at all) and closed
  *    sessions.
+ *  - 'connecting': a claude-code session between triggering a resume
+ *    (`SessionManager.reconnect()` starting) and the live harness connection
+ *    actually being (re)established — see 'connecting'-pill in the topbar
+ *    (fix-session-resume-stale-sigterm-and-no-connect-indicator).
  */
-export type SessionStatus = 'working' | 'waiting' | 'idle' | 'disconnected'
+export type SessionStatus = 'working' | 'waiting' | 'idle' | 'disconnected' | 'connecting'
 
 export interface SessionStatusEvent {
   sessionId: string
