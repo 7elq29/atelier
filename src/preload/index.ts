@@ -65,6 +65,13 @@ const api = {
   },
   /** Test-only: delays the next write-daily-note call. No-op if not registered (test builds only). */
   testDelayNextWrite: (ms: number): Promise<void> => ipcRenderer.invoke('daily-note:testDelayNextWrite', ms),
+  /** 16-task-move-to-date: moves a task from sourceDate's note to targetDate's note's Backlog, creating targetDate's note from the template if needed. */
+  moveTaskToDate: (
+    sourceDate: string,
+    taskId: string,
+    targetDate: string
+  ): Promise<{ sourceNote: DailyNote; targetNote: DailyNote }> =>
+    ipcRenderer.invoke('daily-note:move-task', sourceDate, taskId, targetDate),
 
   // ── Sessions (02-session-lifecycle) ──────────────────────────────
   pickProjectFolder: (): Promise<string | null> => ipcRenderer.invoke('session:pickProjectFolder'),

@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useDailyNote } from '../../hooks/useDailyNote'
 import { useSectionResize } from './section-resize'
 import Timeline from './Timeline'
 import TaskItem from './TaskItem'
+import { computeMoveDateOptions } from './move-date-options'
 
 export interface DailyNotesSidebarProps {
   date: string
@@ -91,11 +92,17 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
     addTask,
     deleteTask,
     moveTask,
+    moveTaskToDate,
     updateTask
   } = useDailyNote(date)
   const containerRef = useRef<HTMLDivElement>(null)
   const { weights, startResize } = useSectionResize(containerRef)
   const [collapsedSections, setCollapsedSections] = useState<Set<CollapsibleSection>>(new Set())
+  // 16-task-move-to-date: "today" for the "Move to..." menu's relative
+  // labels (tomorrow/weekday-name/next-week) is the date of the note
+  // currently open — the app has no other-date navigation today, so this is
+  // always the real "today" (or GARDENIA_TEST_DATE in tests).
+  const moveDateOptions = useMemo(() => computeMoveDateOptions(date), [date])
 
   function toggleSection(section: CollapsibleSection): void {
     setCollapsedSections((prev) => {
@@ -210,6 +217,8 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
           onCreate={(text, timeBlock) => addTask(text, 'day-plan', timeBlock)}
           onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
           onDelete={deleteTask}
+          moveDateOptions={moveDateOptions}
+          onMoveToDate={moveTaskToDate}
         />
       </div>
 
@@ -251,6 +260,8 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
                   onDelete={deleteTask}
                   onUpdateText={(id, text) => updateTask(id, { text })}
                   onUpdateTags={(id, tags) => updateTask(id, { tags })}
+                  moveDateOptions={moveDateOptions}
+                  onMoveToDate={moveTaskToDate}
                 />
               ))}
             </div>

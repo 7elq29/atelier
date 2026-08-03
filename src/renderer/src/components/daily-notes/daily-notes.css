@@ -431,3 +431,39 @@
   font-size: 15px;
   padding: 6px 0;
 }
+
+/* ---- "Move to..." context menu (16-task-move-to-date) ----
+   Modeled after .session-menu-popup/.export-menu-pop in global.css (same
+   background/border/shadow/hover tokens, same .smi row / .sm-sep separator
+   classnames) for visual consistency with the app's other popup menus — the
+   only difference is positioning: this one is anchored at the cursor
+   (position: fixed, inline left/top from the triggering contextmenu event)
+   rather than anchored to a trigger button. */
+.dn-move-menu-popup {
+  position: fixed;
+  width: 190px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-popover);
+  z-index: 80;
+  padding: 4px;
+}
+.dn-move-menu-popup .smi {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  font-size: 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.dn-move-menu-popup .smi:hover {
+  background: var(--bg-hover);
+}
+.dn-move-menu-popup .sm-sep {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 2px;
+}

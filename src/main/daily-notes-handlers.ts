@@ -17,7 +17,7 @@ import { ipcMain, type BrowserWindow } from 'electron'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, watch, type FSWatcher } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, basename } from 'node:path'
-import type { DailyNote, DailyTask } from '../shared/daily-note-types'
+import type { DailyNote, DailyTask, RawSections } from '../shared/daily-note-types'
 import { parseDailyNote, serializeDailyNote, resolveNotePath, generateNewNote, getTaskIds } from './daily-note-io'
 import { logger } from './logger'
 
@@ -166,6 +166,61 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * Shared "read-or-create-from-template" path used by both `daily-note:create`
+ * and `daily-note:move-task` (16-task-move-to-date): if `date`'s note already
+ * exists, reads/parses it as-is; otherwise scaffolds it via the same
+ * template-fill + carry-over logic `daily-note:create` has always used
+ * (`generateNewNote`/`loadNoteTemplate`/`findMostRecentNoteDate`/
+ * `collectCarryOverTasks`) — extracted here so the move-task path doesn't
+ * duplicate/diverge from normal note-creation behavior.
+ *
+ * Design note (spec-flagged): creating a target note purely to receive a
+ * moved task still runs the normal UC-2 carry-over scan against ITS OWN
+ * most-recent prior note. This is deliberate, not an oversight — it's
+ * exactly what happens any time that date's note gets created for the first
+ * time (e.g. the user navigates there directly tomorrow), so a task-move
+ * triggering it early isn't a new or "spurious" side effect, just the
+ * ordinary note-creation behavior happening a little sooner than it
+ * otherwise would have.
+ */
+async function ensureNoteExists(
+  date: string,
+  vaultRoot: string
+): Promise<{ note: DailyNote; raw: RawSections; path: string; created: boolean }> {
+  const path = resolveNotePath(date, vaultRoot)
+  if (existsSync(path)) {
+    const content = await readFile(path, 'utf-8')
+    const { note, raw } = parseDailyNote(content, date)
+    recordKnownIds(path, getTaskIds(note))
+    return { note, raw, path, created: false }
+  }
+
+  let carriedTasks: DailyTask[] = []
+  const priorDate = findMostRecentNoteDate(date, vaultRoot)
+  if (priorDate) {
+    const priorPath = resolveNotePath(priorDate, vaultRoot)
+    const priorContent = await readFile(priorPath, 'utf-8')
+    const { note: priorNote } = parseDailyNote(priorContent, priorDate)
+    carriedTasks = collectCarryOverTasks(priorNote)
+    logger.info('daily-note create: carrying tasks forward', {
+      path,
+      priorDate,
+      priorPath,
+      carriedIds: carriedTasks.map((t) => t.id)
+    })
+  }
+
+  const content = generateNewNote(date, carriedTasks, loadNoteTemplate(vaultRoot))
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, content, 'utf-8')
+  recordWrittenContent(path, content)
+  const { note, raw } = parseDailyNote(content, date)
+  recordKnownIds(path, getTaskIds(note))
+  logger.info('daily-note created', { path })
+  return { note, raw, path, created: true }
+}
+
 export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | null): void {
   const isTestMode = process.env.GARDENIA_TEST_VAULT_ROOT !== undefined
 
@@ -190,39 +245,94 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
   ipcMain.handle('daily-note:create', async (_event, date: string) => {
     const vaultRoot = resolveVaultRoot()
     if (!vaultRoot) throw new Error('no vault root configured (GARDENIA_VAULT_ROOT / GARDENIA_TEST_VAULT_ROOT)')
-
-    const path = resolveNotePath(date, vaultRoot)
-    if (existsSync(path)) {
-      const content = await readFile(path, 'utf-8')
-      const { note, raw } = parseDailyNote(content, date)
-      recordKnownIds(path, getTaskIds(note))
-      return { note, raw, exists: true }
-    }
-
-    let carriedTasks: DailyTask[] = []
-    const priorDate = findMostRecentNoteDate(date, vaultRoot)
-    if (priorDate) {
-      const priorPath = resolveNotePath(priorDate, vaultRoot)
-      const priorContent = await readFile(priorPath, 'utf-8')
-      const { note: priorNote } = parseDailyNote(priorContent, priorDate)
-      carriedTasks = collectCarryOverTasks(priorNote)
-      logger.info('daily-note create: carrying tasks forward', {
-        path,
-        priorDate,
-        priorPath,
-        carriedIds: carriedTasks.map((t) => t.id)
-      })
-    }
-
-    const content = generateNewNote(date, carriedTasks, loadNoteTemplate(vaultRoot))
-    mkdirSync(dirname(path), { recursive: true })
-    writeFileSync(path, content, 'utf-8')
-    recordWrittenContent(path, content)
-    const { note, raw } = parseDailyNote(content, date)
-    recordKnownIds(path, getTaskIds(note))
-    logger.info('daily-note created', { path })
+    const { note, raw } = await ensureNoteExists(date, vaultRoot)
     return { note, raw, exists: true }
   })
+
+  // 16-task-move-to-date: moves a single task from `sourceDate`'s note to
+  // `targetDate`'s note's Backlog section, creating the target note from the
+  // template first if needed (via the shared ensureNoteExists path above).
+  // Both files are read/rewritten directly here rather than going through
+  // `daily-note:write`'s tombstone-diff pipeline, mirroring how
+  // `daily-note:create` already writes brand-new notes directly.
+  ipcMain.handle(
+    'daily-note:move-task',
+    async (_event, sourceDate: string, taskId: string, targetDate: string) => {
+      const vaultRoot = resolveVaultRoot()
+      if (!vaultRoot) throw new Error('no vault root configured')
+
+      const sourcePath = resolveNotePath(sourceDate, vaultRoot)
+      const targetPath = resolveNotePath(targetDate, vaultRoot)
+
+      if (!existsSync(sourcePath)) throw new Error(`source note not found: ${sourcePath}`)
+      const sourceContent = await readFile(sourcePath, 'utf-8')
+      const { note: sourceNote, raw: sourceRaw } = parseDailyNote(sourceContent, sourceDate)
+      const task = sourceNote.tasks.find((t) => t.id === taskId)
+      if (!task) throw new Error(`task not found in source note: ${taskId}`)
+
+      // Defensive no-op (spec): source and target resolve to the same file.
+      // Not realistically reachable via the menu (which only offers future
+      // dates relative to the note being viewed), but guard against
+      // duplicating/deleting the task incorrectly if it ever is.
+      if (sourcePath === targetPath) {
+        logger.info('daily-note move-task: source/target resolve to the same file, no-op', {
+          sourcePath,
+          taskId
+        })
+        return { sourceNote, targetNote: sourceNote }
+      }
+
+      // Write the source note FIRST, with the task already removed, before
+      // touching the target. This ordering matters: if the target note
+      // doesn't exist yet, ensureNoteExists's UC-2 carry-over scan may find
+      // the SOURCE note as the "most recent prior note" (e.g. moving to
+      // tomorrow) and independently carry the still-open task forward on its
+      // own — landing it in the target's day-plan section AND then having
+      // this handler append it again to Backlog, duplicating it. Persisting
+      // the removal first means any carry-over scan the target's creation
+      // triggers only ever sees the task already gone.
+      const updatedSourceNote: DailyNote = {
+        ...sourceNote,
+        tasks: sourceNote.tasks.filter((t) => t.id !== taskId)
+      }
+      const sourceSerialized = serializeDailyNote(updatedSourceNote, sourceRaw)
+      mkdirSync(dirname(sourcePath), { recursive: true })
+      const sourceTmp = `${sourcePath}.tmp`
+      writeFileSync(sourceTmp, sourceSerialized, 'utf-8')
+      renameSync(sourceTmp, sourcePath)
+      recordWrittenContent(sourcePath, sourceSerialized)
+      recordKnownIds(sourcePath, getTaskIds(updatedSourceNote))
+
+      const { note: targetNoteBefore, raw: targetRaw } = await ensureNoteExists(targetDate, vaultRoot)
+
+      // Backlog items aren't scheduled to a time slot — strip the time-block.
+      // Text, tags, and done-state carry over unchanged.
+      const movedTask: DailyTask = { ...task, section: 'unscheduled', timeBlock: undefined }
+
+      const updatedTargetNote: DailyNote = {
+        ...targetNoteBefore,
+        tasks: [...targetNoteBefore.tasks, movedTask]
+      }
+      const targetSerialized = serializeDailyNote(updatedTargetNote, targetRaw)
+
+      mkdirSync(dirname(targetPath), { recursive: true })
+      const targetTmp = `${targetPath}.tmp`
+      writeFileSync(targetTmp, targetSerialized, 'utf-8')
+      renameSync(targetTmp, targetPath)
+      recordWrittenContent(targetPath, targetSerialized)
+      recordKnownIds(targetPath, getTaskIds(updatedTargetNote))
+
+      logger.info('daily-note move-task committed', {
+        sourcePath,
+        targetPath,
+        taskId,
+        sourceDate,
+        targetDate
+      })
+
+      return { sourceNote: updatedSourceNote, targetNote: updatedTargetNote }
+    }
+  )
 
   ipcMain.handle('daily-note:write', async (_event, date: string, incoming: DailyNote) => {
     const vaultRoot = resolveVaultRoot()

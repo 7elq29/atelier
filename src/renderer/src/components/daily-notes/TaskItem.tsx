@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DailyTask } from '../../../../shared/daily-note-types'
+import TaskMoveContextMenu from './TaskMoveContextMenu'
+import type { MoveDateOptions } from './move-date-options'
 
 interface TaskItemProps {
   task: DailyTask
@@ -12,6 +14,13 @@ interface TaskItemProps {
    * Trackers section (UC-14, identical mechanics to Unscheduled's UC-12)
    * passes "tracker-task" to match its existing test/selector convention. */
   testId?: string
+  /** 16-task-move-to-date: right-click -> "Move to..." menu. Only wired up
+   * for the Unscheduled usage of this component — Trackers (and
+   * Backlog/Delegated, which don't use TaskItem at all) are out of scope
+   * for this feature, so omitting these props there disables the
+   * affordance entirely rather than duplicating the menu logic. */
+  moveDateOptions?: MoveDateOptions
+  onMoveToDate?: (id: string, targetDate: string) => void
 }
 
 /** Fixed tag suggestion list (54b list affordances). */
@@ -41,12 +50,15 @@ export default function TaskItem({
   onUpdateText,
   onUpdateTags,
   draggable = true,
-  testId = 'unscheduled-task'
+  testId = 'unscheduled-task',
+  moveDateOptions,
+  onMoveToDate
 }: TaskItemProps): JSX.Element {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
   const [tagPickerOpen, setTagPickerOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  const [moveMenu, setMoveMenu] = useState<{ x: number; y: number } | null>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
   const tagInputRef = useRef<HTMLInputElement>(null)
 
@@ -99,6 +111,11 @@ export default function TaskItem({
       data-task-id={task.id}
       draggable={draggable}
       onDragStart={(e) => e.dataTransfer.setData('text/task-id', task.id)}
+      onContextMenu={(e) => {
+        if (!moveDateOptions || !onMoveToDate) return
+        e.preventDefault()
+        setMoveMenu({ x: e.clientX, y: e.clientY })
+      }}
     >
       <div className="dn-tbox" onClick={() => onToggle(task.id)} />
       {editing ? (
@@ -197,6 +214,16 @@ export default function TaskItem({
       <button className="btn btn-icon btn-sm dn-task-chip-remove" onClick={() => onDelete(task.id)}>
         ✕
       </button>
+
+      {moveMenu && moveDateOptions && onMoveToDate && (
+        <TaskMoveContextMenu
+          x={moveMenu.x}
+          y={moveMenu.y}
+          options={moveDateOptions}
+          onSelect={(targetDate) => onMoveToDate(task.id, targetDate)}
+          onClose={() => setMoveMenu(null)}
+        />
+      )}
     </div>
   )
 }
