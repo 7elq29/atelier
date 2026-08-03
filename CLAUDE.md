@@ -22,7 +22,8 @@ entry).
 2. **Define validation/done criteria up front** (see §3) — decide what
    "done" looks like before implementing, not after.
 3. Implement.
-4. Run the full validation in §3 and only then call the work complete.
+4. Run the validation in §3 (targeted e2e run per `e2e/TEST_CATEGORIES.md`,
+   not the full suite by default) and only then call the work complete.
 
 ## 1. Environment basics
 
@@ -31,9 +32,14 @@ entry).
 - `npm run build` — typechecks main/web configs, builds via `electron-vite`,
   and typechecks the e2e suite (`tsc -p tsconfig.e2e.json`). Must be clean
   (zero errors) before any merge.
-- `npm run test:e2e` — runs the full Playwright/Electron suite (`playwright
+- `npm run test:e2e` — runs the Playwright/Electron suite (`playwright
   test`). This is the only test suite; there is no unit-test layer to
-  substitute for it.
+  substitute for it. Don't run the whole thing by default — use
+  `e2e/TEST_CATEGORIES.md` to find the spec file(s) whose source paths
+  overlap the files you changed, and run only those
+  (`npx playwright test e2e/<file>.spec.ts ...`). See §3 for the exception
+  (session-creation/shared code) where you must run broader than one
+  category.
 - **No mocking, ever.** Every e2e test drives the real Electron app via
   `_electron.launch({ args: ['.'], cwd: '<project-root>' })` (launch via `.`,
   not a raw script path — otherwise Electron resolves the app name as
@@ -79,10 +85,20 @@ A feature or bug fix is **not complete** until all of the following pass, in
 the task's own isolated worktree:
 
 - [ ] `npm run build` is clean — zero TypeScript errors.
-- [ ] `npm run test:e2e` — the **full** suite passes. A new/changed spec
-      passing in isolation is not sufficient; run the whole suite to catch
-      cross-feature regressions (state bleed between sessions, shared
-      component regressions, etc.).
+- [ ] `npm run test:e2e` (targeted) — run only the spec file(s) mapped to
+      your change in `e2e/TEST_CATEGORIES.md` (match by source path, not
+      guesswork), e.g.:
+      ```bash
+      npx playwright test e2e/composer-core.spec.ts e2e/composer-mentions-and-commands.spec.ts
+      ```
+      A new/changed spec passing in isolation is not sufficient — run every
+      spec file in the matched categor(ies), including ones you didn't add,
+      to catch same-area regressions.
+  - If you touched `NewSessionModal.tsx` or anything under `src/main/sessions/*`
+    (session-creation/bootstrap code that nearly every spec launches through),
+    run the **full** suite instead of a single category — per
+    `e2e/TEST_CATEGORIES.md`'s own "Notes on scope overlap," a regression
+    there can surface across almost every category.
   - If a failure looks unrelated to your change, confirm it's pre-existing
     flake by rerunning that single spec file in isolation 2+ times before
     dismissing it. Currently known-flaky (timing-dependent, not caused by
@@ -91,6 +107,12 @@ the task's own isolated worktree:
     "groups: create, drag two sessions...". Don't add to this list without
     the same isolated-rerun confirmation; don't use it as an excuse to skip
     investigating a new failure.
+  - Separately, `audit-scroll-experience.spec.ts`'s daily-notes trackers
+    scroll-position assertion is a known **pre-existing failing** test (not
+    flaky — consistently fails, confirmed independently on clean `main` more
+    than once) tracking a real, still-open layout bug from the window-resize
+    audit. It is not caused by unrelated feature work; don't invest time
+    re-diagnosing it unless you're specifically fixing that bug.
 - [ ] Every new/changed screenshot artifact in `e2e-artifacts/` has been
       **personally viewed** (via the `Read` tool) and visually compared
       against `Features/UI-Design/mocks/index.html` — not just asserted on
