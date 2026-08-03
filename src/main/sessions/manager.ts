@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron'
-import type { HarnessDriver, HarnessEvent, PromptResponse, RemoteHost } from '../harness/types'
+import type { HarnessDriver, HarnessEvent, HarnessSession, PromptResponse, RemoteHost } from '../harness/types'
 import { logger } from '../logger'
 import type {
   CreateSessionOptions,
@@ -388,6 +388,46 @@ export class SessionManager {
     return { session, messages }
   }
 
+  /**
+   * Shared reconnect dispatch (fix-no-conversation-found-remote-resume):
+   * every call site that used to unconditionally call `harness.resume()`
+   * (`reconnect()`'s explicit resume-button path, and `sendUserMessage()`'s
+   * "no live harness session" fallback) funnels through here now. A
+   * `--resume <id>` reconnect is only valid for a session id the underlying
+   * CLI has ACTUALLY recorded a real conversation for — `SessionRecord.
+   * everConnected` (persisted, set the moment this session's very first
+   * `session_started` harness event ever fired) is the ground truth for
+   * that, not merely "does `SessionManager` have local state that looks
+   * active." A session that's never gotten that far (e.g. created with no
+   * initial prompt, then closed/interrupted, or whose earlier attempts all
+   * failed before ever completing the CLI's init handshake) gets routed
+   * through `harness.startWithId()` instead — a genuinely fresh conversation
+   * as far as the CLI is concerned, just one that reuses the id Gardenia
+   * already fixed in its own SQLite row, so the rest of the app (transcript,
+   * IPC, etc.) never needs to know the id changed, because it doesn't.
+   */
+  private async reconnectHarness(
+    session: SessionRecord,
+    opts: { permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort'] }
+  ): Promise<HarnessSession> {
+    const host = this.resolveHostFromSession(session.hostname)
+    const startOpts = {
+      cwd: session.projectPath,
+      host,
+      keepAlive: true,
+      ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
+      ...(opts.model ? { model: opts.model } : {}),
+      ...(opts.effort ? { effort: opts.effort } : {})
+    }
+    if (!session.everConnected) {
+      logger.info('reconnectHarness: session never had a real connection, starting fresh (not resume())', {
+        sessionId: session.id
+      })
+      return this.harness.startWithId(session.id, '', startOpts)
+    }
+    return this.harness.resume(session.id, startOpts)
+  }
+
   /** Reconnects the live harness session on top of the already-rendered transcript. No-op for terminal sessions. */
   async reconnect(sessionId: string): Promise<void> {
     const session = this.store.getSession(sessionId)
@@ -400,16 +440,12 @@ export class SessionManager {
     this.connecting.add(sessionId)
     this.sendStatus(sessionId)
 try {
-      const host = this.resolveHostFromSession(session.hostname)
       const permissionMode = this.permissionModes.get(sessionId)
       const modelSelection = this.modelSelections.get(sessionId)
-      const harnessSession = await this.harness.resume(sessionId, {
-        cwd: session.projectPath,
-        host,
-        keepAlive: true,
-        ...(permissionMode ? { permissionMode } : {}),
-        ...(modelSelection?.model ? { model: modelSelection.model } : {}),
-        ...(modelSelection?.effort ? { effort: modelSelection.effort } : {})
+      const harnessSession = await this.reconnectHarness(session, {
+        permissionMode,
+        model: modelSelection?.model,
+        effort: modelSelection?.effort
       })
       // NOT cleared here — `harness.resume()` resolving only means the SDK
       // `query()` call was constructed, not that the subprocess has actually
@@ -523,16 +559,12 @@ try {
         return
       }
       logger.info('sendUserMessage: no live harness session, reconnecting via resume()', { sessionId })
-      const host = this.resolveHostFromSession(session.hostname)
       const permissionMode = this.permissionModes.get(sessionId)
       const modelSelection = this.modelSelections.get(sessionId)
-      const harnessSession = await this.harness.resume(sessionId, {
-        cwd: session.projectPath,
-        host,
-        keepAlive: true,
-        ...(permissionMode ? { permissionMode } : {}),
-        ...(modelSelection?.model ? { model: modelSelection.model } : {}),
-        ...(modelSelection?.effort ? { effort: modelSelection.effort } : {})
+      const harnessSession = await this.reconnectHarness(session, {
+        permissionMode,
+        model: modelSelection?.model,
+        effort: modelSelection?.effort
       })
       await this.harness.streamInput(sessionId, text, image)
       const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
@@ -906,6 +938,12 @@ try {
         // `system`/`init` message (`event.model`), independent of whatever
         // string was requested via `HarnessStartOptions.model`.
         logger.info('harness event: session_started', { sessionId, model: event.model, apiKeySource: event.apiKeySource })
+        // fix-no-conversation-found-remote-resume: this IS the CLI's own
+        // confirmation that a real conversation now exists server-side for
+        // this session id — persisted so every future reconnect (this run or
+        // after a relaunch) can tell whether `harness.resume()` is even valid
+        // to call for it. See SessionStore.markEverConnected's doc comment.
+        this.store.markEverConnected(sessionId)
         return
 
       case 'commands_updated':
