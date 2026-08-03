@@ -16,6 +16,15 @@ export interface UseDailyNoteResult {
   moveTask: (id: string, section: 'day-plan' | 'unscheduled', timeBlock?: string) => void
   /** 16-task-move-to-date: cross-file move — sends the task to `targetDate`'s note's Backlog, unlike `moveTask` above (same-note section move). */
   moveTaskToDate: (id: string, targetDate: string) => void
+  /**
+   * fix-move-task-not-found-in-source-note: set when the most recent
+   * `moveTaskToDate` call failed (e.g. the renderer's cached task id was
+   * stale relative to disk — an external edit changed or removed the task
+   * before the move reached the main process). `null` when there's nothing
+   * to show. Cleared automatically at the start of the next move attempt —
+   * same convention as `DiffPanel`'s `worktreeError`.
+   */
+  moveError: string | null
 }
 
 /**
@@ -39,6 +48,7 @@ export function useDailyNote(date: string): UseDailyNoteResult {
   const [loading, setLoading] = useState(true)
   const [exists, setExists] = useState(false)
   const [vaultConfigured, setVaultConfigured] = useState(true)
+  const [moveError, setMoveError] = useState<string | null>(null)
   const writeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -199,6 +209,7 @@ export function useDailyNote(date: string): UseDailyNoteResult {
   // pending edit.
   const moveTaskToDate = useCallback(
     (id: string, targetDate: string) => {
+      setMoveError(null)
       const run = async (): Promise<void> => {
         if (writeTimerRef.current) {
           clearTimeout(writeTimerRef.current)
@@ -209,7 +220,31 @@ export function useDailyNote(date: string): UseDailyNoteResult {
         setNote(result.sourceNote)
         setExists(true)
       }
-      run().catch(() => {})
+      run().catch(async (err) => {
+        // fix-move-task-not-found-in-source-note: the move failed — most
+        // commonly because the id captured by the renderer (e.g. from a
+        // Timeline "Move to..." menu opened before an external Obsidian
+        // edit changed/removed the task) is no longer what's on disk. The
+        // main process already refused to write anything in that case (see
+        // daily-notes-handlers.ts's `daily-note:move-task`), so the source
+        // note on disk is untouched and safe to just re-read: this resyncs
+        // the renderer's stale copy (picking up whatever id the task now
+        // has, or its removal) so the NEXT attempt isn't stale too, instead
+        // of leaving the UI frozen on the same bad state that just failed.
+        const message = err instanceof Error ? err.message : String(err)
+        setMoveError(
+          message.includes('task not found in source note')
+            ? 'Could not move this task — it changed or was removed before the move completed. Refreshed from disk.'
+            : `Failed to move task: ${message}`
+        )
+        await window.gardenia
+          .readDailyNote(date)
+          .then((result) => {
+            setNote(result.note)
+            setExists(result.exists)
+          })
+          .catch(() => {})
+      })
     },
     [date, note]
   )
@@ -225,6 +260,7 @@ export function useDailyNote(date: string): UseDailyNoteResult {
     addTask,
     deleteTask,
     moveTask,
-    moveTaskToDate
+    moveTaskToDate,
+    moveError
   }
 }
