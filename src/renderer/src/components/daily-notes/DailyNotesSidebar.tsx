@@ -93,6 +93,7 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
     deleteTask,
     moveTask,
     moveTaskToDate,
+    moveError,
     updateTask
   } = useDailyNote(date)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -195,6 +196,12 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
           ×
         </button>
       </div>
+
+      {moveError && (
+        <div style={{ color: 'var(--danger)', fontSize: 13.5, padding: '8px 12px' }} data-testid="move-task-error">
+          {moveError}
+        </div>
+      )}
 
       {note.bigThree.length > 0 && (
         <div className="dn-focus-block" data-testid="dn-big-three">

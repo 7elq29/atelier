@@ -275,7 +275,24 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
       const sourceContent = await readFile(sourcePath, 'utf-8')
       const { note: sourceNote, raw: sourceRaw } = parseDailyNote(sourceContent, sourceDate)
       const task = sourceNote.tasks.find((t) => t.id === taskId)
-      if (!task) throw new Error(`task not found in source note: ${taskId}`)
+      if (!task) {
+        // fix-move-task-not-found-in-source-note: this is the renderer
+        // trusting a possibly-stale id (e.g. a Timeline "Move to..." menu
+        // opened before an external edit regenerated/removed that task's
+        // gid — see Timeline.tsx's moveMenu-close useEffect for the other
+        // half of this fix). Log it with the ids actually on disk right
+        // now so a real report (like the one that motivated this fix) is
+        // diagnosable from main.log alone, not just the renderer's raw
+        // console error.
+        logger.info('daily-note move-task: task not found in source note', {
+          sourcePath,
+          taskId,
+          sourceDate,
+          targetDate,
+          freshIds: sourceNote.tasks.map((t) => t.id)
+        })
+        throw new Error(`task not found in source note: ${taskId}`)
+      }
 
       // Defensive no-op (spec): source and target resolve to the same file.
       // Not realistically reachable via the menu (which only offers future

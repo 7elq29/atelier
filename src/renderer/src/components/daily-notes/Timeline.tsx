@@ -91,6 +91,27 @@ export default function Timeline({
     return () => clearInterval(interval)
   }, [])
 
+  // fix-move-task-not-found-in-source-note: unlike TaskItem's per-task
+  // menu (which naturally unmounts — and its menu state with it — when its
+  // task's `id` changes, since `key={task.id}` in DailyNotesSidebar's map),
+  // this Timeline-level `moveMenu` holds the right-clicked task's id in
+  // state that's independent of `tasks` re-rendering. If a fresh disk read
+  // lands (fs.watch resync after an external Obsidian edit) while the menu
+  // is still open — e.g. the edit stripped/regenerated that task's `[gid::]`
+  // tag, so the SAME line now parses to a brand-new id, or the task was
+  // deleted/moved out from under the menu entirely — the menu would
+  // otherwise keep offering "Move to..." options against an id that no
+  // longer exists on disk. Selecting one then reaches the main process's
+  // fresh-disk-read fully unaware, and it correctly refuses to guess: it
+  // throws "task not found in source note". Closing the menu here as soon
+  // as its captured id vanishes from the live task list prevents that stale
+  // IPC call from ever being made — the same self-heal TaskItem already
+  // gets "for free" from React's key-based unmount.
+  useEffect(() => {
+    if (!moveMenu) return
+    if (!tasks.some((t) => t.id === moveMenu.taskId)) setMoveMenu(null)
+  }, [tasks, moveMenu])
+
   // Drag state machine (UC-9/UC-10 move + resize): dragRef is the source of
   // truth read by the window-level mousemove/mouseup listeners (so they
   // never see a stale closure over the initial mousedown values); liveBlock
