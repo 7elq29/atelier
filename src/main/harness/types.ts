@@ -342,6 +342,20 @@ export interface HarnessDriver {
   /** Start a brand-new agent turn with an initial prompt. */
   start(prompt: string, opts: HarnessStartOptions): Promise<HarnessSession>
 
+  /**
+   * Starts a brand-new agent turn like `start()`, but reuses a SPECIFIC,
+   * caller-supplied session id instead of generating one internally
+   * (fix-no-conversation-found-remote-resume). Passes the SDK the same
+   * `sessionId` option `start()` uses (never `resume`) — this is a genuinely
+   * fresh conversation as far as the underlying CLI is concerned, just one
+   * whose id Gardenia already fixed in its own SQLite row (e.g. reopening a
+   * session that was closed/interrupted before it ever completed a real
+   * turn, so the CLI never actually recorded a conversation for it — calling
+   * `resume()` for that id fails with "No conversation found"). See
+   * `SessionRecord.everConnected`.
+   */
+  startWithId(sessionId: string, prompt: string, opts: HarnessStartOptions): Promise<HarnessSession>
+
   /** Resume a previously-started session (by the harness's own session id). */
   resume(sessionId: string, opts?: Partial<HarnessStartOptions>): Promise<HarnessSession>
 

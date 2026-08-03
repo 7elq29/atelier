@@ -56,6 +56,21 @@ export interface SessionRecord {
    * was never started in plan mode and has never had its mode cycled.
    */
   permissionMode: PermissionModeValue
+  /**
+   * Whether the underlying harness/CLI backend has EVER actually confirmed a
+   * real conversation for this session id (fix-no-conversation-found-remote-
+   * resume) — true once its `session_started` harness event (the SDK's own
+   * `system`/`init` handshake) has fired at least once, persisted so it
+   * survives relaunch. A session can have an open, `isActive()` harness
+   * connection (e.g. right after creation with no initial prompt) while this
+   * is still `false` — the CLI doesn't emit its init handshake until it
+   * actually receives a first real turn. `SessionManager` uses this to
+   * decide whether a reconnect must go through `harness.startWithId()`
+   * (fresh, safe for a session the CLI has never heard of) instead of
+   * `harness.resume()` (a `--resume <id>` reconnect, which the CLI rejects
+   * with "No conversation found" for a session id it never actually started).
+   */
+  everConnected: boolean
 }
 
 /** A named, collapsible, reorderable session group (06-session-organization). */

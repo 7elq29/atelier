@@ -117,6 +117,38 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
       );
       CREATE INDEX IF NOT EXISTS idx_project_path_history_host_used ON project_path_history(host_id, used_at);
     `
+  },
+  {
+    // fix-no-conversation-found-remote-resume: persisted, cross-relaunch
+    // record of whether the underlying harness/CLI has EVER actually
+    // confirmed a real conversation for this session id (i.e. its `system`/
+    // `init` handshake — HarnessEvent's `session_started` — has actually
+    // fired at least once; see SessionStore.markEverConnected). A session
+    // created via `harness.start()` with no initial prompt sits in
+    // `SessionManager.sessions` looking "live" (`harness.isActive()` is
+    // true) but the underlying CLI never emits `session_started` until it
+    // actually receives its first real input — so `everConnected` can be
+    // `false` even for a session with an open, active harness connection.
+    // Verified for real: reconnect()/sendUserMessage() previously called
+    // `harness.resume()` (a `--resume <id>` reconnect) unconditionally for
+    // ANY session with no currently-active in-memory harness entry,
+    // including one that had never gotten this far — the underlying `claude`
+    // CLI has no record of a session id it was never actually asked to
+    // start, and rejects the resume with "No conversation found with session
+    // ID: <id>" (root cause of the recurring "Claude Code process exited
+    // with code 255" bug, both locally and on remote/SSH hosts). Defaults to
+    // 0 (false) for both new and pre-existing rows — a pre-existing row from
+    // before this migration necessarily already has real transcript history
+    // (it could only exist by having gone through a real turn under the
+    // pre-fix code), so `everConnected` is backfilled to 1 for any session
+    // with at least one persisted message, since resuming those is safe and
+    // was already working.
+    name: '0006_session_ever_connected',
+    sql: `
+      ALTER TABLE sessions ADD COLUMN ever_connected INTEGER NOT NULL DEFAULT 0;
+      UPDATE sessions SET ever_connected = 1
+        WHERE id IN (SELECT DISTINCT session_id FROM messages);
+    `
   }
 ]
 

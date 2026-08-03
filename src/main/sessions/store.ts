@@ -43,6 +43,7 @@ interface SessionRow {
   notes: string | null
   sort_order: number
   total_cost_usd: number
+  ever_connected: number
 }
 
 interface MessageRow {
@@ -89,6 +90,12 @@ function toSessionRecord(row: SessionRow, tags: string[] = []): SessionRecord {
     notes: row.notes,
     sortOrder: row.sort_order,
     totalCostUsd: row.total_cost_usd,
+    // fix-no-conversation-found-remote-resume: whether the underlying
+    // harness/CLI has ever actually confirmed a real conversation for this
+    // session id — see db.ts's '0006_session_ever_connected' migration doc
+    // comment and SessionManager.markEverConnected's call site for the full
+    // rationale.
+    everConnected: row.ever_connected === 1,
     // Not a real DB column (11-composer-mode-indicator) — this is just a
     // type-satisfying placeholder for every raw store read. SessionManager's
     // `decorate()` always overwrites this with the real tracked value
@@ -245,6 +252,19 @@ export class SessionStore {
   addCost(id: string, deltaUsd: number): SessionRecord | undefined {
     this.db.prepare('UPDATE sessions SET total_cost_usd = total_cost_usd + ? WHERE id = ?').run(deltaUsd, id)
     return this.getSession(id)
+  }
+
+  /**
+   * Marks a session as having had at least one real, backend-confirmed
+   * connection (fix-no-conversation-found-remote-resume) — called exactly
+   * once the harness's `session_started` event (the SDK's own `system`/
+   * `init` handshake) has actually fired for this session id, i.e. the
+   * underlying CLI has genuinely acknowledged/created this conversation.
+   * Idempotent (plain `= 1`, not a toggle) so repeat calls across multiple
+   * turns are harmless.
+   */
+  markEverConnected(id: string): void {
+    this.db.prepare('UPDATE sessions SET ever_connected = 1 WHERE id = ?').run(id)
   }
 
 

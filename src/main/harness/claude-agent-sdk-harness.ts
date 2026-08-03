@@ -323,12 +323,16 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
   private readonly sessions = new Map<string, ActiveSession>()
 
   async start(prompt: string, opts: HarnessStartOptions): Promise<HarnessSession> {
-    return this.launch(prompt, opts, undefined)
+    return this.launch(prompt, opts, { mode: 'fresh' })
+  }
+
+  async startWithId(sessionId: string, prompt: string, opts: HarnessStartOptions): Promise<HarnessSession> {
+    return this.launch(prompt, opts, { mode: 'fresh-with-id', sessionId })
   }
 
   async resume(sessionId: string, opts: Partial<HarnessStartOptions> = {}): Promise<HarnessSession> {
     const cwd = opts.cwd ?? process.cwd()
-    return this.launch('', { ...opts, cwd }, sessionId)
+    return this.launch('', { ...opts, cwd }, { mode: 'resume', sessionId })
   }
 
   async interrupt(sessionId: string): Promise<void> {
@@ -420,10 +424,10 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
   private async launch(
     prompt: string,
     opts: HarnessStartOptions & { cwd: string },
-    resumeSessionId: string | undefined,
+    spec: { mode: 'fresh' } | { mode: 'fresh-with-id'; sessionId: string } | { mode: 'resume'; sessionId: string },
   ): Promise<HarnessSession> {
     const sdk = await loadSdk()
-    const sessionId = resumeSessionId ?? randomUUID()
+    const sessionId = spec.mode === 'fresh' ? randomUUID() : spec.sessionId
     const queue = new UserMessageQueue()
     if (prompt) queue.push(userMessage(prompt))
 
@@ -444,7 +448,7 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     const options: SdkOptions = {
       cwd: opts.cwd,
       includePartialMessages: true,
-      ...(resumeSessionId ? { resume: resumeSessionId } : { sessionId }),
+      ...(spec.mode === 'resume' ? { resume: sessionId } : { sessionId }),
       model: opts.model ?? DEFAULT_MODEL,
       ...(opts.effort ? { effort: opts.effort } : {}),
       ...(opts.systemPrompt ? { systemPrompt: opts.systemPrompt } : {}),
