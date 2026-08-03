@@ -112,6 +112,15 @@ let watchedPath: string | null = null
  */
 let pendingTestWriteDelayMs: number | null = null
 
+const TEMPLATE_RELATIVE_PATH = '92.templates/Daily Note Template.md'
+
+/** Real vault template for scaffolding a new note, or null if the vault doesn't have one (falls back to a built-in skeleton). */
+function loadNoteTemplate(vaultRoot: string): string | null {
+  const templatePath = `${vaultRoot}/${TEMPLATE_RELATIVE_PATH}`
+  if (!existsSync(templatePath)) return null
+  return readFileSync(templatePath, 'utf-8')
+}
+
 function resolveVaultRoot(): string | null {
   return process.env.GARDENIA_TEST_VAULT_ROOT ?? process.env.GARDENIA_VAULT_ROOT ?? null
 }
@@ -178,7 +187,7 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
       })
     }
 
-    const content = generateNewNote(date, carriedTasks)
+    const content = generateNewNote(date, carriedTasks, loadNoteTemplate(vaultRoot))
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, content, 'utf-8')
     const { note, raw } = parseDailyNote(content, date)
