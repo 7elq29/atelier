@@ -523,6 +523,88 @@ test.describe('audit: pass-2 per-card assertions (isolated app)', () => {
     await setWindowSize(electronApp, 1024, 700)
   })
 
+  // ── composer spans full width beneath BOTH the transcript column and the
+  // Tracker Rail (Features/13-composer-spans-tracker-rail) — the composer
+  // must be a sibling of `.chat-body-row`, not nested inside
+  // `.chat-main-col`, so its width should equal `.chat-body-row`'s full
+  // width regardless of whether the Tracker Rail is present, and must be
+  // strictly wider than `.chat-main-col` when the rail is visible
+  // (otherwise this would trivially pass by coincidence if the composer
+  // were still nested and just happened to render at the same width).
+  test('composer-wrap spans full width under both transcript and Tracker Rail, in both rail-visible and rail-absent states', async ({}, testInfo) => {
+    testInfo.setTimeout(60_000)
+    await setWindowSize(electronApp, 1440, 900)
+    await page.waitForTimeout(150)
+
+    // (1) Rail-visible state: the beforeAll session already has 2 real
+    // TodoWrite-populated todos, so `.tracker-rail` renders non-empty.
+    const row = page.locator('[data-testid="session-row"]').first()
+    await row.click()
+    await expect(page.getByTestId('tracker-rail')).toBeVisible()
+    await expect(page.getByTestId('todo-tracker-card')).toBeVisible({ timeout: 15_000 })
+
+    const chatBodyRowWidthWithRail = await page.locator('.chat-body-row').evaluate((el) => el.getBoundingClientRect().width)
+    const chatMainColWidthWithRail = await page.locator('.chat-main-col').evaluate((el) => el.getBoundingClientRect().width)
+    const composerWidthWithRail = await page.locator('.composer-wrap').evaluate((el) => el.getBoundingClientRect().width)
+    const trackerRailWidth = await page.locator('.tracker-rail').evaluate((el) => el.getBoundingClientRect().width)
+
+    expect(trackerRailWidth, 'tracker-rail should actually occupy real width for this to be a meaningful check').toBeGreaterThan(50)
+    expect(
+      composerWidthWithRail,
+      `composer-wrap width (${composerWidthWithRail}) should equal chat-body-row's full width (${chatBodyRowWidthWithRail}) when the rail is visible`
+    ).toBeCloseTo(chatBodyRowWidthWithRail, 0)
+    expect(
+      composerWidthWithRail,
+      `composer-wrap width (${composerWidthWithRail}) must be strictly wider than chat-main-col's width (${chatMainColWidthWithRail}) — otherwise it isn't actually spanning past the Tracker Rail`
+    ).toBeGreaterThan(chatMainColWidthWithRail + trackerRailWidth / 2)
+
+    // Spawn a real subagent too (not just todos) so the required screenshot
+    // shows a genuinely non-empty Tracker Rail (Todos AND Subagents cards)
+    // alongside the full-width composer.
+    await page.getByTestId('composer-input').fill(
+      'Use the Task tool to spawn exactly one general-purpose subagent. Give it this exact instruction: ' +
+        '"Use the Bash tool to run: echo hi — then reply with ONLY that word." ' +
+        'Do not run any tools yourself other than the Task tool.'
+    )
+    await page.getByTestId('send-button').click()
+    await expect(page.getByTestId('subagent-tracker-card')).toBeVisible({ timeout: 30_000 })
+    await page.screenshot({ path: join(artifactsDir, '13-composer-spans-tracker-rail.png') })
+
+    // (2) Rail-absent state: a brand-new empty session with no todos/
+    // subagents — TrackerRail.tsx returns null entirely in this case (see
+    // fix-empty-tracker-rail-reserves-width), so `.tracker-rail` shouldn't
+    // even be in the DOM.
+    await stubProjectFolder(electronApp, projectDir)
+    await openNewSessionModal(page)
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('initial-prompt').fill('Reply with exactly: READY. Do not use any tools.')
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    await expect(page.locator('[data-testid="session-row"]').first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('.tracker-rail')).toHaveCount(0, { timeout: 15_000 })
+
+    const composerWidthNoRail = await page.locator('.composer-wrap').evaluate((el) => el.getBoundingClientRect().width)
+    const chatBodyRowWidthNoRail = await page.locator('.chat-body-row').evaluate((el) => el.getBoundingClientRect().width)
+
+    expect(
+      composerWidthNoRail,
+      `composer-wrap width (${composerWidthNoRail}) should equal chat-body-row's full width (${chatBodyRowWidthNoRail}) when the rail is absent`
+    ).toBeCloseTo(chatBodyRowWidthNoRail, 0)
+    expect(
+      composerWidthNoRail,
+      `composer-wrap width must NOT change based on Tracker Rail presence: with-rail=${composerWidthWithRail}, without-rail=${composerWidthNoRail}`
+    ).toBeCloseTo(composerWidthWithRail, 0)
+
+    // Switch back to the rail-visible (TodoWrite) session — it's the one
+    // NOT currently active, since the just-created empty session auto-
+    // activates on creation — so later tests in this file (which assume
+    // the first session row is the TodoWrite one) aren't affected by this
+    // test having created a second session.
+    await page.locator('[data-testid="session-row"]:not(.active)').first().click()
+    await expect(page.getByTestId('tracker-rail')).toBeVisible()
+  })
+
   // ── Pass-2: AskUserQuestion card, real SDK-triggered, checked across sizes ──
   test('AskUserQuestion card: real SDK-triggered, option rows readable at small widths', async ({}, testInfo) => {
     testInfo.setTimeout(60_000)

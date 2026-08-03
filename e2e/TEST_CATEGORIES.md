@@ -131,7 +131,7 @@ iterating.
 |---|---|
 | **Spec files** | `audit-window-resize-layout.spec.ts`, `audit-scroll-experience.spec.ts` |
 | **Source paths** | Cross-cutting: `src/renderer/src/styles/global.css`, `.app-body` top-level panel layout, `src/renderer/src/components/chat/*`, `src/renderer/src/components/daily-notes/*`, `src/renderer/src/components/NewSessionModal.tsx` |
-| **Catches** | Real `BrowserWindow` resize across 5 sizes x 4 app states, checking for sibling-panel overlap and unintended content-hiding overflow (excluding intentionally-scrollable containers); real scroll behavior in transcript/sidebar/tracker/daily-notes bodies (not just overflow metrics) via mention popover, timeline task, and tracker-task interactions while scrolled. These are cross-cutting regression nets, not single-feature specs — expect to run them whenever touching shared layout/CSS, even if your change is "in" another category. |
+| **Catches** | Real `BrowserWindow` resize across 5 sizes x 4 app states, checking for sibling-panel overlap and unintended content-hiding overflow (excluding intentionally-scrollable containers); real scroll behavior in transcript/sidebar/tracker/daily-notes bodies (not just overflow metrics) via mention popover, timeline task, and tracker-task interactions while scrolled; that `.composer-wrap` spans the full width of `.chat-body-row` beneath BOTH the transcript column and the Tracker Rail (not nested inside `.chat-main-col`), with identical width whether the Tracker Rail is visible or absent, and strictly wider than `.chat-main-col` when the rail is visible. These are cross-cutting regression nets, not single-feature specs — expect to run them whenever touching shared layout/CSS, even if your change is "in" another category. |
 
 ---
 
