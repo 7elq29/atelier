@@ -426,25 +426,25 @@ export default function App(): JSX.Element {
                             activeMatchIndex={activeMatchIndex}
                             onMatchCount={setMatchCount}
                           />
-                          {activeSession.mode === 'claude-code' && (
-                            <Composer
-                              value={composerText}
-                              onChange={setComposerText}
-                              onSend={(text, image) => void handleSend(text, image)}
-                              onInterrupt={() => void handleInterrupt()}
-                              busy={sessions.busyBySession[activeSession.id] ?? false}
-                              projectPath={activeSession.projectPath}
-                              onFork={() => void sessions.forkSession(activeSession.id).then((forked) => setActiveSessionId(forked.id))}
-                              modelSelection={modelSelection}
-                              onModelSelectionChange={setModelSelection}
-                              liveSlashCommands={sessions.commandsBySession[activeSession.id] ?? []}
-                              mode={activeSession.permissionMode}
-                              onCycleMode={() => void sessions.cycleMode(activeSession.id)}
-                            />
-                          )}
                         </div>
                         <TrackerRail messages={activeMessages} />
                       </div>
+                      {activeSession.mode === 'claude-code' && (
+                        <Composer
+                          value={composerText}
+                          onChange={setComposerText}
+                          onSend={(text, image) => void handleSend(text, image)}
+                          onInterrupt={() => void handleInterrupt()}
+                          busy={sessions.busyBySession[activeSession.id] ?? false}
+                          projectPath={activeSession.projectPath}
+                          onFork={() => void sessions.forkSession(activeSession.id).then((forked) => setActiveSessionId(forked.id))}
+                          modelSelection={modelSelection}
+                          onModelSelectionChange={setModelSelection}
+                          liveSlashCommands={sessions.commandsBySession[activeSession.id] ?? []}
+                          mode={activeSession.permissionMode}
+                          onCycleMode={() => void sessions.cycleMode(activeSession.id)}
+                        />
+                      )}
                     </div>
                   </div>
 
