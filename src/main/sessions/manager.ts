@@ -64,6 +64,22 @@ interface LiveStream {
   bufferMessageId: number | null
   /** Number of completed assistant turns ('result' events) seen so far. */
   turnCount: number
+  /**
+   * Most recent raw `totalCostUsd` reported by the SDK on this connection
+   * (Bug: fix-session-cost-total-overcounted). Verified for real (3-turn
+   * probe, raw main.log): the SDK's `result.total_cost_usd` is CUMULATIVE
+   * for the current `query()` connection, not a per-turn delta — turn 2 on
+   * a connection reported its own standalone cost, but turn 3 on the SAME
+   * connection (no resume in between) reported turn2+turn3 combined. It
+   * resets to a fresh 0 baseline on every new connection (`start()`/
+   * `resume()`) rather than carrying the historical session cost forward.
+   * So the true per-turn spend to persist is
+   * `event.totalCostUsd - connectionCostUsd` (this connection's last seen
+   * value), and this field must reset to 0 whenever a genuinely new
+   * connection starts (see `newLiveStream()` call sites) but persist
+   * across turns fed via `streamInput()` on the same connection.
+   */
+  connectionCostUsd: number
   /** Tool calls started but not yet ended, keyed by toolUseId. */
   pendingTools: Map<string, PendingToolCall>
   /**
@@ -82,6 +98,7 @@ function newLiveStream(turnCount = 0): LiveStream {
     buffer: '',
     bufferMessageId: null,
     turnCount,
+    connectionCostUsd: 0,
     pendingTools: new Map(),
     busy: false,
     pendingPrompts: new Map()
@@ -979,9 +996,23 @@ try {
         live.busy = false
         this.sendStatus(sessionId)
         logger.info('harness event: result (turn complete)', { sessionId, turnCount: live.turnCount, isError: event.isError })
-        const costUpdated = this.store.addCost(sessionId, event.totalCostUsd)
+        // `event.totalCostUsd` is cumulative for the whole live connection
+        // (verified for real — see `LiveStream.connectionCostUsd` doc), so
+        // only the delta since this connection's last reported value is new
+        // spend. Clamp at 0 in case of any float jitter/SDK quirk so a
+        // decrease never subtracts from the persisted total.
+        const rawTotalCostUsd = event.totalCostUsd ?? 0
+        const deltaUsd = Math.max(0, rawTotalCostUsd - live.connectionCostUsd)
+        live.connectionCostUsd = rawTotalCostUsd
+        const costUpdated = this.store.addCost(sessionId, deltaUsd)
         if (costUpdated) {
-          logger.info('session cost updated', { sessionId, totalCostUsd: costUpdated.totalCostUsd })
+          logger.info('session cost updated', {
+            sessionId,
+            deltaUsd,
+            rawTotalCostUsd,
+            totalCostUsd: costUpdated.totalCostUsd,
+            usage: event.usage
+          })
           this.sendLifecycle({ type: 'session.updated', session: costUpdated })
         }
         this.sendTurnState(sessionId, false)

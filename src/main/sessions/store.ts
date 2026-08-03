@@ -233,14 +233,20 @@ export class SessionStore {
 
   /**
    * Adds `deltaUsd` to the session's running cost total (10a-enrichment-
-   * cost-tracking) — called once per harness `result` event with that
-   * event's own `totalCostUsd`, so the column accumulates the sum of every
-   * turn's real SDK-reported cost, not a recomputation.
+   * cost-tracking). The caller (`SessionManager`'s `case 'result'`) is
+   * responsible for computing `deltaUsd` as the NEW spend since this is not
+   * simply the harness's own `totalCostUsd` — that field is cumulative for
+   * the whole live SDK connection (verified for real against the SDK: see
+   * `LiveStream.connectionCostUsd` in `manager.ts`), not a per-turn delta.
+   * Passing the raw SDK value straight through here would double (or worse)
+   * count every turn after the first on a multi-turn connection
+   * (fix-session-cost-total-overcounted).
    */
   addCost(id: string, deltaUsd: number): SessionRecord | undefined {
     this.db.prepare('UPDATE sessions SET total_cost_usd = total_cost_usd + ? WHERE id = ?').run(deltaUsd, id)
     return this.getSession(id)
   }
+
 
   // ── Tags (06-session-organization) ───────────────────────────────────
 
