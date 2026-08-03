@@ -59,7 +59,7 @@ iterating.
 |---|---|
 | **Spec files** | `chat-surface-core.spec.ts`, `composer-core.spec.ts` |
 | **Source paths** | `src/renderer/src/components/chat/ChatTranscript.tsx`, `src/renderer/src/components/chat/Composer.tsx`, `src/renderer/src/components/chat/TrackerRail.tsx`, `src/renderer/src/components/chat/ToolCallCard.tsx` |
-| **Catches** | Sending a real message end-to-end, live todo-tracker updates from a real `TodoWrite` SDK call, transcript message rendering, composer send/stop-button behavior mid-stream. |
+| **Catches** | Sending a real message end-to-end, live todo-tracker updates from a real `TodoWrite` SDK call, transcript message rendering, composer send/stop-button behavior mid-stream, Markdown rendering of assistant text (bold/inline-code/fenced-code-blocks/lists/links via `MarkdownMessage.tsx`, with user messages and search-highlighting explicitly excluded from Markdown rendering). |
 
 ### 5. Composer Mentions, Slash Commands & Model Picker
 
