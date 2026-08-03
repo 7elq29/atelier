@@ -250,7 +250,105 @@ test.describe('03-chat-surface-core', () => {
     await logTranscriptState(page, sessionId, 'turn3-subagent')
   })
 
-  // ── 5. UI-match: bubbles, tool card, divider, rail — both themes ────────
+  // ── 5. Markdown rendering (12-markdown-message-rendering) ───────────────
+  test('assistant Markdown renders real bold/inline-code/code-block/list elements from a real streamed reply', async () => {
+    await page.getByTestId('composer-input').fill(
+      'Reply with exactly this Markdown and nothing else — no other words before or after it, ' +
+        'do not use any tools: \n\n' +
+        '**bold text**\n\n' +
+        '`inline code`\n\n' +
+        '```\ncode block line\n```\n\n' +
+        '- item one\n- item two'
+    )
+    await page.getByTestId('send-button').click()
+
+    const assistantMsg = page.locator('.msg-assistant[data-testid="transcript-message"]').last()
+    await expect(assistantMsg).toBeVisible({ timeout: 30_000 })
+
+    // Real rendered elements, not textContent string matching — locks in
+    // that react-markdown actually parsed the reply instead of leaving
+    // literal `**`/`` ` ``/`-` characters in the DOM.
+    await expect(assistantMsg.locator('strong')).toHaveText('bold text', { timeout: 30_000 })
+    await expect(assistantMsg.locator('code:not(pre code)')).toHaveText('inline code', { timeout: 30_000 })
+    await expect(assistantMsg.locator('pre code')).toContainText('code block line', { timeout: 30_000 })
+    await expect(assistantMsg.locator('ul li')).toHaveCount(2, { timeout: 30_000 })
+    await expect(assistantMsg.locator('ul li').first()).toHaveText('item one')
+    await expect(assistantMsg.locator('ul li').last()).toHaveText('item two')
+
+    // Literal Markdown syntax characters must NOT remain visible as text —
+    // confirms this is real rendering, not decoration on top of raw source.
+    const rawText = (await assistantMsg.textContent()) ?? ''
+    expect(rawText).not.toContain('**bold text**')
+    expect(rawText).not.toContain('`inline code`')
+
+    await page.screenshot({ path: join(artifactsDir, '12-markdown-message-rendering.png') })
+    await logTranscriptState(page, sessionId, 'turn4-markdown')
+  })
+
+  test('assistant Markdown link renders a real <a> and clicking it invokes shell.openExternal, never in-app navigation', async () => {
+    await electronApp.evaluate(({ shell }) => {
+      shell.openExternal = async (url: string) => {
+        // @ts-expect-error test-only bookkeeping read back below
+        globalThis.__lastOpenedExternalUrl = url
+        return undefined
+      }
+    })
+
+    const targetUrl = 'https://example.com/gardenia-markdown-link-test'
+    await page.getByTestId('composer-input').fill(
+      `Reply with exactly this Markdown link and nothing else, do not use any tools: [Example Site](${targetUrl})`
+    )
+    await page.getByTestId('send-button').click()
+
+    const assistantMsg = page.locator('.msg-assistant[data-testid="transcript-message"]').last()
+    await expect(assistantMsg).toBeVisible({ timeout: 30_000 })
+
+    const link = assistantMsg.locator('a[data-testid="external-link"]')
+    await expect(link).toBeVisible({ timeout: 30_000 })
+    await expect(link).toHaveAttribute('href', targetUrl)
+
+    await link.click()
+
+    const openedUrl = await electronApp.evaluate(() => {
+      // @ts-expect-error test-only bookkeeping
+      return globalThis.__lastOpenedExternalUrl ?? null
+    })
+    expect(openedUrl).toBe(targetUrl)
+    expect(page.url()).not.toContain('example.com')
+
+    await logTranscriptState(page, sessionId, 'turn5-markdown-link')
+  })
+
+  test('user messages are NOT Markdown-rendered: literal ** / ` stay literal', async () => {
+    async function assistantReplyCount(): Promise<number> {
+      const rows = await page.evaluate(
+        (id) => window.gardenia.debugQueryDb<{ c: number }>(
+          "SELECT COUNT(*) as c FROM messages WHERE session_id = ? AND role='assistant' AND content NOT LIKE '{%'",
+          [id]
+        ),
+        sessionId
+      )
+      return rows[0]?.c ?? 0
+    }
+    const baselineCount = await assistantReplyCount()
+
+    await page.getByTestId('composer-input').fill('This is **not bold** and this is `not code` on purpose.')
+    await page.getByTestId('send-button').click()
+
+    const userMsg = page.locator('.msg-user[data-testid="transcript-message"]').last()
+    await expect(userMsg).toBeVisible({ timeout: 10_000 })
+    await expect(userMsg).toContainText('This is **not bold** and this is `not code` on purpose.')
+    expect(await userMsg.locator('strong').count()).toBe(0)
+    expect(await userMsg.locator('code').count()).toBe(0)
+
+    // Let the turn actually complete before moving on so it doesn't bleed
+    // into the next test's assistant-message locators.
+    await expect.poll(assistantReplyCount, { timeout: 30_000 }).toBeGreaterThan(baselineCount)
+
+    await logTranscriptState(page, sessionId, 'turn6-user-not-markdown')
+  })
+
+  // ── 6. UI-match: bubbles, tool card, divider, rail — both themes ────────
   test('UI-match: user bubble has no border, tool card resolves --bg-tint/--accent tokens', async () => {
     async function resolveToken(name: string): Promise<string> {
       return page.evaluate((tokenName) => {

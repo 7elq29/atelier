@@ -6,7 +6,7 @@ import ToolCallCard, { toolHeadline } from './ToolCallCard'
 import AskUserQuestionCard from './AskUserQuestionCard'
 import PermissionRequestCard from './PermissionRequestCard'
 import PlanProposedCard from './PlanProposedCard'
-import Linkify from '../panels/Linkify'
+import MarkdownMessage from './MarkdownMessage'
 import MessageActions from './MessageActions'
 
 function formatElapsed(ms: number): string {
@@ -89,9 +89,20 @@ interface TopRow {
  * `searchQuery` is non-empty, every plain user/assistant text message (same
  * `extractSearchableText` classification the FTS5 index uses — never raw
  * tool-call JSON) is rendered through `highlightMatches` instead of
- * Linkify/plain text, and the total match count is reported back via
+ * Markdown/plain text, and the total match count is reported back via
  * `onMatchCount` after each render so the topbar's "N matches" chip and the
  * up/down navigation clamp stay in sync with what's actually on screen.
+ *
+ * Plain assistant text (12-markdown-message-rendering — the final `else`
+ * branch below, reached only when `parseStructuredContent` returns falsy)
+ * renders through `MarkdownMessage` when no transcript search is active.
+ * When a search query IS active, this intentionally keeps showing the plain
+ * `highlightMatches(...)` text instead of Markdown — merging search
+ * highlighting into rendered Markdown nodes is out of scope, an accepted
+ * limitation, not a bug. Scope is otherwise unchanged: user messages
+ * (`.msg-user`) and every structured-content card (`ToolCallCard`,
+ * `PlanProposedCard`, `AskUserQuestionCard`, `PermissionRequestCard`, todo
+ * updates, image attachments) are never Markdown-rendered.
  */
 export default function ChatTranscript({
   messages,
@@ -232,7 +243,11 @@ export default function ChatTranscript({
         <div className="msg-wrap" key={message.id}>
           <MessageActions text={message.content} speakable />
           <div className="msg-assistant" data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
-            {query ? highlightMatches(message.content, query, matchCounter, activeMatchIndex) : <Linkify text={message.content} />}
+            {query ? (
+              highlightMatches(message.content, query, matchCounter, activeMatchIndex)
+            ) : (
+              <MarkdownMessage content={message.content} />
+            )}
           </div>
         </div>
       )
