@@ -1,35 +1,45 @@
 /**
  * Real git operations backing the Diff/Review panel + Git-worktree UI
  * (07-secondary-panels §2 and §4) — everything here shells out to the real
- * `git` binary via `child_process.execFile` against the session's actual
- * `project_path`, no mocked data.
+ * `git` binary against the session's actual `project_path`, no mocked data.
+ *
+ * For remote/devpod sessions `projectPath` only exists on the remote host,
+ * so every function accepts an optional `sshHost`: when set, `run()` shells
+ * out to `ssh <host> -- cd <remoteCdTarget> && git <args>` instead of
+ * running `git` locally with `cwd`, mirroring the same local/remote split
+ * already used by the terminal (`pty.ts`) and the harness's remote spawn
+ * (`claude-agent-sdk-harness.ts`).
  */
 import { execFile } from 'node:child_process'
 import type { CommitInfo, DiffFileChange, DiffFileStatus, DiffHunk, DiffLine, DiffSummary, WorktreeInfo } from '../../shared/panel-types'
+import { shQuote, remoteCdTarget } from '../shell-quote'
 
-function run(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+function run(cwd: string, args: string[], sshHost?: string | null): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, maxBuffer: 1024 * 1024 * 32 }, (err, stdout, stderr) => {
+    const [cmd, cmdArgs] = sshHost
+      ? ['ssh', ['-o', 'BatchMode=yes', sshHost, '--', `cd ${remoteCdTarget(cwd)} && git ${args.map(shQuote).join(' ')}`]]
+      : ['git', args]
+    execFile(cmd, cmdArgs, { cwd: sshHost ? undefined : cwd, maxBuffer: 1024 * 1024 * 32 }, (err, stdout, stderr) => {
       const code = (err as NodeJS.ErrnoException & { code?: number })?.code
       resolve({ stdout, stderr, code: typeof code === 'number' ? code : err ? 1 : 0 })
     })
   })
 }
 
-async function isGitRepo(cwd: string): Promise<boolean> {
-  const res = await run(cwd, ['rev-parse', '--is-inside-work-tree'])
+async function isGitRepo(cwd: string, sshHost?: string | null): Promise<boolean> {
+  const res = await run(cwd, ['rev-parse', '--is-inside-work-tree'], sshHost)
   return res.code === 0 && res.stdout.trim() === 'true'
 }
 
-async function currentBranch(cwd: string): Promise<string | null> {
-  const res = await run(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
+async function currentBranch(cwd: string, sshHost?: string | null): Promise<string | null> {
+  const res = await run(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'], sshHost)
   if (res.code !== 0) return null
   const name = res.stdout.trim()
   return name === 'HEAD' ? null : name
 }
 
-async function hasHead(cwd: string): Promise<boolean> {
-  const res = await run(cwd, ['rev-parse', '--verify', 'HEAD'])
+async function hasHead(cwd: string, sshHost?: string | null): Promise<boolean> {
+  const res = await run(cwd, ['rev-parse', '--verify', 'HEAD'], sshHost)
   return res.code === 0
 }
 
@@ -111,29 +121,28 @@ function parseUnifiedDiff(patch: string): DiffFileChange[] {
 }
 
 /** Real uncommitted-changes diff (working tree + index vs HEAD) for the session's project folder. */
-export async function getDiffSummary(projectPath: string): Promise<DiffSummary> {
-  if (!(await isGitRepo(projectPath))) {
+export async function getDiffSummary(projectPath: string, sshHost?: string | null): Promise<DiffSummary> {
+  if (!(await isGitRepo(projectPath, sshHost))) {
     return { isRepo: false, branch: null, files: [] }
   }
-  const branch = await currentBranch(projectPath)
-  const head = await hasHead(projectPath)
+  const branch = await currentBranch(projectPath, sshHost)
+  const head = await hasHead(projectPath, sshHost)
   // Diff against HEAD when it exists (covers staged + unstaged); otherwise
   // diff the empty tree so a freshly-initialized repo with only untracked/
   // staged files still shows something real instead of an empty result.
   const target = head ? 'HEAD' : '4b825dc642cb6eb9a060e54bf8d69288fbee4904' // git's canonical empty-tree hash
-  const diff = await run(projectPath, ['diff', '--no-color', '-U3', target])
+  const diff = await run(projectPath, ['diff', '--no-color', '-U3', target], sshHost)
   const files = parseUnifiedDiff(diff.stdout)
   return { isRepo: true, branch, files }
 }
 
-export async function listCommits(projectPath: string, limit = 50): Promise<CommitInfo[]> {
-  if (!(await isGitRepo(projectPath)) || !(await hasHead(projectPath))) return []
-  const res = await run(projectPath, [
-    'log',
-    `-n${limit}`,
-    '--date=relative',
-    '--pretty=format:%H%x1f%an%x1f%ad%x1f%s'
-  ])
+export async function listCommits(projectPath: string, limit = 50, sshHost?: string | null): Promise<CommitInfo[]> {
+  if (!(await isGitRepo(projectPath, sshHost)) || !(await hasHead(projectPath, sshHost))) return []
+  const res = await run(
+    projectPath,
+    ['log', `-n${limit}`, '--date=relative', '--pretty=format:%H%x1f%an%x1f%ad%x1f%s'],
+    sshHost
+  )
   if (res.code !== 0 || !res.stdout.trim()) return []
   return res.stdout
     .trim()
@@ -144,9 +153,9 @@ export async function listCommits(projectPath: string, limit = 50): Promise<Comm
     })
 }
 
-export async function listWorktrees(projectPath: string): Promise<WorktreeInfo[]> {
-  if (!(await isGitRepo(projectPath))) return []
-  const res = await run(projectPath, ['worktree', 'list', '--porcelain'])
+export async function listWorktrees(projectPath: string, sshHost?: string | null): Promise<WorktreeInfo[]> {
+  if (!(await isGitRepo(projectPath, sshHost))) return []
+  const res = await run(projectPath, ['worktree', 'list', '--porcelain'], sshHost)
   if (res.code !== 0) return []
   const worktrees: WorktreeInfo[] = []
   let current: Partial<WorktreeInfo> | null = null
@@ -164,17 +173,17 @@ export async function listWorktrees(projectPath: string): Promise<WorktreeInfo[]
   return worktrees.map((w, idx) => ({ ...w, isMain: idx === 0 }))
 }
 
-export async function addWorktree(projectPath: string, worktreePath: string, branch: string): Promise<void> {
-  const res = await run(projectPath, ['worktree', 'add', '-b', branch, worktreePath])
+export async function addWorktree(projectPath: string, worktreePath: string, branch: string, sshHost?: string | null): Promise<void> {
+  const res = await run(projectPath, ['worktree', 'add', '-b', branch, worktreePath], sshHost)
   if (res.code !== 0) throw new Error(res.stderr.trim() || 'git worktree add failed')
 }
 
-export async function removeWorktree(projectPath: string, worktreePath: string): Promise<void> {
-  const res = await run(projectPath, ['worktree', 'remove', worktreePath, '--force'])
+export async function removeWorktree(projectPath: string, worktreePath: string, sshHost?: string | null): Promise<void> {
+  const res = await run(projectPath, ['worktree', 'remove', worktreePath, '--force'], sshHost)
   if (res.code !== 0) throw new Error(res.stderr.trim() || 'git worktree remove failed')
 }
 
-export async function mergeWorktreeBranch(projectPath: string, branch: string): Promise<void> {
-  const res = await run(projectPath, ['merge', '--no-edit', branch])
+export async function mergeWorktreeBranch(projectPath: string, branch: string, sshHost?: string | null): Promise<void> {
+  const res = await run(projectPath, ['merge', '--no-edit', branch], sshHost)
   if (res.code !== 0) throw new Error(res.stderr.trim() || 'git merge failed')
 }
