@@ -22,11 +22,13 @@ function stripAnsi(s: string): string {
 export default function TerminalPanel({
   ptyId,
   cwd,
-  hostname
+  hostname,
+  active = true
 }: {
   ptyId: string
   cwd: string
   hostname?: string | null
+  active?: boolean
 }): JSX.Element {
   const [output, setOutput] = useState('')
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -47,6 +49,15 @@ export default function TerminalPanel({
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight
   }, [output])
+
+  // Becoming the visible tab/drawer (or first mounting as one) should behave
+  // like a real terminal: typing should work right away, not only after an
+  // extra click. Without this, clicking the "Terminal" tab button leaves
+  // keyboard focus on that <button> (browser default), so keystrokes never
+  // reach this panel's onKeyDown at all — reported as "can't type anything".
+  useEffect(() => {
+    if (active) bodyRef.current?.focus()
+  }, [active])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
     e.preventDefault()

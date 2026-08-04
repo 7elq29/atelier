@@ -476,6 +476,7 @@ export default function App(): JSX.Element {
                         ptyId={`${activeSession.id}:tab-terminal`}
                         cwd={activeSession.projectPath}
                         hostname={activeSession.hostname}
+                        active={activeTab === 'terminal'}
                       />
                     )}
                   </div>
