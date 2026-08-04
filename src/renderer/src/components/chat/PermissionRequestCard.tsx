@@ -72,11 +72,13 @@ export default function PermissionRequestCard({
           </div>
         ) : (
           <div className={`perm-resolved ${content.status}`} data-testid="perm-resolved">
-            {content.status === 'allowed'
-              ? content.alwaysAllowed
-                ? `Allowed — will always allow ${content.suggestedPattern ?? 'this pattern'} for the rest of this session`
-                : 'Allowed'
-              : 'Denied'}
+            {content.status === 'expired'
+              ? 'This request expired — the turn ended before you could respond.'
+              : content.status === 'allowed'
+                ? content.alwaysAllowed
+                  ? `Allowed — will always allow ${content.suggestedPattern ?? 'this pattern'} for the rest of this session`
+                  : 'Allowed'
+                : 'Denied'}
           </div>
         )}
       </div>

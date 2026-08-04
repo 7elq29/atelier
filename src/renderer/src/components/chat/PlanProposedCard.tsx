@@ -1,49 +1,8 @@
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { PlanProposedContent } from '../../../../shared/chat-content'
 import type { PromptDecision } from '../../../../shared/session-types'
-
-/**
- * Minimal markdown-ish renderer for plan text (the SDK's `ExitPlanMode`
- * `plan` field is free-form markdown — verified live: headings, a numbered
- * list, prose). No markdown dependency in this project yet, so this handles
- * just enough to satisfy spec.md's "arbitrary rendered markdown" requirement
- * for the plan body: `#`/`##` headings, `1. `-numbered lists, and paragraphs.
- */
-function renderPlanBody(plan: string): JSX.Element[] {
-  const lines = plan.split('\n')
-  const blocks: JSX.Element[] = []
-  let listItems: string[] = []
-  let key = 0
-
-  function flushList(): void {
-    if (listItems.length === 0) return
-    blocks.push(
-      <ol key={`ol-${key++}`}>
-        {listItems.map((item, i) => (
-          <li key={i}>{item}</li>
-        ))}
-      </ol>
-    )
-    listItems = []
-  }
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim()
-    if (!line) continue
-    const heading = line.match(/^(#{1,3})\s+(.*)$/)
-    const numbered = line.match(/^\d+[.)]\s+(.*)$/)
-    if (heading) {
-      flushList()
-      blocks.push(<h4 key={`h-${key++}`}>{heading[2]}</h4>)
-    } else if (numbered) {
-      listItems.push(numbered[1])
-    } else {
-      flushList()
-      blocks.push(<p key={`p-${key++}`}>{line}</p>)
-    }
-  }
-  flushList()
-  return blocks
-}
+import { markdownComponents } from './MarkdownMessage'
 
 /**
  * Plan card (05-interactive-prompts) — dedicated card for the SDK's
@@ -74,7 +33,11 @@ export default function PlanProposedCard({
         <span aria-hidden="true">▤</span> Proposed plan
       </div>
       <div className="plan-body" data-testid="plan-body">
-        {renderPlanBody(content.plan)}
+        <div className="md-body">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            {content.plan}
+          </ReactMarkdown>
+        </div>
       </div>
       <div className="plan-actions" data-testid="plan-actions">
         <button className="btn btn-allow" data-testid="plan-accept" onClick={() => onRespond({ kind: 'plan', decision: 'accept' })}>
@@ -95,6 +58,7 @@ export default function PlanProposedCard({
         {content.status === 'accepted' && 'Plan accepted — Claude is proceeding.'}
         {content.status === 'rejected' && 'Plan rejected.'}
         {content.status === 'keep_planning' && 'Asked Claude to keep planning.'}
+        {content.status === 'expired' && 'This request expired — the turn ended before you could respond.'}
       </div>
     </div>
   )

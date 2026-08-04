@@ -1213,6 +1213,7 @@ try {
           this.sendLifecycle({ type: 'session.updated', session: costUpdated })
         }
         this.sendTurnState(sessionId, false)
+        if (event.isError) this.expirePendingPrompts(sessionId, live)
         if (live.turnCount >= AUTO_NAME_STARTING_FROM_TURN) {
           void this.maybeAutoName(sessionId).catch((err) =>
             logger.warn('auto-naming failed', { sessionId, error: err instanceof Error ? err.message : String(err) })
@@ -1221,6 +1222,27 @@ try {
         return
       }
     }
+  }
+
+  /**
+   * A turn can end in error (`result` event, `isError: true`) while a
+   * permission/AskUserQuestion/plan prompt is still awaiting a response —
+   * confirmed live (see `respondToPrompt`'s doc comment): the harness never
+   * resolves `canUseTool` itself in this case, so without this cleanup the
+   * card stays rendered as `pending` forever, and a later click on it throws
+   * "Unknown or already-resolved prompt" (bug: silently swallowed by the
+   * renderer). Mark each abandoned prompt `expired` so the card reflects
+   * reality and stops offering dead buttons.
+   */
+  private expirePendingPrompts(sessionId: string, live: LiveStream): void {
+    if (live.pendingPrompts.size === 0) return
+    for (const [requestId, pending] of live.pendingPrompts) {
+      const expiredContent = { ...pending.content, status: 'expired' }
+      const updated = this.store.updateMessage(pending.messageId, { content: JSON.stringify(expiredContent) })
+      if (updated) this.sendMessage(sessionId, updated)
+      logger.info('expired pending prompt after errored turn', { sessionId, requestId })
+    }
+    live.pendingPrompts.clear()
   }
 
   private flushBuffer(sessionId: string, live: LiveStream): void {

@@ -58,7 +58,7 @@ export interface AskQuestion {
   options: AskQuestionOption[]
 }
 
-export type PermissionRequestStatus = 'pending' | 'allowed' | 'denied'
+export type PermissionRequestStatus = 'pending' | 'allowed' | 'denied' | 'expired'
 
 export interface PermissionRequestContent {
   kind: 'permission_request'
@@ -74,7 +74,7 @@ export interface PermissionRequestContent {
   alwaysAllowed?: boolean
 }
 
-export type AskUserQuestionStatus = 'pending' | 'answered'
+export type AskUserQuestionStatus = 'pending' | 'answered' | 'expired'
 
 export interface AskUserQuestionContent {
   kind: 'ask_user_question'
@@ -88,7 +88,7 @@ export interface AskUserQuestionContent {
   freeText?: string
 }
 
-export type PlanStatus = 'pending' | 'accepted' | 'rejected' | 'keep_planning'
+export type PlanStatus = 'pending' | 'accepted' | 'rejected' | 'keep_planning' | 'expired'
 
 export interface PlanProposedContent {
   kind: 'plan_proposed'

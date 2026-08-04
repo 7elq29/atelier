@@ -6,11 +6,12 @@ import { openExternalLink } from '../panels/Linkify'
  * Renders assistant chat text as real Markdown (12-markdown-message-
  * rendering), replacing the plain-text `<Linkify>` path for the final
  * plain-assistant-text branch in `ChatTranscript.tsx`. Scope is intentionally
- * narrow: only that branch uses this component — user messages
- * (`.msg-user`), structured cards (`ToolCallCard`/`PlanProposedCard`/
- * `AskUserQuestionCard`/`PermissionRequestCard`/todo updates/image
- * attachments), and `PlanProposedCard`'s own hand-rolled parser are
- * untouched.
+ * narrow: only that branch uses this component directly — user messages
+ * (`.msg-user`), other structured cards (`ToolCallCard`/`AskUserQuestionCard`/
+ * `PermissionRequestCard`/todo updates/image attachments) are untouched.
+ * `PlanProposedCard` reuses `markdownComponents` (below) with its own
+ * `<ReactMarkdown>` instance rather than this component, since it renders
+ * inside its own `.plan-body` wrapper.
  *
  * Uses `react-markdown` (+ `remark-gfm` for tables/strikethrough/task
  * lists) rather than a hand-rolled parser — renders to real React elements,
@@ -27,8 +28,11 @@ import { openExternalLink } from '../panels/Linkify'
  * `openExternalLink()` / `window.gardenia.openExternal()` IPC path
  * `Linkify.tsx` already uses for auto-linkified plain URLs — never a raw
  * in-app navigation.
+ *
+ * Exported as `markdownComponents` so `PlanProposedCard.tsx` can reuse the
+ * same link override instead of duplicating it.
  */
-const components: Components = {
+export const markdownComponents: Components = {
   a: ({ href, children, ...props }) => (
     <a
       {...props}
@@ -48,7 +52,7 @@ const components: Components = {
 export default function MarkdownMessage({ content }: { content: string }): JSX.Element {
   return (
     <div className="md-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {content}
       </ReactMarkdown>
     </div>

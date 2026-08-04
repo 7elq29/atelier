@@ -184,7 +184,16 @@ export function useSessions(): UseSessionsResult {
 
   const respondToPrompt = useCallback(
     async (sessionId: string, requestId: string, decision: PromptDecision): Promise<void> => {
-      await window.gardenia.respondToPrompt(sessionId, requestId, decision)
+      try {
+        await window.gardenia.respondToPrompt(sessionId, requestId, decision)
+      } catch (err) {
+        // Can legitimately fail if the turn already ended in error and the
+        // card's prompt was expired server-side (see manager.ts's
+        // `expirePendingPrompts`) — the card itself re-renders from the
+        // pushed `session.message` update in that case, so there's nothing
+        // else to do here besides not letting this vanish silently.
+        console.error('respondToPrompt failed', { sessionId, requestId, decision, err })
+      }
     },
     []
   )

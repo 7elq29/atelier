@@ -73,9 +73,9 @@ iterating.
 
 | | |
 |---|---|
-| **Spec files** | `interactive-prompts.spec.ts`, `bug-ask-user-question-explicit-submit.spec.ts` |
-| **Source paths** | `src/renderer/src/components/chat/PermissionRequestCard.tsx`, `src/renderer/src/components/chat/PlanProposedCard.tsx`, `src/renderer/src/components/chat/AskUserQuestionCard.tsx`, `src/main/harness/claude-agent-sdk-harness.ts` |
-| **Catches** | Real permission-request round-trips (allow/always-allow/deny), plan-mode proposal accept/reject, `AskUserQuestion` card option selection requiring an explicit submit click (not an instant single-click submit). |
+| **Spec files** | `interactive-prompts.spec.ts`, `bug-ask-user-question-explicit-submit.spec.ts`, `bug-plan-card-expired-prompt.spec.ts` |
+| **Source paths** | `src/renderer/src/components/chat/PermissionRequestCard.tsx`, `src/renderer/src/components/chat/PlanProposedCard.tsx`, `src/renderer/src/components/chat/AskUserQuestionCard.tsx`, `src/main/harness/claude-agent-sdk-harness.ts`, `src/main/sessions/manager.ts`, `src/renderer/src/components/chat/MarkdownMessage.tsx` |
+| **Catches** | Real permission-request round-trips (allow/always-allow/deny), plan-mode proposal accept/reject, `AskUserQuestion` card option selection requiring an explicit submit click (not an instant single-click submit), plan-card markdown rendering, and cards correctly showing an "expired" state (no dead action buttons) when a turn ends in error while a prompt is still pending. |
 
 ### 7. Message Actions (Copy / Speak)
 

@@ -33,6 +33,8 @@ export default function AskUserQuestionCard({
   onRespond: (decision: PromptDecision) => void
 }): JSX.Element {
   const answered = content.status === 'answered'
+  const expired = content.status === 'expired'
+  const locked = content.status !== 'pending'
   const [otherOpenFor, setOtherOpenFor] = useState<number | null>(null)
   const [otherText, setOtherText] = useState('')
   // Answers picked so far this render (pre-submit), per question index.
@@ -47,7 +49,7 @@ export default function AskUserQuestionCard({
   }
 
   function pickOption(qIndex: number, label: string): void {
-    if (answered) return
+    if (locked) return
     // Only record the pick here — submission requires an explicit click on
     // the Submit button below, even once every question has an answer
     // (bug #52: clicking an option used to submit instantly with no chance
@@ -101,7 +103,7 @@ export default function AskUserQuestionCard({
                 <div
                   className="aq-option aq-other"
                   data-testid="aq-option-other"
-                  onClick={() => !answered && setOtherOpenFor(qIndex)}
+                  onClick={() => !locked && setOtherOpenFor(qIndex)}
                 >
                   <div className="num">{q.options.length + 1}</div>
                   <div>Other — type your own answer</div>
@@ -122,7 +124,7 @@ export default function AskUserQuestionCard({
             </div>
           )
         })}
-        {!answered && (
+        {!locked && (
           <button
             className="btn btn-primary aq-submit"
             data-testid="aq-submit"
@@ -132,7 +134,13 @@ export default function AskUserQuestionCard({
             Submit
           </button>
         )}
-        <div className="aq-footer-hint">You can also just type a reply in the composer below instead of picking an option.</div>
+        {expired ? (
+          <div className="aq-footer-hint" data-testid="aq-expired-note">
+            This request expired — the turn ended before you could respond.
+          </div>
+        ) : (
+          <div className="aq-footer-hint">You can also just type a reply in the composer below instead of picking an option.</div>
+        )}
       </div>
     </div>
   )
