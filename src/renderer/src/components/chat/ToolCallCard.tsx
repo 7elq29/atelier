@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import type { ToolCallContent } from '../../../../shared/chat-content'
+import type { ToolCallContent, ToolCallStatus } from '../../../../shared/chat-content'
 
-/** Maps a tool name to one of the mock's `.tool-badge` color classes (bash/read/edit are the ones defined verbatim in mocks/index.html; the rest extend that same token-driven pattern for tool types the mock didn't enumerate). */
-function toolBadgeClass(name: string): string {
+/** Maps a tool name to one of the mock's `.tool-badge` color classes (bash/read/edit are the ones defined verbatim in mocks/index.html; the rest extend that same token-driven pattern for tool types the mock didn't enumerate). Exported for reuse by `ToolCallSequence.tsx`'s aggregate-summary grouping (14-tool-call-sequence-collapse), which buckets by these same classes. */
+export function toolBadgeClass(name: string): string {
   const key = name.toLowerCase()
   if (key === 'bash') return 'bash'
   if (key === 'read') return 'read'
@@ -54,6 +54,54 @@ export function toolHeadline(name: string, input: unknown): string {
   }
 }
 
+function countLines(text: string): number {
+  return text.length === 0 ? 0 : text.split('\n').length
+}
+
+/**
+ * One-line "what changed" summary for edit-type tools' collapsed row
+ * (14-tool-call-sequence-collapse), computed purely from `input` — no diff
+ * tool, no waiting on anything beyond the call having finished. Returns null
+ * while running (no summary yet, matching the spec) or when the expected
+ * input shape isn't present (fall back to headline-only rather than guess).
+ */
+export function editSummary(name: string, input: unknown, status: ToolCallStatus): string | null {
+  if (status === 'running') return null
+  const obj = asRecord(input)
+  switch (name) {
+    case 'Edit': {
+      const oldStr = obj.old_string
+      const newStr = obj.new_string
+      if (typeof oldStr !== 'string' || typeof newStr !== 'string') return null
+      return `+${countLines(newStr)} -${countLines(oldStr)} lines`
+    }
+    case 'MultiEdit': {
+      const edits = obj.edits
+      if (!Array.isArray(edits) || edits.length === 0) return null
+      let added = 0
+      let removed = 0
+      for (const edit of edits) {
+        const e = asRecord(edit)
+        if (typeof e.old_string !== 'string' || typeof e.new_string !== 'string') return null
+        added += countLines(e.new_string)
+        removed += countLines(e.old_string)
+      }
+      return `+${added} -${removed} lines`
+    }
+    case 'Write': {
+      const content = obj.content
+      if (typeof content !== 'string') return null
+      return `${countLines(content)} lines written`
+    }
+    case 'NotebookEdit':
+      // Minimal, computable phrasing — this tool is rare enough that
+      // per-cell-type/diff detail isn't worth the complexity (per spec).
+      return '1 cell edited'
+    default:
+      return null
+  }
+}
+
 function outputText(output: unknown): string {
   if (output == null) return ''
   if (typeof output === 'string') return output
@@ -81,6 +129,10 @@ export default function ToolCallCard({ content }: { content: ToolCallContent }):
   const [open, setOpen] = useState(false)
   const badge = toolBadgeClass(content.name)
   const running = content.status === 'running'
+  // Only edit-type tools (Edit/Write/NotebookEdit/MultiEdit) get a collapsed
+  // change summary next to the headline; every other tool type stays
+  // headline-only, unchanged from before (14-tool-call-sequence-collapse).
+  const summary = !open && badge === 'edit' ? editSummary(content.name, content.input, content.status) : null
 
   return (
     <div
@@ -90,11 +142,24 @@ export default function ToolCallCard({ content }: { content: ToolCallContent }):
       data-tool-status={content.status}
       data-tool-use-id={content.toolUseId}
       data-parent-tool-use-id={content.parentToolUseId ?? ''}
-      onClick={() => setOpen((v) => !v)}
+      onClick={(e) => {
+        // Stop propagation: a ToolCallCard can now sit inside an expanded
+        // `.tool-sequence-summary` aggregate row (14-tool-call-sequence-
+        // collapse), which is itself clickable to collapse/expand. Without
+        // this, clicking a nested card would also bubble up and immediately
+        // re-collapse the aggregate it's sitting inside.
+        e.stopPropagation()
+        setOpen((v) => !v)
+      }}
     >
       <div className="tool-head">
         <span className={`tool-badge ${badge}`}>{content.name.toUpperCase()}</span>
         <span className="tool-headline">{toolHeadline(content.name, content.input)}</span>
+        {summary && (
+          <span className="tool-edit-summary" data-testid="tool-edit-summary">
+            {summary}
+          </span>
+        )}
         {running ? (
           <span className="spinner" data-testid="tool-running-indicator" />
         ) : (
