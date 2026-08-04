@@ -98,9 +98,14 @@ test.describe('fix-gidless-task-id-not-persisted: moving a task that has never h
   })
 
   test('the initial daily-note:read persists a minted gid for the gid-less task before the move menu is ever opened', async () => {
-    // Precondition: the seed file genuinely has no gid tag for this task.
-    expect(readFileSync(notePath, 'utf-8')).not.toContain('[gid::')
-
+    // The seed file was written with NO gid tag (see gidlessSeedContent) —
+    // by the time the Timeline renders the task below, the app's very first
+    // daily-note:read has already run and (per the fix) persisted a minted
+    // [gid::] back to disk. We can't observe the pre-persist on-disk state
+    // from here (the read/persist round-trip completes before the renderer
+    // even paints), so this test instead asserts the post-persist invariant
+    // directly: the on-disk file now has a gid for a task that started with
+    // none — proving persist-on-first-parse actually ran.
     const timelineTask = page.locator('[data-testid="timeline-task"]', { hasText: 'ingestion lag' })
     await expect(timelineTask).toBeVisible()
 
