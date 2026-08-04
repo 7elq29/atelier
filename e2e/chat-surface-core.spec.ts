@@ -55,6 +55,31 @@ async function approveAnyPendingPermission(page: Page, timeoutMs = 5_000): Promi
 }
 
 /**
+ * Approves EVERY currently-visible permission card whose own Allow button is
+ * still visible — not just `.last()`. Two Read calls that each guess a path
+ * outside the working directory (e.g. `~/a.txt` then `~/b.txt`) can produce
+ * two SEPARATE permission cards; once the first is resolved (its Allow/Deny
+ * buttons disappear, replaced by an "Allowed"/"Denied" label) `.last()` can
+ * resolve to the SECOND, still-pending card, which is correct, but if the
+ * cards render in the other order `.last()` instead resolves to the
+ * already-resolved one — its own Allow button is gone, so the click
+ * silently no-ops (via `.catch()`) and the real pending card in front of it
+ * is never clicked, hanging the turn forever. Iterating all cards and
+ * clicking whichever ones still expose an Allow button avoids that.
+ */
+async function approveAllPendingPermissions(page: Page): Promise<void> {
+  const cards = page.getByTestId('permission-card')
+  const count = await cards.count().catch(() => 0)
+  for (let i = 0; i < count; i++) {
+    await cards
+      .nth(i)
+      .getByTestId('perm-allow')
+      .click({ timeout: 500 })
+      .catch(() => undefined)
+  }
+}
+
+/**
  * Waits for the whole turn to go idle (Send button reappears), transparently
  * approving any number of permission prompts that pop up along the way (a
  * single turn can trigger more than one — e.g. two separate Read calls each
@@ -65,13 +90,7 @@ async function waitForTurnIdle(page: Page, timeoutMs = 60_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     if (await page.getByTestId('send-button').isVisible()) return
-    const permCard = page.getByTestId('permission-card').last()
-    if (await permCard.isVisible().catch(() => false)) {
-      await permCard
-        .getByTestId('perm-allow')
-        .click({ timeout: 2_000 })
-        .catch(() => undefined)
-    }
+    await approveAllPendingPermissions(page)
     await page.waitForTimeout(300)
   }
   await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 1_000 })
@@ -87,13 +106,7 @@ async function waitForCondition(page: Page, predicate: () => Promise<boolean>, t
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     if (await predicate()) return
-    const permCard = page.getByTestId('permission-card').last()
-    if (await permCard.isVisible().catch(() => false)) {
-      await permCard
-        .getByTestId('perm-allow')
-        .click({ timeout: 2_000 })
-        .catch(() => undefined)
-    }
+    await approveAllPendingPermissions(page)
     await page.waitForTimeout(300)
   }
   expect(await predicate()).toBe(true)
@@ -134,9 +147,15 @@ test.describe('03-chat-surface-core', () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-chat-'))
     seedSkipOnboarding(userDataDir)
     projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-chat-project-'))
+    // Deliberately only 2 files: several tests below (e.g. the tool-call
+    // sequence-collapse test) instruct the model to read exactly a.txt and
+    // b.txt and assert an exact "Read 2 files" count — a stray unreferenced
+    // third file in this shared project dir gave the model something extra
+    // to glance at despite explicit instructions not to, causing a real,
+    // occasionally-reproducing "Read 3 files" mismatch unrelated to the
+    // aggregation logic under test.
     writeFileSync(join(projectDir, 'a.txt'), 'a\n')
     writeFileSync(join(projectDir, 'b.txt'), 'b\n')
-    writeFileSync(join(projectDir, 'c.txt'), 'c\n')
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 
