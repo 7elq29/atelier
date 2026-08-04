@@ -4,46 +4,34 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * Root-cause investigation for fix-move-task-not-found-root-cause (see
+ * Acceptance test for fix-gidless-task-id-not-persisted (see
+ * Documents/Default/03.projects/Gardenia/Bugs/fix-gidless-task-id-not-persisted/spec.md
+ * and the root-cause investigation it references,
  * Documents/Default/03.projects/Gardenia/Bugs/fix-move-task-not-found-root-cause/spec.md).
  *
- * The prior fix (fix-move-task-not-found-in-source-note, see
- * bug-move-task-not-found-in-source-note.spec.ts) reproduced the error via a
- * *concurrent external edit* stripping a task's `[gid::]` tag while the
- * Timeline "Move to..." menu was already open. That fix made the FAILURE
- * MODE graceful (error banner + resync) but did not address why a task's id
- * can change out from under an open menu in the first place.
+ * Root cause: `daily-note-io.ts`'s `parseDailyNote` minted a brand-new random
+ * `gid` (`mintTaskId()`) EVERY time it parsed a task line with no `[gid::]`
+ * tag, and nothing persisted that minted id back to disk until some renderer
+ * mutation happened to round-trip it. A task hand-typed directly in Obsidian
+ * (never touched via Gardenia's UI) would therefore get a different,
+ * independently-minted id on every separate parse — including
+ * `daily-notes-handlers.ts`'s own fresh re-parse inside the
+ * `daily-note:move-task` handler, decoupled from whatever id the renderer's
+ * `tasks` state currently held. That made `daily-note:move-task` fail
+ * deterministically with "task not found in source note: <id>" for any
+ * gid-less task, with no external edit, no race window, and no stale menu
+ * required.
  *
- * This spec proves the deeper root cause: `daily-note-io.ts`'s
- * `parseDailyNote` mints a brand-new random `gid` (`mintTaskId()`) EVERY
- * time it parses a task line that has no `[gid::]` tag in the file content
- * — and nothing persists that minted id back to disk until some renderer
- * mutation (`updateTask`/`toggleTask`/`addTask`/a write) round-trips it
- * through `serializeTaskLine` (which always emits `[gid:: ...]`).
- *
- * A real user's daily note commonly contains tasks typed directly in
- * Obsidian (or carried from a template) that were NEVER touched via
- * Gardenia's UI, so they never got a `[gid::]` tag written. Every read of
- * that file — the renderer's initial `daily-note:read`, a later focus-regain
- * re-read, an fs.watch reparse — mints an INDEPENDENT random id for that
- * same logical task line. Critically, `daily-notes-handlers.ts`'s
- * `daily-note:move-task` handler does its OWN fresh, independent
- * `parseDailyNote` call on the source file at move time, decoupled from
- * whatever id the renderer's `tasks` state currently holds. If the task
- * being moved has no persisted gid, the renderer's captured id and the
- * handler's freshly-minted id are near-certainly different UUIDs — so the
- * lookup in `daily-note:move-task` fails and throws `task not found in
- * source note: <id>`, with NO external edit, NO race window, and NO stale
- * menu required at all. This matches the real field report exactly: the
- * missing id (`043516d1-...`) did not appear anywhere in `freshIds` because
- * it was never on disk to begin with — it only ever existed in the
- * renderer's in-memory state from an earlier, independent parse.
- *
- * This spec seeds a note with a task that has NO `[gid::]` tag (the normal
- * shape of a hand-typed Obsidian task), opens the Timeline "Move to..."
- * menu for it immediately, and selects "Move to tomorrow" with ZERO
- * external edits and ZERO artificial delay — proving the failure is
- * deterministic given a gid-less task, not merely a rare race.
+ * This spec previously reproduced that failure (see git history — the
+ * original two "reproduction"/"confirms the existing mitigation" tests
+ * asserted the error). The fix persists a minted `[gid:: ...]` back to disk
+ * the FIRST time a gid-less task line is parsed (daily-note:read,
+ * ensureNoteExists, the fs.watch reparse, and move-task's own source parse
+ * all now call `persistMintedGids`), so every subsequent parse of the same
+ * file — including `daily-note:move-task`'s own independent re-parse —
+ * reuses the SAME id instead of minting a new random one. This spec is now
+ * the acceptance test: the exact same gid-less-task scenario must succeed
+ * the move instead of throwing.
  */
 
 const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
@@ -76,7 +64,7 @@ type: daily
 `
 }
 
-test.describe('fix-move-task-not-found-root-cause: moving a task that has never had a persisted gid fails deterministically, with no external edit or race required', () => {
+test.describe('fix-gidless-task-id-not-persisted: moving a task that has never had a persisted gid now succeeds', () => {
   let electronApp: ElectronApplication
   let page: Page
   let vaultRoot: string
@@ -109,95 +97,54 @@ test.describe('fix-move-task-not-found-root-cause: moving a task that has never 
     await electronApp.close().catch(() => undefined)
   })
 
-  test('reproduction: right-click "Move to tomorrow" on a never-persisted-gid task fails with "task not found in source note" immediately, no external edit, no delay', async () => {
-    // Confirm the file on disk genuinely has no gid tag for this task before
-    // touching anything — this is the precondition for the whole theory.
+  test('the initial daily-note:read persists a minted gid for the gid-less task before the move menu is ever opened', async () => {
+    // Precondition: the seed file genuinely has no gid tag for this task.
     expect(readFileSync(notePath, 'utf-8')).not.toContain('[gid::')
 
     const timelineTask = page.locator('[data-testid="timeline-task"]', { hasText: 'ingestion lag' })
     await expect(timelineTask).toBeVisible()
-    const box = await timelineTask.boundingBox()
-    if (!box) throw new Error('timeline task not visible')
 
-    // Open the "Move to..." menu immediately — this captures whatever id the
-    // renderer's initial parse minted for this gid-less line.
-    await timelineTask.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } })
-    const menu = page.locator('[data-testid="task-move-context-menu"]')
-    await expect(menu).toBeVisible()
-
-    // Select "Move to tomorrow" right away. No external file edit, no
-    // waiting for the fs.watch debounce, no double-click, no second window —
-    // the mismatch already exists because the renderer's captured id and
-    // whatever `daily-note:move-task`'s own fresh parse mints are two
-    // independent random mints of the same gid-less line.
-    await menu.locator('[data-testid="task-move-option"]', { hasText: 'Move to tomorrow' }).click()
-
-    // ── Log evidence: the main process hit the exact reported error, and
-    // its `freshIds` diagnostic does NOT contain the id the renderer sent —
-    // confirming it's not a "task moved position" case, it's a genuinely
-    // different id, matching the real field report precisely. ──
-    let logContent = ''
+    // The read that populated the Timeline should have persisted a [gid::]
+    // tag back to disk immediately — the fix's core invariant. Poll briefly
+    // since the persist write is disk I/O following the IPC round-trip.
     await expect
-      .poll(
-        async () => {
-          const logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
-          logContent = readFileSync(logPath, 'utf-8')
-          return logContent
-        },
-        { timeout: 5000 }
-      )
-      .toContain('daily-note move-task: task not found in source note')
-
-    const logLine = logContent
-      .split('\n')
-      .reverse()
-      .find((l) => l.includes('daily-note move-task: task not found in source note'))
-    expect(logLine).toBeTruthy()
-    const parsed = JSON.parse(logLine!)
-    expect(parsed.taskId).toBeTruthy()
-    expect(parsed.freshIds).not.toContain(parsed.taskId)
-
-    // ── The existing mitigation (error banner + resync) still applies —
-    // this is the graceful failure mode from the prior fix, not a crash. ──
-    const errorBanner = page.locator('[data-testid="move-task-error"]')
-    await expect(errorBanner).toBeVisible({ timeout: 5000 })
-
-    await page.screenshot({ path: join(artifactsDir, 'bug-move-task-not-found-gidless-task.png') })
-
-    // The task itself is untouched on disk — still gid-less, still present,
-    // never written into tomorrow's note.
-    const tomorrowPath = join(vaultRoot, '01.dailynotes', '2026', 'Aug', '32', `${TOMORROW}.md`)
-    expect(() => readFileSync(tomorrowPath, 'utf-8')).toThrow()
+      .poll(() => readFileSync(notePath, 'utf-8'), { timeout: 5000 })
+      .toContain('[gid::')
     expect(readFileSync(notePath, 'utf-8')).toContain('ingestion lag')
   })
 
-  test('confirms the existing stale-menu-closing mitigation (Timeline.tsx tasks-prop effect) cannot catch this case: the renderer\'s own `tasks` state never changes between menu-open and click, so the effect never fires — the mismatch is against a fresh disk parse the renderer never sees', async () => {
-    // Reload with a fresh gid-less task to isolate this check.
-    await page.reload()
-    await page.waitForLoadState('domcontentloaded')
-    await expect(page.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
-
+  test('right-click "Move to tomorrow" on the (now gid-persisted) task succeeds: no "task not found" error, task lands in tomorrow\'s Backlog', async () => {
     const timelineTask = page.locator('[data-testid="timeline-task"]', { hasText: 'ingestion lag' })
     await expect(timelineTask).toBeVisible()
-
-    // Read the renderer's in-memory task id for this task via the exposed
-    // note state, immediately before AND immediately after opening the
-    // menu — with no external edit, no watcher event, nothing to trigger
-    // Timeline.tsx's `tasks`-dependent stale-menu-closing useEffect at all.
     const box = await timelineTask.boundingBox()
     if (!box) throw new Error('timeline task not visible')
+
     await timelineTask.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } })
     const menu = page.locator('[data-testid="task-move-context-menu"]')
     await expect(menu).toBeVisible()
-
-    // The menu is still open and was never auto-closed — proving the
-    // mitigation had nothing to react to (the renderer's `tasks` prop is
-    // unchanged; the mismatch only exists relative to a disk-side parse the
-    // renderer never receives a push for).
-    await expect(menu).toBeVisible()
     await menu.locator('[data-testid="task-move-option"]', { hasText: 'Move to tomorrow' }).click()
 
+    // No error banner should ever appear.
     const errorBanner = page.locator('[data-testid="move-task-error"]')
-    await expect(errorBanner).toBeVisible({ timeout: 5000 })
+    await expect(errorBanner).not.toBeVisible({ timeout: 3000 })
+
+    // The task disappears from today's Timeline...
+    await expect(timelineTask).not.toBeVisible({ timeout: 5000 })
+
+    await page.screenshot({ path: join(artifactsDir, 'bug-move-task-not-found-gidless-task.png') })
+
+    // ...and log evidence confirms a committed move, never a "not found".
+    const logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+    const logContent = readFileSync(logPath, 'utf-8')
+    expect(logContent).not.toContain('daily-note move-task: task not found in source note')
+    expect(logContent).toContain('daily-note move-task committed')
+
+    // Source note no longer has the task; tomorrow's note was created with it
+    // in the Backlog section.
+    expect(readFileSync(notePath, 'utf-8')).not.toContain('ingestion lag')
+    const tomorrowPath = join(vaultRoot, '01.dailynotes', '2026', 'Aug', '32', `${TOMORROW}.md`)
+    const tomorrowContent = readFileSync(tomorrowPath, 'utf-8')
+    expect(tomorrowContent).toContain('ingestion lag')
+    expect(tomorrowContent).toContain('[gid::')
   })
 })
