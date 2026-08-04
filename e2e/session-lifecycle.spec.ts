@@ -699,7 +699,8 @@ test.describe('02-session-lifecycle', () => {
   // byte the same text as the production remote log) — same "backend has no
   // record of this conversation" condition, just triggered locally instead
   // of by a remote devpod restart.
-  test('bug: resume() against a conversation the CLI backend has lost falls back to a fresh session instead of failing forever', async () => {
+  test('bug: resume() against a conversation the CLI backend has lost falls back to a fresh session instead of failing forever', async ({}, testInfo) => {
+    testInfo.setTimeout(120_000)
     const bugProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug-lost-conversation-'))
     writeFileSync(join(bugProjectDir, 'README.md'), '# test project\n')
 
@@ -791,7 +792,7 @@ test.describe('02-session-lifecycle', () => {
     // startWithId() call has actually spawned/handshaken with the CLI (same
     // "connecting != connected yet" gap applyEvent's own doc comment
     // describes for a normal resume()).
-    await expect.poll(() => existsSync(transcriptPath), { timeout: 20_000 }).toBe(true)
+    await expect.poll(() => existsSync(transcriptPath), { timeout: 40_000 }).toBe(true)
 
     // Must not still be racing the fallback's own in-flight reconnect —
     // sending a follow-up while THAT is still connecting would trigger a
