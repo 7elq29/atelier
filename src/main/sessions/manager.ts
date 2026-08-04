@@ -108,6 +108,22 @@ function isConversationLostError(message: string): boolean {
   return /no conversation found/i.test(message)
 }
 
+/**
+ * Matches the CLI's distinct `"Session ID <id> is already in use"` error —
+ * verified for real (SDK-level probe, see `startFreshWithRetry`'s doc
+ * comment) to be a genuine but narrow race specifically when a
+ * `startWithId()` fallback immediately follows a failed `resume()` for a
+ * still-streaming (`keepAlive: true`) session, NOT the `"no conversation
+ * found"` failure itself.
+ */
+function isSessionLockRaceError(message: string): boolean {
+  return /is already in use/i.test(message)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function newLiveStream(turnCount = 0): LiveStream {
   return {
     buffer: '',
@@ -501,8 +517,7 @@ export class SessionManager {
         })
         this.sendMessage(session.id, notice)
         try {
-          const fresh = await this.harness.startWithId(session.id, '', startOpts)
-          yield* fresh.events
+          yield* this.startFreshWithRetry(session, startOpts)
         } catch (err) {
           yield {
             type: 'error',
@@ -514,6 +529,54 @@ export class SessionManager {
         return
       }
       yield event
+    }
+  }
+
+  /**
+   * Starts a fresh `startWithId()` conversation, with ONE bounded retry
+   * (after a short delay) if — and only if — the CLI reports the exact
+   * `"Session ID ... is already in use"` conflict as the VERY FIRST event of
+   * that attempt. Verified for real (SDK-level probe: `resume()` against a
+   * conversation with its transcript deleted, immediately followed by
+   * `startWithId()` for the SAME id) that this is a genuine, narrow race —
+   * not a design flaw in falling back at all: `SessionManager`'s live
+   * sessions use a persistent streaming-input queue (`keepAlive: true`), so
+   * the FAILED resume's underlying CLI subprocess is still in the process of
+   * shutting down (`active.queue.close()` closes its stdin, but the OS
+   * process takes a little longer to actually exit and release whatever
+   * session-id lock the CLI holds) at the exact moment the fallback's new
+   * `startWithId()` call tries to spawn a NEW process for that same id — a
+   * timing gap that doesn't exist for a one-shot `-p` CLI invocation (which
+   * is why a plain sequential CLI probe never reproduced it). One retry with
+   * a short delay clears this window in practice; if the SAME conflict
+   * happens again on the retry, or any OTHER error occurs on either attempt,
+   * it's surfaced normally (via the plain `'error'`/`'result'` events
+   * `fresh.events` naturally yields) — never a second bounded retry, so this
+   * still can't loop forever.
+   */
+  private async *startFreshWithRetry(
+    session: SessionRecord,
+    startOpts: { cwd: string; host?: RemoteHost; keepAlive: boolean; permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort'] }
+  ): AsyncGenerator<HarnessEvent, void, void> {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const fresh = await this.harness.startWithId(session.id, '', startOpts)
+      const iterator = fresh.events[Symbol.asyncIterator]()
+      const first = await iterator.next()
+      if (first.done) return
+      if (attempt === 1 && first.value.type === 'error' && isSessionLockRaceError(first.value.message)) {
+        logger.warn('startFreshWithRetry: hit a transient session-id lock race right after the failed resume; retrying once after a short delay', {
+          sessionId: session.id,
+          error: first.value.message
+        })
+        await delay(750)
+        continue
+      }
+      yield first.value
+      while (true) {
+        const next = await iterator.next()
+        if (next.done) return
+        yield next.value
+      }
     }
   }
 
