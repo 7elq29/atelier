@@ -534,7 +534,7 @@ export class SessionManager {
 
   /**
    * Starts a fresh `startWithId()` conversation, with a SHORT, BOUNDED
-   * exponential-backoff retry (max 3 total attempts, ~1.5s then ~3s delays —
+   * exponential-backoff retry (max 4 total attempts, ~1.5s/3s/5s delays —
    * never unbounded/forever) if — and only if — the CLI reports the exact
    * `"Session ID ... is already in use"` conflict. Verified for real
    * (SDK-level probe, driven through the same persistent streaming-input
@@ -542,25 +542,25 @@ export class SessionManager {
    * sequential one-shot `-p` CLI probe never reproduced this at all) that
    * this is a genuine, narrow race, not a design flaw in falling back at
    * all: `SessionManager`'s live sessions use a persistent streaming-input
-   * queue (`keepAlive: true`), so the FAILED resume's underlying CLI
-   * subprocess can still be mid-shutdown (`active.queue.close()` closes its
-   * stdin, but the OS process — and whatever session-id lock/hook execution
-   * the CLI itself runs on teardown — takes a little longer to actually
-   * finish) at the exact moment the fallback's new `startWithId()` call
-   * tries to spawn a NEW process for that same id. A single 750ms retry
-   * measured too short in practice (observed to still collide); the backoff
-   * here was tuned against a real repro until it reliably cleared. Any OTHER
-   * error, or the SAME conflict still happening after all attempts are
-   * exhausted, is surfaced normally (via the plain `'error'`/`'result'`
-   * events `fresh.events` naturally yields) — this loop is capped, so it
-   * still can't retry forever.
+   * queue (`keepAlive: true`), so the FAILED resume's underlying `query()`
+   * still held session-level state that the SDK itself hadn't released yet
+   * at the exact moment the fallback's new `startWithId()` call tries to
+   * reuse that same id — `pump()`'s catch (claude-agent-sdk-harness.ts) now
+   * also calls `query.interrupt()` on a genuine (non-self-inflicted) failure
+   * specifically to release that state sooner, but the backoff here remains
+   * as a bounded safety net since that call is fire-and-forget (not awaited
+   * before the fallback's own retry loop proceeds). Any OTHER error, or the
+   * SAME conflict still happening after all attempts are exhausted, is
+   * surfaced normally (via the plain `'error'`/`'result'` events
+   * `fresh.events` naturally yields) — this loop is capped, so it still
+   * can't retry forever.
    */
   private async *startFreshWithRetry(
     session: SessionRecord,
     startOpts: { cwd: string; host?: RemoteHost; keepAlive: boolean; permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort'] }
   ): AsyncGenerator<HarnessEvent, void, void> {
-    const MAX_ATTEMPTS = 3
-    const RETRY_DELAYS_MS = [1500, 3000]
+    const MAX_ATTEMPTS = 4
+    const RETRY_DELAYS_MS = [1500, 3000, 5000]
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const fresh = await this.harness.startWithId(session.id, '', startOpts)
       const iterator = fresh.events[Symbol.asyncIterator]()
