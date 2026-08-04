@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync } from 'node:fs'
+import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 
 const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
@@ -677,5 +677,135 @@ test.describe('02-session-lifecycle', () => {
         { timeout: 20_000 }
       )
       .toBe(true)
+  })
+
+  // ── Bug repro + fix (fix-remote-resume-conversation-lost-fallback):
+  // resume() against a session the CLI backend has genuinely lost all
+  // record of ("No conversation found with session ID: ...") must fall back
+  // ONCE to a fresh startWithId() conversation reusing the same id, with a
+  // clear system message explaining why — not fail forever with a raw,
+  // confusing CLI error. `everConnected` genuinely is true here (a real
+  // first connection did happen) — this is deliberately NOT the "never
+  // connected" case already covered by fix-no-conversation-found-remote-resume.
+  //
+  // Remote/devpod access (where this was actually observed in production —
+  // a devpod restart pruning its own conversation history) isn't available
+  // in this sandbox. The LOCAL equivalent reproduces the byte-identical
+  // failure: deleting a session's own transcript `.jsonl` under
+  // `~/.claude/projects/<encoded-cwd>/<id>.jsonl` after it has connected
+  // once (verified for real via a standalone `claude --resume <id>` CLI
+  // probe against a deleted transcript: stderr
+  // "No conversation found with session ID: <id>", exit code 1 — byte-for-
+  // byte the same text as the production remote log) — same "backend has no
+  // record of this conversation" condition, just triggered locally instead
+  // of by a remote devpod restart.
+  test('bug: resume() against a conversation the CLI backend has lost falls back to a fresh session instead of failing forever', async () => {
+    const bugProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug-lost-conversation-'))
+    writeFileSync(join(bugProjectDir, 'README.md'), '# test project\n')
+
+    await stubProjectFolder(electronApp, bugProjectDir)
+    await openNewSessionModal(page)
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: ACK')
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    const row = page.locator('[data-testid="session-row"]').first()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    const sessionId = (await row.getAttribute('data-session-id')) as string
+    expect(sessionId).toBeTruthy()
+
+    // Wait for the first real turn to complete — this is what flips
+    // ever_connected to 1 (session_started actually fired), the precondition
+    // for reconnectHarness() to route through resume() at all rather than
+    // startWithId().
+    await expect
+      .poll(async () => page.locator('[data-testid="transcript-message"][data-role="assistant"]').count(), {
+        timeout: 30_000
+      })
+      .toBeGreaterThan(0)
+
+    const everConnectedRows = await queryDb<{ ever_connected: number }>(
+      page,
+      'SELECT ever_connected FROM sessions WHERE id = ?',
+      [sessionId]
+    )
+    expect(everConnectedRows[0]?.ever_connected).toBe(1)
+
+    // Close, then delete this session's own transcript — the local
+    // equivalent of the devpod losing its conversation history server-side.
+    await row.getByTestId('session-menu-button').click()
+    await row.getByTestId('menu-close').click()
+
+    const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
+    await expect(historyRow).toBeVisible({ timeout: 10_000 })
+
+    // Mirrors historical-cost-recompute.ts's encodeProjectDir intent, but
+    // verified for real (via the actual `~/.claude/projects/` dir this test
+    // run just created) that Claude Code's own encoding replaces EVERY
+    // non-alphanumeric character with `-` — not just `/` and `.` as
+    // historical-cost-recompute.ts's comment claims. That distinction only
+    // shows up here because macOS's own tmpdir() path contains `_`
+    // (`/private/var/folders/xh/xxxxx_xxxx_xxxx/T/...`), which real project
+    // paths essentially never do — so the narrower regex has silently never
+    // been exercised by that path before.
+    const encodedProjectDir = realpathSync(bugProjectDir).replace(/[^a-zA-Z0-9]/g, '-')
+    const transcriptPath = join(homedir(), '.claude', 'projects', encodedProjectDir, `${sessionId}.jsonl`)
+    expect(existsSync(transcriptPath)).toBe(true)
+    rmSync(transcriptPath)
+
+    await historyRow.getByTestId('resume-button').click()
+
+    const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+    await expect(activeRow).toBeVisible({ timeout: 10_000 })
+
+    // The fallback's own explanatory system message must show up (not a raw
+    // "Error: Claude Code returned an error result: No conversation found
+    // with session ID: ..." string) — and the session must actually recover:
+    // a follow-up message gets a real new assistant response, proving the
+    // fresh startWithId() conversation is genuinely usable, not just silent.
+    await expect
+      .poll(
+        async () => {
+          const texts = await page.locator('[data-testid="transcript-message"]').allTextContents()
+          return texts.some((t) => t.toLowerCase().includes('lost the server-side conversation history'))
+        },
+        { timeout: 20_000 }
+      )
+      .toBe(true)
+
+    const textsAfterFallback = await page.locator('[data-testid="transcript-message"]').allTextContents()
+    expect(textsAfterFallback.some((t) => t.includes('No conversation found'))).toBe(false)
+
+    await page.screenshot({ path: join(artifactsDir, 'fix-remote-resume-conversation-lost-fallback-system-message.png') })
+
+    appendMainLog(userDataDir)
+    const log = readFileSync(lifecycleLogPath, 'utf-8')
+    expect(log).toContain('resume() failed because the CLI has lost this conversation')
+
+    // The fresh conversation must have a real, usable transcript file of its
+    // own now (startWithId() actually ran and connected for real).
+    expect(existsSync(transcriptPath)).toBe(true)
+
+    // Session must be genuinely usable again: a follow-up gets a real
+    // response, not another failure.
+    const assistantCountBefore = await page.locator('[data-testid="transcript-message"][data-role="assistant"]').count()
+    const composer = page.getByTestId('composer-input')
+    await composer.fill('Reply with exactly the single word: PONG')
+    await page.getByTestId('send-button').click()
+    await expect
+      .poll(async () => page.locator('[data-testid="transcript-message"][data-role="assistant"]').count(), {
+        timeout: 30_000
+      })
+      .toBeGreaterThan(assistantCountBefore)
+
+    // No infinite retry loop: only ONE fallback log line for this session,
+    // not one per attempt.
+    const fallbackLogLines = log.split('\n').filter((l) => l.includes('resume() failed because the CLI has lost this conversation') && l.includes(sessionId))
+    expect(fallbackLogLines.length).toBe(1)
+
+    await row.getByTestId('session-menu-button').click()
+    await row.getByTestId('menu-close').click()
   })
 })
