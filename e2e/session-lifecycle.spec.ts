@@ -1,5 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync, readdirSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -755,6 +755,33 @@ test.describe('02-session-lifecycle', () => {
     const transcriptPath = join(homedir(), '.claude', 'projects', encodedProjectDir, `${sessionId}.jsonl`)
     expect(existsSync(transcriptPath)).toBe(true)
     rmSync(transcriptPath)
+
+    // A real devpod restart/disk-wipe (the actual production trigger for
+    // this bug) clears EVERYTHING the CLI keeps about a session, not just
+    // its transcript. Investigated (background research agent, read-only,
+    // against this machine's real ~/.claude/) why a fallback startWithId()
+    // reusing this exact id was consistently refused with "Session ID ...
+    // is already in use" even across a full app relaunch: the CLI persists
+    // additional per-session-id state OUTSIDE `~/.claude/projects/*.jsonl`
+    // — confirmed present on this machine at `~/.claude/session-env/<id>/`
+    // and `~/.claude/debug/<id>.txt` (also reported independently at
+    // https://github.com/coder/registry/issues/726, which names a third
+    // sibling, `~/.claude/todos/<id>*.json`, not present on this machine).
+    // Deleting only the transcript left these behind, which a genuine
+    // remote wipe would not — an incomplete reproduction, not a real
+    // product bug. Removing them too makes this repro faithfully match
+    // "the backend lost this conversation" rather than "the backend lost
+    // ONLY its transcript of this conversation."
+    const sessionEnvDir = join(homedir(), '.claude', 'session-env', sessionId)
+    const debugFile = join(homedir(), '.claude', 'debug', `${sessionId}.txt`)
+    if (existsSync(sessionEnvDir)) rmSync(sessionEnvDir, { recursive: true, force: true })
+    if (existsSync(debugFile)) rmSync(debugFile)
+    const todosDir = join(homedir(), '.claude', 'todos')
+    if (existsSync(todosDir)) {
+      for (const entry of readdirSync(todosDir)) {
+        if (entry.startsWith(sessionId)) rmSync(join(todosDir, entry), { recursive: true, force: true })
+      }
+    }
 
     await historyRow.getByTestId('resume-button').click()
 
