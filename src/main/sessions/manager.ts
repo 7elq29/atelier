@@ -93,6 +93,21 @@ interface LiveStream {
 }
 
 
+/**
+ * Matches the CLI's own error text for a `resume()` against a session id it
+ * has no backend-side record of at all (see `SessionManager.
+ * withConversationLostFallback`'s doc comment) — verified for real via a
+ * standalone `claude --resume <id>` probe against a deleted transcript file:
+ * stderr `"No conversation found with session ID: <id>"`. Deliberately loose
+ * (case-insensitive substring, no exact id/format match) so it also catches
+ * the same phrasing surfacing through `initializationResult()` rejecting
+ * with `"Claude Code returned an error result: No conversation found with
+ * session ID: <id>"` — both wrap the identical underlying CLI message.
+ */
+function isConversationLostError(message: string): boolean {
+  return /no conversation found/i.test(message)
+}
+
 function newLiveStream(turnCount = 0): LiveStream {
   return {
     buffer: '',
@@ -425,7 +440,81 @@ export class SessionManager {
       })
       return this.harness.startWithId(session.id, '', startOpts)
     }
-    return this.harness.resume(session.id, startOpts)
+    const harnessSession = await this.harness.resume(session.id, startOpts)
+    return {
+      sessionId: harnessSession.sessionId,
+      events: this.withConversationLostFallback(session, startOpts, harnessSession.events)
+    }
+  }
+
+  /**
+   * fix-remote-resume-conversation-lost-fallback: a session with
+   * `everConnected === true` genuinely did connect once, but the CLI backend
+   * (local or remote/devpod) can still have since lost ALL record of that
+   * conversation — a devpod restart/disk-clear pruning its own history, or
+   * (verified locally as a faithful reproduction, same error text and exit
+   * code) the session's own transcript file having been deleted. `resume()`
+   * against that fails with "No conversation found with session ID: ..." on
+   * EVERY future attempt forever — there is no local flag that can predict
+   * this in advance, so it can only be detected by actually trying `resume()`
+   * and watching for this specific failure in the harness's own event
+   * stream (see claude-agent-sdk-harness.ts's `launch()`/`pump()`: a lost
+   * conversation first yields a `result` event with `isError: true` — handled
+   * silently by `applyEvent`'s `case 'result':`, nothing to intercept there —
+   * then the very next `query.next()` throws, which `pump()`'s `catch` turns
+   * into a `type: 'error'` event with this exact message).
+   *
+   * On seeing that specific error (and ONLY on the first occurrence for this
+   * reconnect attempt — this generator returns right after, so there is no
+   * loop), this swallows the raw/confusing CLI error, persists a plain-
+   * language system message explaining what happened, and falls back ONCE to
+   * `startWithId()` — a genuinely fresh conversation reusing the same session
+   * id (same mechanism `!session.everConnected` already uses above) — then
+   * re-yields THAT session's events for the remainder of this generator's
+   * life. If the fallback itself throws, no further retry is attempted: a
+   * distinct `error` event is yielded instead, which `applyEvent`'s existing
+   * `case 'error':` persists as a normal visible system error — so the user
+   * always reaches a clear terminal state.
+   *
+   * Any OTHER `error` event (bad cwd, auth failure, network — anything not
+   * matching this specific message) passes through completely unchanged,
+   * preserving the "a genuine reconnect failure still surfaces an error"
+   * behavior already covered by `session-lifecycle.spec.ts`'s "bug repro
+   * safety net" test.
+   */
+  private async *withConversationLostFallback(
+    session: SessionRecord,
+    startOpts: { cwd: string; host?: RemoteHost; keepAlive: boolean; permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort'] },
+    events: AsyncGenerator<HarnessEvent, void, void>
+  ): AsyncGenerator<HarnessEvent, void, void> {
+    for await (const event of events) {
+      if (event.type === 'error' && isConversationLostError(event.message)) {
+        logger.warn('reconnectHarness: resume() failed because the CLI has lost this conversation server-side; falling back once to a fresh session reusing the same id', {
+          sessionId: session.id,
+          error: event.message
+        })
+        const notice = this.store.addMessage({
+          sessionId: session.id,
+          role: 'system',
+          content:
+            'Reconnecting lost the server-side conversation history for this session (likely due to a remote restart or history being cleared). Starting fresh with the same session — prior messages are still visible above, but the assistant will not have that context anymore.'
+        })
+        this.sendMessage(session.id, notice)
+        try {
+          const fresh = await this.harness.startWithId(session.id, '', startOpts)
+          yield* fresh.events
+        } catch (err) {
+          yield {
+            type: 'error',
+            sessionId: session.id,
+            timestamp: new Date().toISOString(),
+            message: `Fallback to a fresh session also failed: ${err instanceof Error ? err.message : String(err)}`
+          }
+        }
+        return
+      }
+      yield event
+    }
   }
 
   /** Reconnects the live harness session on top of the already-rendered transcript. No-op for terminal sessions. */
