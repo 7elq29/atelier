@@ -753,7 +753,11 @@ test.describe('02-session-lifecycle', () => {
     // been exercised by that path before.
     const encodedProjectDir = realpathSync(bugProjectDir).replace(/[^a-zA-Z0-9]/g, '-')
     const transcriptPath = join(homedir(), '.claude', 'projects', encodedProjectDir, `${sessionId}.jsonl`)
-    expect(existsSync(transcriptPath)).toBe(true)
+    // The CLI's transcript write for the just-completed turn may not have
+    // flushed to disk yet, especially under back-to-back real-SDK-call load
+    // (e.g. run right after another real-CLI-driving test in the same
+    // worker) — poll instead of a single synchronous check.
+    await expect.poll(() => existsSync(transcriptPath), { timeout: 10_000 }).toBe(true)
     rmSync(transcriptPath)
 
     // A real devpod restart/disk-wipe (the actual production trigger for
