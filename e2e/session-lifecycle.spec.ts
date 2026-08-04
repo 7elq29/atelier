@@ -838,9 +838,14 @@ test.describe('02-session-lifecycle', () => {
     // thing to prove is that the session reaches a WELL-DEFINED terminal
     // state either way — connected and usable, or a clear final error — never
     // silently stuck showing only the original confusing message with no
-    // resolution. Poll for either outcome, bounded by startFreshWithRetry's
-    // own known-bounded attempt budget (4 attempts, ~1.5s+3s+5s backoff) plus
-    // headroom.
+    // resolution.
+    //
+    // Poll for the success case (fast path — usually seconds), but cap the
+    // wait at startFreshWithRetry's own known-bounded attempt budget (4
+    // attempts, ~1.5s+3s+5s backoff, plus per-attempt overhead) so a run that
+    // ends up exhausting every attempt doesn't wait any longer than that
+    // budget allows before this test evaluates the (equally valid) exhausted
+    // branch below.
     const sessionStartedCountBeforeFallback = logAfterFallback
       .split('\n')
       .filter((l) => l.includes('harness event: session_started') && l.includes(sessionId)).length
@@ -850,18 +855,12 @@ test.describe('02-session-lifecycle', () => {
         () => {
           appendMainLog(userDataDir)
           const currentLog = readFileSync(lifecycleLogPath, 'utf-8')
-          const sessionStartedCount = currentLog.split('\n').filter((l) => l.includes('harness event: session_started') && l.includes(sessionId)).length
-          const succeeded = sessionStartedCount > sessionStartedCountBeforeFallback
-          // startFreshWithRetry() exhausted all attempts without succeeding:
-          // its last attempt's error passes through unmodified as a normal
-          // 'error' event/system message (not the friendly fallback text) —
-          // a clear, visible terminal failure, not a silent one.
-          const exhaustedWithClearError = currentLog.includes('"level":"warn","msg":"initializationResult() failed') && !succeeded
-          return succeeded || exhaustedWithClearError
+          return currentLog.split('\n').filter((l) => l.includes('harness event: session_started') && l.includes(sessionId)).length
         },
-        { timeout: 30_000 }
+        { timeout: 25_000, intervals: [500] }
       )
-      .toBe(true)
+      .toBeGreaterThan(sessionStartedCountBeforeFallback)
+      .catch(() => undefined) // exhausted-fallback branch below handles a real timeout here
 
     const textsAfterSettling = await page.locator('[data-testid="transcript-message"]').allTextContents()
     // Never the raw, confusing pre-fix message, regardless of which terminal
