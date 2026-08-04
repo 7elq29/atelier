@@ -668,13 +668,17 @@ test.describe('02-session-lifecycle', () => {
 
     // A genuine failure must still surface as a visible system error message
     // — Part A only suppresses the bogus SIGTERM-from-our-own-interrupt case.
+    // Widened from 20s: confirmed pre-existing (reproduces identically on
+    // the pre-fix commit) flake under the CPU/disk contention of a long
+    // sequential real-CLI test run; not caused by this change, but blocking
+    // it from completing in the full targeted category.
     await expect
       .poll(
         async () => {
           const texts = await page.locator('[data-testid="transcript-message"]').allTextContents()
           return texts.some((t) => t.toLowerCase().includes('error'))
         },
-        { timeout: 20_000 }
+        { timeout: 40_000 }
       )
       .toBe(true)
   })
@@ -712,7 +716,22 @@ test.describe('02-session-lifecycle', () => {
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
 
-    const row = page.locator('[data-testid="session-row"]').first()
+    // NOTE: deliberately NOT `.first()` here. A previous test in this same
+    // serial describe block (e.g. "bug repro safety net") can still have its
+    // own session row lingering in the "active" section of the sidebar when
+    // this test starts — its own resume/interrupt teardown runs
+    // fire-and-forget in the main process and isn't guaranteed to have
+    // settled (row moved to History) by the time the next `test()` begins.
+    // Confirmed for real: `.first()` grabbed that STALE row instead of this
+    // test's own freshly created one, silently pairing the wrong session id
+    // with this test's own project dir for the rest of the test — the
+    // transcript-existence check below then polled a path that could never
+    // exist (wrong project dir for that id), which looked like a flush
+    // delay but was actually just the wrong file entirely. Scope the
+    // selector to the just-created project dir's own basename, which is
+    // rendered as the row's subtitle, to make it unambiguous.
+    const bugProjectDirName = bugProjectDir.split('/').pop() as string
+    const row = page.locator('[data-testid="session-row"]', { hasText: bugProjectDirName })
     await expect(row).toBeVisible({ timeout: 15_000 })
     const sessionId = (await row.getAttribute('data-session-id')) as string
     expect(sessionId).toBeTruthy()
@@ -753,11 +772,18 @@ test.describe('02-session-lifecycle', () => {
     // been exercised by that path before.
     const encodedProjectDir = realpathSync(bugProjectDir).replace(/[^a-zA-Z0-9]/g, '-')
     const transcriptPath = join(homedir(), '.claude', 'projects', encodedProjectDir, `${sessionId}.jsonl`)
-    // The CLI's transcript write for the just-completed turn may not have
-    // flushed to disk yet, especially under back-to-back real-SDK-call load
-    // (e.g. run right after another real-CLI-driving test in the same
-    // worker) — poll instead of a single synchronous check.
-    await expect.poll(() => existsSync(transcriptPath), { timeout: 10_000 }).toBe(true)
+    // Poll rather than a single synchronous check: the CLI's transcript
+    // write for the just-completed turn can lag slightly behind the
+    // assistant message already showing in the UI (persisted via SQLite/IPC
+    // independently of the CLI's own on-disk transcript write). NOT a
+    // multi-minute race — an earlier version of this test appeared to hit
+    // one under back-to-back real-CLI runs (>60s and still missing), but
+    // that was actually `row` resolving to a DIFFERENT, still-lingering
+    // session row left over from a preceding test in this same serial
+    // block (see the `row` selector's comment above) — once the selector
+    // was scoped to this test's own project dir, the real file shows up
+    // within a couple of seconds.
+    await expect.poll(() => existsSync(transcriptPath), { timeout: 15_000 }).toBe(true)
     rmSync(transcriptPath)
 
     // A real devpod restart/disk-wipe (the actual production trigger for
