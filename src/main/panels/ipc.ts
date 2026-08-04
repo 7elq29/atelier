@@ -17,16 +17,18 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
   const portManager = new PortForwardManager(getWindow)
 
   // ── Git / diff / worktrees ─────────────────────────────────────────
-  ipcMain.handle('panel:git:diff', (_e, projectPath: string) => git.getDiffSummary(projectPath))
-  ipcMain.handle('panel:git:commits', (_e, projectPath: string) => git.listCommits(projectPath))
-  ipcMain.handle('panel:git:worktrees', (_e, projectPath: string) => git.listWorktrees(projectPath))
-  ipcMain.handle('panel:git:worktreeAdd', (_e, projectPath: string, worktreePath: string, branch: string) =>
-    git.addWorktree(projectPath, worktreePath, branch)
+  ipcMain.handle('panel:git:diff', (_e, projectPath: string, hostname?: string | null) => git.getDiffSummary(projectPath, hostname))
+  ipcMain.handle('panel:git:commits', (_e, projectPath: string, hostname?: string | null) => git.listCommits(projectPath, 50, hostname))
+  ipcMain.handle('panel:git:worktrees', (_e, projectPath: string, hostname?: string | null) => git.listWorktrees(projectPath, hostname))
+  ipcMain.handle('panel:git:worktreeAdd', (_e, projectPath: string, worktreePath: string, branch: string, hostname?: string | null) =>
+    git.addWorktree(projectPath, worktreePath, branch, hostname)
   )
-  ipcMain.handle('panel:git:worktreeRemove', (_e, projectPath: string, worktreePath: string) =>
-    git.removeWorktree(projectPath, worktreePath)
+  ipcMain.handle('panel:git:worktreeRemove', (_e, projectPath: string, worktreePath: string, hostname?: string | null) =>
+    git.removeWorktree(projectPath, worktreePath, hostname)
   )
-  ipcMain.handle('panel:git:worktreeMerge', (_e, projectPath: string, branch: string) => git.mergeWorktreeBranch(projectPath, branch))
+  ipcMain.handle('panel:git:worktreeMerge', (_e, projectPath: string, branch: string, hostname?: string | null) =>
+    git.mergeWorktreeBranch(projectPath, branch, hostname)
+  )
 
   // ── Files ────────────────────────────────────────────────────────────
   ipcMain.handle('panel:files:tree', (_e, projectPath: string) => walkFileTree(projectPath))

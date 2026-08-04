@@ -323,6 +323,45 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('port-row')).toHaveCount(0, { timeout: 10_000 })
   })
 
+  // ── 6b. Diff panel (real devpod): git ops must run remotely over SSH ───
+  // Bug repro: the Diff tab always shells out to the LOCAL git binary with
+  // cwd=projectPath, so for a remote session (where projectPath only exists
+  // on the devpod) it always reports "not a git repository" — even though
+  // the real remote path is a real repo with real commits (confirmed via
+  // `ssh qingqin-go.devpod-us-or -- git -C ~/go-code rev-parse
+  // --is-inside-work-tree` -> `true`).
+  test('diff panel: real devpod session shows real remote git state, not "not a git repository"', async () => {
+    await stubProjectFolder(electronApp, '')
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId('host-option-devpod-us-or').click()
+    await page.getByTestId('remote-project-path').fill('/home/user/go-code')
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    await expect(page.getByTestId('tab-diff')).toBeVisible({ timeout: 20_000 })
+    await page.getByTestId('tab-diff').click()
+
+    // Wait for the panel to settle out of "Loading diff…" (9 sequential SSH
+    // round-trips: isRepo/branch/hasHead/diff for getDiffSummary, plus
+    // isRepo/hasHead/log for listCommits, plus isRepo/worktree-list for
+    // listWorktrees) before asserting on which state it landed in.
+    await expect(page.getByTestId('diff-empty-not-repo').or(page.getByTestId('diff-panel'))).toBeVisible({ timeout: 30_000 })
+
+    // The bug: this must NOT show the "not a git repository" empty state for
+    // a real remote repo.
+    await expect(page.getByTestId('diff-empty-not-repo')).toHaveCount(0)
+    await expect(page.getByTestId('diff-panel')).toBeVisible()
+
+    // Prove it's genuinely talking to the remote repo (not just "isRepo:
+    // true" by accident) via a real `git log` round trip over SSH.
+    await page.getByTestId('diff-sub-commits').click()
+    await expect(page.getByTestId('commit-row').first()).toBeVisible({ timeout: 15_000 })
+
+    await page.screenshot({ path: join(artifactsDir, '07-diff-devpod.png') })
+    log('diff panel: real devpod git state shown OK')
+  })
+
   // ── 7. External links open the OS browser, never an embedded view ─────
   test('external links: clicking a real rendered link invokes shell.openExternal with the right URL, never navigates in-app', async () => {
     await electronApp.evaluate(({ shell }) => {

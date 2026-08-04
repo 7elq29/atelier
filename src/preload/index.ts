@@ -181,15 +181,18 @@ const api = {
     ipcRenderer.invoke('debug:execDb', sql, params),
 
   // ── Secondary panels (07-secondary-panels) ──────────────────────────
-  gitDiff: (projectPath: string): Promise<DiffSummary> => ipcRenderer.invoke('panel:git:diff', projectPath),
-  gitCommits: (projectPath: string): Promise<CommitInfo[]> => ipcRenderer.invoke('panel:git:commits', projectPath),
-  gitWorktrees: (projectPath: string): Promise<WorktreeInfo[]> => ipcRenderer.invoke('panel:git:worktrees', projectPath),
-  gitWorktreeAdd: (projectPath: string, worktreePath: string, branch: string): Promise<void> =>
-    ipcRenderer.invoke('panel:git:worktreeAdd', projectPath, worktreePath, branch),
-  gitWorktreeRemove: (projectPath: string, worktreePath: string): Promise<void> =>
-    ipcRenderer.invoke('panel:git:worktreeRemove', projectPath, worktreePath),
-  gitWorktreeMerge: (projectPath: string, branch: string): Promise<void> =>
-    ipcRenderer.invoke('panel:git:worktreeMerge', projectPath, branch),
+  gitDiff: (projectPath: string, hostname?: string | null): Promise<DiffSummary> =>
+    ipcRenderer.invoke('panel:git:diff', projectPath, hostname),
+  gitCommits: (projectPath: string, hostname?: string | null): Promise<CommitInfo[]> =>
+    ipcRenderer.invoke('panel:git:commits', projectPath, hostname),
+  gitWorktrees: (projectPath: string, hostname?: string | null): Promise<WorktreeInfo[]> =>
+    ipcRenderer.invoke('panel:git:worktrees', projectPath, hostname),
+  gitWorktreeAdd: (projectPath: string, worktreePath: string, branch: string, hostname?: string | null): Promise<void> =>
+    ipcRenderer.invoke('panel:git:worktreeAdd', projectPath, worktreePath, branch, hostname),
+  gitWorktreeRemove: (projectPath: string, worktreePath: string, hostname?: string | null): Promise<void> =>
+    ipcRenderer.invoke('panel:git:worktreeRemove', projectPath, worktreePath, hostname),
+  gitWorktreeMerge: (projectPath: string, branch: string, hostname?: string | null): Promise<void> =>
+    ipcRenderer.invoke('panel:git:worktreeMerge', projectPath, branch, hostname),
 
   filesTree: (projectPath: string): Promise<FileTreeNode[]> => ipcRenderer.invoke('panel:files:tree', projectPath),
   filesRead: (path: string): Promise<FileReadResult> => ipcRenderer.invoke('panel:files:read', path),

@@ -460,6 +460,7 @@ export default function App(): JSX.Element {
                     {visitedTabs.has('diff') && (
                       <DiffPanel
                         projectPath={activeSession.projectPath}
+                        hostname={activeSession.hostname}
                         onAddComment={(note) => setComposerText((prev) => (prev ? `${prev}\n\n${note}` : note))}
                       />
                     )}

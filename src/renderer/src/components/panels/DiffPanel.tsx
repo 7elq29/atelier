@@ -14,9 +14,11 @@ type DiffSubTab = 'changes' | 'commits' | 'worktrees'
  */
 export default function DiffPanel({
   projectPath,
+  hostname,
   onAddComment
 }: {
   projectPath: string
+  hostname?: string | null
   onAddComment: (note: string) => void
 }): JSX.Element {
   const [sub, setSub] = useState<DiffSubTab>('changes')
@@ -31,9 +33,9 @@ export default function DiffPanel({
 
   async function refresh(): Promise<void> {
     const [diff, log, wts] = await Promise.all([
-      window.gardenia.gitDiff(projectPath),
-      window.gardenia.gitCommits(projectPath),
-      window.gardenia.gitWorktrees(projectPath)
+      window.gardenia.gitDiff(projectPath, hostname),
+      window.gardenia.gitCommits(projectPath, hostname),
+      window.gardenia.gitWorktrees(projectPath, hostname)
     ])
     setSummary(diff)
     setCommits(log)
@@ -44,7 +46,7 @@ export default function DiffPanel({
   useEffect(() => {
     void refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectPath])
+  }, [projectPath, hostname])
 
   const activeFile: DiffFileChange | undefined = summary?.files.find((f) => f.path === selectedFile)
 
@@ -54,7 +56,7 @@ export default function DiffPanel({
     if (!branch) return
     const path = `${projectPath}/.gardenia/worktrees/${branch}`
     try {
-      await window.gardenia.gitWorktreeAdd(projectPath, path, branch)
+      await window.gardenia.gitWorktreeAdd(projectPath, path, branch, hostname)
       setNewWorktreeBranch('')
       await refresh()
     } catch (err) {
@@ -65,7 +67,7 @@ export default function DiffPanel({
   async function handleMergeWorktree(branch: string): Promise<void> {
     setWorktreeError(null)
     try {
-      await window.gardenia.gitWorktreeMerge(projectPath, branch)
+      await window.gardenia.gitWorktreeMerge(projectPath, branch, hostname)
       await refresh()
     } catch (err) {
       setWorktreeError(err instanceof Error ? err.message : String(err))
@@ -75,7 +77,7 @@ export default function DiffPanel({
   async function handleRemoveWorktree(path: string): Promise<void> {
     setWorktreeError(null)
     try {
-      await window.gardenia.gitWorktreeRemove(projectPath, path)
+      await window.gardenia.gitWorktreeRemove(projectPath, path, hostname)
       await refresh()
     } catch (err) {
       setWorktreeError(err instanceof Error ? err.message : String(err))
