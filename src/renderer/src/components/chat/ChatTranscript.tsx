@@ -3,6 +3,7 @@ import type { MessageRecord } from '../../../../shared/session-types'
 import type { PromptDecision } from '../../../../shared/session-types'
 import { parseStructuredContent, type ToolCallContent } from '../../../../shared/chat-content'
 import ToolCallCard, { toolHeadline } from './ToolCallCard'
+import ToolCallSequence from './ToolCallSequence'
 import AskUserQuestionCard from './AskUserQuestionCard'
 import PermissionRequestCard from './PermissionRequestCard'
 import PlanProposedCard from './PlanProposedCard'
@@ -136,12 +137,155 @@ export default function ChatTranscript({
     topRows.push({ message: m, tool: parsed?.kind === 'tool_call' ? parsed : undefined })
   }
 
+  /**
+   * Renders one tool-call row's full markup — its `transcript-message`
+   * wrapper + `MessageActions` + `ToolCallCard`, plus (if it spawned a
+   * subagent) the nested `.subagent-wrap` right after it, whose own
+   * children go through the same `ToolCallSequence` aggregation
+   * (14-tool-call-sequence-collapse). This is exactly what every tool-call
+   * message rendered as before this feature; now it's handed to
+   * `ToolCallSequence` as a callback so grouping decides *when* (immediately,
+   * or only once an aggregate row is expanded) to call it, not *what* it
+   * renders.
+   */
+  function renderToolRow(message: MessageRecord, tool: ToolCallContent): JSX.Element {
+    const children = childrenByParent.get(tool.toolUseId)
+    return (
+      <Fragment key={message.id}>
+        <div className="msg-wrap" data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
+          <MessageActions text={`${tool.name}: ${toolHeadline(tool.name, tool.input)}`} />
+          <ToolCallCard content={tool} />
+        </div>
+        {children && children.length > 0 && (
+          <div
+            className="subagent-wrap"
+            data-testid="subagent-wrap"
+            data-parent-tool-use-id={tool.toolUseId}
+            key={`subagent-${message.id}`}
+          >
+            <div className="subagent-label">
+              {tool.status === 'running' && <span className="spinner" />}
+              <span>Task: {taskLabel(tool)}</span>
+            </div>
+            <ToolCallSequence
+              entries={children.map((child) => ({
+                key: String(child.message.id),
+                tool: child.tool!,
+                render: () => (
+                  <div
+                    data-testid="transcript-message"
+                    data-role="assistant"
+                    data-message-id={child.message.id}
+                    key={child.message.id}
+                  >
+                    <ToolCallCard content={child.tool!} />
+                  </div>
+                )
+              }))}
+            />
+          </div>
+        )}
+      </Fragment>
+    )
+  }
+
+  // Group consecutive top-level tool-call rows into sequences
+  // (14-tool-call-sequence-collapse): a run of adjacent tool-call rows (any
+  // non-tool row — user/assistant text/etc. — breaks a run) is handed to
+  // `ToolCallSequence`, which decides whether it renders as standalone
+  // card(s) or collapses finished calls into one aggregate.
+  //
+  // A permission/AskUserQuestion/plan-proposed card (05-interactive-prompts)
+  // can land *between* two tool calls of what is otherwise one contiguous
+  // sequence (e.g. Read, then an Edit call that needs approval, then Bash) —
+  // it isn't itself a tool call, but it shouldn't fracture the sequence into
+  // two separate aggregates either. Such cards are pulled out as "sidecars"
+  // (kept in their original relative order) and rendered right after the
+  // run's own ToolCallSequence, instead of breaking the run.
+  type RenderUnit = TopRow | { toolRun: TopRow[]; sidecars: TopRow[] }
+  const renderUnits: RenderUnit[] = []
+  let currentRun: TopRow[] = []
+  let currentSidecars: TopRow[] = []
+  const isSidecarRow = (row: TopRow): boolean => {
+    const kind = parseStructuredContent(row.message.content)?.kind
+    return kind === 'permission_request' || kind === 'ask_user_question' || kind === 'plan_proposed'
+  }
+  for (const row of topRows) {
+    if (row.tool) {
+      currentRun.push(row)
+      continue
+    }
+    if (currentRun.length > 0 && isSidecarRow(row)) {
+      currentSidecars.push(row)
+      continue
+    }
+    if (currentRun.length > 0) {
+      renderUnits.push({ toolRun: currentRun, sidecars: currentSidecars })
+      currentRun = []
+      currentSidecars = []
+    }
+    renderUnits.push(row)
+  }
+  if (currentRun.length > 0) renderUnits.push({ toolRun: currentRun, sidecars: currentSidecars })
+
   let lastTimestamp: string | null = null
   let sawFirstUser = false
   const matchCounter = { current: 0 }
   const query = searchQuery ?? ''
 
-  const rows = topRows.map(({ message, tool }) => {
+  /**
+   * Renders a permission/AskUserQuestion/plan-proposed card outside its
+   * normal top-level row position — used for "sidecars" pulled out of a
+   * tool-call run above (14-tool-call-sequence-collapse) so a mid-sequence
+   * approval prompt doesn't fracture the run into two aggregates. Returns
+   * null for any other message kind (defensive; callers only pass rows
+   * `isSidecarRow` already accepted).
+   */
+  function renderSidecar(message: MessageRecord): JSX.Element | null {
+    const parsed = parseStructuredContent(message.content)
+    if (parsed?.kind === 'permission_request') {
+      return (
+        <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
+          <PermissionRequestCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+        </div>
+      )
+    }
+    if (parsed?.kind === 'ask_user_question') {
+      return (
+        <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
+          <AskUserQuestionCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+        </div>
+      )
+    }
+    if (parsed?.kind === 'plan_proposed') {
+      return (
+        <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
+          <PlanProposedCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+        </div>
+      )
+    }
+    return null
+  }
+
+  const rows = renderUnits.map((unit) => {
+    if ('toolRun' in unit) {
+      const run = unit.toolRun
+      lastTimestamp = run[run.length - 1].message.createdAt
+      return (
+        <Fragment key={`seq-${run[0].message.id}`}>
+          <ToolCallSequence
+            entries={run.map((row) => ({
+              key: String(row.message.id),
+              tool: row.tool!,
+              render: () => renderToolRow(row.message, row.tool!)
+            }))}
+          />
+          {unit.sidecars.map((row) => renderSidecar(row.message))}
+        </Fragment>
+      )
+    }
+
+    const { message } = unit
     const parsed = parseStructuredContent(message.content)
     const nodes: JSX.Element[] = []
 
@@ -204,34 +348,6 @@ export default function ChatTranscript({
           <PlanProposedCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
         </div>
       )
-    } else if (tool) {
-      const children = childrenByParent.get(tool.toolUseId)
-      nodes.push(
-        <div className="msg-wrap" data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
-          <MessageActions text={`${tool.name}: ${toolHeadline(tool.name, tool.input)}`} />
-          <ToolCallCard content={tool} />
-        </div>
-      )
-      if (children && children.length > 0) {
-        nodes.push(
-          <div
-            className="subagent-wrap"
-            data-testid="subagent-wrap"
-            data-parent-tool-use-id={tool.toolUseId}
-            key={`subagent-${message.id}`}
-          >
-            <div className="subagent-label">
-              {tool.status === 'running' && <span className="spinner" />}
-              <span>Task: {taskLabel(tool)}</span>
-            </div>
-            {children.map((child) => (
-              <div data-testid="transcript-message" data-role="assistant" data-message-id={child.message.id} key={child.message.id}>
-                <ToolCallCard content={child.tool!} />
-              </div>
-            ))}
-          </div>
-        )
-      }
     } else if (message.role === 'system') {
       nodes.push(
         <div className="msg-system" data-testid="transcript-message" data-role="system" data-message-id={message.id} key={message.id}>
