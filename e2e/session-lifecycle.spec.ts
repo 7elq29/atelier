@@ -791,6 +791,15 @@ test.describe('02-session-lifecycle', () => {
       .split('\n')
       .filter((l) => l.includes('reconnectHarness: resume() failed because the CLI has lost this conversation') && l.includes(sessionId)).length
     expect(fallbackTriggerCount).toBe(1)
+    // Baseline for the post-relaunch check below — main.log already has AT
+    // LEAST one "session_started" for this id from the original ACK turn
+    // (before any of this bug scenario started), so a bare ">= 1" check
+    // post-relaunch would be trivially satisfied by that stale line and
+    // prove nothing. Only an INCREASE past this count proves the relaunched
+    // process's own resume/fallback attempt actually connected for real.
+    const sessionStartedCountBeforeRelaunch = logAfterFallback
+      .split('\n')
+      .filter((l) => l.includes('harness event: session_started') && l.includes(sessionId)).length
 
     // Whether THIS in-process attempt's startFreshWithRetry() actually
     // landed a fresh connection depends on how quickly the CLI itself
@@ -826,7 +835,8 @@ test.describe('02-session-lifecycle', () => {
     // both already valid; or (b) hits "no conversation found" once more (if
     // that in-process fallback was still mid-retry when closed) and falls
     // back again, in a clean process with nothing left to race. Either way,
-    // the session must end up connected for real and usable.
+    // the session must end up connected for real and usable — proven by a
+    // session_started count strictly GREATER than the pre-relaunch baseline.
     await expect
       .poll(
         () => {
@@ -836,7 +846,7 @@ test.describe('02-session-lifecycle', () => {
         },
         { timeout: 40_000 }
       )
-      .toBeGreaterThanOrEqual(1)
+      .toBeGreaterThan(sessionStartedCountBeforeRelaunch)
     await expect(page.getByTestId('connecting-pill')).toHaveCount(0, { timeout: 15_000 })
 
     const textsAfterRelaunch = await page.locator('[data-testid="transcript-message"]').allTextContents()
