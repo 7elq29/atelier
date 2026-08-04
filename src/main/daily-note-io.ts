@@ -17,6 +17,15 @@
  * when other lines are added/removed/reordered around it — this is the
  * mechanism the write-back tombstone diff (daily-notes-handlers.ts) relies
  * on to tell "externally deleted" apart from "still there, just moved".
+ *
+ * `parseDailyNote` itself never touches disk — it only *reports* which ids
+ * it minted this call (`mintedIds`). It's the caller's job (see
+ * daily-notes-handlers.ts's `persistMintedGids`) to write a freshly-minted
+ * `[gid:: ...]` back to the file the first time it's encountered — a task
+ * hand-typed in Obsidian (no Gardenia-authored gid) would otherwise be
+ * minted a brand-new random id on every independent parse, which breaks the
+ * "id is stable" invariant this module's other comments rely on
+ * (fix-gidless-task-id-not-persisted).
  */
 
 import type {
@@ -63,12 +72,18 @@ const STATUS_TO_CHAR: Record<TaskStatus, string> = {
 const TASK_RE = /^(\s*)- \[(.)\]\s+(.*)$/
 const PLAIN_BULLET_RE = /^(\s*)-\s+(.+)$/
 
+interface ParsedBulletLine {
+  task: DailyTask
+  /** True if this line had no `[gid:: ...]` tag and one was just minted for it. */
+  mintedGid: boolean
+}
+
 function parseBulletLine(
   line: string,
   sectionHint: TaskSection,
   isDelegatedSection: boolean,
   allowPlainBullet: boolean
-): DailyTask | null {
+): ParsedBulletLine | null {
   const taskMatch = line.match(TASK_RE)
   let rest: string
   let status: TaskStatus = 'open'
@@ -146,23 +161,27 @@ function parseBulletLine(
   // correctly detecting and pushing the external edit — the bug was purely
   // this line ignoring where the edit actually placed the task.
   const section: TaskSection = sectionHint
-  const gid = metadata.gid && metadata.gid.length > 0 ? metadata.gid : mintTaskId()
+  const hadGid = metadata.gid !== undefined && metadata.gid.length > 0
+  const gid = hadGid ? metadata.gid! : mintTaskId()
 
   return {
-    id: gid,
-    gid,
-    text,
-    status,
-    section,
-    tags,
-    scheduled: metadata.scheduled,
-    completion: metadata.completion,
-    due: metadata.due,
-    timeBlock,
-    externalLinks,
-    delegatedTo,
-    isTracker,
-    isNote
+    task: {
+      id: gid,
+      gid,
+      text,
+      status,
+      section,
+      tags,
+      scheduled: metadata.scheduled,
+      completion: metadata.completion,
+      due: metadata.due,
+      timeBlock,
+      externalLinks,
+      delegatedTo,
+      isTracker,
+      isNote
+    },
+    mintedGid: !hadGid
   }
 }
 
@@ -191,9 +210,17 @@ function detectSection(line: string): SectionKind | null {
 
 // ── parser ────────────────────────────────────────────────────────
 
-export function parseDailyNote(content: string, date: string): { note: DailyNote; raw: RawSections } {
+export function parseDailyNote(
+  content: string,
+  date: string
+): { note: DailyNote; raw: RawSections; mintedIds: string[] } {
   const lines = content.split('\n')
   const tasks: DailyTask[] = []
+  // Ids minted during THIS parse for task lines that had no [gid:: ...] tag
+  // in `content` — see daily-notes-handlers.ts's persistMintedGids, which
+  // writes these back to disk so the next parse of the same file reuses
+  // them instead of minting fresh (random, therefore different) ids again.
+  const mintedIds: string[] = []
   const bigThreeItems: string[] = []
   const raw: RawSections = { frontmatter: [], beforeTasks: [], afterTasks: [] }
 
@@ -235,26 +262,38 @@ export function parseDailyNote(content: string, date: string): { note: DailyNote
         break
       case 'tasks':
         if (detected !== 'tasks') {
-          const task = parseBulletLine(line, 'day-plan', false, true)
-          if (task) tasks.push(task)
+          const parsed = parseBulletLine(line, 'day-plan', false, true)
+          if (parsed) {
+            tasks.push(parsed.task)
+            if (parsed.mintedGid) mintedIds.push(parsed.task.id)
+          }
         }
         break
       case 'backlog':
         if (detected !== 'backlog') {
-          const task = parseBulletLine(line, 'unscheduled', false, true)
-          if (task) tasks.push(task)
+          const parsed = parseBulletLine(line, 'unscheduled', false, true)
+          if (parsed) {
+            tasks.push(parsed.task)
+            if (parsed.mintedGid) mintedIds.push(parsed.task.id)
+          }
         }
         break
       case 'delegated':
         if (detected !== 'delegated') {
-          const task = parseBulletLine(line, 'unscheduled', true, true)
-          if (task) tasks.push(task)
+          const parsed = parseBulletLine(line, 'unscheduled', true, true)
+          if (parsed) {
+            tasks.push(parsed.task)
+            if (parsed.mintedGid) mintedIds.push(parsed.task.id)
+          }
         }
         break
       case 'trackers': {
         const stripped = line.replace(/^>\s?/, '')
-        const task = parseBulletLine(stripped, 'tracker', false, true)
-        if (task) tasks.push(task)
+        const parsed = parseBulletLine(stripped, 'tracker', false, true)
+        if (parsed) {
+          tasks.push(parsed.task)
+          if (parsed.mintedGid) mintedIds.push(parsed.task.id)
+        }
         break
       }
       case 'after-tasks':
@@ -270,7 +309,7 @@ export function parseDailyNote(content: string, date: string): { note: DailyNote
     }
   }
 
-  return { note: { date, dayOfWeek, tasks, bigThree: bigThreeItems }, raw }
+  return { note: { date, dayOfWeek, tasks, bigThree: bigThreeItems }, raw, mintedIds }
 }
 
 // ── serializer ────────────────────────────────────────────────────

@@ -125,6 +125,44 @@ function recordWrittenContent(path: string, content: string): void {
   lastWrittenContent.set(path, content)
 }
 
+/**
+ * fix-gidless-task-id-not-persisted: `parseDailyNote` mints a fresh random
+ * id for any task line lacking a `[gid:: ...]` tag (e.g. hand-typed in
+ * Obsidian), but never writes it back on its own — that's this function's
+ * job. Called right after every `parseDailyNote(...)` in this file with the
+ * `mintedIds` it reported; a no-op when empty (the overwhelmingly common
+ * case — nothing to do on every normal re-read).
+ *
+ * When `mintedIds` is non-empty, `note` already carries those minted ids in
+ * memory (same object `parseDailyNote` returned), so serializing it and
+ * writing it back is enough to make every task's gid durable — including
+ * ones with a pre-existing gid, since `serializeDailyNote`/`serializeTaskLine`
+ * always round-trip whatever `task.gid` currently is. This makes the *first*
+ * parse to ever see a gid-less task line the one that persists it, so every
+ * subsequent parse (a different IPC call, the file watcher, a relaunch)
+ * reuses the same id instead of independently minting a new random one.
+ *
+ * Uses the exact same temp-file + rename + recordWrittenContent/
+ * recordKnownIds bookkeeping as every other write in this file, so the
+ * fs.watch self-write-echo suppression (see `lastWrittenContent` above,
+ * fix-note-content-reverts-to-template-on-edit) correctly treats the fs
+ * event this write triggers as our own, not an external edit.
+ */
+function persistMintedGids(path: string, note: DailyNote, raw: RawSections, mintedIds: string[]): void {
+  if (mintedIds.length === 0) return
+  const serialized = serializeDailyNote(note, raw)
+  mkdirSync(dirname(path), { recursive: true })
+  const tmpPath = `${path}.tmp`
+  writeFileSync(tmpPath, serialized, 'utf-8')
+  renameSync(tmpPath, path)
+  recordWrittenContent(path, serialized)
+  recordKnownIds(path, getTaskIds(note))
+  logger.info('daily-note: persisted newly-minted gid(s) for previously untagged task(s)', {
+    path,
+    mintedIds
+  })
+}
+
 let activeWatcher: FSWatcher | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let watchedPath: string | null = null
@@ -195,7 +233,8 @@ async function ensureNoteExists(
   const path = resolveNotePath(date, vaultRoot)
   if (existsSync(path)) {
     const content = await readFile(path, 'utf-8')
-    const { note, raw } = parseDailyNote(content, date)
+    const { note, raw, mintedIds } = parseDailyNote(content, date)
+    persistMintedGids(path, note, raw, mintedIds)
     recordKnownIds(path, getTaskIds(note))
     return { note, raw, path, created: false }
   }
@@ -206,7 +245,8 @@ async function ensureNoteExists(
     if (priorDate) {
       const priorPath = resolveNotePath(priorDate, vaultRoot)
       const priorContent = await readFile(priorPath, 'utf-8')
-      const { note: priorNote } = parseDailyNote(priorContent, priorDate)
+      const { note: priorNote, raw: priorRaw, mintedIds: priorMintedIds } = parseDailyNote(priorContent, priorDate)
+      persistMintedGids(priorPath, priorNote, priorRaw, priorMintedIds)
       carriedTasks = collectCarryOverTasks(priorNote)
       logger.info('daily-note create: carrying tasks forward', {
         path,
@@ -243,7 +283,8 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
     if (!existsSync(path)) return { note: null, raw: null, exists: false }
 
     const content = await readFile(path, 'utf-8')
-    const { note, raw } = parseDailyNote(content, date)
+    const { note, raw, mintedIds } = parseDailyNote(content, date)
+    persistMintedGids(path, note, raw, mintedIds)
     recordKnownIds(path, getTaskIds(note))
     logger.info('daily-note read', { path, taskCount: note.tasks.length })
     return { note, raw, exists: true }
@@ -273,7 +314,18 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
 
       if (!existsSync(sourcePath)) throw new Error(`source note not found: ${sourcePath}`)
       const sourceContent = await readFile(sourcePath, 'utf-8')
-      const { note: sourceNote, raw: sourceRaw } = parseDailyNote(sourceContent, sourceDate)
+      const { note: sourceNote, raw: sourceRaw, mintedIds: sourceMintedIds } = parseDailyNote(sourceContent, sourceDate)
+      // fix-gidless-task-id-not-persisted: persist unconditionally, right
+      // after parsing and before the not-found check / same-file no-op
+      // below — this handler does its OWN independent parse of the source
+      // note, decoupled from whatever id the renderer captured earlier. If
+      // this parse is the first to ever see a gid-less task line, it must
+      // not lose that minted id on an early return/throw; the normal
+      // "rewrite source note with task removed" write further down already
+      // carries these same ids, but persisting here too guarantees the
+      // invariant holds even when that later write doesn't happen (task not
+      // found, or source === target no-op).
+      persistMintedGids(sourcePath, sourceNote, sourceRaw, sourceMintedIds)
       const task = sourceNote.tasks.find((t) => t.id === taskId)
       if (!task) {
         // fix-move-task-not-found-in-source-note: this is the renderer
@@ -475,7 +527,14 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
             return
           }
 
-          const { note } = parseDailyNote(content, date)
+          const { note, raw, mintedIds } = parseDailyNote(content, date)
+          // fix-gidless-task-id-not-persisted: persist BEFORE recording known
+          // ids / pushing to the renderer. This does its own temp-file +
+          // rename write and records it via recordWrittenContent, so the fs
+          // event it triggers is caught by the self-write-echo check above on
+          // the NEXT invocation of notifyChange — it won't recurse into this
+          // one (that check already ran for the event we're handling now).
+          persistMintedGids(path, note, raw, mintedIds)
           recordKnownIds(path, getTaskIds(note))
           logger.info('daily-note watcher: reparsed after change', { path, taskCount: note.tasks.length })
           const win = getMainWindow()
