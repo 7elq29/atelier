@@ -781,18 +781,33 @@ test.describe('02-session-lifecycle', () => {
 
     await page.screenshot({ path: join(artifactsDir, 'fix-remote-resume-conversation-lost-fallback-system-message.png') })
 
-    appendMainLog(userDataDir)
-    const log = readFileSync(lifecycleLogPath, 'utf-8')
-    expect(log).toContain('resume() failed because the CLI has lost this conversation')
-
-    // The fresh conversation must have a real, usable transcript file of its
-    // own now (startWithId() actually ran and connected for real) — polled,
-    // not asserted immediately: the fallback's system message above is
+    // The fresh conversation must actually connect for real — polled, not
+    // asserted immediately: the fallback's system message above is
     // persisted synchronously, well before startFreshWithRetry()'s own
     // startWithId() call has actually spawned/handshaken with the CLI (same
     // "connecting != connected yet" gap applyEvent's own doc comment
-    // describes for a normal resume()).
-    await expect.poll(() => existsSync(transcriptPath), { timeout: 40_000 }).toBe(true)
+    // describes for a normal resume()). A plain existsSync() on the
+    // transcript file is NOT a reliable signal here — verified for real that
+    // even a FAILING `--session-id` attempt (one that goes on to hit the
+    // "already in use" lock race) touches/creates the jsonl file before it
+    // errors out, so that check can pass mid-retry, before any attempt has
+    // actually succeeded. A second "harness event: session_started" log line
+    // for this session id, though, only ever gets logged once the CLI's own
+    // system/init message is genuinely received — proof of an actual
+    // successful (re)connection, not just an attempt.
+    await expect
+      .poll(
+        () => {
+          appendMainLog(userDataDir)
+          const currentLog = readFileSync(lifecycleLogPath, 'utf-8')
+          const sessionStartedCount = currentLog
+            .split('\n')
+            .filter((l) => l.includes('harness event: session_started') && l.includes(sessionId)).length
+          return sessionStartedCount
+        },
+        { timeout: 40_000 }
+      )
+      .toBeGreaterThanOrEqual(2)
 
     // Must not still be racing the fallback's own in-flight reconnect —
     // sending a follow-up while THAT is still connecting would trigger a
@@ -800,6 +815,12 @@ test.describe('02-session-lifecycle', () => {
     // (isActive() sees no live harness session yet), a self-inflicted
     // collision, not a real bug in the fallback itself.
     await expect(page.getByTestId('connecting-pill')).toHaveCount(0, { timeout: 15_000 })
+
+    // The fresh conversation must have a real, usable transcript file too.
+    expect(existsSync(transcriptPath)).toBe(true)
+
+    appendMainLog(userDataDir)
+    expect(readFileSync(lifecycleLogPath, 'utf-8')).toContain('resume() failed because the CLI has lost this conversation')
 
     // Session must be genuinely usable again: a follow-up gets a real
     // response, not another failure.
@@ -815,6 +836,8 @@ test.describe('02-session-lifecycle', () => {
 
     // No infinite retry loop: only ONE fallback log line for this session,
     // not one per attempt.
+    appendMainLog(userDataDir)
+    const log = readFileSync(lifecycleLogPath, 'utf-8')
     const fallbackLogLines = log.split('\n').filter((l) => l.includes('resume() failed because the CLI has lost this conversation') && l.includes(sessionId))
     expect(fallbackLogLines.length).toBe(1)
 
