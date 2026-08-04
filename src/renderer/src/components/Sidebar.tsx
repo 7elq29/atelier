@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { MessageRecord, SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
+import SpendStatusChip from './SpendStatusChip'
 
 interface SidebarProps {
   collapsed: boolean
@@ -606,6 +607,9 @@ export default function Sidebar({
       <div className="sidebar-top">
         <div className="app-mark" />
         <div className="app-name hide-on-collapse">Gardenia</div>
+      </div>
+      <div className="hide-on-collapse">
+        <SpendStatusChip />
       </div>
       <div className="sidebar-search-row hide-on-collapse">
         <input

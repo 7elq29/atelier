@@ -11,6 +11,7 @@ import { SessionManager } from './sessions/manager'
 import { createStaticHostResolver } from './sessions/hosts'
 import { registerSessionHandlers } from './sessions/ipc'
 import { registerPanelHandlers } from './panels/ipc'
+import { registerSpendStatusHandlers } from './spend-status-ipc'
 import type { PtyManager } from './panels/pty'
 import type { PortForwardManager } from './panels/ports'
 
@@ -97,6 +98,7 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
 
   registerDailyNoteHandlers(() => mainWindow)
   registerSessionHandlers(sessionManager, () => mainWindow)
+  registerSpendStatusHandlers()
   const panelManagers = registerPanelHandlers(() => mainWindow)
   ptyManager = panelManagers.ptyManager
   portManager = panelManagers.portManager

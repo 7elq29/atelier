@@ -212,6 +212,26 @@
   align-items: center;
   gap: 4px;
 }
+/* ===== Sidebar org spend-cap chip (ported from Morpheus's
+   CostSpendIndicator.tsx) — no mock precedent for this element, so it
+   reuses .topbar-chip's layout with the --warning amber accent already
+   used for warning-toned UI (see .mode-pill.mode-auto below). ===== */
+.spend-status-chip {
+  font-size: 14px;
+  color: var(--warning);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 16px 8px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.spend-status-chip:hover {
+  text-decoration: underline;
+}
 /* ===== "Connecting…" status pill (fix-session-resume-stale-sigterm-and-
    no-connect-indicator) — reuses .topbar-chip's layout and the same
    spinner/tertiary-text visual language as the composer's .working-pill;

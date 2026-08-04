@@ -495,3 +495,48 @@ test.describe('onboarding — first-run wizard shows once', () => {
     rmSync(freshDir, { recursive: true, force: true })
   })
 })
+
+// Feature: org-wide AI harness-pool spend chip (ported from Morpheus's
+// CostSpendIndicator.tsx), rendered at the top of the sidebar above the
+// search box. This depends on a live internal endpoint + the local `usso`
+// CLI, so these tests exercise the real IPC round-trip and the app's
+// behavior when that dependency is disabled — not a specific dollar figure.
+test.describe('sidebar spend-status chip', () => {
+  test('does not render, and the app does not error, when spend status is disabled', async () => {
+    const freshDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-spend-status-disabled-'))
+    process.env.GARDENIA_DISABLE_SPEND_STATUS = '1'
+    try {
+      const { app, page } = await launchApp(freshDir)
+      await expect(page.getByTestId('sidebar')).toBeVisible()
+      await expect(page.getByTestId('spend-status-chip')).toHaveCount(0)
+      await app.close()
+    } finally {
+      delete process.env.GARDENIA_DISABLE_SPEND_STATUS
+      rmSync(freshDir, { recursive: true, force: true })
+    }
+  })
+
+  test('renders a real $spent/$cap readout when the fetch succeeds, or stays absent without erroring otherwise', async () => {
+    const freshDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-spend-status-live-'))
+    delete process.env.GARDENIA_DISABLE_SPEND_STATUS
+    const { app, page } = await launchApp(freshDir)
+    await expect(page.getByTestId('sidebar')).toBeVisible()
+
+    // No mocking: this either round-trips to the real genai-api spendstatus
+    // endpoint via the real `usso` CLI, or — in an environment without Uber
+    // network/usso access — the IPC handler catches the failure and the
+    // chip simply never mounts. Both are valid outcomes; a crash isn't.
+    const chip = page.getByTestId('spend-status-chip')
+    const appeared = await chip
+      .waitFor({ state: 'visible', timeout: 8000 })
+      .then(() => true)
+      .catch(() => false)
+
+    if (appeared) {
+      await expect(chip).toHaveText(/^\$[\d,]+\/(\$[\d,]+|\?)$/)
+    }
+
+    await app.close()
+    rmSync(freshDir, { recursive: true, force: true })
+  })
+})

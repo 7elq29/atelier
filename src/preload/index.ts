@@ -28,6 +28,7 @@ import type {
   PortForward,
   WorktreeInfo
 } from '../shared/panel-types'
+import type { SpendStatus } from '../shared/spend-status-types'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -219,7 +220,9 @@ const api = {
     return () => ipcRenderer.removeListener('ports:updated', listener)
   },
 
-  openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url)
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),
+
+  getSpendStatus: (): Promise<SpendStatus | null> => ipcRenderer.invoke('spendStatus:get')
 }
 
 contextBridge.exposeInMainWorld('gardenia', api)
