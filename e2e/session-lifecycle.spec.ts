@@ -785,8 +785,20 @@ test.describe('02-session-lifecycle', () => {
     expect(log).toContain('resume() failed because the CLI has lost this conversation')
 
     // The fresh conversation must have a real, usable transcript file of its
-    // own now (startWithId() actually ran and connected for real).
-    expect(existsSync(transcriptPath)).toBe(true)
+    // own now (startWithId() actually ran and connected for real) — polled,
+    // not asserted immediately: the fallback's system message above is
+    // persisted synchronously, well before startFreshWithRetry()'s own
+    // startWithId() call has actually spawned/handshaken with the CLI (same
+    // "connecting != connected yet" gap applyEvent's own doc comment
+    // describes for a normal resume()).
+    await expect.poll(() => existsSync(transcriptPath), { timeout: 20_000 }).toBe(true)
+
+    // Must not still be racing the fallback's own in-flight reconnect —
+    // sending a follow-up while THAT is still connecting would trigger a
+    // SECOND, concurrent reconnectHarness() call for the same session
+    // (isActive() sees no live harness session yet), a self-inflicted
+    // collision, not a real bug in the fallback itself.
+    await expect(page.getByTestId('connecting-pill')).toHaveCount(0, { timeout: 15_000 })
 
     // Session must be genuinely usable again: a follow-up gets a real
     // response, not another failure.
