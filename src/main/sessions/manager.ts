@@ -93,6 +93,37 @@ interface LiveStream {
 }
 
 
+/**
+ * Matches the CLI's own error text for a `resume()` against a session id it
+ * has no backend-side record of at all (see `SessionManager.
+ * withConversationLostFallback`'s doc comment) — verified for real via a
+ * standalone `claude --resume <id>` probe against a deleted transcript file:
+ * stderr `"No conversation found with session ID: <id>"`. Deliberately loose
+ * (case-insensitive substring, no exact id/format match) so it also catches
+ * the same phrasing surfacing through `initializationResult()` rejecting
+ * with `"Claude Code returned an error result: No conversation found with
+ * session ID: <id>"` — both wrap the identical underlying CLI message.
+ */
+function isConversationLostError(message: string): boolean {
+  return /no conversation found/i.test(message)
+}
+
+/**
+ * Matches the CLI's distinct `"Session ID <id> is already in use"` error —
+ * verified for real (SDK-level probe, see `startFreshWithRetry`'s doc
+ * comment) to be a genuine but narrow race specifically when a
+ * `startWithId()` fallback immediately follows a failed `resume()` for a
+ * still-streaming (`keepAlive: true`) session, NOT the `"no conversation
+ * found"` failure itself.
+ */
+function isSessionLockRaceError(message: string): boolean {
+  return /is already in use/i.test(message)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function newLiveStream(turnCount = 0): LiveStream {
   return {
     buffer: '',
@@ -425,7 +456,135 @@ export class SessionManager {
       })
       return this.harness.startWithId(session.id, '', startOpts)
     }
-    return this.harness.resume(session.id, startOpts)
+    const harnessSession = await this.harness.resume(session.id, startOpts)
+    return {
+      sessionId: harnessSession.sessionId,
+      events: this.withConversationLostFallback(session, startOpts, harnessSession.events)
+    }
+  }
+
+  /**
+   * fix-remote-resume-conversation-lost-fallback: a session with
+   * `everConnected === true` genuinely did connect once, but the CLI backend
+   * (local or remote/devpod) can still have since lost ALL record of that
+   * conversation — a devpod restart/disk-clear pruning its own history, or
+   * (verified locally as a faithful reproduction, same error text and exit
+   * code) the session's own transcript file having been deleted. `resume()`
+   * against that fails with "No conversation found with session ID: ..." on
+   * EVERY future attempt forever — there is no local flag that can predict
+   * this in advance, so it can only be detected by actually trying `resume()`
+   * and watching for this specific failure in the harness's own event
+   * stream (see claude-agent-sdk-harness.ts's `launch()`/`pump()`: a lost
+   * conversation first yields a `result` event with `isError: true` — handled
+   * silently by `applyEvent`'s `case 'result':`, nothing to intercept there —
+   * then the very next `query.next()` throws, which `pump()`'s `catch` turns
+   * into a `type: 'error'` event with this exact message).
+   *
+   * On seeing that specific error (and ONLY on the first occurrence for this
+   * reconnect attempt — this generator returns right after, so there is no
+   * loop), this swallows the raw/confusing CLI error, persists a plain-
+   * language system message explaining what happened, and falls back ONCE to
+   * `startWithId()` — a genuinely fresh conversation reusing the same session
+   * id (same mechanism `!session.everConnected` already uses above) — then
+   * re-yields THAT session's events for the remainder of this generator's
+   * life. If the fallback itself throws, no further retry is attempted: a
+   * distinct `error` event is yielded instead, which `applyEvent`'s existing
+   * `case 'error':` persists as a normal visible system error — so the user
+   * always reaches a clear terminal state.
+   *
+   * Any OTHER `error` event (bad cwd, auth failure, network — anything not
+   * matching this specific message) passes through completely unchanged,
+   * preserving the "a genuine reconnect failure still surfaces an error"
+   * behavior already covered by `session-lifecycle.spec.ts`'s "bug repro
+   * safety net" test.
+   */
+  private async *withConversationLostFallback(
+    session: SessionRecord,
+    startOpts: { cwd: string; host?: RemoteHost; keepAlive: boolean; permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort'] },
+    events: AsyncGenerator<HarnessEvent, void, void>
+  ): AsyncGenerator<HarnessEvent, void, void> {
+    for await (const event of events) {
+      if (event.type === 'error' && isConversationLostError(event.message)) {
+        logger.warn('reconnectHarness: resume() failed because the CLI has lost this conversation server-side; falling back once to a fresh session reusing the same id', {
+          sessionId: session.id,
+          error: event.message
+        })
+        const notice = this.store.addMessage({
+          sessionId: session.id,
+          role: 'system',
+          content:
+            'Reconnecting lost the server-side conversation history for this session (likely due to a remote restart or history being cleared). Starting fresh with the same session — prior messages are still visible above, but the assistant will not have that context anymore.'
+        })
+        this.sendMessage(session.id, notice)
+        try {
+          yield* this.startFreshWithRetry(session, startOpts)
+        } catch (err) {
+          yield {
+            type: 'error',
+            sessionId: session.id,
+            timestamp: new Date().toISOString(),
+            message: `Fallback to a fresh session also failed: ${err instanceof Error ? err.message : String(err)}`
+          }
+        }
+        return
+      }
+      yield event
+    }
+  }
+
+  /**
+   * Starts a fresh `startWithId()` conversation, with a SHORT, BOUNDED
+   * exponential-backoff retry (max 4 total attempts, ~1.5s/3s/5s delays —
+   * never unbounded/forever) if — and only if — the CLI reports the exact
+   * `"Session ID ... is already in use"` conflict. Verified for real
+   * (SDK-level probe, driven through the same persistent streaming-input
+   * `query()` shape `claude-agent-sdk-harness.ts` actually uses — a plain
+   * sequential one-shot `-p` CLI probe never reproduced this at all) that
+   * this is a genuine, narrow race, not a design flaw in falling back at
+   * all: `SessionManager`'s live sessions use a persistent streaming-input
+   * queue (`keepAlive: true`), so the FAILED resume's underlying `query()`
+   * still held session-level state that the SDK itself hadn't released yet
+   * at the exact moment the fallback's new `startWithId()` call tries to
+   * reuse that same id — `pump()`'s catch (claude-agent-sdk-harness.ts) now
+   * also calls `query.interrupt()` on a genuine (non-self-inflicted) failure
+   * specifically to release that state sooner, but the backoff here remains
+   * as a bounded safety net since that call is fire-and-forget (not awaited
+   * before the fallback's own retry loop proceeds). Any OTHER error, or the
+   * SAME conflict still happening after all attempts are exhausted, is
+   * surfaced normally (via the plain `'error'`/`'result'` events
+   * `fresh.events` naturally yields) — this loop is capped, so it still
+   * can't retry forever.
+   */
+  private async *startFreshWithRetry(
+    session: SessionRecord,
+    startOpts: { cwd: string; host?: RemoteHost; keepAlive: boolean; permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort'] }
+  ): AsyncGenerator<HarnessEvent, void, void> {
+    const MAX_ATTEMPTS = 4
+    const RETRY_DELAYS_MS = [1500, 3000, 5000]
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const fresh = await this.harness.startWithId(session.id, '', startOpts)
+      const iterator = fresh.events[Symbol.asyncIterator]()
+      const first = await iterator.next()
+      if (first.done) return
+      const canRetry = attempt < MAX_ATTEMPTS
+      if (canRetry && first.value.type === 'error' && isSessionLockRaceError(first.value.message)) {
+        const delayMs = RETRY_DELAYS_MS[attempt - 1]
+        logger.warn('startFreshWithRetry: hit a transient session-id lock race right after the failed resume; retrying after a short delay', {
+          sessionId: session.id,
+          attempt,
+          delayMs,
+          error: first.value.message
+        })
+        await delay(delayMs)
+        continue
+      }
+      yield first.value
+      while (true) {
+        const next = await iterator.next()
+        if (next.done) return
+        yield next.value
+      }
+    }
   }
 
   /** Reconnects the live harness session on top of the already-rendered transcript. No-op for terminal sessions. */

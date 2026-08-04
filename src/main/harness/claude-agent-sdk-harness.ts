@@ -582,6 +582,19 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
           timestamp: new Date().toISOString(),
           message: err instanceof Error ? err.message : String(err),
         })
+        // fix-remote-resume-conversation-lost-fallback: a GENUINE failure
+        // (not our own interrupt) still leaves this `query`'s own internal
+        // state around — verified for real that immediately retrying the
+        // SAME session id (e.g. SessionManager's startWithId() fallback
+        // right after a failed resume()) can otherwise collide with
+        // "Session ID ... is already in use" for several seconds, even
+        // though nothing in THIS process is still actually using it. An
+        // explicit `interrupt()` call here (best-effort; the query is
+        // already dead, so failures here are expected and ignored) signals
+        // the SDK to release whatever it's still holding for this session,
+        // the same call the deliberate close()/interrupt() path already
+        // relies on below.
+        void active.query.interrupt().catch(() => undefined)
       } else {
         active.eventQueue.push({ type: 'interrupted', sessionId, timestamp: new Date().toISOString() })
       }
