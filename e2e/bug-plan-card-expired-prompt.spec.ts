@@ -118,6 +118,17 @@ test('bug-repro: plan card renders real markdown, and an expired prompt shows a 
 
     await page.screenshot({ path: join(artifactsDir, 'bug-plan-card-markdown-rendered.png') })
 
+    // Bug 3: non-heading plan-body text (paragraphs/list items/code) must
+    // match the chat transcript's own message font size (`--font-agent-
+    // message-size`), not a different, larger token — headings are exempt
+    // (they're deliberately bigger for emphasis, same as `.msg-assistant`'s
+    // own markdown headings).
+    const chatFontSize = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--font-agent-message-size').trim()
+    )
+    const planListItemFontSize = await planBody.locator('li').first().evaluate((el) => getComputedStyle(el).fontSize)
+    expect(planListItemFontSize).toBe(chatFontSize)
+
     // Bug 2 (expiry contract): flip the real, already-persisted plan message
     // to the exact state SessionManager.expirePendingPrompts produces for an
     // abandoned prompt, then reload and confirm the card reflects it.

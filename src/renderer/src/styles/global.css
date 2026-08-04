@@ -939,7 +939,7 @@ input[type='range'] {
 /* ---- Plan card ---- */
 .plan-card { border: 1px solid var(--elevation-border); background: var(--bg-panel); border-radius: var(--r-lg); overflow: hidden; max-width: 84%; box-shadow: var(--elevation-shadow); }
 .plan-head { display: flex; align-items: center; gap: 8px; padding: 13px 16px 6px; font-size: 13.5px; font-weight: 600; }
-.plan-body { padding: 4px 16px 15px; font-size: var(--text-base); line-height: 1.6; }
+.plan-body { padding: 4px 16px 15px; font-size: var(--font-agent-message-size); line-height: 1.6; }
 .plan-actions { display: flex; gap: 8px; padding: 4px 16px 13px; }
 .plan-card.resolved .plan-actions { display: none; }
 .plan-resolved-note { display: none; padding: 9px 16px 13px; font-size: 13.5px; color: var(--accent); }
