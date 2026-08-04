@@ -440,6 +440,82 @@ test.describe('07-secondary-panels', () => {
     await expect.poll(async () => term.textContent(), { timeout: 10_000 }).toContain(marker)
   })
 
+  // ── 6e. Real bug: React.StrictMode's mount->cleanup->mount (dev-mode only —
+  // see src/renderer/src/main.tsx) fires TerminalPanel's pty-lifecycle effect
+  // as spawn(P1) -> kill(P1) -> spawn(P2) for the *same* ptyId, all
+  // back-to-back with no await between. `pty.ts`'s `proc.onData(...)` never
+  // checks whether its own `proc` is still the live entry in `this.ptys`
+  // before forwarding to the renderer, so P1's in-flight output keeps
+  // leaking through under the same id even after P2 has taken over — this
+  // is what corrupted a real user's terminal into duplicated/garbled
+  // "cd ... && clear" lines and made it look like typing did nothing.
+  // Reproduced here via the real `window.gardenia` IPC bridge (same bridge
+  // TerminalPanel itself uses) so it doesn't depend on flaky React dev-mode
+  // timing to trigger.
+  test('bug repro: rapid respawn under the same ptyId leaks the killed process\'s output forever', async () => {
+    const raceId = `strictmode-race-${Date.now()}`
+
+    await page.evaluate(
+      ({ id, cwd }) => {
+        ;(window as unknown as { __raceLog: string[] }).__raceLog = []
+        ;(window as unknown as { __raceUnsub: () => void }).__raceUnsub = window.gardenia.onPtyData(({ id: evId, data }) => {
+          if (evId === id) (window as unknown as { __raceLog: string[] }).__raceLog.push(data)
+        })
+        void window.gardenia.ptySpawn({ id, cwd, hostname: null, cols: 100, rows: 30 })
+      },
+      { id: raceId, cwd: repoDir }
+    )
+
+    await page.waitForTimeout(500) // let P1's real shell actually start
+    // P1 (the soon-to-be-killed process) is made to continuously produce
+    // output, guaranteeing it's mid-write at the exact moment it's killed —
+    // the real-world race is timing-dependent; this makes it deterministic.
+    await page.evaluate((id) => void window.gardenia.ptyWrite(id, 'yes P1-LEAK-MARKER\r'), raceId)
+    await page.waitForTimeout(500)
+
+    // Simulate StrictMode's synchronous cleanup+remount: kill P1, then
+    // immediately spawn P2 for the identical id, no await in between.
+    await page.evaluate(
+      (id) => {
+        void window.gardenia.ptyKill(id)
+        void window.gardenia.ptySpawn({ id, cwd: '/tmp', hostname: null, cols: 100, rows: 30 })
+      },
+      raceId
+    )
+
+    // A finite tail of *already-sent* pre-kill messages can still be sitting
+    // in Electron's IPC delivery queue at this point (P1 was flooding the
+    // channel) — that's expected and not the bug, and not something the
+    // renderer can reliably distinguish from a genuine leak by content/count
+    // alone. The authoritative check is at the source: `pty.ts` logs every
+    // time it detects and drops output from a process that's no longer the
+    // current entry for its id (see `logger.info('pty stale-data dropped', ...)`
+    // in src/main/panels/pty.ts) — grep the real app log for that, the same
+    // pattern this project already uses for bug evidence (see CLAUDE.md §2).
+    await page.waitForTimeout(1500)
+
+    const logPath = join(userDataDir, 'logs', 'main.log')
+    const droppedForRace = readFileSync(logPath, 'utf-8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { msg: string; id: string; gen: number; currentGen: number | null })
+      .filter((entry) => entry.msg === 'pty stale-data dropped' && entry.id === raceId)
+
+    log(`rapid respawn race: pty.ts dropped ${droppedForRace.length} stale-data event(s) for this race: ${JSON.stringify(droppedForRace)}`)
+
+    await page.evaluate(() => (window as unknown as { __raceUnsub: () => void }).__raceUnsub())
+    await page.evaluate((id) => void window.gardenia.ptyKill(id), raceId)
+
+    // Confirms the race was actually hit (P1 really was still mid-write when
+    // replaced) *and* that it was correctly intercepted before ever reaching
+    // the renderer — the real, source-level fix for the bug, not just an
+    // absence-of-symptom check that could pass by luck.
+    expect(droppedForRace.length, 'the source-level guard must detect and drop stale data from the killed process').toBeGreaterThan(0)
+    for (const entry of droppedForRace) {
+      expect(entry.currentGen, 'dropped data must be from an older generation than the current live process').not.toBe(entry.gen)
+    }
+  })
+
   // ── 7. External links open the OS browser, never an embedded view ─────
   test('external links: clicking a real rendered link invokes shell.openExternal with the right URL, never navigates in-app', async () => {
     await electronApp.evaluate(({ shell }) => {
