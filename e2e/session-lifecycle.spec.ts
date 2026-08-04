@@ -700,7 +700,7 @@ test.describe('02-session-lifecycle', () => {
   // record of this conversation" condition, just triggered locally instead
   // of by a remote devpod restart.
   test('bug: resume() against a conversation the CLI backend has lost falls back to a fresh session instead of failing forever', async ({}, testInfo) => {
-    testInfo.setTimeout(120_000)
+    testInfo.setTimeout(180_000)
     const bugProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug-lost-conversation-'))
     writeFileSync(join(bugProjectDir, 'README.md'), '# test project\n')
 
@@ -814,6 +814,20 @@ test.describe('02-session-lifecycle', () => {
     // relaunch" tests already use) before resuming again: a brand new
     // process has no leftover state from the earlier failed resume's CLI
     // subprocess to race against.
+    //
+    // Must wait for startFreshWithRetry()'s bounded attempts to fully
+    // SETTLE (success or final failure) before closing — verified for real
+    // that closing/quitting the app while its own `setTimeout`-based backoff
+    // delay is still pending does NOT force-kill the process outright; the
+    // OLD process's event loop stays alive draining that pending timer (and
+    // its own subsequent startWithId() attempt) concurrently with the NEW
+    // relaunched process, both racing the same session id and the same
+    // SQLite file — a second, worse collision layer, not a real product
+    // bug, entirely an artifact of tearing down mid-retry. Max settle time
+    // is bounded and known: 4 attempts, ~1.5s+3s+5s of backoff plus normal
+    // per-attempt overhead — comfortably under 20s.
+    await page.waitForTimeout(20_000)
+
     await row.getByTestId('session-menu-button').click()
     await row.getByTestId('menu-close').click()
     const closedHistoryRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
