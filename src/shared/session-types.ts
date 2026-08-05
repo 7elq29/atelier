@@ -71,6 +71,17 @@ export interface SessionRecord {
    * with "No conversation found" for a session id it never actually started).
    */
   everConnected: boolean
+  /**
+   * Persisted model/effort override for this session (restore-mode-and-model-
+   * on-resume), stored in SQLite and restored when the session is resumed
+   * after an app relaunch. Null for sessions that were never sent a message
+   * with an explicit model override (they use the app default). Decorated
+   * onto the DB row at read time by `SessionManager.decorate()`, which
+   * overlays the in-memory `modelSelections` Map value (if present) first —
+   * same "in-memory wins, DB is the persistent fallback" pattern as
+   * `permissionMode`.
+   */
+  modelSelection: ModelSelection | null
 }
 
 /** A named, collapsible, reorderable session group (06-session-organization). */

@@ -150,6 +150,22 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
       UPDATE sessions SET ever_connected = 1
         WHERE id IN (SELECT DISTINCT session_id FROM messages);
     `
+  },
+  {
+    // restore-mode-and-model-on-resume: persists the session's current SDK
+    // permission mode and model/effort selection to SQLite so both survive
+    // an app relaunch and are restored when the user resumes a session.
+    // `permission_mode` mirrors the in-memory `permissionModes` Map and
+    // defaults to 'default' (the SDK's own default) for pre-existing rows.
+    // `model_id` and `effort` mirror the in-memory `modelSelections` Map;
+    // both are nullable since a session that was never sent a message has
+    // no stored model override.
+    name: '0007_session_mode_model',
+    sql: `
+      ALTER TABLE sessions ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'default';
+      ALTER TABLE sessions ADD COLUMN model_id TEXT;
+      ALTER TABLE sessions ADD COLUMN effort TEXT;
+    `
   }
 ]
 

@@ -4,6 +4,8 @@ import type {
   MessageRecord,
   MessageRole,
   MessageSearchHit,
+  ModelSelection,
+  PermissionModeValue,
   SessionGroupRecord,
   SessionMode,
   SessionRecord
@@ -44,6 +46,9 @@ interface SessionRow {
   sort_order: number
   total_cost_usd: number
   ever_connected: number
+  permission_mode: string
+  model_id: string | null
+  effort: string | null
 }
 
 interface MessageRow {
@@ -96,13 +101,14 @@ function toSessionRecord(row: SessionRow, tags: string[] = []): SessionRecord {
     // comment and SessionManager.markEverConnected's call site for the full
     // rationale.
     everConnected: row.ever_connected === 1,
-    // Not a real DB column (11-composer-mode-indicator) — this is just a
-    // type-satisfying placeholder for every raw store read. SessionManager's
-    // `decorate()` always overwrites this with the real tracked value
-    // (defaulting to 'default' itself) before a record reaches IPC/the
-    // renderer; nothing reads a store-returned SessionRecord's
-    // `permissionMode` directly without going through that.
-    permissionMode: 'default'
+    // restore-mode-and-model-on-resume: read from the DB column (populated
+    // by SessionStore.setPermissionMode, written whenever the in-memory
+    // permissionModes Map changes). SessionManager's `decorate()` overlays
+    // its own in-memory value (if present) on top of this, but for sessions
+    // first loaded after a relaunch the DB column IS the right value.
+    permissionMode: row.permission_mode as PermissionModeValue,
+    // restore-mode-and-model-on-resume: read from DB columns; null if never set.
+    modelSelection: row.model_id ? { model: row.model_id, effort: row.effort as ModelSelection['effort'] | undefined } : null
   }
 }
 
@@ -265,6 +271,18 @@ export class SessionStore {
    */
   markEverConnected(id: string): void {
     this.db.prepare('UPDATE sessions SET ever_connected = 1 WHERE id = ?').run(id)
+  }
+
+  /** Persists the session's current SDK permission mode (restore-mode-and-model-on-resume). Called at every site that updates the in-memory permissionModes Map. */
+  setPermissionMode(id: string, mode: PermissionModeValue): void {
+    this.db.prepare('UPDATE sessions SET permission_mode = ? WHERE id = ?').run(mode, id)
+  }
+
+  /** Persists the session's model/effort selection (restore-mode-and-model-on-resume). Null clears both columns. Called at every site that updates the in-memory modelSelections Map. */
+  setModelSelection(id: string, selection: ModelSelection | null): void {
+    this.db
+      .prepare('UPDATE sessions SET model_id = ?, effort = ? WHERE id = ?')
+      .run(selection?.model ?? null, selection?.effort ?? null, id)
   }
 
 

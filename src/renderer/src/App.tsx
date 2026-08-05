@@ -127,6 +127,12 @@ export default function App(): JSX.Element {
     setActiveTab('chat')
     setVisitedTabs(new Set(['chat']))
     setDrawerOpen(false)
+    // restore-mode-and-model-on-resume: restores the persisted model selection
+    // so the composer's picker reflects what this session was last using,
+    // not whatever the previously-active session had set. Falls back to the
+    // app default (Sonnet 5 / high) for sessions that were never sent a
+    // message with an explicit model override.
+    setModelSelection(session.modelSelection ?? { model: 'claude-sonnet-5', effort: 'high' })
     // Two independent reasons to call resumeSession (reopen + reconnect +
     // fetch transcript), not just one:
     //  - session.closedAt: an explicitly-closed session must always reopen

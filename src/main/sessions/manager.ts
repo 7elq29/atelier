@@ -206,7 +206,11 @@ export class SessionManager {
    * as-is.
    */
   private decorate(session: SessionRecord): SessionRecord {
-    return { ...session, permissionMode: this.permissionModes.get(session.id) ?? 'default' }
+    return {
+      ...session,
+      permissionMode: this.permissionModes.get(session.id) ?? session.permissionMode,
+      modelSelection: this.modelSelections.get(session.id) ?? session.modelSelection ?? null
+    }
   }
 
   listActive(): SessionRecord[] {
@@ -376,7 +380,10 @@ export class SessionManager {
       keepAlive: true,
       ...(opts.planMode ? { permissionMode: 'plan' as const } : {})
     })
-    if (opts.planMode) this.permissionModes.set(harnessSession.sessionId, 'plan')
+    if (opts.planMode) {
+      this.permissionModes.set(harnessSession.sessionId, 'plan')
+      this.store.setPermissionMode(harnessSession.sessionId, 'plan')
+    }
 
     const session = this.decorate(
       this.store.createSession({
@@ -695,6 +702,7 @@ try {
           next: override
         })
         this.modelSelections.set(sessionId, override)
+        this.store.setModelSelection(sessionId, override)
         if (this.harness.isActive(sessionId)) {
           await this.harness.interrupt(sessionId)
         }
@@ -772,6 +780,7 @@ try {
     // in plan mode for the next reconnect.
     if (decision.kind === 'plan' && decision.decision === 'accept') {
       this.permissionModes.set(sessionId, 'default')
+      this.store.setPermissionMode(sessionId, 'default')
       // 11-composer-mode-indicator: the mode pill must reflect this
       // automatic flip the same way it reflects a manual Shift+Tab cycle —
       // without this broadcast the pill would keep showing "Plan mode" until
@@ -805,6 +814,7 @@ try {
     const current = this.permissionModes.get(sessionId) ?? 'default'
     const next = MODE_CYCLE[(MODE_CYCLE.indexOf(current) + 1) % MODE_CYCLE.length]
     this.permissionModes.set(sessionId, next)
+    this.store.setPermissionMode(sessionId, next)
     logger.info('cycleMode: mode changed', { sessionId, from: current, to: next })
 
     if (existing.mode === 'claude-code') {
