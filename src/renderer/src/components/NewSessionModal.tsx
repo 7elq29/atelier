@@ -20,6 +20,7 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
   const [hostId, setHostId] = useState<string>('local')
   const [prompt, setPrompt] = useState('')
   const [planMode, setPlanMode] = useState(false)
+  const [useWorktree, setUseWorktree] = useState(false)
   const [creating, setCreating] = useState(false)
   // fix-bug-triage-jul31 / bug #49: recently-used remote paths for the
   // currently-selected host, offered via a <datalist> on the remote path
@@ -34,6 +35,7 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
       setHostId('local')
       setPrompt('')
       setPlanMode(false)
+      setUseWorktree(false)
       setCreating(false)
     }
   }, [isOpen])
@@ -75,7 +77,8 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
         mode,
         hostId,
         prompt: mode === 'claude-code' && prompt.trim() ? prompt.trim() : undefined,
-        planMode: mode === 'claude-code' ? planMode : undefined
+        planMode: mode === 'claude-code' ? planMode : undefined,
+        useWorktree: mode === 'claude-code' && hostId === 'local' ? useWorktree : undefined
       })
       onClose()
     } finally {
@@ -202,6 +205,29 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
                 />
                 Start in plan mode (explore and propose a plan before editing)
               </label>
+              {hostId === 'local' && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 14.5, color: 'var(--text-secondary)' }}>
+                  <input
+                    type="checkbox"
+                    data-testid="use-worktree-checkbox"
+                    checked={useWorktree}
+                    onChange={(e) => setUseWorktree(e.target.checked)}
+                  />
+                  <span>
+                    Use worktree
+                    {projectPath && (
+                      <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
+                        — isolated copy at {projectPath}/.gardenia/worktrees/&lt;id&gt;
+                      </span>
+                    )}
+                    {!projectPath && (
+                      <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
+                        — isolated copy at &lt;project&gt;/.gardenia/worktrees/&lt;id&gt;
+                      </span>
+                    )}
+                  </span>
+                </label>
+              )}
             </div>
           )}
         </div>

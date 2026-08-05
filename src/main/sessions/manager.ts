@@ -27,6 +27,7 @@ import type {
   TodoUpdateContent
 } from '../../shared/chat-content'
 import type { SessionStore } from './store'
+import { createWorktree, removeWorktree } from './worktree'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
 const AUTO_NAME_PROMPT = 'Summarize this conversation topic in under 6 words. Reply with ONLY the title, no punctuation, no quotes.'
@@ -371,8 +372,85 @@ export class SessionManager {
       return session
     }
 
+    // use-worktree: create an isolated git worktree for local claude-code
+    // sessions when the user opted in. We must pre-allocate the session id
+    // (so the worktree path can embed it) and use harness.startWithId()
+    // instead of harness.start() when a worktree is requested — this is the
+    // same mechanism `reconnectHarness` already uses for sessions that were
+    // never backed by a real CLI conversation. Failures are non-fatal: if
+    // git worktree add fails (not a git repo, no permissions, etc.) we log a
+    // warning and fall through to a plain harness.start() in the original
+    // projectPath, never blocking session creation entirely.
+    let worktreePath: string | null = null
+    let effectiveCwd = opts.projectPath
+    const wantWorktree = opts.useWorktree && opts.hostId === 'local'
+
+    if (wantWorktree) {
+      const { randomUUID } = await import('node:crypto')
+      const allocatedId = randomUUID()
+      try {
+        worktreePath = createWorktree(opts.projectPath, allocatedId)
+        effectiveCwd = worktreePath
+        logger.info('createSession: worktree created', { allocatedId, worktreePath })
+        // Use startWithId so the harness session id matches our pre-allocated
+        // id (which is already embedded in the worktree path).
+        const harnessOpts = {
+          cwd: effectiveCwd,
+          host,
+          keepAlive: true as const,
+          ...(opts.planMode ? { permissionMode: 'plan' as const } : {})
+        }
+        const harnessSession = await this.harness.startWithId(allocatedId, opts.prompt ?? '', harnessOpts)
+        if (opts.planMode) {
+          this.permissionModes.set(harnessSession.sessionId, 'plan')
+          this.store.setPermissionMode(harnessSession.sessionId, 'plan')
+        }
+        const session = this.decorate(
+          this.store.createSession({
+            id: harnessSession.sessionId,
+            name: defaultName,
+            projectPath: opts.projectPath,
+            mode: 'claude-code',
+            hostname: hostOption?.sshHost ?? null,
+            groupId: opts.groupId ?? null,
+            worktreePath
+          })
+        )
+        if (opts.prompt) {
+          const userMessage = this.store.addMessage({ sessionId: session.id, role: 'user', content: opts.prompt })
+          this.sendMessage(session.id, userMessage)
+        }
+        this.sendLifecycle({ type: 'session.created', session })
+        this.live.set(session.id, newLiveStream())
+        if (opts.prompt) {
+          this.live.get(session.id)!.busy = true
+          this.sendStatus(session.id)
+          this.sendTurnState(session.id, true)
+        }
+        void this.consume(session.id, harnessSession.events)
+        return session
+      } catch (err) {
+        logger.warn('createSession: worktree setup failed, falling back to plain session', {
+          projectPath: opts.projectPath,
+          error: err instanceof Error ? err.message : String(err)
+        })
+        // If the worktree was partially created before the harness call failed,
+        // attempt to clean it up so we don't leave a dangling directory.
+        if (worktreePath) {
+          try {
+            removeWorktree(worktreePath, worktreePath.split('/').pop() ?? '')
+          } catch {
+            // best-effort only
+          }
+          worktreePath = null
+          effectiveCwd = opts.projectPath
+        }
+        // Fall through to the normal (no-worktree) path below.
+      }
+    }
+
     const harnessSession = await this.harness.start(opts.prompt ?? '', {
-      cwd: opts.projectPath,
+      cwd: effectiveCwd,
       host,
       // Real interactive chat session: stays connected past its first turn
       // so a later `sendUserMessage` can inject live via `streamInput()`
@@ -392,7 +470,8 @@ export class SessionManager {
         projectPath: opts.projectPath,
         mode: 'claude-code',
         hostname: hostOption?.sshHost ?? null,
-        groupId: opts.groupId ?? null
+        groupId: opts.groupId ?? null,
+        worktreePath
       })
     )
 
@@ -899,6 +978,21 @@ try {
   }
 
   deleteSession(sessionId: string): void {
+    const session = this.store.getSession(sessionId)
+    // use-worktree: remove the session's isolated git worktree and its branch
+    // before deleting the DB row (which is where the path is stored). Errors
+    // are caught and logged — a failed cleanup must never block deletion.
+    if (session?.worktreePath) {
+      try {
+        removeWorktree(session.worktreePath, sessionId)
+      } catch (err) {
+        logger.warn('deleteSession: worktree removal failed (ignored)', {
+          sessionId,
+          worktreePath: session.worktreePath,
+          error: err instanceof Error ? err.message : String(err)
+        })
+      }
+    }
     this.live.delete(sessionId)
     this.connecting.delete(sessionId)
     this.store.deleteSession(sessionId)

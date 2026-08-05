@@ -166,6 +166,21 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
       ALTER TABLE sessions ADD COLUMN model_id TEXT;
       ALTER TABLE sessions ADD COLUMN effort TEXT;
     `
+  },
+  {
+    // use-worktree: optional isolated git worktree per session. When the
+    // user enables "Use worktree" in the New Session modal for a local
+    // claude-code session, Gardenia creates a git worktree at
+    // `<project>/.gardenia/worktrees/<session-id>` on a new branch
+    // `gardenia-<session-id-prefix>`, runs Claude Code inside that
+    // worktree path instead of the original project path, and removes both
+    // the worktree directory and its branch when the session is deleted.
+    // Null for sessions that were not created with useWorktree, or for
+    // remote/terminal sessions where worktrees are out of scope.
+    name: '0008_session_worktree',
+    sql: `
+      ALTER TABLE sessions ADD COLUMN worktree_path TEXT;
+    `
   }
 ]
 

@@ -49,6 +49,7 @@ interface SessionRow {
   permission_mode: string
   model_id: string | null
   effort: string | null
+  worktree_path: string | null
 }
 
 interface MessageRow {
@@ -108,7 +109,10 @@ function toSessionRecord(row: SessionRow, tags: string[] = []): SessionRecord {
     // first loaded after a relaunch the DB column IS the right value.
     permissionMode: row.permission_mode as PermissionModeValue,
     // restore-mode-and-model-on-resume: read from DB columns; null if never set.
-    modelSelection: row.model_id ? { model: row.model_id, effort: row.effort as ModelSelection['effort'] | undefined } : null
+    modelSelection: row.model_id ? { model: row.model_id, effort: row.effort as ModelSelection['effort'] | undefined } : null,
+    // use-worktree: absolute path to the session's isolated git worktree, or
+    // null for sessions not created with the "Use worktree" toggle.
+    worktreePath: row.worktree_path ?? null
   }
 }
 
@@ -161,13 +165,14 @@ export class SessionStore {
     color?: string | null
     id?: string
     sortOrder?: number
+    worktreePath?: string | null
   }): SessionRecord {
     const id = input.id ?? randomUUID()
     const createdAt = new Date().toISOString()
     this.db
       .prepare(
-        `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order)
-         VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, @pinned, @color, @createdAt, NULL, NULL, @sortOrder)`
+        `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order, worktree_path)
+         VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, @pinned, @color, @createdAt, NULL, NULL, @sortOrder, @worktreePath)`
       )
       .run({
         id,
@@ -179,7 +184,8 @@ export class SessionStore {
         pinned: input.pinned ? 1 : 0,
         color: input.color ?? null,
         createdAt,
-        sortOrder: input.sortOrder ?? Date.now()
+        sortOrder: input.sortOrder ?? Date.now(),
+        worktreePath: input.worktreePath ?? null
       })
     return this.getSession(id)!
   }

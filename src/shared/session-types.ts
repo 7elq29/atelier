@@ -82,6 +82,14 @@ export interface SessionRecord {
    * `permissionMode`.
    */
   modelSelection: ModelSelection | null
+  /**
+   * Absolute path to the session's isolated git worktree (use-worktree), or
+   * null if this session was not created with the "Use worktree" toggle. When
+   * set, Claude Code runs inside this worktree path instead of the original
+   * projectPath. The worktree and its branch are removed when the session is
+   * deleted.
+   */
+  worktreePath: string | null
 }
 
 /** A named, collapsible, reorderable session group (06-session-organization). */
@@ -162,6 +170,8 @@ export interface CreateSessionOptions {
   groupId?: string | null
   /** Start the session in the SDK's plan permission mode (05-interactive-prompts): Claude explores/plans without editing files until a proposed plan is accepted via the plan card. */
   planMode?: boolean
+  /** Create an isolated git worktree for this session (use-worktree). Only meaningful for local claude-code sessions. */
+  useWorktree?: boolean
 }
 
 /**
