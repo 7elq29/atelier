@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<!--
+  Gardenia UI mocks — message queue indicator
+  Shows the composer in three states:
+    A) Idle — normal Send button
+    B) Busy — Working… + Stop, no queued message
+    C) Busy + 1 queued message — queue badge on Stop, queued-message strip below footer
+
+  CSS token names and class names match src/renderer/src/styles/tokens.css and
+  src/renderer/src/styles/global.css exactly so the real implementation can copy
+  selectors verbatim.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Gardenia — Message Queue Mock</title>
+<style>
+/* ── Design tokens (mirrors tokens.css exactly) ─────────────────────────── */
+:root {
+  --bg-app: #1c1a16;
+  --bg-sidebar: #201e19;
+  --bg-panel: #2a2721;
+  --bg-panel-raised: #302c25;
+  --bg-hover: #332f27;
+  --bg-active: #3d382c;
+  --bg-input: #302c25;
+  --bg-tint: #332f27;
+
+  --border-subtle: rgba(255,255,255,.05);
+  --border-default: rgba(255,255,255,.09);
+  --border-strong: rgba(255,255,255,.16);
+
+  --text-primary: #ece7d9;
+  --text-secondary: #b3ac9a;
+  --text-tertiary: #837c6b;
+  --text-disabled: #5c5647;
+
+  --accent: #8fc17f;
+  --accent-strong: #a3d194;
+  --accent-dim: #33402c;
+  --accent-text-on: #16210e;
+
+  --warning: #d9b374;
+  --danger: #d98f74;
+  --danger-dim: #3a2a20;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Avenir Next", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --text-xs: 14px;
+  --text-sm: 16px;
+  --text-base: 17.5px;
+
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+
+  --shadow-popover: 0 8px 20px rgba(0,0,0,.3);
+}
+
+/* ── Reset + base ────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Mock-page chrome ────────────────────────────────────────────────────── */
+.mock-label {
+  padding: 6px 14px;
+  background: #1a1000;
+  color: #e0b95c;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #3a2c0a;
+}
+
+.mock-page {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  padding: 40px 0;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.mock-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 0 24px;
+  margin-bottom: 10px;
+}
+
+/* ── Composer (mirrors global.css exactly) ───────────────────────────────── */
+.composer-wrap {
+  padding: 0 16px;
+}
+
+.composer-box {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-xl);
+  overflow: hidden;
+}
+
+.composer-box textarea {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  padding: 14px 18px 8px;
+  min-height: 52px;
+  line-height: 1.5;
+}
+
+.composer-box textarea::placeholder { color: var(--text-tertiary); }
+
+.composer-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 12px;
+}
+
+.composer-footer .spacer { flex: 1; }
+
+/* Mode pill (11-composer-mode-indicator) */
+.mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 100px;
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+/* Working pill */
+.working-pill {
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Spinner (mirrors global.css .spinner exactly) */
+.spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  animation: spin .7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Footer buttons */
+.footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 100px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.stop-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--danger-dim);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 100px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.send-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--accent);
+  color: var(--accent-text-on);
+  border: none;
+  border-radius: 100px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+/* ── NEW: Queue badge on Stop button ────────────────────────────────────────
+   Shown when a message has been submitted while busy.
+   Attaches to .stop-btn as a sibling, grouped in .stop-group.
+   Class name: .queue-badge
+   Token reuse: --warning (amber) for a "pending/informational" tone distinct
+   from danger (stop) and accent (success). Matches the .topbar-chip sizing
+   idiom already in global.css. ─────────────────────────────────────────── */
+.stop-group {
+  /* wraps .stop-btn + .queue-badge so they sit side-by-side in the footer */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.queue-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px 2px 6px;
+  border-radius: 100px;
+  background: rgba(217, 179, 116, 0.12); /* --warning at low opacity */
+  color: var(--warning);
+  border: 1px solid rgba(217, 179, 116, 0.3);
+  white-space: nowrap;
+  animation: queue-in 0.15s ease-out;
+}
+
+@keyframes queue-in {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── NEW: Queued-message strip ──────────────────────────────────────────────
+   Sits between the textarea and .composer-footer (inside .composer-box).
+   Shows the pending message text + a cancel (×) button.
+   Class names: .queued-strip, .queued-strip-text, .queued-strip-cancel
+   ─────────────────────────────────────────────────────────────────────────── */
+.queued-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 18px;
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(217, 179, 116, 0.06); /* very faint amber wash */
+  animation: strip-in 0.18s ease-out;
+}
+
+@keyframes strip-in {
+  from { opacity: 0; max-height: 0; }
+  to   { opacity: 1; max-height: 60px; }
+}
+
+.queued-strip-icon {
+  font-size: 11px;
+  color: var(--warning);
+  flex-shrink: 0;
+}
+
+.queued-strip-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--warning);
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.queued-strip-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+}
+
+.queued-strip-cancel {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-family: var(--font-ui);
+  transition: background 0.1s, color 0.1s;
+}
+.queued-strip-cancel:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* ── State E: draining pill ─────────────────────────────────────────────── */
+.draining-pill {
+  font-size: 12.5px;
+  color: var(--warning);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ── ESC hint badge inside Stop button ──────────────────────────────────── */
+.esc-hint {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  font-family: var(--font-mono);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 3px;
+  opacity: 0.7;
+}
+
+/* ── Queue button (shown when busy — submitting queues the message) ──────── */
+.queue-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(217, 179, 116, 0.10);
+  color: var(--warning);
+  border: 1px solid rgba(217, 179, 116, 0.30);
+  border-radius: 100px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+/* ── Collapsible strip trigger (State D, collapsed) ─────────────────────── */
+.queued-strip-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 18px;
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(217, 179, 116, 0.06);
+  cursor: pointer;
+  user-select: none;
+}
+.queued-strip-trigger:hover { background: rgba(217, 179, 116, 0.10); }
+
+.queued-strip-chevron {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--warning);
+  transition: transform 0.15s;
+}
+.queued-strip-chevron.open { transform: rotate(180deg); }
+
+/* ── Expanded queue list (State D, expanded) ────────────────────────────── */
+.queue-expanded {
+  background: rgba(217, 179, 116, 0.04);
+  border-top: 1px solid var(--border-subtle);
+  animation: strip-in 0.15s ease-out;
+}
+
+.queue-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px 5px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.queue-list-item:last-child { border-bottom: none; }
+
+.queue-list-item-num {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  width: 14px;
+  text-align: right;
+}
+
+.queue-list-item-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+}
+
+.queue-list-item-cancel {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-ui);
+  transition: background 0.1s, color 0.1s;
+}
+.queue-list-item-cancel:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+.queue-cancel-all-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 3px 14px 5px;
+}
+
+.queue-cancel-all-btn {
+  font-size: 11px;
+  font-family: var(--font-ui);
+  color: var(--warning);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0.8;
+  padding: 2px 4px;
+}
+.queue-cancel-all-btn:hover { opacity: 1; text-decoration: underline; }
+
+/* ── Interactive demo chrome ─────────────────────────────────────────────── */
+.demo-state-badge {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  border-radius: 100px;
+  padding: 3px 12px;
+  display: inline-block;
+  margin: 0 24px 12px;
+  transition: color 0.2s, background 0.2s;
+}
+
+.demo-hints {
+  margin: 8px 16px 0;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  padding: 9px 14px;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--border-subtle);
+  line-height: 1.6;
+}
+
+.demo-sim-btn {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid rgba(143,193,127,0.25);
+  border-radius: 100px;
+  padding: 2px 10px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  margin-left: 4px;
+}
+.demo-sim-btn:hover { background: var(--accent-dim); }
+
+/* Keyboard hint badge used in demo-hints HTML */
+kbd.kbd, .kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 0 5px;
+  color: var(--text-secondary);
+}
+
+/* Textarea flash when text is restored via ESC/Stop */
+@keyframes restored-pulse {
+  0%   { outline: 2px solid rgba(143,193,127,0.55); outline-offset: 2px; }
+  100% { outline: 2px solid transparent; outline-offset: 2px; }
+}
+.textarea-restored { animation: restored-pulse 0.7s ease-out; }
+</style>
+</head>
+<body>
+
+<div class="mock-label">Gardenia UI Mocks — Message Queue Indicator (message-queue)</div>
+
+<div class="mock-page">
+
+  <!-- ── State A: Idle ─────────────────────────────────────────────────── -->
+  <div>
+    <div class="mock-section-label">A — Idle (baseline, no change)</div>
+    <div class="composer-wrap">
+      <div class="composer-box">
+        <textarea placeholder="Message Gardenia…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
+        <div class="composer-footer">
+          <span class="mode-pill">● Default</span>
+          <div class="spacer"></div>
+          <button class="footer-btn">✦ Sonnet 5 · High ▾</button>
+          <button class="send-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"/><polyline points="6 11 12 5 18 11"/>
+            </svg>
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── State B: Busy, no queue ──────────────────────────────────────── -->
+  <div>
+    <div class="mock-section-label">B — Busy, no queued message (existing behavior)</div>
+    <div class="composer-wrap">
+      <div class="composer-box">
+        <textarea placeholder="Message Gardenia…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
+        <div class="composer-footer">
+          <span class="mode-pill">● Default</span>
+          <div class="spacer"></div>
+          <span class="working-pill">
+            <span class="spinner"></span>
+            Working…
+          </span>
+          <button class="footer-btn">✦ Sonnet 5 · High ▾</button>
+          <button class="stop-btn">⏹ Stop</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── State C: Busy + 1 queued ─────────────────────────────────────── -->
+  <div>
+    <div class="mock-section-label">C — Busy + 1 queued message (NEW)</div>
+    <div class="composer-wrap">
+      <div class="composer-box">
+        <textarea placeholder="Message Gardenia…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
+
+        <!--
+          .queued-strip — NEW element, inserted between <textarea> and .composer-footer.
+          Position: inside .composer-box, above .composer-footer.
+          Shows when pendingQueue.length > 0.
+        -->
+        <div class="queued-strip">
+          <span class="queued-strip-label">Queued</span>
+          <span class="queued-strip-text">Can you also add tests for the edge cases we discussed?</span>
+          <button class="queued-strip-cancel" title="Cancel queued message">✕</button>
+        </div>
+
+        <div class="composer-footer">
+          <span class="mode-pill">● Default</span>
+          <div class="spacer"></div>
+          <span class="working-pill">
+            <span class="spinner"></span>
+            Working…
+          </span>
+          <button class="footer-btn">✦ Sonnet 5 · High ▾</button>
+
+          <!--
+            .stop-group — NEW wrapper around .stop-btn + .queue-badge.
+            Replaces the bare .stop-btn in the footer when busy.
+            When pendingQueue.length === 0, render just the plain .stop-btn (State B).
+          -->
+          <div class="stop-group">
+            <button class="stop-btn">⏹ Stop</button>
+            <!--
+              .queue-badge — NEW element.
+              Count reflects pendingQueue.length (the number of messages
+              submitted while busy, tracked client-side in SessionManager).
+              Clicking it has no action in this mock; in the real app it
+              could scroll to / highlight the .queued-strip.
+            -->
+            <span class="queue-badge">1 queued</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── State D: Busy + 2+ queued (count badge) ──────────────────────── -->
+  <div>
+    <div class="mock-section-label">D — Busy + 2 queued (count scales)</div>
+    <div class="composer-wrap">
+      <div class="composer-box">
+        <textarea placeholder="Message Gardenia…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
+
+        <!-- Only the LAST queued message is shown in the strip; the badge shows the full count. -->
+        <div class="queued-strip">
+          <span class="queued-strip-label">Queued ×2</span>
+          <span class="queued-strip-text">Now run the tests and show me the output</span>
+          <button class="queued-strip-cancel" title="Cancel all queued messages">✕</button>
+        </div>
+
+        <div class="composer-footer">
+          <span class="mode-pill">● Default</span>
+          <div class="spacer"></div>
+          <span class="working-pill">
+            <span class="spinner"></span>
+            Working…
+          </span>
+          <button class="footer-btn">✦ Sonnet 5 · High ▾</button>
+          <div class="stop-group">
+            <button class="stop-btn">⏹ Stop</button>
+            <span class="queue-badge">2 queued</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── State E: Busy, queue draining ────────────────────────────────────── -->
+  <div>
+    <div class="mock-section-label">E — Queue draining (next queued message about to run → auto to A)</div>
+    <div class="composer-wrap">
+      <div class="composer-box">
+        <textarea placeholder="Message Gardenia…" rows="1" style="height:52px;overflow-y:hidden" disabled></textarea>
+        <div class="composer-footer">
+          <span class="mode-pill">● Default</span>
+          <div class="spacer"></div>
+          <span class="draining-pill">
+            <span class="spinner" style="border-top-color:var(--warning)"></span>
+            1 more…
+          </span>
+          <button class="footer-btn">✦ Sonnet 5 · High ▾</button>
+          <button class="stop-btn">⏹ Stop</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Interactive Demo: full state machine ───────────────────────────── -->
+  <div>
+    <div class="mock-section-label">Interactive Demo — full state machine (click/type to explore)</div>
+
+    <!--
+      State machine: A → B → C → D → E → A
+      A: idle, send-btn visible
+      B: busy, working-pill + stop-btn (with ESC hint) + queue-btn
+      C: busy + 1 queued, single strip + badge
+      D: busy + N≥2 queued, collapsible strip + badge
+      E: draining (1 more…), auto-transitions to A after 1.5s
+      ESC key while busy: restores last submitted text, returns to A
+      ⌘↵ / Ctrl↵: submit (same as clicking Send/+Queue)
+    -->
+    <span id="dq-sb" class="demo-state-badge"
+      style="color:var(--accent);background:var(--accent-dim);border:1px solid rgba(143,193,127,0.2)">
+      A — Idle
+    </span>
+
+    <div class="composer-wrap">
+      <div class="composer-box">
+
+        <textarea id="dq-ta" placeholder="Message Gardenia…" rows="2"
+          style="min-height:52px;"></textarea>
+
+        <!-- State C: single queued message strip -->
+        <div id="dq-single" class="queued-strip" style="display:none">
+          <span class="queued-strip-label">Queued</span>
+          <span id="dq-stext" class="queued-strip-text"></span>
+          <button class="queued-strip-cancel" onclick="iq.cancel(0)" title="Cancel queued message">✕</button>
+        </div>
+
+        <!-- State D: collapsed strip trigger (click to expand) -->
+        <div id="dq-ctrig" class="queued-strip-trigger" style="display:none" onclick="iq.toggle()">
+          <span class="queued-strip-label">Queued</span>
+          <span id="dq-ctxt" class="queued-strip-text"></span>
+          <span id="dq-cch" class="queued-strip-chevron">▼</span>
+        </div>
+
+        <!-- State D: expanded queue list -->
+        <div id="dq-exp" class="queue-expanded" style="display:none">
+          <div id="dq-xlist"></div>
+          <div class="queue-cancel-all-row">
+            <button class="queue-cancel-all-btn" onclick="iq.cancelAll()">Cancel all queued</button>
+          </div>
+        </div>
+
+        <div class="composer-footer">
+          <span class="mode-pill">● Default</span>
+          <div class="spacer"></div>
+
+          <span id="dq-working" class="working-pill" style="display:none">
+            <span class="spinner"></span>
+            Working…
+          </span>
+          <span id="dq-draining" class="draining-pill" style="display:none">
+            <span class="spinner" style="border-top-color:var(--warning)"></span>
+            1 more…
+          </span>
+
+          <button class="footer-btn">✦ Sonnet 5 · High ▾</button>
+
+          <!--
+            State A: send-btn visible.
+            State B/C/D: queue-btn visible instead (same action, queues to SDK).
+          -->
+          <button id="dq-send" class="send-btn" onclick="iq.send()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"/>
+              <polyline points="6 11 12 5 18 11"/>
+            </svg>
+            Send
+          </button>
+
+          <button id="dq-qbtn" class="queue-btn" onclick="iq.send()" style="display:none">
+            + Queue
+          </button>
+
+          <!--
+            .stop-group wraps Stop + optional queue badge.
+            ESC hint inside the Stop button mirrors the keyboard shortcut.
+          -->
+          <div id="dq-stop" class="stop-group" style="display:none">
+            <button class="stop-btn" onclick="iq.stop()">
+              ⏹ Stop
+              <span class="esc-hint">ESC</span>
+            </button>
+            <span id="dq-badge" class="queue-badge" style="display:none"></span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div id="dq-hint" class="demo-hints">
+      ↑ Type a message and click <strong>Send</strong> to start a turn.
+    </div>
+  </div>
+
+</div><!-- /.mock-page -->
+
+<script>
+// ── Message Queue Interactive Demo ──────────────────────────────────────────
+// State machine: A (idle) → B (busy) → C (busy+1q) → D (busy+Nq) → E (drain) → A
+// ESC while busy: stop + restore last submitted text to composer
+(function () {
+  'use strict';
+
+  function el(id) { return document.getElementById(id); }
+  function show(id, v) { el(id).style.display = (v === false) ? 'none' : ''; }
+
+  let S        = 'A';   // current state
+  let queue    = [];    // queued message strings
+  let lastMsg  = '';    // last text that started the running turn (restored by ESC/Stop)
+  let expanded = false; // D: whether the multi-queue strip is expanded
+  let drainT   = null;  // setTimeout handle for E→A auto-transition
+
+  // ── Render ──────────────────────────────────────────────────────────────
+
+  function render() {
+    // Reset all variable UI elements
+    show('dq-working', false); show('dq-draining', false);
+    show('dq-send',    false); show('dq-qbtn',    false);
+    show('dq-stop',    false); show('dq-badge',   false);
+    show('dq-single',  false); show('dq-ctrig',   false);
+    show('dq-exp',     false);
+    el('dq-ta').disabled = false;
+
+    if (S === 'A') {
+      setSB('A — Idle', 'var(--accent)', 'var(--accent-dim)', 'rgba(143,193,127,0.2)');
+      show('dq-send');
+      el('dq-ta').placeholder = 'Message Gardenia…';
+      el('dq-hint').innerHTML =
+        '↑ Type a message and click <strong>Send</strong> to start a turn. ' +
+        '(<kbd class="kbd">⌘↵</kbd> also works)';
+    }
+    else if (S === 'B') {
+      setSB('B — Busy', 'var(--text-secondary)', 'transparent', 'var(--border-default)');
+      show('dq-working'); show('dq-qbtn'); show('dq-stop');
+      el('dq-ta').placeholder = 'Queue a message…';
+      el('dq-hint').innerHTML =
+        'Busy. Type a message and click <strong>+ Queue</strong> to enqueue it ' +
+        '(<kbd class="kbd">⌘↵</kbd>). ' +
+        'Click <strong>Stop</strong> or press <kbd class="kbd">ESC</kbd> to stop the turn ' +
+        '(restores last submitted text to composer). ' +
+        simBtn('→ Simulate turn complete', 'iq.drain()');
+    }
+    else if (S === 'C') {
+      setSB('C — Busy + 1 queued', 'var(--warning)', 'rgba(217,179,116,0.1)', 'rgba(217,179,116,0.25)');
+      show('dq-working'); show('dq-qbtn'); show('dq-stop'); show('dq-badge');
+      el('dq-badge').textContent = '1 queued';
+      show('dq-single');
+      el('dq-stext').textContent = queue[0] || '';
+      el('dq-ta').placeholder = 'Queue another…';
+      el('dq-hint').innerHTML =
+        'Click <strong>✕</strong> on the strip to cancel (→ B). ' +
+        'Queue another message to reach state D. ' +
+        simBtn('→ Simulate turn complete', 'iq.drain()');
+    }
+    else if (S === 'D') {
+      setSB('D — Busy + ' + queue.length + ' queued',
+        'var(--warning)', 'rgba(217,179,116,0.1)', 'rgba(217,179,116,0.25)');
+      show('dq-working'); show('dq-qbtn'); show('dq-stop'); show('dq-badge');
+      el('dq-badge').textContent = queue.length + ' queued';
+      el('dq-ta').placeholder = 'Queue another…';
+      if (!expanded) {
+        show('dq-ctrig');
+        el('dq-ctxt').textContent = queue.length + ' messages queued — click to expand';
+        el('dq-cch').className = 'queued-strip-chevron';
+      } else {
+        show('dq-exp');
+        renderExpanded();
+      }
+      el('dq-hint').innerHTML =
+        'Click the strip to <strong>expand</strong> individual messages and cancel them one by one. ' +
+        simBtn('→ Simulate turn complete', 'iq.drain()');
+    }
+    else if (S === 'E') {
+      setSB('E — Draining…', 'var(--warning)', 'rgba(217,179,116,0.1)', 'rgba(217,179,116,0.25)');
+      show('dq-draining'); show('dq-stop');
+      el('dq-ta').disabled = true;
+      el('dq-ta').placeholder = 'Message Gardenia…';
+      el('dq-hint').innerHTML =
+        '⟳ The next queued message is about to run… auto-returning to A in 1.5 s.';
+      drainT = setTimeout(function () {
+        S = 'A'; queue = []; expanded = false;
+        render();
+      }, 1500);
+    }
+  }
+
+  function setSB(txt, color, bg, borderColor) {
+    var b = el('dq-sb');
+    b.textContent = txt;
+    b.style.color = color;
+    b.style.background = bg;
+    b.style.border = '1px solid ' + borderColor;
+  }
+
+  function simBtn(label, onclick) {
+    return '<button class="demo-sim-btn" onclick="' + onclick + '">' + label + '</button>';
+  }
+
+  function renderExpanded() {
+    var list = el('dq-xlist');
+    list.innerHTML = '';
+    queue.forEach(function (msg, i) {
+      var d = document.createElement('div');
+      d.className = 'queue-list-item';
+      d.innerHTML =
+        '<span class="queue-list-item-num">' + (i + 1) + '</span>' +
+        '<span class="queue-list-item-text">' + escHtml(msg) + '</span>' +
+        '<button class="queue-list-item-cancel" onclick="iq.cancel(' + i + ')" title="Cancel this message">✕</button>';
+      list.appendChild(d);
+    });
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // ── Public actions (called from onclick and keyboard handler) ────────────
+
+  window.iq = {
+
+    send: function () {
+      var txt = el('dq-ta').value.trim();
+      if (!txt) { el('dq-ta').focus(); return; }
+      if (drainT) { clearTimeout(drainT); drainT = null; }
+      if (S === 'A') {
+        lastMsg = txt;
+        el('dq-ta').value = '';
+        S = 'B';
+      } else if (S === 'B' || S === 'C' || S === 'D') {
+        queue.push(txt);
+        el('dq-ta').value = '';
+        expanded = false;
+        S = queue.length === 1 ? 'C' : 'D';
+      }
+      render();
+    },
+
+    stop: function () {
+      // Stop current turn, clear queue, restore last submitted text
+      if (drainT) { clearTimeout(drainT); drainT = null; }
+      queue = []; expanded = false;
+      var ta = el('dq-ta');
+      ta.value = lastMsg;
+      ta.classList.remove('textarea-restored');
+      // Trigger reflow to restart animation
+      void ta.offsetWidth;
+      ta.classList.add('textarea-restored');
+      S = 'A';
+      render();
+    },
+
+    cancel: function (idx) {
+      queue.splice(idx, 1);
+      expanded = false;
+      S = queue.length === 0 ? 'B' : queue.length === 1 ? 'C' : 'D';
+      render();
+    },
+
+    cancelAll: function () {
+      queue = []; expanded = false;
+      S = 'B';
+      render();
+    },
+
+    toggle: function () {
+      expanded = !expanded;
+      // Toggle in-place without full re-render to avoid losing focus
+      show('dq-ctrig', !expanded);
+      show('dq-exp', expanded);
+      el('dq-cch').className = 'queued-strip-chevron' + (expanded ? ' open' : '');
+      if (expanded) renderExpanded();
+    },
+
+    drain: function () {
+      // Simulate the current turn completing:
+      // If queue has items → show "1 more…" (state E) then auto-idle.
+      // If queue is empty → idle immediately.
+      if (S !== 'B' && S !== 'C' && S !== 'D') return;
+      if (drainT) { clearTimeout(drainT); drainT = null; }
+      expanded = false;
+      if (queue.length > 0) {
+        // Dequeue the next item — it "runs" briefly shown as E ("1 more…"), then A.
+        queue.shift();
+        S = 'E';
+      } else {
+        lastMsg = '';
+        S = 'A';
+      }
+      render();
+    }
+  };
+
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && (S === 'B' || S === 'C' || S === 'D')) {
+      e.preventDefault();
+      iq.stop();
+    }
+  });
+
+  el('dq-ta').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      iq.send();
+    }
+  });
+
+  // Initial render
+  render();
+
+}());
+</script>
+</body>
+</html>
