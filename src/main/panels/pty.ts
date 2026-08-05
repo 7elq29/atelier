@@ -67,15 +67,27 @@ export class PtyManager {
 
     if (useTmux) {
       const name = tmuxSessionName(id)
+      // Ensure the session exists as a detached session first. Using
+      // `new-session -d` (not `new-session -A`) separates creation from
+      // attachment: the session is created once, with the correct cwd, and
+      // thereafter survives client disconnects without restarting the shell.
+      // The `has-session` guard prevents resetting the cwd on reattach.
+      try {
+        execFileSync(tmuxBin!, ['has-session', '-t', name], { stdio: 'ignore' })
+      } catch {
+        // Session doesn't exist — create it detached with the initial cwd.
+        execFileSync(tmuxBin!, [
+          'new-session', '-d', '-s', name,
+          '-x', String(Math.max(opts.cols || 80, 2)),
+          '-y', String(Math.max(opts.rows || 24, 2)),
+          '-c', opts.cwd
+        ], { stdio: 'ignore' })
+      }
+      // Attach to the (now-guaranteed) existing session. When this client
+      // exits (node-pty closes), tmux simply detaches — no SIGHUP to the
+      // shell, so the session and its processes survive.
       shell = tmuxBin!
-      args = [
-        'new-session',
-        '-A',            // attach if session exists, create if not — key reattach flag
-        '-s', name,
-        '-x', String(Math.max(opts.cols || 80, 2)),
-        '-y', String(Math.max(opts.rows || 24, 2)),
-        '-c', opts.cwd   // working directory: applied on initial creation, ignored on reattach
-      ]
+      args = ['attach-session', '-t', name]
     } else if (isRemote) {
       shell = 'ssh'
       args = [opts.hostname as string]
