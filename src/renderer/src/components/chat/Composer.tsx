@@ -432,12 +432,27 @@ export default function Composer({
       { cmd: '/fork', desc: 'Fork this session into a new one', run: () => onFork() },
       { cmd: '/model', desc: 'Open the model/effort picker', run: () => setModelPickerOpen(true) }
     ]
-    const localNames = new Set(local.map((c) => c.cmd.slice(1)))
+    // `seenNames` starts with the 4 local command names and also accumulates
+    // live command names as they're added — this deduplicates in both
+    // directions: local commands win over same-named SDK entries (pre-existing
+    // behavior), AND duplicate entries within `liveSlashCommands` itself are
+    // collapsed to their first occurrence. The SDK can return the same name
+    // multiple times when it discovers commands from multiple sources (built-in
+    // CLI commands, CLAUDE.md skills, MCP server tools, project-level .claude/
+    // commands), and without this guard each duplicate passes the old
+    // `!localNames.has(c.name)` filter and appears twice in the popup
+    // (confirmed: both entries render because `key={command.cmd}` is the same
+    // for both — a React duplicate-key case that still renders all items).
+    const seenNames = new Set(local.map((c) => c.cmd.slice(1)))
     // No `run` here on purpose — see `selectSlash`'s handling of a command
     // with no `run`: it forwards the command through as a real prompt turn
     // instead of swallowing it into a local action Gardenia doesn't have.
     const live: SlashCommand[] = liveSlashCommands
-      .filter((c) => !localNames.has(c.name))
+      .filter((c) => {
+        if (seenNames.has(c.name)) return false
+        seenNames.add(c.name)
+        return true
+      })
       .map((c) => ({ cmd: `/${c.name}`, desc: c.description || c.argumentHint || 'Session command' }))
     return [...local, ...live]
   }, [onChange, onInterrupt, onFork, liveSlashCommands])
