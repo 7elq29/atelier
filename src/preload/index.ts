@@ -145,6 +145,9 @@ const api = {
     ipcRenderer.invoke('session:respondToPrompt', sessionId, requestId, decision),
   /** Shift+Tab / mode-pill click cycles default -> plan -> acceptEdits -> auto -> default (11-composer-mode-indicator). */
   cycleSessionMode: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:cycleMode', sessionId),
+  /** Persists a model/effort selection immediately (fix-model-persist-on-slash-model) — called by the renderer when /model <id> fires so the selection survives a relaunch even without a subsequent message send. */
+  setSessionModelSelection: (sessionId: string, selection: ModelSelection): Promise<void> =>
+    ipcRenderer.invoke('session:setModelSelection', sessionId, selection),
   onSessionMessage: (callback: (event: SessionStreamEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: SessionStreamEvent): void => callback(payload)
     ipcRenderer.on('session:message', listener)

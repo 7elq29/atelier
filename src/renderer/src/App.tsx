@@ -453,7 +453,12 @@ export default function App(): JSX.Element {
                           projectPath={activeSession.projectPath}
                           onFork={() => void sessions.forkSession(activeSession.id).then((forked) => setActiveSessionId(forked.id))}
                           modelSelection={modelSelection}
-                          onModelSelectionChange={setModelSelection}
+                          onModelSelectionChange={(selection) => {
+                            setModelSelection(selection)
+                            if (activeSessionId && selection) {
+                              void window.gardenia.setSessionModelSelection(activeSessionId, selection)
+                            }
+                          }}
                           liveSlashCommands={sessions.commandsBySession[activeSession.id] ?? []}
                           mode={activeSession.permissionMode}
                           onCycleMode={() => void sessions.cycleMode(activeSession.id)}

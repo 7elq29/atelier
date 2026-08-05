@@ -796,6 +796,18 @@ try {
   // ── Mode cycling (11-composer-mode-indicator) ─────────────────────────
 
   /**
+   * Persists a model/effort selection for a session without sending a message
+   * (fix-model-persist-on-slash-model): called immediately when the renderer's
+   * `/model <id>` slash command fires so the selection survives a relaunch
+   * even if no subsequent message is sent. Mirrors the same Map+store write
+   * that `sendUserMessage` does when it detects a changed selection.
+   */
+  persistModelSelection(sessionId: string, selection: ModelSelection): void {
+    this.modelSelections.set(sessionId, selection)
+    this.store.setModelSelection(sessionId, selection)
+  }
+
+  /**
    * Cycles a session's SDK permission mode through `MODE_CYCLE`
    * (default -> plan -> acceptEdits -> auto -> default), triggered by the
    * composer's Shift+Tab handler or a click on the mode pill. Updates the

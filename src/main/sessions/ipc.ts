@@ -92,6 +92,10 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
 
   ipcMain.handle('session:setPinned', (_event, sessionId: string, pinned: boolean) => manager.setPinned(sessionId, pinned))
 
+  ipcMain.handle('session:setModelSelection', (_event, sessionId: string, selection: ModelSelection) =>
+    manager.persistModelSelection(sessionId, selection)
+  )
+
   ipcMain.handle('session:setColor', (_event, sessionId: string, color: string) => manager.setColor(sessionId, color))
 
   ipcMain.handle('session:setNotes', (_event, sessionId: string, notes: string) => manager.setNotes(sessionId, notes))
