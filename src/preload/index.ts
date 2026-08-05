@@ -205,6 +205,8 @@ const api = {
   ptyWrite: (id: string, data: string): Promise<void> => ipcRenderer.invoke('panel:pty:write', id, data),
   ptyResize: (id: string, cols: number, rows: number): Promise<void> => ipcRenderer.invoke('panel:pty:resize', id, cols, rows),
   ptyKill: (id: string): Promise<void> => ipcRenderer.invoke('panel:pty:kill', id),
+  /** Kill the tmux server session for this pty id (call on Gardenia session delete, not close). No-op if tmux is not installed. */
+  ptyKillTmuxSession: (id: string): Promise<void> => ipcRenderer.invoke('panel:pty:killTmuxSession', id),
   onPtyData: (callback: (payload: { id: string; data: string }) => void): (() => void) => {
     const listener = (_event: unknown, payload: { id: string; data: string }): void => callback(payload)
     ipcRenderer.on('pty:data', listener)

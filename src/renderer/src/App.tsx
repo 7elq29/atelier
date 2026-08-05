@@ -411,6 +411,12 @@ export default function App(): JSX.Element {
           onDelete={(id) => {
             if (activeSessionId === id) setActiveSessionId(null)
             void sessions.deleteSession(id)
+            // Kill the tmux server sessions for all pty variants of this
+            // Gardenia session (terminal-only, tab terminal, companion drawer).
+            // No-op if tmux is not installed or the sessions never existed.
+            void window.gardenia.ptyKillTmuxSession(id)
+            void window.gardenia.ptyKillTmuxSession(`${id}:tab-terminal`)
+            void window.gardenia.ptyKillTmuxSession(`${id}:companion`)
           }}
           onFork={(id) => void sessions.forkSession(id).then((forked) => setActiveSessionId(forked.id))}
           onRestart={(id) => void sessions.restartSession(id).then((forked) => setActiveSessionId(forked.id))}

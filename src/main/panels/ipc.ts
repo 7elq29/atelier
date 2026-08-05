@@ -42,6 +42,9 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
   ipcMain.handle('panel:pty:write', (_e, id: string, data: string) => ptyManager.write(id, data))
   ipcMain.handle('panel:pty:resize', (_e, id: string, cols: number, rows: number) => ptyManager.resize(id, cols, rows))
   ipcMain.handle('panel:pty:kill', (_e, id: string) => ptyManager.kill(id))
+  // Kill the tmux server session for this pty id — call on Gardenia session
+  // delete (not close) so the tmux session is cleaned up permanently.
+  ipcMain.handle('panel:pty:killTmuxSession', (_e, id: string) => ptyManager.killTmuxSession(id))
 
   // ── Ports (SSH forwards) ─────────────────────────────────────────────
   ipcMain.handle(
