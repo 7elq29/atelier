@@ -450,6 +450,74 @@ html, body {
 }
 .queue-cancel-all-btn:hover { opacity: 1; text-decoration: underline; }
 
+/* ── Demo transcript (chat history above composer) ───────────────────────── */
+.demo-transcript {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  margin: 0 16px 10px;
+  min-height: 90px;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end; /* new messages push up from bottom */
+  padding: 8px 0 4px;
+  scroll-behavior: smooth;
+}
+
+.demo-transcript-empty {
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  text-align: center;
+  padding: 20px;
+  align-self: center;
+}
+
+/* User message row — right-aligned */
+.demo-msg-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 3px 14px;
+}
+
+.demo-msg-bubble {
+  max-width: 72%;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: 14px 14px 3px 14px;
+  padding: 7px 13px;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  word-break: break-word;
+  animation: bubble-in 0.22s cubic-bezier(0.34, 1.26, 0.64, 1);
+}
+
+/* Bubbles promoted from the queue get an amber left accent */
+.demo-msg-bubble.from-queue {
+  border-left: 2px solid rgba(217, 179, 116, 0.55);
+}
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+
+/* Assistant "Working…" indicator row — left-aligned */
+.demo-assistant-row {
+  display: flex;
+  justify-content: flex-start;
+  padding: 4px 16px 3px;
+}
+
+.demo-assistant-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
 /* ── Interactive demo chrome ─────────────────────────────────────────────── */
 .demo-state-badge {
   font-size: 11px;
@@ -671,6 +739,16 @@ kbd.kbd, .kbd {
     </span>
 
     <div class="composer-wrap">
+
+      <!--
+        Transcript: user bubbles + assistant indicator live here.
+        Bubbles promoted from the queue have a subtle amber left border (.from-queue).
+        The assistant Working… row is removed on Stop/ESC and on turn completion.
+      -->
+      <div id="dq-transcript" class="demo-transcript">
+        <span class="demo-transcript-empty" id="dq-empty">Start a conversation…</span>
+      </div>
+
       <div class="composer-box">
 
         <textarea id="dq-ta" placeholder="Message Gardenia…" rows="2"
@@ -837,6 +915,8 @@ kbd.kbd, .kbd {
       el('dq-hint').innerHTML =
         '⟳ The next queued message is about to run… auto-returning to A in 1.5 s.';
       drainT = setTimeout(function () {
+        // Turn completed: remove assistant indicator, reset to idle
+        removeAssistantIndicator();
         S = 'A'; queue = []; expanded = false;
         render();
       }, 1500);
@@ -873,6 +953,47 @@ kbd.kbd, .kbd {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  // ── Transcript helpers ───────────────────────────────────────────────────
+
+  function addBubble(text, fromQueue) {
+    var t = el('dq-transcript');
+    // Remove empty placeholder
+    var emp = el('dq-empty');
+    if (emp) emp.remove();
+    // Remove existing assistant indicator (will be re-added after bubble)
+    var oldAss = t.querySelector('.demo-assistant-row');
+    if (oldAss) oldAss.remove();
+    // Add user bubble
+    var row = document.createElement('div');
+    row.className = 'demo-msg-row';
+    var bubble = document.createElement('div');
+    bubble.className = 'demo-msg-bubble' + (fromQueue ? ' from-queue' : '');
+    bubble.textContent = text;
+    row.appendChild(bubble);
+    t.appendChild(row);
+    t.scrollTop = t.scrollHeight;
+  }
+
+  function addAssistantIndicator() {
+    var t = el('dq-transcript');
+    var existing = t.querySelector('.demo-assistant-row');
+    if (existing) existing.remove();
+    var row = document.createElement('div');
+    row.className = 'demo-assistant-row';
+    row.innerHTML =
+      '<div class="demo-assistant-pill">' +
+        '<span class="spinner" style="width:11px;height:11px;border-width:1.5px"></span>' +
+        'Working…' +
+      '</div>';
+    t.appendChild(row);
+    t.scrollTop = t.scrollHeight;
+  }
+
+  function removeAssistantIndicator() {
+    var row = el('dq-transcript').querySelector('.demo-assistant-row');
+    if (row) row.remove();
+  }
+
   // ── Public actions (called from onclick and keyboard handler) ────────────
 
   window.iq = {
@@ -884,6 +1005,8 @@ kbd.kbd, .kbd {
       if (S === 'A') {
         lastMsg = txt;
         el('dq-ta').value = '';
+        addBubble(txt, false);
+        addAssistantIndicator();
         S = 'B';
       } else if (S === 'B' || S === 'C' || S === 'D') {
         queue.push(txt);
@@ -898,6 +1021,7 @@ kbd.kbd, .kbd {
       // Stop current turn, clear queue, restore last submitted text
       if (drainT) { clearTimeout(drainT); drainT = null; }
       queue = []; expanded = false;
+      removeAssistantIndicator();
       var ta = el('dq-ta');
       ta.value = lastMsg;
       ta.classList.remove('textarea-restored');
@@ -932,16 +1056,22 @@ kbd.kbd, .kbd {
 
     drain: function () {
       // Simulate the current turn completing:
-      // If queue has items → show "1 more…" (state E) then auto-idle.
-      // If queue is empty → idle immediately.
+      // Dequeue the next item → add it as a user bubble in transcript →
+      // update strip/badge → show state E ("1 more…") briefly → auto to A.
       if (S !== 'B' && S !== 'C' && S !== 'D') return;
       if (drainT) { clearTimeout(drainT); drainT = null; }
       expanded = false;
       if (queue.length > 0) {
-        // Dequeue the next item — it "runs" briefly shown as E ("1 more…"), then A.
-        queue.shift();
+        var msg = queue.shift();
+        // 1. Message appears in transcript (from-queue amber accent)
+        addBubble(msg, true);
+        // 2. New assistant indicator for this freshly-dequeued turn
+        addAssistantIndicator();
+        // 3. Transition to E — strip/badge update happens in render()
         S = 'E';
       } else {
+        // No queue: turn just completes, back to idle
+        removeAssistantIndicator();
         lastMsg = '';
         S = 'A';
       }
