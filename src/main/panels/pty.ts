@@ -48,6 +48,8 @@ interface PtyEntry {
   proc: pty.IPty
   gen: number
   tmuxName?: string
+  /** SSH hostname for remote/devpod sessions that use tmux — needed by kill() to SSH in and detach. */
+  hostname?: string
 }
 
 export class PtyManager {
@@ -64,6 +66,9 @@ export class PtyManager {
 
     let shell: string
     let args: string[]
+    // Accumulated for the PtyEntry written after spawn — set in each branch below.
+    let entryTmuxName: string | undefined
+    let entryHostname: string | undefined
 
     if (useTmux) {
       const name = tmuxSessionName(id)
@@ -88,9 +93,39 @@ export class PtyManager {
       // shell, so the session and its processes survive.
       shell = tmuxBin!
       args = ['attach-session', '-t', name]
+      entryTmuxName = name
     } else if (isRemote) {
-      shell = 'ssh'
-      args = [opts.hostname as string]
+      const hostname = opts.hostname as string
+      const name = tmuxSessionName(id)
+      // Attempt to run tmux on the devpod via SSH so the remote shell session
+      // survives SSH disconnection (app close/restart). Two-step identical to
+      // the local tmux path: has-session? → if not, new-session -d → attach.
+      // The outer try falls back to plain `ssh <host>` if tmux is not installed.
+      try {
+        try {
+          execFileSync('ssh', [hostname, 'tmux', 'has-session', '-t', name], { stdio: 'ignore' })
+        } catch {
+          // Session doesn't exist (or tmux unavailable) — try to create it.
+          // If tmux is not installed this also throws, caught by the outer catch.
+          execFileSync('ssh', [hostname, 'tmux', 'new-session', '-d', '-s', name,
+            '-x', String(Math.max(opts.cols || 80, 2)),
+            '-y', String(Math.max(opts.rows || 24, 2))
+          ], { stdio: 'ignore' })
+        }
+        // `-t` allocates a PTY for the SSH connection so tmux attach gets a
+        // real terminal; without it the attach output is garbled.
+        shell = 'ssh'
+        args = [hostname, '-t', 'tmux', 'attach-session', '-t', name]
+        entryTmuxName = name
+        entryHostname = hostname
+        logger.info('remote tmux session ready', { hostname, name })
+      } catch (err) {
+        // tmux not installed on the devpod — fall back to a plain interactive
+        // SSH session (no persistence across disconnects).
+        logger.warn('remote tmux not available — falling back to plain ssh', { hostname, error: String(err) })
+        shell = 'ssh'
+        args = [hostname]
+      }
     } else {
       shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh')
       args = []
@@ -135,8 +170,8 @@ export class PtyManager {
       proc.write(`cd ${JSON.stringify(opts.cwd)} && clear\r`)
     }
 
-    this.ptys.set(id, { proc, gen, tmuxName: useTmux ? tmuxSessionName(id) : undefined })
-    logger.info('pty spawned', { id, shell, remote: isRemote, tmux: useTmux, cwd: opts.cwd, gen })
+    this.ptys.set(id, { proc, gen, tmuxName: entryTmuxName, hostname: entryHostname })
+    logger.info('pty spawned', { id, shell, remote: isRemote, tmux: Boolean(entryTmuxName), cwd: opts.cwd, gen })
   }
 
   write(id: string, data: string): void {
@@ -155,13 +190,21 @@ export class PtyManager {
     const entry = this.ptys.get(id)
     if (!entry) return
     this.ptys.delete(id)
-    if (entry.tmuxName && tmuxBin) {
-      // Detach all clients from the tmux session before closing the pty —
-      // `proc.kill()` sends SIGTERM which can drag the session down. A proper
-      // detach leaves the tmux server session alive so the next spawn reattaches.
-      try {
-        execFileSync(tmuxBin, ['detach-client', '-s', entry.tmuxName], { stdio: 'ignore' })
-      } catch { /* session may already be detached or gone */ }
+    if (entry.tmuxName) {
+      if (entry.hostname) {
+        // Remote tmux: SSH in to detach the client from the remote tmux session.
+        // This leaves the session alive on the devpod so the next spawn reattaches.
+        try {
+          execFileSync('ssh', [entry.hostname, 'tmux', 'detach-client', '-s', entry.tmuxName], { stdio: 'ignore' })
+        } catch { /* session may already be detached or gone */ }
+      } else if (tmuxBin) {
+        // Local tmux: detach all clients from the session before closing the pty —
+        // `proc.kill()` sends SIGTERM which can drag the session down. A proper
+        // detach leaves the tmux server session alive so the next spawn reattaches.
+        try {
+          execFileSync(tmuxBin, ['detach-client', '-s', entry.tmuxName], { stdio: 'ignore' })
+        } catch { /* session may already be detached or gone */ }
+      }
     }
     try {
       entry.proc.kill()

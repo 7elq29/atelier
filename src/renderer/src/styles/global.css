@@ -360,6 +360,11 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   align-items: center;
   gap: 8px;
 }
+.modal-error {
+  color: var(--danger, #e05252);
+  font-size: 13px;
+  margin-top: 8px;
+}
 .field-label {
   font-size: var(--text-sm);
   font-weight: 500;

@@ -27,7 +27,7 @@ import type {
   TodoUpdateContent
 } from '../../shared/chat-content'
 import type { SessionStore } from './store'
-import { createWorktree, removeWorktree } from './worktree'
+import { createWorktree, removeWorktree, WorktreeError } from './worktree'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
 const AUTO_NAME_PROMPT = 'Summarize this conversation topic in under 6 words. Reply with ONLY the title, no punctuation, no quotes.'
@@ -376,28 +376,44 @@ export class SessionManager {
       return session
     }
 
-    // use-worktree: create an isolated git worktree for local claude-code
-    // sessions when the user opted in. We must pre-allocate the session id
-    // (so the worktree path can embed it) and use harness.startWithId()
-    // instead of harness.start() when a worktree is requested — this is the
-    // same mechanism `reconnectHarness` already uses for sessions that were
-    // never backed by a real CLI conversation. Failures are non-fatal: if
-    // git worktree add fails (not a git repo, no permissions, etc.) we log a
-    // warning and fall through to a plain harness.start() in the original
-    // projectPath, never blocking session creation entirely.
+    // use-worktree: create an isolated git worktree for claude-code sessions
+    // (local or remote/devpod) when the user opted in. We must pre-allocate
+    // the session id (so the worktree path can embed it) and use
+    // harness.startWithId() instead of harness.start() — this is the same
+    // mechanism `reconnectHarness` already uses for sessions that were never
+    // backed by a real CLI conversation. If git worktree add fails (not a git
+    // repo, git not installed, etc.) the error is surfaced to the user via
+    // WorktreeError — session creation is aborted, never silently degraded.
     let worktreePath: string | null = null
     let effectiveCwd = opts.projectPath
-    const wantWorktree = opts.useWorktree && opts.hostId === 'local'
+    const wantWorktree = !!opts.useWorktree
+    const hostname = hostOption?.sshHost
 
     if (wantWorktree) {
       const { randomUUID } = await import('node:crypto')
       const allocatedId = randomUUID()
+
+      // Separate try for createWorktree so the error is always user-visible
+      // (WorktreeError) rather than silently swallowed.
       try {
-        worktreePath = createWorktree(opts.projectPath, allocatedId)
-        effectiveCwd = worktreePath
-        logger.info('createSession: worktree created', { allocatedId, worktreePath })
-        // Use startWithId so the harness session id matches our pre-allocated
-        // id (which is already embedded in the worktree path).
+        worktreePath = createWorktree(opts.projectPath, allocatedId, hostname)
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err)
+        const friendly = /not a git repository/i.test(raw)
+          ? 'Not a git repository'
+          : /git.*not found|command not found.*git|no such file.*git/i.test(raw)
+            ? 'git not found'
+            : raw
+        throw new WorktreeError(`Could not create git worktree: ${friendly}`)
+      }
+
+      effectiveCwd = worktreePath
+      logger.info('createSession: worktree created', { allocatedId, worktreePath })
+
+      // Use startWithId so the harness session id matches our pre-allocated
+      // id (which is already embedded in the worktree path). If the harness
+      // call fails, clean up the dangling worktree and re-throw.
+      try {
         const harnessOpts = {
           cwd: effectiveCwd,
           host,
@@ -434,22 +450,16 @@ export class SessionManager {
         void this.consume(session.id, harnessSession.events)
         return session
       } catch (err) {
-        logger.warn('createSession: worktree setup failed, falling back to plain session', {
+        logger.warn('createSession: harness start failed after worktree creation, cleaning up', {
           projectPath: opts.projectPath,
           error: err instanceof Error ? err.message : String(err)
         })
-        // If the worktree was partially created before the harness call failed,
-        // attempt to clean it up so we don't leave a dangling directory.
-        if (worktreePath) {
-          try {
-            removeWorktree(worktreePath, worktreePath.split('/').pop() ?? '')
-          } catch {
-            // best-effort only
-          }
-          worktreePath = null
-          effectiveCwd = opts.projectPath
+        try {
+          removeWorktree(worktreePath, worktreePath.split('/').pop() ?? '', hostname)
+        } catch {
+          // best-effort only
         }
-        // Fall through to the normal (no-worktree) path below.
+        throw err
       }
     }
 
@@ -988,7 +998,8 @@ try {
     // are caught and logged — a failed cleanup must never block deletion.
     if (session?.worktreePath) {
       try {
-        removeWorktree(session.worktreePath, sessionId)
+        const hostname = session.hostname ? this.hosts.resolveByHostname(session.hostname)?.sshHost : undefined
+        removeWorktree(session.worktreePath, sessionId, hostname)
       } catch (err) {
         logger.warn('deleteSession: worktree removal failed (ignored)', {
           sessionId,

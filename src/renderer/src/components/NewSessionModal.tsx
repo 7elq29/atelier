@@ -22,6 +22,7 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
   const [planMode, setPlanMode] = useState(false)
   const [useWorktree, setUseWorktree] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   // fix-bug-triage-jul31 / bug #49: recently-used remote paths for the
   // currently-selected host, offered via a <datalist> on the remote path
   // input rather than auto-filled — auto-filling risks silently creating a
@@ -37,6 +38,7 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
       setPlanMode(false)
       setUseWorktree(false)
       setCreating(false)
+      setErrorMessage(null)
     }
   }, [isOpen])
 
@@ -71,6 +73,7 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
   async function handleCreate(): Promise<void> {
     if (!projectPath || creating) return
     setCreating(true)
+    setErrorMessage(null)
     try {
       await onCreate({
         projectPath,
@@ -78,9 +81,11 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
         hostId,
         prompt: mode === 'claude-code' && prompt.trim() ? prompt.trim() : undefined,
         planMode: mode === 'claude-code' ? planMode : undefined,
-        useWorktree: mode === 'claude-code' && hostId === 'local' ? useWorktree : undefined
+        useWorktree: mode === 'claude-code' ? useWorktree : undefined
       })
       onClose()
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err))
     } finally {
       setCreating(false)
     }
@@ -196,34 +201,34 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
                   onChange={(e) => setPrompt(e.target.value)}
                 />
               </div>
-              {hostId === 'local' && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 14.5, color: 'var(--text-secondary)' }}>
-                  <input
-                    type="checkbox"
-                    data-testid="use-worktree-checkbox"
-                    checked={useWorktree}
-                    onChange={(e) => setUseWorktree(e.target.checked)}
-                  />
-                  <span>
-                    Use worktree
-                    {projectPath && (
-                      <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
-                        — isolated copy at {projectPath}/.gardenia/worktrees/&lt;id&gt;
-                      </span>
-                    )}
-                    {!projectPath && (
-                      <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
-                        — isolated copy at &lt;project&gt;/.gardenia/worktrees/&lt;id&gt;
-                      </span>
-                    )}
-                  </span>
-                </label>
-              )}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 14.5, color: 'var(--text-secondary)' }}>
+                <input
+                  type="checkbox"
+                  data-testid="use-worktree-checkbox"
+                  checked={useWorktree}
+                  onChange={(e) => setUseWorktree(e.target.checked)}
+                />
+                <span>
+                  Use worktree
+                  {projectPath && (
+                    <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
+                      — isolated copy at {projectPath}/.gardenia/worktrees/&lt;id&gt;
+                    </span>
+                  )}
+                  {!projectPath && (
+                    <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
+                      — isolated copy at &lt;project&gt;/.gardenia/worktrees/&lt;id&gt;
+                    </span>
+                  )}
+                </span>
+              </label>
             </div>
           )}
         </div>
         <div className="modal-footer">
-          <div style={{ flex: 1 }} />
+          <div style={{ flex: 1 }}>
+            {errorMessage && <div className="modal-error">{errorMessage}</div>}
+          </div>
           <button className="btn" onClick={onClose}>
             Cancel
           </button>

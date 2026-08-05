@@ -616,6 +616,123 @@ test.describe('07-secondary-panels', () => {
     log('tmux persistence: cwd /tmp survived TerminalPanel unmount+remount — OK')
   })
 
+  // ── 6g. devpod tmux persistence: remote shell cwd survives TerminalPanel
+  // unmount+remount via session switch, mirroring the local tmux test (6f)
+  // but running the tmux session on the devpod over SSH. The flow:
+  //   spawn → `ssh <host> tmux new-session -d` (if needed)
+  //           `ssh <host> -t tmux attach-session`
+  //   kill  → `ssh <host> tmux detach-client` (session survives on remote)
+  //   spawn → `ssh <host> tmux has-session` (finds it) → `attach-session`
+  // The shell's cwd and running processes are fully preserved across the
+  // SSH disconnection because tmux keeps the session alive on the devpod.
+  test('devpod tmux persistence: remote shell cwd survives TerminalPanel unmount+remount via session switch', async () => {
+    // Resolve which devpod host to use. Prefer the GARDENIA_TEST_DEVPOD env
+    // var (matched by sshHost or id), otherwise take the first available host.
+    const hosts = await page.evaluate(() => window.gardenia.listHosts())
+    const envTarget = process.env.GARDENIA_TEST_DEVPOD
+    const devpodHost = envTarget
+      ? hosts.find((h) => h.sshHost === envTarget || h.id === envTarget)
+      : hosts[0]
+
+    test.skip(!devpodHost, 'No devpod configured — set GARDENIA_TEST_DEVPOD env var or configure a devpod host')
+    if (!devpodHost) return
+
+    log(`devpod tmux persistence: using host ${devpodHost.sshHost} (id=${devpodHost.id})`)
+
+    // 1. Create a terminal-only session on the devpod.
+    await stubProjectFolder(electronApp, '')
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId(`host-option-${devpodHost.id}`).click()
+    await page.getByTestId('remote-project-path').fill('/home/user')
+    await page.getByTestId('mode-terminal').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 20_000 })
+
+    // Capture the devpod session's id so we can click back to it after switching away.
+    const sessionDevpodId = await page
+      .locator('[data-testid="session-row"][data-active="true"]')
+      .getAttribute('data-session-id')
+    expect(sessionDevpodId, 'devpod session must be the active row after creation').toBeTruthy()
+    const rowDevpod = page.locator(`[data-testid="session-row"][data-session-id="${sessionDevpodId}"]`)
+
+    // 2. Wait for the PTY to fully attach — the remote tmux attach-session
+    //    connects via SSH then reattaches to the session, so we get the shell
+    //    prompt rather than the SSH login banner (the banner was shown at
+    //    `tmux new-session -d` time, inside the detached session buffer).
+    //    SSH + tmux new-session + attach over a real network typically takes
+    //    3-5 seconds, so we wait, then probe the shell with a unique marker
+    //    echo before typing the real commands — this is the only reliable way
+    //    to know the shell is actually responsive (a fixed timeout is not).
+    const termDevpod = page.getByTestId('terminal-body')
+    await expect(termDevpod).toBeVisible({ timeout: 10_000 })
+    await termDevpod.click()
+    await page.waitForTimeout(5000) // SSH connect + tmux new-session + attach
+
+    const readyMarker = `gardenia-ready-${Date.now()}`
+    await page.keyboard.type(`echo ${readyMarker}`)
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => termDevpod.textContent(), { timeout: 20_000 }).toContain(readyMarker)
+    log(`devpod tmux persistence: shell ready (echo marker ${readyMarker} confirmed)`)
+
+    // 3. cd into ~/go-code and confirm the cwd before switching away.
+    //    Use `echo <marker>:$(pwd)` — the marker prefix is unique so matching
+    //    it in textContent() proves the shell EXECUTED the echo (not just that
+    //    the command text appears in the terminal buffer as typed text).
+    await page.keyboard.type('cd ~/go-code')
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(300)
+
+    const cwdMarker = `gardenia-cwd-${Date.now()}`
+    await page.keyboard.type(`echo ${cwdMarker}:$(pwd)`)
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => termDevpod.textContent(), { timeout: 10_000 }).toContain(`${cwdMarker}:`)
+    const beforeContent = await termDevpod.textContent() ?? ''
+    expect(beforeContent, 'cwd must be in go-code before switching away').toContain('go-code')
+    await page.screenshot({ path: join(artifactsDir, 'devpod-tmux-persistence-01-before-switch.png') })
+    log('devpod tmux persistence: go-code cwd confirmed before switch')
+
+    // 4. Create a local terminal-only session to switch to. This triggers
+    //    selectSession() in App.tsx → React unmounts the devpod TerminalPanel
+    //    → its cleanup fires ptyKill → `ssh <host> tmux detach-client -s <name>`
+    //    (graceful remote detach, tmux session stays alive on the devpod) → proc.kill().
+    await stubProjectFolder(electronApp, repoDir)
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-terminal').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 10_000 })
+    await page.screenshot({ path: join(artifactsDir, 'devpod-tmux-persistence-02-switched-away.png') })
+    log('devpod tmux persistence: switched to local session B — devpod terminal unmounted, remote tmux session left alive')
+
+    // 5. Switch back to the devpod session. React mounts a fresh TerminalPanel:
+    //    ptySpawn → `ssh <host> tmux has-session` succeeds → skip new-session →
+    //    `ssh <host> -t tmux attach-session` reattaches to the live remote session.
+    await rowDevpod.click()
+    await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 10_000 })
+    const termAfter = page.getByTestId('terminal-body')
+    await expect(termAfter).toBeVisible({ timeout: 10_000 })
+    await termAfter.click()
+    // Remote reattach is slower than local: two extra SSH round-trips (has-session
+    // + attach-session) on top of the connection latency. Wait longer than the
+    // local tmux test does, then use a marker echo to confirm the shell is live
+    // before checking the cwd — same pattern as the initial-connect step above.
+    await page.waitForTimeout(6000)
+
+    // 6. Probe the shell with a unique marker, then check cwd. Without remote
+    //    tmux the plain SSH session would have terminated on disconnect and a
+    //    fresh shell would start in the default home dir, failing this check.
+    const recheckMarker = `gardenia-recheck-${Date.now()}`
+    await page.keyboard.type(`echo ${recheckMarker}:$(pwd)`)
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => termAfter.textContent(), { timeout: 25_000 }).toContain(`${recheckMarker}:`)
+    const afterContent = await termAfter.textContent() ?? ''
+    expect(afterContent, 'cwd must still be in go-code after SSH disconnect+reattach').toContain('go-code')
+    await page.screenshot({ path: join(artifactsDir, 'devpod-tmux-persistence-03-after-reattach.png') })
+    log('devpod tmux persistence: cwd go-code survived SSH disconnect+reattach via remote tmux — OK')
+  })
+
   // ── 7. External links open the OS browser, never an embedded view ─────
   test('external links: clicking a real rendered link invokes shell.openExternal with the right URL, never navigates in-app', async () => {
     await electronApp.evaluate(({ shell }) => {
