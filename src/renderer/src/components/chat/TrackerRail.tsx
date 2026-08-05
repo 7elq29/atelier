@@ -28,6 +28,7 @@ interface SubagentEntry {
  */
 export default function TrackerRail({ messages }: { messages: MessageRecord[] }): JSX.Element | null {
   const [collapsed, setCollapsed] = useState(false)
+  const [showCompleted, setShowCompleted] = useState(false)
   let todos: { content: string; status: string }[] = []
   const subagentOrder: string[] = []
   const subagentByToolUseId = new Map<string, SubagentEntry>()
@@ -84,7 +85,7 @@ export default function TrackerRail({ messages }: { messages: MessageRecord[] })
             </span>
           </div>
           <div className="tracker-body">
-            {todos.map((t, i) => (
+            {todos.filter((t) => showCompleted || t.status !== 'completed').map((t, i) => (
               <div
                 key={i}
                 className={`todo-item${t.status === 'completed' ? ' done' : t.status === 'in_progress' ? ' active' : ''}`}
@@ -95,10 +96,19 @@ export default function TrackerRail({ messages }: { messages: MessageRecord[] })
                 <span>{t.content}</span>
               </div>
             ))}
+            {doneCount > 0 && (
+              <button
+                type="button"
+                className="todo-completed-toggle"
+                onClick={() => setShowCompleted((s) => !s)}
+              >
+                {showCompleted ? 'Hide completed' : `${doneCount} completed`}
+              </button>
+            )}
           </div>
         </div>
       )}
-      {subagents.length > 0 && (
+      {runningCount > 0 && (
         <div className="tracker-card" data-testid="subagent-tracker-card">
           <div className="tracker-head">
             Subagents <span className="count">{runningCount} running</span>
@@ -121,7 +131,7 @@ export default function TrackerRail({ messages }: { messages: MessageRecord[] })
             </b>
           </div>
         )}
-        {subagents.length > 0 && (
+        {runningCount > 0 && (
           <div className="rail-mini-badge" title={`Subagents: ${runningCount} running`}>
             <b>{runningCount}</b>
           </div>

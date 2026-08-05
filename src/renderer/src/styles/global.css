@@ -972,6 +972,8 @@ input[type='range'] {
 .todo-item.done .box { background: var(--accent); border-color: var(--accent); }
 .todo-item.done span { color: var(--text-tertiary); text-decoration: line-through; }
 .todo-item.active span { color: var(--text-primary); font-weight: 500; }
+.todo-completed-toggle { background: none; border: none; padding: 0; font-size: 13px; color: var(--text-tertiary); cursor: pointer; text-align: left; }
+.todo-completed-toggle:hover { color: var(--text-secondary); }
 .subagent-item { display: flex; align-items: center; gap: 9px; font-size: 15px; }
 /* Composer core (04-composer-core) — quoted verbatim from mocks/index.html's
    `.composer-wrap`/`.composer-box`/`.composer-footer`/`.stop-btn`/
