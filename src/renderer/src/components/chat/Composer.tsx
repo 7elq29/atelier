@@ -104,7 +104,7 @@ const DEFAULT_LABEL = 'Sonnet 5 · High'
 
 function labelFor(selection: ModelSelection | null): string {
   if (!selection) return DEFAULT_LABEL
-  const modelLabel = MODEL_OPTIONS.find((m) => m.id === selection.model)?.label ?? MODEL_OPTIONS[0].label
+  const modelLabel = MODEL_OPTIONS.find((m) => m.id === selection.model)?.label ?? selection.model ?? MODEL_OPTIONS[0].label
   const effortLabel = EFFORT_OPTIONS.find((e) => e.id === selection.effort)?.label ?? EFFORT_OPTIONS[2].label
   return `${modelLabel} · ${effortLabel}`
 }
@@ -478,6 +478,16 @@ export default function Composer({
   function handleSend(): void {
     const text = value.trim()
     if (!text && !attachedImage) return
+    // `/model <model-id>` force-switches to any model string (including IDs
+    // not in the picker list) without opening the picker or sending a message.
+    if (text.startsWith('/model ')) {
+      const arg = text.slice('/model '.length).trim()
+      if (arg) {
+        onModelSelectionChange({ model: arg, effort: modelSelection?.effort ?? 'high' })
+        onChange('')
+        return
+      }
+    }
     onSend(text, attachedImage ? { mimeType: attachedImage.mimeType, data: attachedImage.data } : undefined)
     setAttachedImage(null)
   }
