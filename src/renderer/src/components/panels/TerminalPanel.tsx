@@ -1,23 +1,45 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
+import { Terminal, type ITheme } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import { useConfig } from '../../hooks/useConfig'
+import '@xterm/xterm/css/xterm.css'
 
-// Strips common ANSI escape sequences (CSI/OSC) so a real pty's output is
-// readable in a plain `<pre>` without implementing a full terminal emulator
-// (spec: real pty required, full VT100 rendering is not — see progress.md).
-// Built via RegExp() rather than a literal to keep raw control characters
-// (ESC, CSI) out of the source text itself.
-const ANSI_RE = new RegExp('[\\u001B\\u009B][[\\]()#;?]*(?:\\d{1,4}(?:;\\d{0,4})*)?[a-zA-Z]', 'g')
-
-function stripAnsi(s: string): string {
-  return s.replace(ANSI_RE, '').replace(/\r/g, '')
+function readTheme(): ITheme {
+  const style = getComputedStyle(document.documentElement)
+  const v = (name: string): string => style.getPropertyValue(name).trim()
+  return {
+    background: v('--bg-code'),
+    foreground: v('--text-primary'),
+    cursor: v('--text-primary'),
+    selectionBackground: v('--accent-dim'),
+    black: v('--bg-panel'),
+    brightBlack: v('--text-tertiary'),
+    red: v('--danger'),
+    brightRed: v('--danger'),
+    green: v('--success'),
+    brightGreen: v('--accent'),
+    yellow: v('--warning'),
+    brightYellow: v('--warning'),
+    blue: v('--sc-blue'),
+    brightBlue: v('--sc-blue'),
+    magenta: v('--sc-purple'),
+    brightMagenta: v('--sc-purple'),
+    cyan: v('--sc-cyan'),
+    brightCyan: v('--sc-cyan'),
+    white: v('--text-primary'),
+    brightWhite: v('--text-primary')
+  }
 }
 
 /**
  * Real terminal surface (07-secondary-panels §5): spawns/attaches a real
  * `node-pty` process keyed by `ptyId` (see main/panels/pty.ts) and streams
- * its actual output. Used both for creation-time "Terminal-only" sessions
- * (mounted as the session's whole main view) and the companion terminal
- * drawer — the two never share a pty id, so they're genuinely independent
- * shells.
+ * its actual output through a real `@xterm/xterm` instance, which owns all
+ * ANSI/VT100 parsing, cursor/erase semantics, and key encoding — this
+ * component only wires it to the pty IPC bridge. Used both for creation-time
+ * "Terminal-only" sessions (mounted as the session's whole main view) and
+ * the companion terminal drawer — the two never share a pty id, so they're
+ * genuinely independent shells.
  */
 export default function TerminalPanel({
   ptyId,
@@ -30,62 +52,96 @@ export default function TerminalPanel({
   hostname?: string | null
   active?: boolean
 }): JSX.Element {
-  const [output, setOutput] = useState('')
-  const bodyRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const termRef = useRef<Terminal | null>(null)
+  const fitAddonRef = useRef<FitAddon | null>(null)
+  const { config } = useConfig()
 
   useEffect(() => {
-    void window.gardenia.ptySpawn({ id: ptyId, cwd, hostname: hostname ?? null, cols: 100, rows: 30 })
+    const container = containerRef.current
+    if (!container) return
+
+    const term = new Terminal({
+      fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim(),
+      fontSize: config.fontSizes.terminal,
+      theme: readTheme(),
+      cursorBlink: true,
+      allowProposedApi: true
+    })
+    const fitAddon = new FitAddon()
+    term.loadAddon(fitAddon)
+    term.open(container)
+    termRef.current = term
+    fitAddonRef.current = fitAddon
+
+    const dims = fitAddon.proposeDimensions()
+    const cols = dims?.cols || 100
+    const rows = dims?.rows || 30
+    void window.gardenia.ptySpawn({ id: ptyId, cwd, hostname: hostname ?? null, cols, rows })
+
+    const dataDisposable = term.onData((data) => {
+      void window.gardenia.ptyWrite(ptyId, data)
+    })
     const unsub = window.gardenia.onPtyData(({ id, data }) => {
       if (id !== ptyId) return
-      setOutput((prev) => (prev + stripAnsi(data)).slice(-200_000))
+      term.write(data)
     })
+
+    fitAddon.fit()
+    void window.gardenia.ptyResize(ptyId, term.cols, term.rows)
+
     return () => {
       unsub()
+      dataDisposable.dispose()
+      term.dispose()
+      termRef.current = null
+      fitAddonRef.current = null
       void window.gardenia.ptyKill(ptyId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ptyId])
 
-  useEffect(() => {
-    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight
-  }, [output])
-
   // Becoming the visible tab/drawer (or first mounting as one) should behave
   // like a real terminal: typing should work right away, not only after an
   // extra click. Without this, clicking the "Terminal" tab button leaves
   // keyboard focus on that <button> (browser default), so keystrokes never
-  // reach this panel's onKeyDown at all — reported as "can't type anything".
+  // reach xterm's internal textarea at all — reported as "can't type
+  // anything". Re-fitting here also matters because the terminal tab-content
+  // gets a `hidden` class while inactive, so a hidden container can't report
+  // a useful size to ResizeObserver the moment it becomes visible again.
   useEffect(() => {
-    if (active) bodyRef.current?.focus()
-  }, [active])
+    if (!active) return
+    const term = termRef.current
+    const fitAddon = fitAddonRef.current
+    if (!term || !fitAddon) return
+    term.focus()
+    fitAddon.fit()
+    void window.gardenia.ptyResize(ptyId, term.cols, term.rows)
+  }, [active, ptyId])
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
-    e.preventDefault()
-    if (e.key === 'Enter') {
-      void window.gardenia.ptyWrite(ptyId, '\r')
-    } else if (e.key === 'Backspace') {
-      void window.gardenia.ptyWrite(ptyId, '\x7f')
-    } else if (e.key === 'Tab') {
-      void window.gardenia.ptyWrite(ptyId, '\t')
-    } else if (e.ctrlKey && e.key.length === 1) {
-      const code = e.key.toUpperCase().charCodeAt(0) - 64
-      if (code >= 0 && code < 32) void window.gardenia.ptyWrite(ptyId, String.fromCharCode(code))
-    } else if (e.key.length === 1) {
-      void window.gardenia.ptyWrite(ptyId, e.key)
-    }
-  }
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const observer = new ResizeObserver(() => {
+      const term = termRef.current
+      const fitAddon = fitAddonRef.current
+      if (!term || !fitAddon) return
+      fitAddon.fit()
+      void window.gardenia.ptyResize(ptyId, term.cols, term.rows)
+    })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [ptyId])
 
-  return (
-    <div
-      ref={bodyRef}
-      className="term-body"
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
-      onClick={() => bodyRef.current?.focus()}
-      data-testid="terminal-body"
-    >
-      {output}
-      <span className="cursor-block" />
-    </div>
-  )
+  useEffect(() => {
+    const term = termRef.current
+    const fitAddon = fitAddonRef.current
+    if (!term || !fitAddon) return
+    term.options.theme = readTheme()
+    term.options.fontSize = config.fontSizes.terminal
+    fitAddon.fit()
+    void window.gardenia.ptyResize(ptyId, term.cols, term.rows)
+  }, [config.theme, config.fontSizes.terminal, ptyId])
+
+  return <div ref={containerRef} className="term-body" data-testid="terminal-body" />
 }
