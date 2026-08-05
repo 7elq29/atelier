@@ -190,4 +190,46 @@ test.describe('10f-enrichment-model-effort-picker', () => {
 
     await page.screenshot({ path: join(artifactsDir, '10f-model-picker-after-change.png') })
   })
+
+  test('/model <model-id> slash command force-switches to any model string without opening the picker', async ({}, testInfo) => {
+    testInfo.setTimeout(60_000)
+
+    const pickerButton = page.getByTestId('model-picker-button')
+    const textarea = page.getByTestId('composer-input')
+
+    // Type `/model claude-sonnet-4-6[1m]` and press Enter — the popover closes
+    // after the space (current word is no longer a slash token), so Enter
+    // should go through handleSend's interception path, not selectSlash().
+    await textarea.fill('/model claude-sonnet-4-6[1m]')
+    await textarea.press('Enter')
+
+    // Picker popover must NOT have opened — this is a direct set, not "open picker".
+    await expect(page.getByTestId('model-picker-popover')).toHaveCount(0)
+
+    // Composer input must be cleared (the command was consumed).
+    await expect(textarea).toHaveValue('')
+
+    // The model chip must reflect the forced model ID as its label (not fall
+    // back to "Opus 4.8" — the first-option default for unknown IDs).
+    await expect(pickerButton).toHaveText(/claude-sonnet-4\-6\[1m\] · /)
+
+    await page.screenshot({ path: join(artifactsDir, '10f-model-slash-force-switch.png') })
+
+    // Send a real turn under the forced model and verify it actually reaches
+    // the SDK — same ground-truth log-grep pattern as the picker test above.
+    const beforeSwitch = sessionStartedModels(logPath, sessionId)
+    await textarea.fill('Reply with exactly: FORCEDMODEL.')
+    await textarea.press('Enter')
+    await expect(pickerButton).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 60_000 })
+
+    await expect
+      .poll(async () => sessionStartedModels(logPath, sessionId).length, { timeout: 10_000 })
+      .toBeGreaterThan(beforeSwitch.length)
+
+    const afterSwitch = sessionStartedModels(logPath, sessionId)
+    expect(afterSwitch[afterSwitch.length - 1]).toBe('claude-sonnet-4-6[1m]')
+
+    await page.screenshot({ path: join(artifactsDir, '10f-model-slash-after-turn.png') })
+  })
 })
