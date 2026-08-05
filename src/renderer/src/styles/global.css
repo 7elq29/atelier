@@ -1293,11 +1293,8 @@ input[type='range'] {
 .tok-num { color: var(--warning); }
 
 /* ===== Terminal tab ===== */
-.term-body { flex: 1; background: #17150f; font-family: var(--font-mono); font-size: 14px; padding: 12px 14px; color: #ece7d9; overflow-y: auto; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
-.term-body .prompt { color: var(--accent); }
-.term-body .dim { color: var(--text-tertiary); }
-.cursor-block { display: inline-block; width: 7px; height: 14px; background: #ece7d9; vertical-align: middle; animation: term-blink 1s steps(1) infinite; }
-@keyframes term-blink { 50% { opacity: 0; } }
+.term-body { flex: 1; min-height: 0; overflow: hidden; background: var(--bg-code); padding: 4px; }
+.term-body .xterm-viewport { background: transparent !important; }
 .drawer-handle { height: 6px; background: var(--border-subtle); cursor: row-resize; flex-shrink: 0; }
 .drawer-handle:hover { background: var(--accent); }
 .drawer { flex-shrink: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border-default); }
