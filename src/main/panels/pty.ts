@@ -47,6 +47,7 @@ function tmuxSessionName(id: string): string {
 interface PtyEntry {
   proc: pty.IPty
   gen: number
+  tmuxName?: string
 }
 
 export class PtyManager {
@@ -122,7 +123,7 @@ export class PtyManager {
       proc.write(`cd ${JSON.stringify(opts.cwd)} && clear\r`)
     }
 
-    this.ptys.set(id, { proc, gen })
+    this.ptys.set(id, { proc, gen, tmuxName: useTmux ? tmuxSessionName(id) : undefined })
     logger.info('pty spawned', { id, shell, remote: isRemote, tmux: useTmux, cwd: opts.cwd, gen })
   }
 
@@ -141,12 +142,20 @@ export class PtyManager {
   kill(id: string): void {
     const entry = this.ptys.get(id)
     if (!entry) return
+    this.ptys.delete(id)
+    if (entry.tmuxName && tmuxBin) {
+      // Detach all clients from the tmux session before closing the pty —
+      // `proc.kill()` sends SIGTERM which can drag the session down. A proper
+      // detach leaves the tmux server session alive so the next spawn reattaches.
+      try {
+        execFileSync(tmuxBin, ['detach-client', '-s', entry.tmuxName], { stdio: 'ignore' })
+      } catch { /* session may already be detached or gone */ }
+    }
     try {
       entry.proc.kill()
     } catch {
       // already dead
     }
-    this.ptys.delete(id)
     // Intentionally does NOT kill the tmux server session — it must persist
     // so Gardenia can reattach next time it opens. Use killTmuxSession() when
     // the Gardenia session is permanently deleted by the user.
