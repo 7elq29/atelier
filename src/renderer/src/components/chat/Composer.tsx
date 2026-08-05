@@ -645,6 +645,10 @@ export default function Composer({
       }
       if (e.key === 'Escape') {
         e.preventDefault()
+        // Stop propagation so the global App-level ESC handler doesn't
+        // simultaneously trigger an interrupt while we're just closing
+        // the popover — the two actions shouldn't fire together.
+        e.stopPropagation()
         setPopover(null)
         return
       }

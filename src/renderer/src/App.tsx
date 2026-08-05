@@ -107,6 +107,27 @@ export default function App(): JSX.Element {
         return
       }
       if (e.key === 'Escape') {
+        // Modal-close always takes priority over interrupt — if any overlay
+        // is open, close it and don't also fire the interrupt path.
+        if (anyModalOpenRef.current) {
+          setPaletteOpen(false)
+          setSettingsOpen(false)
+          setNewSessionOpen(false)
+          return
+        }
+        // No overlay open: if the active session is busy, ESC interrupts it
+        // (same action as clicking Stop) and restores the last-submitted text
+        // back to the composer — matching Claude Code CLI's ESC behaviour.
+        const sid = activeSessionIdRef.current
+        if (sid && busyBySessionRef.current[sid]) {
+          void sessions.interrupt(sid)
+          if (lastSubmittedTextRef.current) {
+            setComposerText(lastSubmittedTextRef.current)
+          }
+          return
+        }
+        // Idle session or no session: still close any modals that happen to
+        // be open (redundant when anyModalOpen is false, but harmless).
         setPaletteOpen(false)
         setSettingsOpen(false)
         setNewSessionOpen(false)
@@ -293,6 +314,9 @@ export default function App(): JSX.Element {
 
   async function handleSend(text: string, image?: ImageAttachment): Promise<void> {
     if (!activeSessionId || (!text.trim() && !image)) return
+    // Save the trimmed text BEFORE clearing the composer — if the user presses
+    // ESC while the turn is running, the global handler can restore it.
+    lastSubmittedTextRef.current = text.trim()
     setComposerText('')
     await sessions.sendMessage(activeSessionId, text.trim(), modelSelection ?? undefined, image)
   }
@@ -329,6 +353,26 @@ export default function App(): JSX.Element {
   // set imperatively via a ref.
   const anyModalOpen = showOnboarding || paletteOpen || settingsOpen || newSessionOpen
   const appBodyRef = useRef<HTMLDivElement>(null)
+
+  // Refs used inside the stable global ESC keydown handler (registered once
+  // with [] deps) to read current render-cycle values without re-registering
+  // the listener on every render.
+  const activeSessionIdRef = useRef<string | null>(null)
+  activeSessionIdRef.current = activeSessionId
+  const busyBySessionRef = useRef<Record<string, boolean>>({})
+  busyBySessionRef.current = sessions.busyBySession
+  const anyModalOpenRef = useRef(false)
+  anyModalOpenRef.current = anyModalOpen
+  /**
+   * Text of the most recently submitted message — saved in `handleSend`
+   * before `composerText` is cleared, so an ESC press during a busy turn
+   * can restore it to the composer (matching Claude Code CLI's behaviour:
+   * ESC while the turn is running both interrupts AND returns the prompt).
+   * Only meaningful while the session is busy; the value doesn't need to
+   * be cleared on turn completion because the interrupt branch only runs
+   * when `busyBySession[sid]` is true.
+   */
+  const lastSubmittedTextRef = useRef('')
   // A layout effect, not a plain effect: it must remove `inert` *before* the
   // "focus jumped to that session" effect below (declared earlier, but a
   // passive effect) tries to call `.focus()` on a session row — a `.focus()`
