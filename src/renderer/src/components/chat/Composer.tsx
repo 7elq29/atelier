@@ -653,6 +653,49 @@ export default function Composer({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+      return
+    }
+
+    // Readline/Emacs word-navigation and kill-line bindings.
+    // These fire regardless of popover state (they're editing bindings, not
+    // popover-navigation bindings) — the popover guard above only intercepts
+    // ArrowUp/Down, Enter, Tab, and Escape.
+
+    // opt+f: move cursor forward one word (skip non-\w, then skip \w)
+    if (e.altKey && e.key === 'f') {
+      e.preventDefault()
+      const ta = e.target as HTMLTextAreaElement
+      const cursor = ta.selectionStart
+      let pos = cursor
+      while (pos < value.length && !/\w/.test(value[pos])) pos++
+      while (pos < value.length && /\w/.test(value[pos])) pos++
+      requestAnimationFrame(() => ta.setSelectionRange(pos, pos))
+      return
+    }
+
+    // opt+b: move cursor backward one word (skip non-\w backwards, then skip \w backwards)
+    if (e.altKey && e.key === 'b') {
+      e.preventDefault()
+      const ta = e.target as HTMLTextAreaElement
+      const cursor = ta.selectionStart
+      let pos = cursor
+      while (pos > 0 && !/\w/.test(value[pos - 1])) pos--
+      while (pos > 0 && /\w/.test(value[pos - 1])) pos--
+      requestAnimationFrame(() => ta.setSelectionRange(pos, pos))
+      return
+    }
+
+    // ctrl+k: kill from cursor to end of line (delete text from cursor to next
+    // newline, or to end of value if there is no following newline)
+    if (e.ctrlKey && e.key === 'k') {
+      e.preventDefault()
+      const ta = e.target as HTMLTextAreaElement
+      const cursor = ta.selectionStart
+      const nextNewline = value.indexOf('\n', cursor)
+      const killEnd = nextNewline === -1 ? value.length : nextNewline
+      onChange(value.slice(0, cursor) + value.slice(killEnd))
+      requestAnimationFrame(() => ta.setSelectionRange(cursor, cursor))
+      return
     }
   }
 
