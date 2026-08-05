@@ -999,6 +999,14 @@ input[type='range'] {
 .stop-btn { display: flex; align-items: center; gap: 7px; background: var(--danger-dim); color: var(--danger); border: 1px solid var(--danger); border-radius: 100px; padding: 8px 18px; font-size: 14px; font-weight: 500; cursor: pointer; }
 .send-btn { display: flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-text-on); border: 1px solid var(--accent); border-radius: 100px; padding: 8px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .send-btn:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+/* Queued-message strip (message-queue) — sits between the textarea and
+   .composer-footer inside .composer-box when pendingQueue.length > 0. Shows
+   the pending message text (truncated) + a cancel (×) button per item. */
+.queued-strip { display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 18px; border-top: 1px solid var(--border-subtle); background: rgba(217, 179, 116, 0.06); }
+.queued-strip-label { font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--warning); flex-shrink: 0; opacity: 0.75; }
+.queued-strip-text { flex: 1; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-style: italic; }
+.queued-strip-cancel { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; border: none; background: transparent; color: var(--text-tertiary); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; line-height: 1; font-family: var(--font-ui); transition: background 0.1s, color 0.1s; }
+.queued-strip-cancel:hover { background: var(--bg-hover); color: var(--text-primary); }
 /* @file mention / slash command popovers (10e-enrichment-file-mentions-and-
    commands) — quoted verbatim from mocks/index.html's `.mention-popup`/
    `.slash-popup`/`.mention-item`/`.slash-item` rules. `.selected` is an

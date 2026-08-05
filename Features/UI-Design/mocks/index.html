@@ -1,11 +1,14 @@
 <!DOCTYPE html>
 <!--
   Gardenia UI mocks — message queue indicator
-  Shows the composer in three states:
+  Shows the composer in five states:
     A) Idle — normal Send button
-    B) Busy — Working… + Stop, no queued message
-    C) Busy + 1 queued message — queue badge on Stop, queued-message strip below footer
+    B) Busy — Working… + Stop + Queue button (Send relabeled); no queued messages
+    C) Busy + 1 queued — single queued-strip above footer + Stop + Queue button
+    D) Busy + 2+ queued — multiple strips (collapsible) + Stop + Queue button
+    E) Draining — next queued message about to run, auto-transitions to A
 
+  The queue-strip is the sole UI for pending messages — no separate count badge.
   CSS token names and class names match src/renderer/src/styles/tokens.css and
   src/renderer/src/styles/global.css exactly so the real implementation can copy
   selectors verbatim.
@@ -630,7 +633,7 @@ kbd.kbd, .kbd {
         <!--
           .queued-strip — NEW element, inserted between <textarea> and .composer-footer.
           Position: inside .composer-box, above .composer-footer.
-          Shows when pendingQueue.length > 0.
+          Shows when pendingQueue.length > 0. One row per queued message.
         -->
         <div class="queued-strip">
           <span class="queued-strip-label">Queued</span>
@@ -648,21 +651,17 @@ kbd.kbd, .kbd {
           <button class="footer-btn">✦ Sonnet 5 · High ▾</button>
 
           <!--
-            .stop-group — NEW wrapper around .stop-btn + .queue-badge.
-            Replaces the bare .stop-btn in the footer when busy.
-            When pendingQueue.length === 0, render just the plain .stop-btn (State B).
+            Stop button — plain, no badge (the queued-strip above shows the
+            pending message; no separate count badge needed).
           -->
-          <div class="stop-group">
-            <button class="stop-btn">⏹ Stop</button>
-            <!--
-              .queue-badge — NEW element.
-              Count reflects pendingQueue.length (the number of messages
-              submitted while busy, tracked client-side in SessionManager).
-              Clicking it has no action in this mock; in the real app it
-              could scroll to / highlight the .queued-strip.
-            -->
-            <span class="queue-badge">1 queued</span>
-          </div>
+          <button class="stop-btn">⏹ Stop</button>
+          <!-- Send button stays visible when busy — clicking it queues another message. -->
+          <button class="send-btn" style="background:transparent;color:var(--accent);border-color:var(--accent)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"/><polyline points="6 11 12 5 18 11"/>
+            </svg>
+            Queue
+          </button>
         </div>
       </div>
     </div>
@@ -675,11 +674,17 @@ kbd.kbd, .kbd {
       <div class="composer-box">
         <textarea placeholder="Message Gardenia…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
 
-        <!-- Only the LAST queued message is shown in the strip; the badge shows the full count. -->
+        <!-- Only the first queued message is shown as a strip row; for 2+
+             messages the label reads "Queued ×N". -->
+        <div class="queued-strip">
+          <span class="queued-strip-label">Queued ×2</span>
+          <span class="queued-strip-text">Can you also add tests for the edge cases we discussed?</span>
+          <button class="queued-strip-cancel" title="Cancel queued message">✕</button>
+        </div>
         <div class="queued-strip">
           <span class="queued-strip-label">Queued ×2</span>
           <span class="queued-strip-text">Now run the tests and show me the output</span>
-          <button class="queued-strip-cancel" title="Cancel all queued messages">✕</button>
+          <button class="queued-strip-cancel" title="Cancel queued message">✕</button>
         </div>
 
         <div class="composer-footer">
@@ -690,10 +695,13 @@ kbd.kbd, .kbd {
             Working…
           </span>
           <button class="footer-btn">✦ Sonnet 5 · High ▾</button>
-          <div class="stop-group">
-            <button class="stop-btn">⏹ Stop</button>
-            <span class="queue-badge">2 queued</span>
-          </div>
+          <button class="stop-btn">⏹ Stop</button>
+          <button class="send-btn" style="background:transparent;color:var(--accent);border-color:var(--accent)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"/><polyline points="6 11 12 5 18 11"/>
+            </svg>
+            Queue
+          </button>
         </div>
       </div>
     </div>
@@ -726,12 +734,12 @@ kbd.kbd, .kbd {
     <!--
       State machine: A → B → C → D → E → A
       A: idle, send-btn visible
-      B: busy, working-pill + stop-btn (with ESC hint) + queue-btn
-      C: busy + 1 queued, single strip + badge
-      D: busy + N≥2 queued, collapsible strip + badge
+      B: busy, working-pill + stop-btn + queue-btn (Send relabeled "Queue")
+      C: busy + 1 queued, single strip + queue-btn
+      D: busy + N≥2 queued, collapsible strip + queue-btn
       E: draining (1 more…), auto-transitions to A after 1.5s
       ESC key while busy: restores last submitted text, returns to A
-      ⌘↵ / Ctrl↵: submit (same as clicking Send/+Queue)
+      ⌘↵ / Ctrl↵: submit (same as clicking Send/Queue)
     -->
     <span id="dq-sb" class="demo-state-badge"
       style="color:var(--accent);background:var(--accent-dim);border:1px solid rgba(143,193,127,0.2)">
@@ -795,30 +803,23 @@ kbd.kbd, .kbd {
             State A: send-btn visible.
             State B/C/D: queue-btn visible instead (same action, queues to SDK).
           -->
-          <button id="dq-send" class="send-btn" onclick="iq.send()">
+          <button id="dq-send" class="send-btn" onclick="iq.send()" style="display:none">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="19" x2="12" y2="5"/>
               <polyline points="6 11 12 5 18 11"/>
             </svg>
-            Send
-          </button>
-
-          <button id="dq-qbtn" class="queue-btn" onclick="iq.send()" style="display:none">
-            + Queue
+            <span id="dq-send-label">Send</span>
           </button>
 
           <!--
-            .stop-group wraps Stop + optional queue badge.
-            ESC hint inside the Stop button mirrors the keyboard shortcut.
+            Stop button — shown when busy. ESC hint mirrors the keyboard shortcut.
+            Send button (above) stays visible when busy so the user can queue messages.
           -->
-          <div id="dq-stop" class="stop-group" style="display:none">
-            <button class="stop-btn" onclick="iq.stop()">
-              ⏹ Stop
-              <span class="esc-hint">ESC</span>
-            </button>
-            <span id="dq-badge" class="queue-badge" style="display:none"></span>
-          </div>
+          <button id="dq-stop" class="stop-btn" onclick="iq.stop()" style="display:none">
+            ⏹ Stop
+            <span class="esc-hint">ESC</span>
+          </button>
         </div>
 
       </div>
@@ -852,8 +853,8 @@ kbd.kbd, .kbd {
   function render() {
     // Reset all variable UI elements
     show('dq-working', false); show('dq-draining', false);
-    show('dq-send',    false); show('dq-qbtn',    false);
-    show('dq-stop',    false); show('dq-badge',   false);
+    show('dq-send',    false);
+    show('dq-stop',    false);
     show('dq-single',  false); show('dq-ctrig',   false);
     show('dq-exp',     false);
     el('dq-ta').disabled = false;
@@ -861,6 +862,10 @@ kbd.kbd, .kbd {
     if (S === 'A') {
       setSB('A — Idle', 'var(--accent)', 'var(--accent-dim)', 'rgba(143,193,127,0.2)');
       show('dq-send');
+      el('dq-send-label').textContent = 'Send';
+      el('dq-send').style.background = '';
+      el('dq-send').style.color = '';
+      el('dq-send').style.borderColor = '';
       el('dq-ta').placeholder = 'Message Gardenia…';
       el('dq-hint').innerHTML =
         '↑ Type a message and click <strong>Send</strong> to start a turn. ' +
@@ -868,10 +873,14 @@ kbd.kbd, .kbd {
     }
     else if (S === 'B') {
       setSB('B — Busy', 'var(--text-secondary)', 'transparent', 'var(--border-default)');
-      show('dq-working'); show('dq-qbtn'); show('dq-stop');
+      show('dq-working'); show('dq-send'); show('dq-stop');
+      el('dq-send-label').textContent = 'Queue';
+      el('dq-send').style.background = 'transparent';
+      el('dq-send').style.color = 'var(--accent)';
+      el('dq-send').style.borderColor = 'var(--accent)';
       el('dq-ta').placeholder = 'Queue a message…';
       el('dq-hint').innerHTML =
-        'Busy. Type a message and click <strong>+ Queue</strong> to enqueue it ' +
+        'Busy. Type a message and click <strong>Queue</strong> to enqueue it ' +
         '(<kbd class="kbd">⌘↵</kbd>). ' +
         'Click <strong>Stop</strong> or press <kbd class="kbd">ESC</kbd> to stop the turn ' +
         '(restores last submitted text to composer). ' +
@@ -879,8 +888,11 @@ kbd.kbd, .kbd {
     }
     else if (S === 'C') {
       setSB('C — Busy + 1 queued', 'var(--warning)', 'rgba(217,179,116,0.1)', 'rgba(217,179,116,0.25)');
-      show('dq-working'); show('dq-qbtn'); show('dq-stop'); show('dq-badge');
-      el('dq-badge').textContent = '1 queued';
+      show('dq-working'); show('dq-send'); show('dq-stop');
+      el('dq-send-label').textContent = 'Queue';
+      el('dq-send').style.background = 'transparent';
+      el('dq-send').style.color = 'var(--accent)';
+      el('dq-send').style.borderColor = 'var(--accent)';
       show('dq-single');
       el('dq-stext').textContent = queue[0] || '';
       el('dq-ta').placeholder = 'Queue another…';
@@ -892,8 +904,11 @@ kbd.kbd, .kbd {
     else if (S === 'D') {
       setSB('D — Busy + ' + queue.length + ' queued',
         'var(--warning)', 'rgba(217,179,116,0.1)', 'rgba(217,179,116,0.25)');
-      show('dq-working'); show('dq-qbtn'); show('dq-stop'); show('dq-badge');
-      el('dq-badge').textContent = queue.length + ' queued';
+      show('dq-working'); show('dq-send'); show('dq-stop');
+      el('dq-send-label').textContent = 'Queue';
+      el('dq-send').style.background = 'transparent';
+      el('dq-send').style.color = 'var(--accent)';
+      el('dq-send').style.borderColor = 'var(--accent)';
       el('dq-ta').placeholder = 'Queue another…';
       if (!expanded) {
         show('dq-ctrig');

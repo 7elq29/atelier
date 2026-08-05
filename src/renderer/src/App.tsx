@@ -56,6 +56,8 @@ export default function App(): JSX.Element {
   const [visitedTabs, setVisitedTabs] = useState<Set<SessionTab>>(new Set(['chat']))
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerHeight, setDrawerHeight] = useState(240)
+  /** Messages queued while the active session was busy (message-queue). Drained FIFO when busy → idle. */
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
 
   // ── In-conversation "Find in conversation" (10b-enrichment-full-text-search) ──
   const [transcriptSearchOpen, setTranscriptSearchOpen] = useState(false)
@@ -182,6 +184,8 @@ export default function App(): JSX.Element {
     setTranscriptSearchQuery('')
     setActiveMatchIndex(0)
     setMatchCount(0)
+    // Also discard any queued messages — they were for the previous session.
+    setQueuedMessages([])
   }, [activeSessionId])
 
   function toggleTranscriptSearch(): void {
@@ -314,6 +318,15 @@ export default function App(): JSX.Element {
 
   async function handleSend(text: string, image?: ImageAttachment): Promise<void> {
     if (!activeSessionId || (!text.trim() && !image)) return
+    const busy = sessions.busyBySession[activeSessionId] ?? false
+    if (busy && !image) {
+      // Session is in flight — queue the message for automatic dispatch when
+      // the current turn completes. Image attachments can't be queued (the
+      // queued-strip only shows text), so they fall through to the normal path.
+      setQueuedMessages((prev) => [...prev, text.trim()])
+      setComposerText('')
+      return
+    }
     // Save the trimmed text BEFORE clearing the composer — if the user presses
     // ESC while the turn is running, the global handler can restore it.
     lastSubmittedTextRef.current = text.trim()
@@ -325,6 +338,20 @@ export default function App(): JSX.Element {
     if (!activeSessionId) return
     await sessions.interrupt(activeSessionId)
   }
+
+  // Drain the message queue when the active session transitions busy → idle
+  // (message-queue). Fires whenever busyBySession changes (i.e. any session
+  // flips). Reads queuedMessages from the render closure — React re-renders
+  // before running effects, so the value is always up-to-date at fire time.
+  useEffect(() => {
+    if (!activeSessionId) return
+    const busy = sessions.busyBySession[activeSessionId] ?? false
+    if (!busy && queuedMessages.length > 0) {
+      const [next, ...rest] = queuedMessages
+      setQueuedMessages(rest)
+      void sessions.sendMessage(activeSessionId, next, modelSelection ?? undefined)
+    }
+  }, [sessions.busyBySession, activeSessionId])
 
   async function handleExport(format: 'markdown' | 'json'): Promise<void> {
     if (!activeSessionId) return
@@ -511,6 +538,8 @@ export default function App(): JSX.Element {
                           liveSlashCommands={sessions.commandsBySession[activeSession.id] ?? []}
                           mode={activeSession.permissionMode}
                           onCycleMode={() => void sessions.cycleMode(activeSession.id)}
+                          queuedMessages={queuedMessages}
+                          onCancelQueued={(index) => setQueuedMessages((prev) => prev.filter((_, i) => i !== index))}
                         />
                       )}
                     </div>

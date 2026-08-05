@@ -218,7 +218,7 @@ interface ComposerProps {
   onChange: (text: string) => void
   onSend: (text: string, image?: ImageAttachment) => void
   onInterrupt: () => void
-  /** True while a turn is in flight for the active session — swaps Send for Stop, per e2e-test-plan.md/spec.md. */
+  /** True while a turn is in flight for the active session — shows Stop alongside Send, per e2e-test-plan.md/spec.md. */
   busy: boolean
   /** Active session's project root — `@file` mentions are resolved (real, live `fs` walk via the existing Files-panel IPC) against this. Undefined/empty just disables the mention popover. */
   projectPath?: string
@@ -243,6 +243,10 @@ interface ComposerProps {
   mode: PermissionModeValue
   /** Fired on Shift+Tab (composer focused) or a click on the mode pill — cycles default -> plan -> acceptEdits -> auto -> default via a real IPC round-trip to SessionManager.cycleMode. */
   onCycleMode: () => void
+  /** Messages queued while the session was busy (message-queue). Rendered as `.queued-strip` rows inside `.composer-box`. Empty when idle or no queue. */
+  queuedMessages?: string[]
+  /** Cancels the queued message at `index` (0-based). Wired to the ✕ button in each `.queued-strip` row. */
+  onCancelQueued?: (index: number) => void
 }
 
 /** Flattens the Files-panel's real `fs`-backed tree (07-secondary-panels) into a flat list of `relativePath`s, files only — dirs aren't mentionable. */
@@ -389,7 +393,9 @@ export default function Composer({
   onModelSelectionChange,
   liveSlashCommands,
   mode,
-  onCycleMode
+  onCycleMode,
+  queuedMessages = [],
+  onCancelQueued
 }: ComposerProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [popover, setPopover] = useState<PopoverState>(null)
@@ -782,6 +788,22 @@ export default function Composer({
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
         />
+        {queuedMessages.length > 0 && queuedMessages.map((msg, idx) => (
+          <div key={idx} className="queued-strip" data-testid="queued-strip">
+            <span className="queued-strip-label">
+              {queuedMessages.length === 1 ? 'Queued' : `Queued ×${queuedMessages.length}`}
+            </span>
+            <span className="queued-strip-text">{msg}</span>
+            <button
+              className="queued-strip-cancel"
+              data-testid="queued-strip-cancel"
+              title="Cancel queued message"
+              onClick={() => onCancelQueued?.(idx)}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
         <div className="composer-footer">
           <span
             className={`mode-pill mode-${mode}`}
@@ -810,21 +832,20 @@ export default function Composer({
             <button className="stop-btn" data-testid="stop-button" onClick={onInterrupt}>
               ⏹ Stop
             </button>
-          ) : (
-            <button
-              className="send-btn"
-              data-testid="send-button"
-              disabled={!value.trim() && !attachedImage}
-              title="Send (Enter)"
-              onClick={handleSend}
-            >
-              <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="19" x2="12" y2="5" />
-                <polyline points="6 11 12 5 18 11" />
-              </svg>
-              Send
-            </button>
-          )}
+          ) : null}
+          <button
+            className="send-btn"
+            data-testid="send-button"
+            disabled={!value.trim() && !attachedImage}
+            title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
+            onClick={handleSend}
+          >
+            <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5" />
+              <polyline points="6 11 12 5 18 11" />
+            </svg>
+            {busy ? 'Queue' : 'Send'}
+          </button>
         </div>
       </div>
     </div>
