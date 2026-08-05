@@ -66,7 +66,12 @@ export default function TerminalPanel({
       fontSize: config.fontSizes.terminal,
       theme: readTheme(),
       cursorBlink: true,
-      allowProposedApi: true
+      allowProposedApi: true,
+      // Make the Option key send ESC-prefixed sequences so that readline/zsh
+      // interprets it as Meta: opt+f → forward-word, opt+b → backward-word,
+      // opt+d → delete-word, etc. Without this, macOS swallows alt+key and
+      // the shell never sees the Meta sequences.
+      macOptionIsMeta: true
     })
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
