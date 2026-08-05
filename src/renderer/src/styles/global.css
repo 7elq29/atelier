@@ -1055,6 +1055,14 @@ input[type='range'] {
 .mode-pill.mode-acceptEdits { background: var(--accent-dim); border-color: transparent; color: var(--accent); }
 .mode-pill.mode-auto { background: rgba(217,179,116,0.16); border-color: transparent; color: var(--warning); }
 
+/* Token context-window usage indicator (token-usage-indicator) — monospace
+   block-character bar in the composer footer, after the mode pill and before
+   the flex spacer. Format: "285k [██████████████░░░░░░ 71%/400k]".
+   Only visible after the session's first completed turn. High usage (≥70%)
+   shifts the color to warning amber so context pressure is visible at a glance. */
+.token-usage { font-family: var(--font-mono); font-size: 11px; color: var(--text-disabled); white-space: nowrap; letter-spacing: -0.01em; }
+.token-usage-high { color: var(--warning); }
+
 /* Model/effort picker (10f-enrichment-model-effort-picker) — quoted verbatim
    from mocks/index.html's `.picker-pop`/`.picker-item` rules. */
 .picker-pop { position: absolute; bottom: 100%; right: 8px; margin-bottom: 6px; width: 190px; background: var(--bg-panel-raised); border: 1px solid var(--border-default); border-radius: var(--r-md); box-shadow: var(--shadow-popover); overflow: hidden; padding: 4px; z-index: 6; }

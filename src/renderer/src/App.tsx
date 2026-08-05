@@ -540,6 +540,7 @@ export default function App(): JSX.Element {
                           onCycleMode={() => void sessions.cycleMode(activeSession.id)}
                           queuedMessages={queuedMessages}
                           onCancelQueued={(index) => setQueuedMessages((prev) => prev.filter((_, i) => i !== index))}
+                          tokenUsage={sessions.tokenUsageBySession[activeSession.id]}
                         />
                       )}
                     </div>

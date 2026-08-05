@@ -315,6 +315,10 @@ export class SessionManager {
    * mid-session `commands_changed` push from the SDK. Always the FULL
    * replacement list — never a delta.
    */
+  private sendTokenUsage(sessionId: string, inputTokens: number, contextWindow: number): void {
+    this.getWindow()?.webContents.send('session:tokenUsage', { sessionId, inputTokens, contextWindow })
+  }
+
   private sendCommands(sessionId: string, commands: SlashCommandInfo[]): void {
     this.getWindow()?.webContents.send('session:commands', { sessionId, commands })
   }
@@ -1329,6 +1333,19 @@ try {
           this.sendLifecycle({ type: 'session.updated', session: costUpdated })
         }
         this.sendTurnState(sessionId, false)
+        // token-usage-indicator: extract per-model token totals and push to
+        // renderer so the composer footer can display context window usage.
+        // `modelUsage` keys are model ids; we sum inputTokens across all models
+        // (handles multi-model sessions gracefully) and take the max contextWindow
+        // (all models in a single session normally report the same value).
+        if (event.modelUsage) {
+          const entries = Object.values(event.modelUsage)
+          if (entries.length > 0) {
+            const inputTokens = entries.reduce((sum, m) => sum + m.inputTokens, 0)
+            const contextWindow = Math.max(...entries.map((m) => m.contextWindow))
+            if (contextWindow > 0) this.sendTokenUsage(sessionId, inputTokens, contextWindow)
+          }
+        }
         if (event.isError) this.expirePendingPrompts(sessionId, live)
         if (live.turnCount >= AUTO_NAME_STARTING_FROM_TURN) {
           void this.maybeAutoName(sessionId).catch((err) =>

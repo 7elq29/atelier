@@ -18,6 +18,7 @@ import type {
   SessionStatusEvent,
   SessionStreamDeltaEvent,
   SessionStreamEvent,
+  SessionTokenUsageEvent,
   SessionTurnStateEvent
 } from '../shared/session-types'
 import type {
@@ -175,6 +176,12 @@ const api = {
     const listener = (_event: unknown, payload: SessionCommandsEvent): void => callback(payload)
     ipcRenderer.on('session:commands', listener)
     return () => ipcRenderer.removeListener('session:commands', listener)
+  },
+  /** Context-window token usage push (token-usage-indicator) — fired after each completed turn with cumulative inputTokens and contextWindow for the session's active connection. */
+  onSessionTokenUsage: (callback: (event: SessionTokenUsageEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionTokenUsageEvent): void => callback(payload)
+    ipcRenderer.on('session:tokenUsage', listener)
+    return () => ipcRenderer.removeListener('session:tokenUsage', listener)
   },
   /** Test-only: raw read-only SQL query against the real SQLite DB (see session:debugQueryDb handler). */
   debugQueryDb: <T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> =>

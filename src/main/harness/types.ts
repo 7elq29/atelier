@@ -244,6 +244,15 @@ export type HarnessEvent =
       durationMs: number
       totalCostUsd: number
       usage: unknown
+      /**
+       * Per-model token usage for this connection (token-usage-indicator),
+       * sourced from the SDK's own `SDKResultMessage.modelUsage`. Keys are
+       * model ids; each value carries at minimum `inputTokens` (cumulative for
+       * the whole connection, same scope as `totalCostUsd`) and `contextWindow`
+       * (the model's declared context length). Undefined only if the SDK
+       * message somehow omitted it.
+       */
+      modelUsage?: Record<string, { inputTokens: number; contextWindow: number }>
     }
   | {
       type: 'interrupted'

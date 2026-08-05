@@ -422,7 +422,8 @@ export default function Composer({
   mode,
   onCycleMode,
   queuedMessages = [],
-  onCancelQueued
+  onCancelQueued,
+  tokenUsage
 }: ComposerProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [popover, setPopover] = useState<PopoverState>(null)
@@ -846,6 +847,18 @@ export default function Composer({
             <span className="mode-icon">{MODE_ICON[mode]}</span>
             <span>{MODE_LABEL[mode]}</span>
           </span>
+          {tokenUsage && tokenUsage.contextWindow > 0 && (() => {
+            const pct = Math.min(100, Math.round((tokenUsage.inputTokens / tokenUsage.contextWindow) * 100))
+            return (
+              <span
+                className={`token-usage${pct >= 70 ? ' token-usage-high' : ''}`}
+                data-testid="token-usage"
+                title={`${tokenUsage.inputTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} context tokens used`}
+              >
+                {formatTokens(tokenUsage.inputTokens)} [{tokenBar(pct)} {pct}%/{formatTokens(tokenUsage.contextWindow)}]
+              </span>
+            )
+          })()}
           <div className="spacer" />
           {busy && (
             <span className="working-pill" data-testid="composer-working-pill">

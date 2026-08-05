@@ -849,6 +849,10 @@ function toHarnessEvents(sessionId: string, message: SDKMessage, active: ActiveS
         durationMs: message.duration_ms,
         totalCostUsd: message.total_cost_usd,
         usage: message.usage,
+        // token-usage-indicator: per-model cumulative totals for this connection.
+        // `ModelUsage` (sdk.d.ts:1234) has `inputTokens` and `contextWindow`
+        // alongside cost/cache fields — cast to the minimal shape we need.
+        modelUsage: message.modelUsage as Record<string, { inputTokens: number; contextWindow: number }> | undefined,
       },
     ]
   }

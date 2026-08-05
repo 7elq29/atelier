@@ -329,3 +329,18 @@ export interface SessionCommandsEvent {
   sessionId: string
   commands: SlashCommandInfo[]
 }
+
+/**
+ * Context-window token usage push (token-usage-indicator). Fired after every
+ * completed turn's `result` harness event — the numbers are the SDK's own
+ * cumulative per-model totals for the current connection (same connection-
+ * scoped semantics as `totalCostUsd`, i.e. resets on every new `start()`/
+ * `resume()` reconnect). `inputTokens` is the sum of all models' `inputTokens`
+ * for this connection; `contextWindow` is the maximum reported context window
+ * across all models (typically a single model per session).
+ */
+export interface SessionTokenUsageEvent {
+  sessionId: string
+  inputTokens: number
+  contextWindow: number
+}

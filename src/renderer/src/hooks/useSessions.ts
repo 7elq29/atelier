@@ -11,7 +11,6 @@ import type {
   SessionStatus,
   SlashCommandInfo
 } from '../../../shared/session-types'
-
 export interface UseSessionsResult {
   activeSessions: SessionRecord[]
   historySessions: SessionRecord[]
@@ -24,6 +23,8 @@ export interface UseSessionsResult {
   busyBySession: Record<string, boolean>
   /** Live slash-command registry per session (bug #56) — see SessionCommandsEvent's doc comment. Empty until the harness's first push lands. */
   commandsBySession: Record<string, SlashCommandInfo[]>
+  /** Context-window token usage per session (token-usage-indicator) — updated after each completed turn. Empty until the session's first turn completes. */
+  tokenUsageBySession: Record<string, { inputTokens: number; contextWindow: number }>
   refresh: () => Promise<void>
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
@@ -69,6 +70,7 @@ export function useSessions(): UseSessionsResult {
   const [allTags, setAllTags] = useState<string[]>([])
   const [busyBySession, setBusyBySession] = useState<Record<string, boolean>>({})
   const [commandsBySession, setCommandsBySession] = useState<Record<string, SlashCommandInfo[]>>({})
+  const [tokenUsageBySession, setTokenUsageBySession] = useState<Record<string, { inputTokens: number; contextWindow: number }>>({})
   const messagesRef = useRef(messagesBySession)
   messagesRef.current = messagesBySession
 
@@ -147,6 +149,10 @@ export function useSessions(): UseSessionsResult {
     const offCommands = window.gardenia.onSessionCommands(({ sessionId, commands }) => {
       setCommandsBySession((prev) => ({ ...prev, [sessionId]: commands }))
     })
+    // token-usage-indicator: update per-session token counts after each turn.
+    const offTokenUsage = window.gardenia.onSessionTokenUsage(({ sessionId, inputTokens, contextWindow }) => {
+      setTokenUsageBySession((prev) => ({ ...prev, [sessionId]: { inputTokens, contextWindow } }))
+    })
     return () => {
       offMessage()
       offDelta()
@@ -155,6 +161,7 @@ export function useSessions(): UseSessionsResult {
       offGroup()
       offTurnState()
       offCommands()
+      offTokenUsage()
     }
   }, [refresh, refreshGroups])
 
@@ -308,6 +315,7 @@ export function useSessions(): UseSessionsResult {
     allTags,
     busyBySession,
     commandsBySession,
+    tokenUsageBySession,
     refresh,
     createSession,
     resumeSession,
