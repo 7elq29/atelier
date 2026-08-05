@@ -516,6 +516,106 @@ test.describe('07-secondary-panels', () => {
     }
   })
 
+  // ── 6f. tmux persistence: shell cwd survives TerminalPanel unmount/remount ──
+  // When switching sessions, `selectSession()` resets visitedTabs to {chat},
+  // which unmounts the outgoing session's TerminalPanel. Its cleanup calls
+  // `ptyKill` → `tmux detach-client` then `proc.kill()` — this leaves the
+  // named tmux server session alive. When the user switches back, a fresh
+  // TerminalPanel mounts, ptySpawn is called, `tmux has-session` finds the
+  // existing session, and `tmux attach-session` reattaches — the shell's cwd
+  // and any running processes are fully preserved.
+  //
+  // This test is self-contained: it creates its own two terminal-only sessions
+  // (no agent call needed) and uses `data-active="true"` on the session row to
+  // find session A's id reliably even when many other sessions already exist.
+  test('tmux persistence: shell cwd (/tmp) survives TerminalPanel unmount+remount via session switch', async () => {
+    // Guard: skip if tmux is not installed — pty.ts falls back to a plain
+    // shell with no persistence guarantee, making this test vacuous.
+    let hasTmux = false
+    try {
+      execFileSync('which', ['tmux'], { encoding: 'utf8' })
+      hasTmux = true
+    } catch { /* not on PATH */ }
+    if (!hasTmux) {
+      test.skip(true, 'tmux not installed — terminal persistence test skipped')
+      return
+    }
+
+    // 1. Create terminal-only session A — no agent SDK call required, just a
+    //    real pty. After creation the new session is immediately active.
+    await stubProjectFolder(electronApp, repoDir)
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-terminal').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 10_000 })
+
+    // Capture session A's id via the `data-active="true"` attribute set by
+    // Sidebar.tsx on the currently-selected row — reliable regardless of how
+    // many other sessions exist in the sidebar.
+    const sessionAId = await page
+      .locator('[data-testid="session-row"][data-active="true"]')
+      .getAttribute('data-session-id')
+    expect(sessionAId, 'session A must be the active row after creation').toBeTruthy()
+    const rowA = page.locator(`[data-testid="session-row"][data-session-id="${sessionAId}"]`)
+
+    // 2. Wait for the shell prompt, then cd to /tmp. For terminal-only sessions
+    //    TerminalPanel is mounted immediately with ptyId=session.id, and pty.ts
+    //    runs `tmux new-session -d -s <name> -c <cwd>` then
+    //    `tmux attach-session -t <name>` — the pty IS a tmux attach client.
+    const termA = page.getByTestId('terminal-body')
+    await expect(termA).toBeVisible({ timeout: 10_000 })
+    await termA.click()
+    await page.waitForTimeout(1000) // tmux attach + shell fully ready
+
+    await page.keyboard.type('cd /tmp')
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(300)
+
+    // 3. Confirm the cwd is /tmp before switching away.
+    await page.keyboard.type('pwd')
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => termA.textContent(), { timeout: 10_000 }).toContain('/tmp')
+    await page.screenshot({ path: join(artifactsDir, 'bug-tmux-persistence-01-before-switch.png') })
+    log('tmux persistence: /tmp confirmed in session A before switch')
+
+    // 4. Create terminal-only session B to switch to. Navigating to B triggers
+    //    selectSession() in App.tsx, which changes activeSession from A to B.
+    //    React unmounts session A's TerminalPanel → its cleanup fires:
+    //    ptyKill(A.id) → `tmux detach-client -s <name-A>` (graceful detach,
+    //    tmux server session stays alive) → proc.kill().
+    await stubProjectFolder(electronApp, repoDir)
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-terminal').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 10_000 })
+    await page.screenshot({ path: join(artifactsDir, 'bug-tmux-persistence-02-switched-away.png') })
+    log('tmux persistence: switched to session B — session A terminal unmounted, tmux session left alive')
+
+    // 5. Switch back to session A. React mounts a fresh TerminalPanel for A:
+    //    ptySpawn(A.id) → `tmux has-session -t <name-A>` succeeds → skip
+    //    new-session → `tmux attach-session -t <name-A>` reattaches. The
+    //    shell's cwd and running processes are fully restored.
+    await rowA.click()
+    await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 10_000 })
+    const termAfter = page.getByTestId('terminal-body')
+    await expect(termAfter).toBeVisible({ timeout: 10_000 })
+    await termAfter.click()
+    await page.waitForTimeout(1000) // tmux reattach + screen redraw
+
+    // 6. Type pwd again — cwd must still be /tmp. Without tmux (plain shell),
+    //    ptySpawn would start a fresh shell in the project folder and /tmp
+    //    would never appear here.
+    await page.keyboard.type('pwd')
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => termAfter.textContent(), { timeout: 10_000 }).toContain('/tmp')
+    await page.screenshot({ path: join(artifactsDir, 'bug-tmux-persistence-03-after-reattach.png') })
+    log('tmux persistence: cwd /tmp survived TerminalPanel unmount+remount — OK')
+  })
+
   // ── 7. External links open the OS browser, never an embedded view ─────
   test('external links: clicking a real rendered link invokes shell.openExternal with the right URL, never navigates in-app', async () => {
     await electronApp.evaluate(({ shell }) => {
