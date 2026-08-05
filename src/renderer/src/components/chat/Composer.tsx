@@ -662,7 +662,8 @@ export default function Composer({
     // ArrowUp/Down, Enter, Tab, and Escape.
 
     // opt+f: move cursor forward one word (skip non-\w, then skip \w)
-    if (e.altKey && e.key === 'f') {
+    // Uses e.code (physical key) not e.key — macOS Option+F sends 'ƒ', not 'f'.
+    if (e.altKey && e.code === 'KeyF') {
       e.preventDefault()
       const ta = e.target as HTMLTextAreaElement
       const cursor = ta.selectionStart
@@ -674,7 +675,8 @@ export default function Composer({
     }
 
     // opt+b: move cursor backward one word (skip non-\w backwards, then skip \w backwards)
-    if (e.altKey && e.key === 'b') {
+    // Uses e.code (physical key) not e.key — macOS Option+B sends '∫', not 'b'.
+    if (e.altKey && e.code === 'KeyB') {
       e.preventDefault()
       const ta = e.target as HTMLTextAreaElement
       const cursor = ta.selectionStart

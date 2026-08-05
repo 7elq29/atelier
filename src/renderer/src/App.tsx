@@ -101,7 +101,7 @@ export default function App(): JSX.Element {
   // depending on where focus happens to be.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
-      if (e.altKey && e.key.toLowerCase() === 'x') {
+      if (e.altKey && e.code === 'KeyX') {
         e.preventDefault()
         setPaletteOpen(true)
         return
