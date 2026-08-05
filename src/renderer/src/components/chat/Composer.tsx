@@ -5,6 +5,26 @@ import type { ImageAttachment, ModelSelection, PermissionModeValue, SlashCommand
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
 const MAX_TEXTAREA_HEIGHT = 160
 
+/**
+ * Formats a token count as a short human-readable string.
+ * 285000 → "285k", 1200000 → "1.2M", 999 → "999".
+ */
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`
+  return String(n)
+}
+
+/**
+ * Renders a 20-char block-character progress bar.
+ * pct=71 → "██████████████░░░░░░" (14 filled + 6 empty).
+ */
+function tokenBar(pct: number): string {
+  const TOTAL = 20
+  const filled = Math.round((Math.min(100, pct) / 100) * TOTAL)
+  return '█'.repeat(filled) + '░'.repeat(TOTAL - filled)
+}
+
 /** Cap on how many `@file` matches are rendered at once — the underlying file walk is already capped (files.ts's MAX_ENTRIES), this just keeps the popover itself short and scannable. */
 const MAX_MENTION_MATCHES = 20
 
@@ -247,6 +267,13 @@ interface ComposerProps {
   queuedMessages?: string[]
   /** Cancels the queued message at `index` (0-based). Wired to the ✕ button in each `.queued-strip` row. */
   onCancelQueued?: (index: number) => void
+  /**
+   * Current context-window token usage for this session (token-usage-indicator).
+   * Undefined until the session's first turn completes (no display until data is
+   * available). `inputTokens` is cumulative for the live connection; `contextWindow`
+   * is the model's declared context size.
+   */
+  tokenUsage?: { inputTokens: number; contextWindow: number }
 }
 
 /** Flattens the Files-panel's real `fs`-backed tree (07-secondary-panels) into a flat list of `relativePath`s, files only — dirs aren't mentionable. */
@@ -788,7 +815,9 @@ export default function Composer({
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
         />
-        {queuedMessages.length > 0 && queuedMessages.map((msg, idx) => (
+        {queuedMessages.length > 0 && (
+          <div className="queued-strips-list">
+            {queuedMessages.map((msg, idx) => (
           <div key={idx} className="queued-strip" data-testid="queued-strip">
             <span className="queued-strip-label">
               {queuedMessages.length === 1 ? 'Queued' : `Queued ×${queuedMessages.length}`}
@@ -803,7 +832,9 @@ export default function Composer({
               ✕
             </button>
           </div>
-        ))}
+            ))}
+          </div>
+        )}
         <div className="composer-footer">
           <span
             className={`mode-pill mode-${mode}`}

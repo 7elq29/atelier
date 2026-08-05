@@ -1003,6 +1003,7 @@ input[type='range'] {
    .composer-footer inside .composer-box when pendingQueue.length > 0. Shows
    the pending message text (truncated) + a cancel (×) button per item. */
 .queued-strip { display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 18px; border-top: 1px solid var(--border-subtle); background: rgba(217, 179, 116, 0.06); }
+.queued-strips-list { max-height: 88px; overflow-y: auto; }
 .queued-strip-label { font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--warning); flex-shrink: 0; opacity: 0.75; }
 .queued-strip-text { flex: 1; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-style: italic; }
 .queued-strip-cancel { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; border: none; background: transparent; color: var(--text-tertiary); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; line-height: 1; font-family: var(--font-ui); transition: background 0.1s, color 0.1s; }

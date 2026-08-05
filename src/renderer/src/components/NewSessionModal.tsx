@@ -196,15 +196,6 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
                   onChange={(e) => setPrompt(e.target.value)}
                 />
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 14.5, color: 'var(--text-secondary)' }}>
-                <input
-                  type="checkbox"
-                  data-testid="plan-mode-checkbox"
-                  checked={planMode}
-                  onChange={(e) => setPlanMode(e.target.checked)}
-                />
-                Start in plan mode (explore and propose a plan before editing)
-              </label>
               {hostId === 'local' && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 14.5, color: 'var(--text-secondary)' }}>
                   <input
