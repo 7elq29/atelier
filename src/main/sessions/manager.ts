@@ -606,8 +606,8 @@ export class SessionManager {
     this.connecting.add(sessionId)
     this.sendStatus(sessionId)
 try {
-      const permissionMode = this.permissionModes.get(sessionId)
-      const modelSelection = this.modelSelections.get(sessionId)
+      const permissionMode = this.permissionModes.get(sessionId) ?? session.permissionMode
+      const modelSelection = this.modelSelections.get(sessionId) ?? session.modelSelection ?? undefined
       const harnessSession = await this.reconnectHarness(session, {
         permissionMode,
         model: modelSelection?.model,
@@ -726,8 +726,8 @@ try {
         return
       }
       logger.info('sendUserMessage: no live harness session, reconnecting via resume()', { sessionId })
-      const permissionMode = this.permissionModes.get(sessionId)
-      const modelSelection = this.modelSelections.get(sessionId)
+      const permissionMode = this.permissionModes.get(sessionId) ?? session.permissionMode
+      const modelSelection = this.modelSelections.get(sessionId) ?? session.modelSelection ?? undefined
       const harnessSession = await this.reconnectHarness(session, {
         permissionMode,
         model: modelSelection?.model,
@@ -823,7 +823,7 @@ try {
     const existing = this.store.getSession(sessionId)
     if (!existing) throw new Error(`Unknown session: ${sessionId}`)
 
-    const current = this.permissionModes.get(sessionId) ?? 'default'
+    const current = this.permissionModes.get(sessionId) ?? existing.permissionMode
     const next = MODE_CYCLE[(MODE_CYCLE.indexOf(current) + 1) % MODE_CYCLE.length]
     this.permissionModes.set(sessionId, next)
     this.store.setPermissionMode(sessionId, next)
