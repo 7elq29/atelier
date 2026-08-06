@@ -625,6 +625,74 @@ test.describe('02-session-lifecycle', () => {
     await row.getByTestId('menu-close').click()
   })
 
+  test('bug: resume after close does not leave a Bash tool chip stuck in the running state', async () => {
+    const bugProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug-stale-tool-running-'))
+    writeFileSync(join(bugProjectDir, 'README.md'), '# test project\n')
+
+    await stubProjectFolder(electronApp, bugProjectDir)
+    await openNewSessionModal(page)
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    const row = page.locator('[data-testid="session-row"]').first()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    const sessionId = (await row.getAttribute('data-session-id')) as string
+    expect(sessionId).toBeTruthy()
+
+    await expect
+      .poll(async () => page.locator('[data-testid="transcript-message"][data-role="assistant"]').count(), {
+        timeout: 60_000
+      })
+      .toBeGreaterThan(0)
+
+    await row.getByTestId('session-menu-button').click()
+    await row.getByTestId('menu-close').click()
+
+    const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
+    await expect(historyRow).toBeVisible({ timeout: 10_000 })
+
+    const runningToolContent = JSON.stringify({
+      kind: 'tool_call',
+      toolUseId: 'e2e-stale-running-bash',
+      name: 'Bash',
+      input: { command: 'sleep 30 && echo done' },
+      status: 'running',
+      parentToolUseId: null
+    })
+    await page.evaluate(
+      ({ sql, params }) => window.gardenia.debugExecDb(sql, params),
+      {
+        sql: `INSERT INTO messages (session_id, role, content, raw_event, created_at) VALUES (?, 'assistant', ?, NULL, ?)`,
+        params: [sessionId, runningToolContent, new Date().toISOString()]
+      }
+    )
+
+    await historyRow.getByTestId('resume-button').click()
+    const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+    await expect(activeRow).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('connecting-pill')).toHaveCount(0, { timeout: 15_000 })
+
+    await expect(page.locator('[data-testid="tool-running-indicator"]')).toHaveCount(0)
+    const bashCard = page.locator('[data-testid="tool-card"][data-tool-name="Bash"]').first()
+    await expect(bashCard).toBeVisible()
+    await expect(bashCard.locator('[data-testid="tool-status-chip"]')).toHaveText('completed')
+
+    const dbRows = await queryDb<{ content: string }>(
+      page,
+      "SELECT content FROM messages WHERE session_id = ? AND role = 'assistant' AND content LIKE '%\"kind\":\"tool_call\"%'",
+      [sessionId]
+    )
+    expect(dbRows.some((r) => r.content.includes('"status":"running"'))).toBe(false)
+
+    await page.screenshot({ path: join(artifactsDir, 'bug-stale-tool-running-after-resume.png') })
+
+    await activeRow.getByTestId('session-menu-button').click()
+    await activeRow.getByTestId('menu-close').click()
+  })
+
   // ── Bug repro (Part A safety net): a GENUINE reconnect failure (not our
   // own interrupt) must still surface visibly — proves the fix doesn't
   // swallow real errors along with the fake one. Deleting the project

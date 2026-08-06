@@ -1,4 +1,6 @@
 import type { BrowserWindow } from 'electron'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import type { HarnessDriver, HarnessEvent, HarnessSession, PromptResponse, RemoteHost } from '../harness/types'
 import { logger } from '../logger'
 import type {
@@ -26,6 +28,7 @@ import type {
   ToolCallContent,
   TodoUpdateContent
 } from '../../shared/chat-content'
+import { parseStructuredContent } from '../../shared/chat-content'
 import type { SessionStore } from './store'
 import { createWorktree, removeWorktree } from './worktree'
 
@@ -543,6 +546,7 @@ export class SessionManager {
     const existing = this.store.getSession(sessionId)
     if (!existing) throw new Error(`Unknown session: ${sessionId}`)
     const session = this.decorate(this.store.reopenSession(sessionId) ?? existing)
+    this.finalizeStaleRunningToolCalls(sessionId)
     const messages = this.store.listMessages(sessionId)
     this.sendLifecycle({ type: 'session.resumed', session })
     return { session, messages }
@@ -723,6 +727,8 @@ export class SessionManager {
     // Don't race with setupWorktreeAsync — while the worktree is being created
     // the harness will be started by that path once creation completes.
     if (this.creatingWorktree.has(sessionId)) return
+    // Already live (e.g. connected by startupReconnect) — nothing to do.
+    if (this.live.has(sessionId)) return
     // Fix (fix-session-resume-stale-sigterm-and-no-connect-indicator): mark
     // this session as 'connecting' for the topbar's "Connecting…" pill for
     // the whole gap between triggering this reconnect and the harness
@@ -730,7 +736,8 @@ export class SessionManager {
     // and failure paths so the pill never gets stuck visible.
     this.connecting.add(sessionId)
     this.sendStatus(sessionId)
-try {
+    try {
+      this.finalizeStaleRunningToolCalls(sessionId)
       const permissionMode = this.permissionModes.get(sessionId) ?? session.permissionMode
       const modelSelection = this.modelSelections.get(sessionId) ?? session.modelSelection ?? undefined
       const harnessSession = await this.reconnectHarness(session, {
@@ -848,6 +855,22 @@ try {
       if (!selectionChanged && this.harness.isActive(sessionId)) {
         logger.info('sendUserMessage: live injection (streamInput, no resume)', { sessionId })
         await this.harness.streamInput(sessionId, text, image)
+        // This reuses the EXISTING `consume()` loop/live entry from whenever
+        // the session last started/reconnected — no new `live.busy = true`
+        // assignment happens anywhere else on this path (unlike the
+        // create/resume paths below, which each set it right after standing
+        // up their own live entry). Left unset, the dot stays stuck on
+        // whatever it last was ('waiting', rendered purple) for this entire
+        // new turn — including through any permission/AskUserQuestion/plan
+        // prompt it raises and the `respondToPrompt` that answers it — even
+        // though the harness is genuinely running again. Set it explicitly
+        // here so the dot flips to 'working' immediately, same as every
+        // other turn-start path.
+        const liveEntry = this.live.get(sessionId)
+        if (liveEntry) {
+          liveEntry.busy = true
+          this.sendStatus(sessionId)
+        }
         return
       }
       logger.info('sendUserMessage: no live harness session, reconnecting via resume()', { sessionId })
@@ -860,6 +883,8 @@ try {
       })
       await this.harness.streamInput(sessionId, text, image)
       const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
+      const previousLive = this.live.get(sessionId)
+      this.finalizeStaleRunningToolCalls(sessionId, previousLive)
       this.live.set(sessionId, newLiveStream(previousTurnCount))
       this.live.get(sessionId)!.busy = true
       this.sendStatus(sessionId)
@@ -913,6 +938,25 @@ try {
       const session = this.store.getSession(sessionId)
       if (session) this.sendLifecycle({ type: 'session.updated', session: this.decorate(session) })
     }
+
+    // The turn that raised this prompt has been sitting blocked inside
+    // `canUseTool` this whole time — `live.busy` was never flipped false for
+    // it (see `applyEvent`'s `permission_request`/`ask_user_question`/
+    // `plan_proposed` cases, which don't touch `busy`), so in the normal
+    // "prompt raised mid-turn-that-set-busy-true" case this is a no-op.
+    // But a turn resumed via `sendUserMessage`'s streamInput fast path (an
+    // already-live harness connection, i.e. reusing turnCount for a
+    // follow-up message once the session is 'waiting' between turns) never
+    // sets `live.busy = true` in the first place, so once a prompt from THAT
+    // turn is answered here, the dot would otherwise stay stuck on 'waiting'
+    // (rendered purple 'waiting-input') even though the harness is actively
+    // running tool calls again. Explicitly (re)assert busy=true and push
+    // both status channels here so the dot/turn-state always reflect reality
+    // the instant the user's decision is dispatched, regardless of which
+    // path started the turn.
+    live.busy = true
+    this.sendStatus(sessionId)
+    this.sendTurnState(sessionId, true)
 
     logger.info('respondToPrompt: dispatching to harness', { sessionId, requestId, kind: decision.kind })
     await this.harness.respondToPrompt(sessionId, requestId, toHarnessPromptResponse(decision))
@@ -1011,6 +1055,8 @@ try {
 
   closeSession(sessionId: string): SessionRecord {
     void this.harness.interrupt(sessionId).catch(() => undefined)
+    const live = this.live.get(sessionId)
+    this.finalizeStaleRunningToolCalls(sessionId, live)
     this.live.delete(sessionId)
     // A session can be closed again while a previous reconnect() is still in
     // flight (e.g. rapid resume/close) — don't leave a stale 'connecting'
@@ -1344,6 +1390,7 @@ try {
 
       case 'interrupted':
         this.flushBuffer(sessionId, live)
+        this.finalizeStaleRunningToolCalls(sessionId, live)
         live.busy = false
         this.sendStatus(sessionId)
         logger.info('harness event: interrupted (terminal)', { sessionId })
@@ -1429,6 +1476,28 @@ try {
     live.pendingPrompts.clear()
   }
 
+  /**
+   * Tool calls persisted as `running` cannot finish once the harness
+   * connection is torn down (close, reconnect, interrupt) — `tool_call_end`
+   * never arrives. Flip them to a terminal state so resume/reconnect does
+   * not show a forever-spinning action chip.
+   */
+  private finalizeStaleRunningToolCalls(sessionId: string, live?: LiveStream): void {
+    const disconnectedNote = '(Session disconnected before this tool finished.)'
+    for (const message of this.store.listMessages(sessionId)) {
+      const structured = parseStructuredContent(message.content)
+      if (structured?.kind !== 'tool_call' || structured.status !== 'running') continue
+      const content: ToolCallContent = {
+        ...structured,
+        status: 'completed',
+        output: structured.output ?? disconnectedNote
+      }
+      const updated = this.store.updateMessage(message.id, { content: JSON.stringify(content) })
+      if (updated) this.sendMessage(sessionId, updated)
+    }
+    live?.pendingTools.clear()
+  }
+
   private flushBuffer(sessionId: string, live: LiveStream): void {
     if (live.bufferMessageId == null) return
     const updated = this.store.updateMessage(live.bufferMessageId, { content: live.buffer })
@@ -1482,6 +1551,67 @@ try {
     }
     if (updated && updated.name === title) {
       this.sendLifecycle({ type: 'session.updated', session: updated })
+    }
+  }
+
+  /**
+   * Attempts to reconnect all active sessions on startup, concurrently and
+   * without blocking the caller. During reconnect each session shows as
+   * 'connecting' (blinking grey). On success it transitions to 'waiting'
+   * (purple). On failure it is pushed to 'session:stale' (steady grey) with
+   * no error written to the transcript — startup failures are silent.
+   * Terminal-mode sessions can't auto-reconnect (they need a pty attach), so
+   * they are probed via `tmux has-session` instead and marked stale if dead.
+   */
+  startupReconnect(): void {
+    const execFileAsync = promisify(execFile)
+    const SSH_MUX_OPTS = ['-o', 'ControlMaster=auto', '-o', 'ControlPath=/tmp/gardenia-ssh-%C', '-o', 'ControlPersist=300']
+    const TMUX_TIMEOUT_MS = 8000
+
+    const markStale = (sessionId: string): void => {
+      this.getWindow()?.webContents.send('session:stale', { sessionId, stale: true })
+    }
+
+    const tmuxName = (s: SessionRecord) =>
+      `gardenia-${s.id.replace(/[^a-zA-Z0-9-]/g, '-')}`.slice(0, 50)
+
+    for (const session of this.store.listActiveSessions()) {
+      if (session.mode === 'terminal') {
+        // Terminal sessions can't auto-reconnect — probe tmux and mark stale if dead.
+        const name = tmuxName(session)
+        const check = session.hostname
+          ? execFileAsync('ssh', [...SSH_MUX_OPTS, session.hostname, 'tmux', 'has-session', '-t', name], { timeout: TMUX_TIMEOUT_MS })
+          : execFileAsync('tmux', ['has-session', '-t', name], { timeout: TMUX_TIMEOUT_MS })
+        check.catch(() => markStale(session.id))
+        continue
+      }
+
+      // claude-code: attempt startup reconnect for all active sessions.
+      // reconnectHarness handles both resume() (everConnected) and startWithId() (!everConnected).
+
+      // Mark connecting, attempt reconnect, handle success/failure.
+      const sessionId = session.id
+      this.connecting.add(sessionId)
+      this.sendStatus(sessionId)
+
+      const permissionMode = this.permissionModes.get(sessionId) ?? session.permissionMode
+      const modelSelection = this.modelSelections.get(sessionId) ?? session.modelSelection ?? undefined
+
+      this.reconnectHarness(session, {
+        permissionMode,
+        model: modelSelection?.model,
+        effort: modelSelection?.effort,
+      }).then((harnessSession) => {
+        this.finalizeStaleRunningToolCalls(sessionId)
+        this.live.set(sessionId, newLiveStream())
+        this.sendStatus(sessionId)
+        void this.consume(sessionId, harnessSession.events)
+      }).catch(() => {
+        // Don't mark as stale — transient startup failures are common (timing,
+        // SSH mux not ready, etc.). Revert to idle so the user can click to retry.
+        this.connecting.delete(sessionId)
+        this.sendStatus(sessionId)
+      })
     }
   }
 }
