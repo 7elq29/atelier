@@ -12,7 +12,7 @@
  * `ssh <hostname>` so they run on the remote host.
  */
 
-import { execFile as _execFile } from 'node:child_process'
+import { execFile as _execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -45,6 +45,63 @@ const SSH_GIT_OPTS = [
 /** 5 min timeout for all SSH git calls — worktree add on large repos can take several minutes. */
 const SSH_EXEC_TIMEOUT_MS = 5 * 60_000
 
+/** Parse an integer percentage from a `git worktree add` progress line (stderr). */
+function parseGitProgress(text: string): number | null {
+  const m = text.match(/(?:Updating|Checking out) files:\s+(\d+)%/)
+  return m ? parseInt(m[1], 10) : null
+}
+
+/**
+ * Run a command and call `onProgress(pct)` for each "Updating files: N%"
+ * line on stderr. The command's combined stdout+stderr is collected and
+ * included in the rejection reason on failure.
+ */
+function spawnWithProgress(
+  cmd: string,
+  args: string[],
+  onProgress: ((pct: number) => void) | undefined,
+  timeoutMs: number
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    let output = ''
+    let lastPct = -1
+
+    const handleChunk = (chunk: Buffer): void => {
+      const text = chunk.toString('utf-8')
+      output += text
+      if (onProgress) {
+        for (const part of text.split(/[\r\n]/)) {
+          const pct = parseGitProgress(part)
+          if (pct !== null && pct !== lastPct) {
+            lastPct = pct
+            onProgress(pct)
+          }
+        }
+      }
+    }
+
+    child.stdout?.on('data', handleChunk)
+    child.stderr?.on('data', handleChunk)
+
+    const timer = setTimeout(() => {
+      child.kill()
+      reject(new Error(`Command timed out after ${timeoutMs}ms: ${cmd} ${args.join(' ')}`))
+    }, timeoutMs)
+
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      if (code === 0) resolve()
+      else reject(new Error(`Command failed (exit ${code}): ${cmd} ${args.slice(-6).join(' ')}\n${output.slice(-500)}`))
+    })
+
+    child.on('error', (err) => {
+      clearTimeout(timer)
+      reject(err)
+    })
+  })
+}
+
 /**
  * Creates a git worktree for a session.
  *
@@ -54,17 +111,23 @@ const SSH_EXEC_TIMEOUT_MS = 5 * 60_000
  * Throws `WorktreeError` if `git worktree add` fails — callers should surface
  * this as a user-visible error.
  */
-export async function createWorktree(projectPath: string, sessionId: string, hostname?: string): Promise<string> {
+export async function createWorktree(
+  projectPath: string,
+  sessionId: string,
+  hostname?: string,
+  onProgress?: (pct: number) => void
+): Promise<string> {
   const worktreePath = join(projectPath, '.gardenia', 'worktrees', sessionId)
   const branch = `gardenia-${sessionId.slice(0, 8)}`
 
   logger.info('worktree: creating', { projectPath, worktreePath, branch, hostname })
 
   if (hostname) {
-    await execFile(
+    await spawnWithProgress(
       'ssh',
       [...SSH_GIT_OPTS, hostname, 'git', '-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch],
-      { encoding: 'utf8', timeout: SSH_EXEC_TIMEOUT_MS }
+      onProgress,
+      SSH_EXEC_TIMEOUT_MS
     )
     // Resolve the path to an absolute one — `worktreePath` may contain `~`
     // which git expands (through the SSH shell), but the harness cwd is used
@@ -77,9 +140,12 @@ export async function createWorktree(projectPath: string, sessionId: string, hos
     logger.info('worktree: created', { worktreePath: resolved, branch })
     return resolved
   } else {
-    await execFile('git', ['-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch], {
-      encoding: 'utf8'
-    })
+    await spawnWithProgress(
+      'git',
+      ['-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch],
+      onProgress,
+      SSH_EXEC_TIMEOUT_MS
+    )
     logger.info('worktree: created', { worktreePath, branch })
     return worktreePath
   }

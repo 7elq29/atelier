@@ -25,6 +25,8 @@ export interface UseSessionsResult {
   commandsBySession: Record<string, SlashCommandInfo[]>
   /** Context-window token usage per session (token-usage-indicator) — updated after each completed turn. Empty until the session's first turn completes. */
   tokenUsageBySession: Record<string, { inputTokens: number; contextWindow: number }>
+  /** Worktree creation progress per session (use-worktree) — integer 0–100 while creating-worktree, deleted when done. */
+  worktreeProgressBySession: Record<string, number>
   refresh: () => Promise<void>
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
@@ -71,6 +73,7 @@ export function useSessions(): UseSessionsResult {
   const [busyBySession, setBusyBySession] = useState<Record<string, boolean>>({})
   const [commandsBySession, setCommandsBySession] = useState<Record<string, SlashCommandInfo[]>>({})
   const [tokenUsageBySession, setTokenUsageBySession] = useState<Record<string, { inputTokens: number; contextWindow: number }>>({})
+  const [worktreeProgressBySession, setWorktreeProgressBySession] = useState<Record<string, number>>({})
   const messagesRef = useRef(messagesBySession)
   messagesRef.current = messagesBySession
 
@@ -153,6 +156,10 @@ export function useSessions(): UseSessionsResult {
     const offTokenUsage = window.gardenia.onSessionTokenUsage(({ sessionId, inputTokens, contextWindow }) => {
       setTokenUsageBySession((prev) => ({ ...prev, [sessionId]: { inputTokens, contextWindow } }))
     })
+    // use-worktree: track git worktree add progress per session.
+    const offWorktreeProgress = window.gardenia.onSessionWorktreeProgress(({ sessionId, percent }) => {
+      setWorktreeProgressBySession((prev) => ({ ...prev, [sessionId]: percent }))
+    })
     return () => {
       offMessage()
       offDelta()
@@ -162,6 +169,7 @@ export function useSessions(): UseSessionsResult {
       offTurnState()
       offCommands()
       offTokenUsage()
+      offWorktreeProgress()
     }
   }, [refresh, refreshGroups])
 
@@ -316,6 +324,7 @@ export function useSessions(): UseSessionsResult {
     busyBySession,
     commandsBySession,
     tokenUsageBySession,
+    worktreeProgressBySession,
     refresh,
     createSession,
     resumeSession,

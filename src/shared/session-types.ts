@@ -344,3 +344,10 @@ export interface SessionTokenUsageEvent {
   inputTokens: number
   contextWindow: number
 }
+
+/** Worktree creation progress push (use-worktree), fired during `git worktree add` for large repos. */
+export interface SessionWorktreeProgressEvent {
+  sessionId: string
+  /** Integer 0–100 from `git worktree add`'s "Updating files: N%" stderr output. */
+  percent: number
+}

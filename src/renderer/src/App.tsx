@@ -460,6 +460,7 @@ export default function App(): JSX.Element {
           onSetGroupCollapsed={(id, collapsed) => void sessions.setGroupCollapsed(id, collapsed)}
           onDeleteGroup={(id) => void sessions.deleteGroup(id)}
           onReorderGroups={(orderedIds) => void sessions.reorderGroups(orderedIds)}
+          worktreeProgressBySession={sessions.worktreeProgressBySession}
         />
 
         <div className="main-area">

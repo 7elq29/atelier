@@ -318,6 +318,10 @@ export class SessionManager {
    * mid-session `commands_changed` push from the SDK. Always the FULL
    * replacement list — never a delta.
    */
+  private sendWorktreeProgress(sessionId: string, percent: number): void {
+    this.getWindow()?.webContents.send('session:worktreeProgress', { sessionId, percent })
+  }
+
   private sendTokenUsage(sessionId: string, inputTokens: number, contextWindow: number): void {
     this.getWindow()?.webContents.send('session:tokenUsage', { sessionId, inputTokens, contextWindow })
   }
@@ -483,7 +487,9 @@ export class SessionManager {
     hostname: string | undefined
   ): Promise<void> {
     try {
-      const worktreePath = await createWorktree(opts.projectPath, sessionId, hostname)
+      const worktreePath = await createWorktree(opts.projectPath, sessionId, hostname, (pct) => {
+        this.sendWorktreeProgress(sessionId, pct)
+      })
       logger.info('setupWorktreeAsync: worktree created', { sessionId, worktreePath })
 
       // Persist the worktree path now that we have it.

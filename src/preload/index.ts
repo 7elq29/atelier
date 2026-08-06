@@ -19,7 +19,8 @@ import type {
   SessionStreamDeltaEvent,
   SessionStreamEvent,
   SessionTokenUsageEvent,
-  SessionTurnStateEvent
+  SessionTurnStateEvent,
+  SessionWorktreeProgressEvent
 } from '../shared/session-types'
 import type {
   CommitInfo,
@@ -182,6 +183,12 @@ const api = {
     const listener = (_event: unknown, payload: SessionTokenUsageEvent): void => callback(payload)
     ipcRenderer.on('session:tokenUsage', listener)
     return () => ipcRenderer.removeListener('session:tokenUsage', listener)
+  },
+  /** Worktree creation progress push (use-worktree) — fired during `git worktree add` with the current percentage. */
+  onSessionWorktreeProgress: (callback: (event: SessionWorktreeProgressEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionWorktreeProgressEvent): void => callback(payload)
+    ipcRenderer.on('session:worktreeProgress', listener)
+    return () => ipcRenderer.removeListener('session:worktreeProgress', listener)
   },
   /** Test-only: raw read-only SQL query against the real SQLite DB (see session:debugQueryDb handler). */
   debugQueryDb: <T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> =>

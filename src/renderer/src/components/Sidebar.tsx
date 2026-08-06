@@ -33,6 +33,7 @@ interface SidebarProps {
   onSetGroupCollapsed: (groupId: string, collapsed: boolean) => void
   onDeleteGroup: (groupId: string) => void
   onReorderGroups: (orderedIds: string[]) => void
+  worktreeProgressBySession: Record<string, number>
 }
 
 const SESSION_COLORS = ['--sc-blue', '--sc-green', '--sc-purple', '--sc-amber', '--sc-rose', '--sc-cyan', '--sc-indigo', '--sc-teal']
@@ -243,7 +244,8 @@ function SessionRow({
   onSetColor,
   onDragStart,
   onDragOver,
-  onDrop
+  onDrop,
+  worktreeProgress
 }: {
   session: SessionRecord
   active: boolean
@@ -264,6 +266,7 @@ function SessionRow({
   onDragStart: (e: React.DragEvent) => void
   onDragOver: (e: React.DragEvent) => void
   onDrop: (e: React.DragEvent) => void
+  worktreeProgress?: number
 }): JSX.Element {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
@@ -342,7 +345,9 @@ function SessionRow({
           ))}
         </div>
         {status === 'creating-worktree' && (
-          <div className="session-creating-label" data-testid="session-creating-label">Setting up worktree…</div>
+          <div className="session-creating-label" data-testid="session-creating-label">
+            Setting up worktree…{worktreeProgress !== undefined ? ` (${worktreeProgress}%)` : ''}
+          </div>
         )}
       </div>
       {closed && (
@@ -496,7 +501,8 @@ export default function Sidebar({
   onRenameGroup,
   onSetGroupCollapsed,
   onDeleteGroup,
-  onReorderGroups
+  onReorderGroups,
+  worktreeProgressBySession
 }: SidebarProps): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('')
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all')
@@ -598,6 +604,7 @@ export default function Sidebar({
         onRemoveTag={(tag) => onRemoveTag(session.id, tag)}
         onSetNotes={(notes) => onSetNotes(session.id, notes)}
         onSetColor={(color) => onSetColor(session.id, color)}
+        worktreeProgress={worktreeProgressBySession[session.id]}
         {...dragHandlers}
       />
     )
