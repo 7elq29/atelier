@@ -27,7 +27,7 @@ import type {
   TodoUpdateContent
 } from '../../shared/chat-content'
 import type { SessionStore } from './store'
-import { createWorktree, removeWorktree, WorktreeError } from './worktree'
+import { createWorktree, removeWorktree } from './worktree'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
 const AUTO_NAME_PROMPT = 'Summarize this conversation topic in under 6 words. Reply with ONLY the title, no punctuation, no quotes.'
@@ -156,6 +156,8 @@ export class SessionManager {
   private readonly live = new Map<string, LiveStream>()
   /** Sessions currently between a triggered `reconnect()` and the live harness connection actually being (re)established — see `getStatus()`'s 'connecting' case (fix-session-resume-stale-sigterm-and-no-connect-indicator). */
   private readonly connecting = new Set<string>()
+  /** Sessions currently being set up with an async worktree creation — see `getStatus()`'s 'creating-worktree' case. */
+  private readonly creatingWorktree = new Set<string>()
   /**
    * Tracks the current SDK permission mode for a session (05-interactive-
    * prompts; generalized from plan-only to all 4 `MODE_CYCLE` values in
@@ -275,8 +277,9 @@ export class SessionManager {
   // currently-viewed session — via `session:status`, independent of which
   // session (if any) is focused in the renderer.
 
-  /** 'connecting' while `reconnect()` is in flight for `sessionId` (fix-session-resume-stale-sigterm-and-no-connect-indicator); 'working'/'waiting' for any session with a live entry this app run; 'idle' otherwise (never opened, or its live entry was torn down on close). */
+  /** 'creating-worktree' while the async worktree setup is in flight; 'connecting' while `reconnect()` is in flight for `sessionId` (fix-session-resume-stale-sigterm-and-no-connect-indicator); 'working'/'waiting' for any session with a live entry this app run; 'idle' otherwise (never opened, or its live entry was torn down on close). */
   getStatus(sessionId: string): SessionStatus {
+    if (this.creatingWorktree.has(sessionId)) return 'creating-worktree'
     if (this.connecting.has(sessionId)) return 'connecting'
     const live = this.live.get(sessionId)
     if (!live) return 'idle'
@@ -377,14 +380,10 @@ export class SessionManager {
     }
 
     // use-worktree: create an isolated git worktree for claude-code sessions
-    // (local or remote/devpod) when the user opted in. We must pre-allocate
-    // the session id (so the worktree path can embed it) and use
-    // harness.startWithId() instead of harness.start() — this is the same
-    // mechanism `reconnectHarness` already uses for sessions that were never
-    // backed by a real CLI conversation. If git worktree add fails (not a git
-    // repo, git not installed, etc.) the error is surfaced to the user via
-    // WorktreeError — session creation is aborted, never silently degraded.
-    let worktreePath: string | null = null
+    // (local or remote/devpod) when the user opted in. We pre-allocate the
+    // session id (so the worktree path can embed it) and use harness.startWithId()
+    // instead of harness.start(). Worktree creation runs asynchronously after
+    // the session row is visible in the sidebar (creating-worktree state).
     let effectiveCwd = opts.projectPath
     const wantWorktree = !!opts.useWorktree
     const hostname = hostOption?.sshHost
@@ -393,72 +392,32 @@ export class SessionManager {
       const { randomUUID } = await import('node:crypto')
       const allocatedId = randomUUID()
 
-      // Separate try for createWorktree so the error is always user-visible
-      // (WorktreeError) rather than silently swallowed.
-      try {
-        worktreePath = await createWorktree(opts.projectPath, allocatedId, hostname)
-      } catch (err) {
-        const raw = err instanceof Error ? err.message : String(err)
-        const friendly = /not a git repository/i.test(raw)
-          ? 'Not a git repository'
-          : /git.*not found|command not found.*git|no such file.*git/i.test(raw)
-            ? 'git not found'
-            : raw
-        throw new WorktreeError(`Could not create git worktree: ${friendly}`)
-      }
-
-      effectiveCwd = worktreePath
-      logger.info('createSession: worktree created', { allocatedId, worktreePath })
-
-      // Use startWithId so the harness session id matches our pre-allocated
-      // id (which is already embedded in the worktree path). If the harness
-      // call fails, clean up the dangling worktree and re-throw.
-      try {
-        const harnessOpts = {
-          cwd: effectiveCwd,
-          host,
-          keepAlive: true as const,
-          ...(opts.planMode ? { permissionMode: 'plan' as const } : {})
-        }
-        const harnessSession = await this.harness.startWithId(allocatedId, opts.prompt ?? '', harnessOpts)
-        if (opts.planMode) {
-          this.permissionModes.set(harnessSession.sessionId, 'plan')
-          this.store.setPermissionMode(harnessSession.sessionId, 'plan')
-        }
-        const session = this.decorate(
-          this.store.createSession({
-            id: harnessSession.sessionId,
-            name: defaultName,
-            projectPath: opts.projectPath,
-            mode: 'claude-code',
-            hostname: hostOption?.sshHost ?? null,
-            groupId: opts.groupId ?? null,
-            worktreePath
-          })
-        )
-        if (opts.prompt) {
-          const userMessage = this.store.addMessage({ sessionId: session.id, role: 'user', content: opts.prompt })
-          this.sendMessage(session.id, userMessage)
-        }
-        this.sendLifecycle({ type: 'session.created', session })
-        this.live.set(session.id, newLiveStream())
-        if (opts.prompt) {
-          this.live.get(session.id)!.busy = true
-          this.sendStatus(session.id)
-          this.sendTurnState(session.id, true)
-        }
-        void this.consume(session.id, harnessSession.events)
-        return session
-      } catch (err) {
-        logger.warn('createSession: harness start failed after worktree creation, cleaning up', {
+      // Create the session record immediately (worktreePath will be filled in
+      // once the async worktree creation succeeds) and broadcast
+      // session:created so the modal can close and the sidebar row appears.
+      const session = this.decorate(
+        this.store.createSession({
+          id: allocatedId,
+          name: defaultName,
           projectPath: opts.projectPath,
-          error: err instanceof Error ? err.message : String(err)
+          mode: 'claude-code',
+          hostname: hostOption?.sshHost ?? null,
+          groupId: opts.groupId ?? null,
+          worktreePath: null
         })
-        void removeWorktree(worktreePath, worktreePath.split('/').pop() ?? '', hostname).catch(() => {
-          // best-effort only
-        })
-        throw err
-      }
+      )
+      this.sendLifecycle({ type: 'session.created', session })
+
+      // Mark as 'creating-worktree' so the sidebar row shows the pending
+      // state (50% opacity, pulsing grey dot, "Setting up worktree…" label).
+      this.creatingWorktree.add(allocatedId)
+      this.sendStatus(allocatedId)
+
+      // Fire worktree creation + harness start asynchronously so createSession
+      // returns immediately (the modal closes, the row appears).
+      void this.setupWorktreeAsync(allocatedId, opts, host, hostOption, hostname)
+
+      return session
     }
 
     const harnessSession = await this.harness.start(opts.prompt ?? '', {
@@ -483,7 +442,7 @@ export class SessionManager {
         mode: 'claude-code',
         hostname: hostOption?.sshHost ?? null,
         groupId: opts.groupId ?? null,
-        worktreePath
+        worktreePath: null
       })
     )
 
@@ -506,6 +465,72 @@ export class SessionManager {
   }
 
   // ── Resume ──────────────────────────────────────────────────────────
+
+  /**
+   * Async worktree setup for `createSession` (use-worktree): runs after the
+   * session record has already been created and `session:created` has been
+   * broadcast so the sidebar row is visible in the 'creating-worktree' state.
+   * On success: persists the worktree path, removes the 'creating-worktree'
+   * flag, starts the harness, and transitions the row to its live status.
+   * On failure: cleans up the creatingWorktree flag, deletes the session row,
+   * and broadcasts `session:deleted` so the row disappears from the sidebar.
+   */
+  private async setupWorktreeAsync(
+    sessionId: string,
+    opts: CreateSessionOptions,
+    host: RemoteHost | undefined,
+    hostOption: RemoteHostOption | undefined,
+    hostname: string | undefined
+  ): Promise<void> {
+    try {
+      const worktreePath = await createWorktree(opts.projectPath, sessionId, hostname)
+      logger.info('setupWorktreeAsync: worktree created', { sessionId, worktreePath })
+
+      // Persist the worktree path now that we have it.
+      this.store.setWorktreePath(sessionId, worktreePath)
+
+      const harnessOpts = {
+        cwd: worktreePath,
+        host,
+        keepAlive: true as const,
+        ...(opts.planMode ? { permissionMode: 'plan' as const } : {})
+      }
+      const harnessSession = await this.harness.startWithId(sessionId, opts.prompt ?? '', harnessOpts)
+      if (opts.planMode) {
+        this.permissionModes.set(harnessSession.sessionId, 'plan')
+        this.store.setPermissionMode(harnessSession.sessionId, 'plan')
+      }
+
+      if (opts.prompt) {
+        const userMessage = this.store.addMessage({ sessionId, role: 'user', content: opts.prompt })
+        this.sendMessage(sessionId, userMessage)
+      }
+
+      // Remove creating-worktree state and transition to live.
+      this.creatingWorktree.delete(sessionId)
+      this.live.set(sessionId, newLiveStream())
+      if (opts.prompt) {
+        this.live.get(sessionId)!.busy = true
+      }
+      this.sendStatus(sessionId)
+      if (opts.prompt) this.sendTurnState(sessionId, true)
+      void this.consume(sessionId, harnessSession.events)
+    } catch (err) {
+      logger.warn('setupWorktreeAsync: failed, removing session', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err)
+      })
+      this.creatingWorktree.delete(sessionId)
+      // Best-effort worktree cleanup — the path may not exist if createWorktree
+      // itself failed, so ignore errors here.
+      const stored = this.store.getSession(sessionId)
+      if (stored?.worktreePath) {
+        void removeWorktree(stored.worktreePath, sessionId, hostname).catch(() => undefined)
+      }
+      this.store.deleteSession(sessionId)
+      this.sendLifecycle({ type: 'session.deleted', sessionId })
+    }
+  }
 
   /** Reopens a closed session and returns it + its full stored transcript synchronously (renderer renders this BEFORE the live reconnect below happens). */
   resumeSnapshot(sessionId: string): { session: SessionRecord; messages: MessageRecord[] } {
@@ -982,6 +1007,7 @@ try {
     // flight (e.g. rapid resume/close) — don't leave a stale 'connecting'
     // pill visible for a session that's no longer even open.
     this.connecting.delete(sessionId)
+    this.creatingWorktree.delete(sessionId)
     this.sendTurnState(sessionId, false)
     const session = this.store.closeSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
@@ -1006,6 +1032,7 @@ try {
     }
     this.live.delete(sessionId)
     this.connecting.delete(sessionId)
+    this.creatingWorktree.delete(sessionId)
     this.store.deleteSession(sessionId)
     this.sendLifecycle({ type: 'session.deleted', sessionId })
   }

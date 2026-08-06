@@ -298,10 +298,10 @@ function SessionRow({
       data-active={active}
       data-pinned={session.pinned}
       data-status={status}
-      draggable={draggable}
+      draggable={draggable && status !== 'creating-worktree'}
       tabIndex={-1}
-      onClick={onSelect}
-      onDragStart={onDragStart}
+      onClick={status === 'creating-worktree' ? undefined : onSelect}
+      onDragStart={status === 'creating-worktree' ? undefined : onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
@@ -341,6 +341,9 @@ function SessionRow({
             </span>
           ))}
         </div>
+        {status === 'creating-worktree' && (
+          <div className="session-creating-label" data-testid="session-creating-label">Setting up worktree…</div>
+        )}
       </div>
       {closed && (
         <button

@@ -124,7 +124,7 @@ export interface SessionGroupRecord {
  *    actually being (re)established — see 'connecting'-pill in the topbar
  *    (fix-session-resume-stale-sigterm-and-no-connect-indicator).
  */
-export type SessionStatus = 'working' | 'waiting' | 'idle' | 'disconnected' | 'connecting'
+export type SessionStatus = 'working' | 'waiting' | 'idle' | 'disconnected' | 'connecting' | 'creating-worktree'
 
 export interface SessionStatusEvent {
   sessionId: string

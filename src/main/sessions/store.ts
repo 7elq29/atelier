@@ -250,6 +250,11 @@ export class SessionStore {
     return this.getSession(id)
   }
 
+  setWorktreePath(id: string, worktreePath: string): SessionRecord | undefined {
+    this.db.prepare('UPDATE sessions SET worktree_path = ? WHERE id = ?').run(worktreePath, id)
+    return this.getSession(id)
+  }
+
   /**
    * Adds `deltaUsd` to the session's running cost total (10a-enrichment-
    * cost-tracking). The caller (`SessionManager`'s `case 'result'`) is
