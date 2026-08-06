@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { FileTreeNode } from '../../../../shared/panel-types'
-import type { ImageAttachment, ModelSelection, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
+import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
 const MAX_TEXTAREA_HEIGHT = 160
@@ -274,6 +274,10 @@ interface ComposerProps {
    * is the model's declared context size.
    */
   tokenUsage?: { inputTokens: number; contextWindow: number }
+  /** Appends a renderer-only system message to the active session's transcript, no SDK round-trip — used to surface an unknown `/model <id>` inline in the chat panel. */
+  onAddLocalMessage: (content: string) => void
+  /** Validates a `/model <id>` against the SDK's own live acceptance logic (calls `Query.setModel()` on the connected session), fetched on demand at the moment `/model <id>` is submitted — not a static list, since the backend silently substitutes the default model for an unrecognized id instead of erroring on it (the only reason `setModel()`'s real accept/reject signal is trustworthy here). */
+  onValidateModel: (model: string) => Promise<ModelValidationResult>
 }
 
 /** Flattens the Files-panel's real `fs`-backed tree (07-secondary-panels) into a flat list of `relativePath`s, files only — dirs aren't mentionable. */
@@ -423,7 +427,9 @@ export default function Composer({
   onCycleMode,
   queuedMessages = [],
   onCancelQueued,
-  tokenUsage
+  tokenUsage,
+  onAddLocalMessage,
+  onValidateModel
 }: ComposerProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [popover, setPopover] = useState<PopoverState>(null)
@@ -524,16 +530,27 @@ export default function Composer({
   const activeMatches: (string | SlashCommand)[] =
     popover?.kind === 'mention' ? mentionMatches : popover?.kind === 'slash' ? slashMatches : []
 
-  function handleSend(): void {
+  async function handleSend(): Promise<void> {
     const text = value.trim()
     if (!text && !attachedImage) return
-    // `/model <model-id>` force-switches to any model string (including IDs
-    // not in the picker list) without opening the picker or sending a message.
+    // `/model <model-id>` validates against the SDK's own live acceptance
+    // logic (calls `Query.setModel()` on the connected session and checks
+    // whether it threw) rather than any static/curated list — verified for
+    // real that the backend otherwise silently substitutes the default
+    // model for an unrecognized id instead of erroring on it, so a static
+    // list can't tell a typo from a legitimate uncurated override (e.g. an
+    // older family deliberately left out of `MODEL_OPTIONS`, see its doc
+    // comment). `setModel()`'s own error text is shown verbatim.
     if (text.startsWith('/model ')) {
       const arg = text.slice('/model '.length).trim()
       if (arg) {
-        onModelSelectionChange({ model: arg, effort: modelSelection?.effort ?? 'high' })
         onChange('')
+        const result = await onValidateModel(arg)
+        if (!result.ok) {
+          onAddLocalMessage(`Unknown model "${arg}": ${result.error}`)
+          return
+        }
+        onModelSelectionChange({ model: arg, effort: modelSelection?.effort ?? 'high' })
         return
       }
     }
@@ -690,7 +707,7 @@ export default function Composer({
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      void handleSend()
       return
     }
 
@@ -882,7 +899,7 @@ export default function Composer({
             data-testid="send-button"
             disabled={!value.trim() && !attachedImage}
             title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
-            onClick={handleSend}
+            onClick={() => void handleSend()}
           >
             <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="19" x2="12" y2="5" />

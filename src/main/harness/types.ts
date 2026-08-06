@@ -372,6 +372,15 @@ export interface HarnessDriver {
   interrupt(sessionId: string): Promise<void>
 
   /**
+   * Validates a `/model <id>` against the SDK's own live acceptance logic
+   * (calls `Query.setModel()` on the connected session and reports whether
+   * it threw) — `{ ok: false, error: 'not connected' }` if the session
+   * isn't connected yet. See `ClaudeAgentSdkHarness.validateModel`'s doc
+   * comment for why this, not a static list, is the only reliable check.
+   */
+  validateModel(sessionId: string, model: string): Promise<{ ok: true } | { ok: false; error: string }>
+
+  /**
    * Push an additional user message into a still-open, streaming-input
    * session (e.g. mid-turn steering). No-op if the session has already
    * ended. `image`, when present (10g-enrichment-image-attachment), turns
