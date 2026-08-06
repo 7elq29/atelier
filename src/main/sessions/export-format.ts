@@ -63,7 +63,14 @@ function formatStructuredMarkdown(structured: StructuredContent): string {
   switch (structured.kind) {
     case 'tool_call': {
       const headline = toolHeadline(structured.name, structured.input)
-      const statusLabel = structured.status === 'error' ? 'error' : structured.status === 'running' ? 'running' : 'completed'
+      const statusLabel =
+        structured.status === 'error'
+          ? 'error'
+          : structured.status === 'running'
+            ? 'running'
+            : structured.status === 'interrupted'
+              ? 'interrupted'
+              : 'completed'
       return `- \u{1F527} **${structured.name}** — \`${headline}\` (${statusLabel})`
     }
     case 'todo_update': {

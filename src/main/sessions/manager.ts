@@ -1494,7 +1494,7 @@ export class SessionManager {
       if (structured?.kind !== 'tool_call' || structured.status !== 'running') continue
       const content: ToolCallContent = {
         ...structured,
-        status: 'completed',
+        status: 'interrupted',
         output: structured.output ?? disconnectedNote
       }
       const updated = this.store.updateMessage(message.id, { content: JSON.stringify(content) })

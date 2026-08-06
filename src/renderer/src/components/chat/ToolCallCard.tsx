@@ -164,10 +164,16 @@ export default function ToolCallCard({ content }: { content: ToolCallContent }):
           <span className="spinner" data-testid="tool-running-indicator" />
         ) : (
           <span
-            className={`tool-status ${content.status === 'error' ? 'error' : 'ok'}`}
+            className={`tool-status ${
+              content.status === 'error' ? 'error' : content.status === 'interrupted' ? 'interrupted' : 'ok'
+            }`}
             data-testid="tool-status-chip"
           >
-            {content.status === 'error' ? 'error' : 'completed'}
+            {content.status === 'error'
+              ? 'error'
+              : content.status === 'interrupted'
+                ? 'interrupted'
+                : 'completed'}
           </span>
         )}
         <span className="tool-chev">▸</span>

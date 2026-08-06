@@ -678,7 +678,8 @@ test.describe('02-session-lifecycle', () => {
     await expect(page.locator('[data-testid="tool-running-indicator"]')).toHaveCount(0)
     const bashCard = page.locator('[data-testid="tool-card"][data-tool-name="Bash"]').first()
     await expect(bashCard).toBeVisible()
-    await expect(bashCard.locator('[data-testid="tool-status-chip"]')).toHaveText('completed')
+    await expect(bashCard.locator('[data-testid="tool-status-chip"]')).toHaveText('interrupted')
+    await expect(bashCard).toHaveAttribute('data-tool-status', 'interrupted')
 
     const dbRows = await queryDb<{ content: string }>(
       page,

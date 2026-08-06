@@ -870,6 +870,7 @@ input[type='range'] {
 .tool-headline { font-family: var(--font-mono); font-size: 13.5px; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-status { font-size: 13.5px; color: var(--text-tertiary); }
 .tool-status.ok { color: var(--accent); }
+.tool-status.interrupted { color: var(--text-secondary); }
 .tool-status.error { color: var(--danger); }
 .tool-chev { font-size: 10.5px; color: var(--text-tertiary); transition: transform .12s; }
 .tool-card.open .tool-chev { transform: rotate(90deg); }

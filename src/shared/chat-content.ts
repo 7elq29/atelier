@@ -7,7 +7,7 @@
  * the transcript/tracker-rail components) share one definition.
  */
 
-export type ToolCallStatus = 'running' | 'completed' | 'error'
+export type ToolCallStatus = 'running' | 'completed' | 'error' | 'interrupted'
 
 export interface ToolCallContent {
   kind: 'tool_call'
