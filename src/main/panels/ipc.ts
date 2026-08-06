@@ -8,7 +8,7 @@
 import { ipcMain, shell, type BrowserWindow } from 'electron'
 import { logger } from '../logger'
 import * as git from './git'
-import { walkFileTree, readFileForPreview, writeFileContent } from './files'
+import { walkFileTree, walkDirChildren, readFileForPreview, writeFileContent } from './files'
 import { PtyManager } from './pty'
 import { PortForwardManager } from './ports'
 
@@ -32,6 +32,7 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
 
   // ── Files ────────────────────────────────────────────────────────────
   ipcMain.handle('panel:files:tree', (_e, projectPath: string, hostname?: string | null) => walkFileTree(projectPath, hostname))
+  ipcMain.handle('panel:files:dir', (_e, root: string, dir: string, hostname?: string | null) => walkDirChildren(root, dir, hostname))
   ipcMain.handle('panel:files:read', (_e, path: string, hostname?: string | null) => readFileForPreview(path, hostname))
   ipcMain.handle('panel:files:write', (_e, path: string, content: string, hostname?: string | null) => writeFileContent(path, content, hostname))
 

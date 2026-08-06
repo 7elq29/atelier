@@ -223,6 +223,7 @@ const api = {
     ipcRenderer.invoke('panel:git:worktreeMerge', projectPath, branch, hostname),
 
   filesTree: (projectPath: string, hostname?: string | null): Promise<FileTreeNode[]> => ipcRenderer.invoke('panel:files:tree', projectPath, hostname),
+  filesDir: (root: string, dir: string, hostname?: string | null): Promise<FileTreeNode[]> => ipcRenderer.invoke('panel:files:dir', root, dir, hostname),
   filesRead: (path: string, hostname?: string | null): Promise<FileReadResult> => ipcRenderer.invoke('panel:files:read', path, hostname),
   filesWrite: (path: string, content: string, hostname?: string | null): Promise<FileWriteResult> => ipcRenderer.invoke('panel:files:write', path, content, hostname),
 

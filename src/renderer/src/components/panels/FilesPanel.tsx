@@ -77,35 +77,64 @@ function FileTree({
   depth,
   selected,
   dirtyPath,
-  onSelect
+  expanded,
+  loadingDirs,
+  dirChildren,
+  onSelect,
+  onToggleDir,
 }: {
   nodes: FileTreeNode[]
   depth: number
   selected: string | null
   dirtyPath: string | null
+  expanded: Set<string>
+  loadingDirs: Set<string>
+  dirChildren: Map<string, FileTreeNode[]>
   onSelect: (node: FileTreeNode) => void
+  onToggleDir: (node: FileTreeNode) => void
 }): JSX.Element {
   return (
     <>
-      {nodes.map((n) => (
-        <div key={n.path}>
-          <div
-            className={`ft-item${n.type === 'dir' ? ' dir' : ''}${selected === n.path ? ' active' : ''}`}
-            style={{ paddingLeft: 8 + depth * 14 }}
-            onClick={() => onSelect(n)}
-            data-testid={n.type === 'file' ? 'file-tree-file' : 'file-tree-dir'}
-            data-path={n.relativePath}
-          >
-            {n.type === 'dir' ? '📁' : '📄'} {n.name}
-            {n.type === 'file' && dirtyPath === n.path && (
-              <span style={{ marginLeft: 5, width: 6, height: 6, borderRadius: '50%', background: 'var(--text-tertiary)', display: 'inline-block', verticalAlign: 'middle' }} />
+      {nodes.map((n) => {
+        const isExpanded = expanded.has(n.path)
+        const isLoading = loadingDirs.has(n.path)
+        const children = dirChildren.get(n.path)
+        return (
+          <div key={n.path}>
+            <div
+              className={`ft-item${n.type === 'dir' ? ' dir' : ''}${selected === n.path ? ' active' : ''}`}
+              style={{ paddingLeft: 8 + depth * 12 }}
+              onClick={() => n.type === 'dir' ? onToggleDir(n) : onSelect(n)}
+              data-testid={n.type === 'file' ? 'file-tree-file' : 'file-tree-dir'}
+              data-path={n.relativePath}
+            >
+              {n.type === 'dir'
+                ? isLoading
+                  ? <div className="spinner" style={{ width: 13, height: 13, flexShrink: 0 }} />
+                  : <svg className="icon" width="14" height="14"><use href="#icon-folder" /></svg>
+                : <svg className="icon" width="14" height="14"><use href="#icon-file" /></svg>
+              }
+              {n.name}
+              {n.type === 'file' && dirtyPath === n.path && (
+                <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', background: 'var(--text-tertiary)', display: 'inline-block', flexShrink: 0 }} />
+              )}
+            </div>
+            {n.type === 'dir' && isExpanded && children && children.length > 0 && (
+              <FileTree
+                nodes={children}
+                depth={depth + 1}
+                selected={selected}
+                dirtyPath={dirtyPath}
+                expanded={expanded}
+                loadingDirs={loadingDirs}
+                dirChildren={dirChildren}
+                onSelect={onSelect}
+                onToggleDir={onToggleDir}
+              />
             )}
           </div>
-          {n.type === 'dir' && n.children && (
-            <FileTree nodes={n.children} depth={depth + 1} selected={selected} dirtyPath={dirtyPath} onSelect={onSelect} />
-          )}
-        </div>
-      ))}
+        )
+      })}
     </>
   )
 }
@@ -124,6 +153,9 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
   const [fileResult, setFileResult] = useState<FileReadResult | null>(null)
   const [isDirty, setIsDirty] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set())
+  const [dirChildren, setDirChildren] = useState<Map<string, FileTreeNode[]>>(new Map())
 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const modelRef = useRef<monaco.editor.ITextModel | null>(null)
@@ -140,6 +172,9 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     setSelectedPath(null)
     setFileResult(null)
     setIsDirty(false)
+    setExpanded(new Set())
+    setLoadingDirs(new Set())
+    setDirChildren(new Map())
     void window.gardenia.filesTree(projectPath, hostname).then(setTree)
   }, [projectPath, hostname])
 
@@ -234,6 +269,21 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     }
   }, [fileResult])
 
+  // ── Directory expansion ────────────────────────────────────────────────────
+  async function handleToggleDir(node: FileTreeNode): Promise<void> {
+    if (expanded.has(node.path)) {
+      setExpanded((prev) => { const s = new Set(prev); s.delete(node.path); return s })
+      return
+    }
+    setExpanded((prev) => new Set(prev).add(node.path))
+    if (!dirChildren.has(node.path)) {
+      setLoadingDirs((prev) => new Set(prev).add(node.path))
+      const children = await window.gardenia.filesDir(projectPath, node.path, hostname)
+      setDirChildren((prev) => new Map(prev).set(node.path, children))
+      setLoadingDirs((prev) => { const s = new Set(prev); s.delete(node.path); return s })
+    }
+  }
+
   // ── File selection ─────────────────────────────────────────────────────────
   async function handleSelect(node: FileTreeNode): Promise<void> {
     if (node.type === 'dir') return
@@ -267,7 +317,11 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
               depth={0}
               selected={selectedPath}
               dirtyPath={isDirty ? selectedPath : null}
+              expanded={expanded}
+              loadingDirs={loadingDirs}
+              dirChildren={dirChildren}
               onSelect={(n) => void handleSelect(n)}
+              onToggleDir={(n) => void handleToggleDir(n)}
             />
           </div>
 

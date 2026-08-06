@@ -189,6 +189,7 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('files-tree')).toContainText('logo.png')
     await expect(page.getByTestId('files-tree')).toContainText('page.html')
 
+    await page.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
     await page.locator('[data-testid="file-tree-file"][data-path="src/index.js"]').click()
     // Monaco editor is visible and renders the file's text content in .view-line elements
     await expect(page.getByTestId('monaco-editor')).toBeVisible()

@@ -82,41 +82,41 @@ function isIgnored(name: string, relPath: string, isDir: boolean, matchers: ((re
   return matchers.some((m) => m(relPath, isDir))
 }
 
+function walkLocalDir(root: string, dir: string, matchers: ReturnType<typeof loadIgnoreMatchers>): FileTreeNode[] {
+  let entries: string[]
+  try {
+    entries = readdirSync(dir)
+  } catch {
+    return []
+  }
+  const nodes: FileTreeNode[] = []
+  for (const name of entries.sort()) {
+    const full = join(dir, name)
+    const rel = relative(root, full)
+    let stat
+    try {
+      stat = statSync(full)
+    } catch {
+      continue
+    }
+    const isDir = stat.isDirectory()
+    if (isIgnored(name, rel, isDir, matchers)) continue
+    nodes.push(isDir
+      ? { name, path: full, relativePath: rel, type: 'dir' }
+      : { name, path: full, relativePath: rel, type: 'file' }
+    )
+  }
+  return nodes.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1))
+}
+
 function walkLocal(root: string): FileTreeNode[] {
   const matchers = loadIgnoreMatchers(root)
-  let count = 0
+  return walkLocalDir(root, root, matchers)
+}
 
-  function walk(dir: string): FileTreeNode[] {
-    let entries: string[]
-    try {
-      entries = readdirSync(dir)
-    } catch {
-      return []
-    }
-    const nodes: FileTreeNode[] = []
-    for (const name of entries.sort()) {
-      if (count >= MAX_ENTRIES) break
-      const full = join(dir, name)
-      const rel = relative(root, full)
-      let stat
-      try {
-        stat = statSync(full)
-      } catch {
-        continue
-      }
-      const isDir = stat.isDirectory()
-      if (isIgnored(name, rel, isDir, matchers)) continue
-      count++
-      if (isDir) {
-        nodes.push({ name, path: full, relativePath: rel, type: 'dir', children: walk(full) })
-      } else {
-        nodes.push({ name, path: full, relativePath: rel, type: 'file' })
-      }
-    }
-    return nodes.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1))
-  }
-
-  return walk(root)
+function walkLocalChildren(root: string, dir: string): FileTreeNode[] {
+  const matchers = loadIgnoreMatchers(root)
+  return walkLocalDir(root, dir, matchers)
 }
 
 // ── Remote helpers ───────────────────────────────────────────────────────────
@@ -176,22 +176,36 @@ function buildRemoteTree(root: string, findOutput: string): FileTreeNode[] {
 
 async function walkRemote(root: string, sshHost: string): Promise<FileTreeNode[]> {
   const ignoredNames = [...ALWAYS_IGNORED].map((n) => `-name ${shQuote(n)}`).join(' -o ')
-  // Use cd + find . with %P (relative paths) so tilde paths work and prefix-stripping is trivial
-  const cmd = `cd ${remoteCdTarget(root)} && find . -maxdepth 6 \\( ${ignoredNames} \\) -prune -o -printf '%y %P\\n' 2>/dev/null`
+  const cmd = `cd ${remoteCdTarget(root)} && find . -maxdepth 1 \\( ${ignoredNames} \\) -prune -o -printf '%y %P\\n' 2>/dev/null`
   const { stdout, code } = await sshExec(sshHost, cmd)
   logger.info('files:tree:remote:done', { root, sshHost, code, lines: stdout.split('\n').length })
   return buildRemoteTree(root, stdout)
 }
 
+async function walkRemoteChildren(root: string, dir: string, sshHost: string): Promise<FileTreeNode[]> {
+  const ignoredNames = [...ALWAYS_IGNORED].map((n) => `-name ${shQuote(n)}`).join(' -o ')
+  const cmd = `cd ${remoteCdTarget(dir)} && find . -maxdepth 1 \\( ${ignoredNames} \\) -prune -o -printf '%y %P\\n' 2>/dev/null`
+  const { stdout, code } = await sshExec(sshHost, cmd)
+  logger.info('files:dir:remote:done', { root, dir, sshHost, code })
+  return buildRemoteTree(dir, stdout)
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
-/** Recursively walks `root`, returning a tree of directories-first-sorted nodes, capped at MAX_ENTRIES total to avoid pathological repos. */
+/** Walks only the top-level of `root`, returning a flat list of first-level entries (dirs have no children until expanded). */
 export function walkFileTree(root: string, sshHost?: string | null): Promise<FileTreeNode[]> | FileTreeNode[] {
   logger.info('files:tree', { root, remote: Boolean(sshHost) })
   if (sshHost) return walkRemote(root, sshHost)
   const result = walkLocal(root)
   logger.info('files:tree:done', { root, count: result.length })
   return result
+}
+
+/** Walks one level of `dir` and returns its children (for lazy directory expansion). */
+export function walkDirChildren(root: string, dir: string, sshHost?: string | null): Promise<FileTreeNode[]> | FileTreeNode[] {
+  logger.info('files:dir', { root, dir, remote: Boolean(sshHost) })
+  if (sshHost) return walkRemoteChildren(root, dir, sshHost)
+  return walkLocalChildren(root, dir)
 }
 
 export async function readFileForPreview(path: string, sshHost?: string | null): Promise<FileReadResult> {
