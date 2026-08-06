@@ -10,6 +10,7 @@ import { readdirSync, readFileSync, statSync, existsSync, writeFileSync } from '
 import { join, relative, extname, basename } from 'node:path'
 import { execFile, spawn } from 'node:child_process'
 import { shQuote, remoteCdTarget } from '../shell-quote'
+import { logger } from '../logger'
 import type { FileKind, FileReadResult, FileTreeNode, FileWriteResult } from '../../shared/panel-types'
 
 const ALWAYS_IGNORED = new Set(['.git', 'node_modules', '.DS_Store'])
@@ -121,11 +122,11 @@ function walkLocal(root: string): FileTreeNode[] {
 // ── Remote helpers ───────────────────────────────────────────────────────────
 
 /**
- * Parses `find -printf '%y %p\n'` output (Linux/devpod) into a FileTreeNode tree.
- * Lines look like: `f /abs/path/to/file` or `d /abs/path/to/dir`.
+ * Parses `find . -printf '%y %P\n'` output (relative paths, Linux/devpod).
+ * Lines look like: `f src/index.ts` or `d src`. Empty path = starting point, skipped.
  */
 function buildRemoteTree(root: string, findOutput: string): FileTreeNode[] {
-  const lines = findOutput.split('\n').filter((l) => l.length > 1)
+  const lines = findOutput.split('\n').filter((l) => l.length > 2)
   const nodeMap = new Map<string, FileTreeNode>()
   const childMap = new Map<string, FileTreeNode[]>()
   let count = 0
@@ -133,16 +134,14 @@ function buildRemoteTree(root: string, findOutput: string): FileTreeNode[] {
   for (const line of lines) {
     if (count >= MAX_ENTRIES) break
     const typeChar = line[0]
-    const absPath = line.slice(2)
-    if (absPath === root || absPath === root + '/') continue
-    if (!absPath.startsWith(root)) continue
+    const relPath = line.slice(2) // skip "f " or "d "
+    if (!relPath) continue        // empty = starting point itself
 
-    const relPath = absPath.slice(root.endsWith('/') ? root.length : root.length + 1)
-    if (!relPath) continue
     const segments = relPath.split('/')
     const name = segments[segments.length - 1]
     if (ALWAYS_IGNORED.has(name)) continue
 
+    const absPath = `${root}/${relPath}`
     const isDir = typeChar === 'd'
     const node: FileTreeNode = {
       name,
@@ -153,7 +152,8 @@ function buildRemoteTree(root: string, findOutput: string): FileTreeNode[] {
     }
     nodeMap.set(absPath, node)
 
-    const parentAbs = absPath.slice(0, absPath.lastIndexOf('/'))
+    const parentRelPath = segments.slice(0, -1).join('/')
+    const parentAbs = parentRelPath ? `${root}/${parentRelPath}` : root
     if (!childMap.has(parentAbs)) childMap.set(parentAbs, [])
     childMap.get(parentAbs)!.push(node)
     count++
@@ -176,8 +176,10 @@ function buildRemoteTree(root: string, findOutput: string): FileTreeNode[] {
 
 async function walkRemote(root: string, sshHost: string): Promise<FileTreeNode[]> {
   const ignoredNames = [...ALWAYS_IGNORED].map((n) => `-name ${shQuote(n)}`).join(' -o ')
-  const cmd = `find ${shQuote(root)} -maxdepth 6 \\( ${ignoredNames} \\) -prune -o -printf '%y %p\\n' 2>/dev/null`
-  const { stdout } = await sshExec(sshHost, cmd)
+  // Use cd + find . with %P (relative paths) so tilde paths work and prefix-stripping is trivial
+  const cmd = `cd ${remoteCdTarget(root)} && find . -maxdepth 6 \\( ${ignoredNames} \\) -prune -o -printf '%y %P\\n' 2>/dev/null`
+  const { stdout, code } = await sshExec(sshHost, cmd)
+  logger.info('files:tree:remote:done', { root, sshHost, code, lines: stdout.split('\n').length })
   return buildRemoteTree(root, stdout)
 }
 
@@ -185,8 +187,11 @@ async function walkRemote(root: string, sshHost: string): Promise<FileTreeNode[]
 
 /** Recursively walks `root`, returning a tree of directories-first-sorted nodes, capped at MAX_ENTRIES total to avoid pathological repos. */
 export function walkFileTree(root: string, sshHost?: string | null): Promise<FileTreeNode[]> | FileTreeNode[] {
+  logger.info('files:tree', { root, remote: Boolean(sshHost) })
   if (sshHost) return walkRemote(root, sshHost)
-  return walkLocal(root)
+  const result = walkLocal(root)
+  logger.info('files:tree:done', { root, count: result.length })
+  return result
 }
 
 export async function readFileForPreview(path: string, sshHost?: string | null): Promise<FileReadResult> {
