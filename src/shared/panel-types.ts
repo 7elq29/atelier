@@ -81,6 +81,8 @@ export interface PortForward {
   error?: string
 }
 
+export type FileWriteResult = { ok: true } | { ok: false; error: string }
+
 export interface PtySpawnOptions {
   id: string
   cwd: string

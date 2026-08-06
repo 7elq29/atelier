@@ -190,8 +190,9 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('files-tree')).toContainText('page.html')
 
     await page.locator('[data-testid="file-tree-file"][data-path="src/index.js"]').click()
-    await expect(page.getByTestId('file-content')).toContainText('hello world!')
-    await expect(page.locator('.tok-key').first()).toBeVisible()
+    // Monaco editor is visible and renders the file's text content in .view-line elements
+    await expect(page.getByTestId('monaco-editor')).toBeVisible()
+    await expect(page.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
 
     await page.locator('[data-testid="file-tree-file"][data-path="logo.png"]').click()
     await expect(page.getByTestId('file-preview-image')).toBeVisible()

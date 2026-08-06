@@ -27,6 +27,7 @@ import type {
   DiffSummary,
   FileReadResult,
   FileTreeNode,
+  FileWriteResult,
   PortForward,
   WorktreeInfo
 } from '../shared/panel-types'
@@ -211,8 +212,9 @@ const api = {
   gitWorktreeMerge: (projectPath: string, branch: string, hostname?: string | null): Promise<void> =>
     ipcRenderer.invoke('panel:git:worktreeMerge', projectPath, branch, hostname),
 
-  filesTree: (projectPath: string): Promise<FileTreeNode[]> => ipcRenderer.invoke('panel:files:tree', projectPath),
-  filesRead: (path: string): Promise<FileReadResult> => ipcRenderer.invoke('panel:files:read', path),
+  filesTree: (projectPath: string, hostname?: string | null): Promise<FileTreeNode[]> => ipcRenderer.invoke('panel:files:tree', projectPath, hostname),
+  filesRead: (path: string, hostname?: string | null): Promise<FileReadResult> => ipcRenderer.invoke('panel:files:read', path, hostname),
+  filesWrite: (path: string, content: string, hostname?: string | null): Promise<FileWriteResult> => ipcRenderer.invoke('panel:files:write', path, content, hostname),
 
   ptySpawn: (opts: { id: string; cwd: string; hostname?: string | null; cols: number; rows: number }): Promise<boolean> =>
     ipcRenderer.invoke('panel:pty:spawn', opts),
