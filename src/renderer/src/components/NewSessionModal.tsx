@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { CreateSessionOptions, RemoteHostOption, SessionMode } from '../../../shared/session-types'
 
 interface NewSessionModalProps {
@@ -22,6 +22,8 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
   const [planMode, setPlanMode] = useState(false)
   const [useWorktree, setUseWorktree] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const creatingStartRef = useRef<number | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   // fix-bug-triage-jul31 / bug #49: recently-used remote paths for the
   // currently-selected host, offered via a <datalist> on the remote path

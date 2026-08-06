@@ -396,7 +396,7 @@ export class SessionManager {
       // Separate try for createWorktree so the error is always user-visible
       // (WorktreeError) rather than silently swallowed.
       try {
-        worktreePath = createWorktree(opts.projectPath, allocatedId, hostname)
+        worktreePath = await createWorktree(opts.projectPath, allocatedId, hostname)
       } catch (err) {
         const raw = err instanceof Error ? err.message : String(err)
         const friendly = /not a git repository/i.test(raw)
@@ -454,11 +454,9 @@ export class SessionManager {
           projectPath: opts.projectPath,
           error: err instanceof Error ? err.message : String(err)
         })
-        try {
-          removeWorktree(worktreePath, worktreePath.split('/').pop() ?? '', hostname)
-        } catch {
+        void removeWorktree(worktreePath, worktreePath.split('/').pop() ?? '', hostname).catch(() => {
           // best-effort only
-        }
+        })
         throw err
       }
     }
@@ -997,16 +995,14 @@ try {
     // before deleting the DB row (which is where the path is stored). Errors
     // are caught and logged — a failed cleanup must never block deletion.
     if (session?.worktreePath) {
-      try {
-        const hostname = session.hostname ? this.hosts.resolveByHostname(session.hostname)?.sshHost : undefined
-        removeWorktree(session.worktreePath, sessionId, hostname)
-      } catch (err) {
+      const hostname = session.hostname ? this.hosts.resolveByHostname(session.hostname)?.sshHost : undefined
+      void removeWorktree(session.worktreePath, sessionId, hostname).catch((err) => {
         logger.warn('deleteSession: worktree removal failed (ignored)', {
           sessionId,
           worktreePath: session.worktreePath,
           error: err instanceof Error ? err.message : String(err)
         })
-      }
+      })
     }
     this.live.delete(sessionId)
     this.connecting.delete(sessionId)

@@ -12,10 +12,13 @@
  * `ssh <hostname>` so they run on the remote host.
  */
 
-import { execFileSync } from 'node:child_process'
+import { execFile as _execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { logger } from '../logger'
+
+const execFile = promisify(_execFile)
 
 /** Thrown by `createWorktree` when the git command fails. */
 export class WorktreeError extends Error {
@@ -34,20 +37,20 @@ export class WorktreeError extends Error {
  * Throws `WorktreeError` if `git worktree add` fails — callers should surface
  * this as a user-visible error.
  */
-export function createWorktree(projectPath: string, sessionId: string, hostname?: string): string {
+export async function createWorktree(projectPath: string, sessionId: string, hostname?: string): Promise<string> {
   const worktreePath = join(projectPath, '.gardenia', 'worktrees', sessionId)
   const branch = `gardenia-${sessionId.slice(0, 8)}`
 
   logger.info('worktree: creating', { projectPath, worktreePath, branch, hostname })
 
   if (hostname) {
-    execFileSync(
+    await execFile(
       'ssh',
       [hostname, 'git', '-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch],
       { encoding: 'utf8' }
     )
   } else {
-    execFileSync('git', ['-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch], {
+    await execFile('git', ['-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch], {
       encoding: 'utf8'
     })
   }
@@ -66,7 +69,7 @@ export function createWorktree(projectPath: string, sessionId: string, hostname?
  * call are swallowed and logged — a failed cleanup must never block session
  * deletion.
  */
-export function removeWorktree(worktreePath: string, sessionId: string, hostname?: string): void {
+export async function removeWorktree(worktreePath: string, sessionId: string, hostname?: string): Promise<void> {
   if (!hostname && !existsSync(worktreePath)) {
     logger.info('worktree: path does not exist, skipping removal', { worktreePath })
     return
@@ -81,7 +84,7 @@ export function removeWorktree(worktreePath: string, sessionId: string, hostname
 
   if (hostname) {
     try {
-      execFileSync('ssh', [hostname, 'git', 'worktree', 'remove', worktreePath, '--force'], {
+      await execFile('ssh', [hostname, 'git', 'worktree', 'remove', worktreePath, '--force'], {
         encoding: 'utf8'
       })
     } catch (err) {
@@ -91,7 +94,7 @@ export function removeWorktree(worktreePath: string, sessionId: string, hostname
       })
     }
     try {
-      execFileSync('ssh', [hostname, 'git', '-C', projectPath, 'branch', '-D', branch], {
+      await execFile('ssh', [hostname, 'git', '-C', projectPath, 'branch', '-D', branch], {
         encoding: 'utf8'
       })
     } catch (err) {
@@ -103,7 +106,7 @@ export function removeWorktree(worktreePath: string, sessionId: string, hostname
     }
   } else {
     try {
-      execFileSync('git', ['worktree', 'remove', worktreePath, '--force'], { encoding: 'utf8' })
+      await execFile('git', ['worktree', 'remove', worktreePath, '--force'], { encoding: 'utf8' })
     } catch (err) {
       logger.warn('worktree: git worktree remove failed (ignored)', {
         worktreePath,
@@ -111,7 +114,7 @@ export function removeWorktree(worktreePath: string, sessionId: string, hostname
       })
     }
     try {
-      execFileSync('git', ['-C', projectPath, 'branch', '-D', branch], { encoding: 'utf8' })
+      await execFile('git', ['-C', projectPath, 'branch', '-D', branch], { encoding: 'utf8' })
     } catch (err) {
       logger.warn('worktree: git branch -D failed (ignored)', {
         branch,
