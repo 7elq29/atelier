@@ -558,7 +558,12 @@ export default function App(): JSX.Element {
                   </div>
 
                   <div className={`tab-content${activeTab === 'files' ? '' : ' hidden'}`} data-tab="files">
-                    {visitedTabs.has('files') && <FilesPanel projectPath={activeSession.projectPath} />}
+                    {visitedTabs.has('files') && (
+                      <FilesPanel
+                        projectPath={activeSession.worktreePath ?? activeSession.projectPath}
+                        hostname={activeSession.hostname}
+                      />
+                    )}
                   </div>
 
                   <div className={`tab-content${activeTab === 'terminal' ? '' : ' hidden'}`} data-tab="terminal">

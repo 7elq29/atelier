@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import monacoEditorPlugin from 'vite-plugin-monaco-editor'
 
 export default defineConfig({
   main: {
@@ -32,6 +33,6 @@ export default defineConfig({
         }
       }
     },
-    plugins: [react()]
+    plugins: [react(), (monacoEditorPlugin as unknown as { default: typeof monacoEditorPlugin }).default({ customWorkers: [] })]
   }
 })
