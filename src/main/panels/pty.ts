@@ -60,6 +60,8 @@ export class PtyManager {
 
   spawn(id: string, opts: { cwd: string; hostname?: string | null; cols: number; rows: number }): void {
     this.kill(id)
+    const t0 = Date.now()
+    const elapsed = (): number => Date.now() - t0
 
     const isRemote = Boolean(opts.hostname)
     const useTmux = !isRemote && tmuxBin !== null
@@ -70,8 +72,11 @@ export class PtyManager {
     let entryTmuxName: string | undefined
     let entryHostname: string | undefined
 
+    logger.info('pty spawn: start', { id, isRemote, useTmux, cwd: opts.cwd })
+
     if (useTmux) {
       const name = tmuxSessionName(id)
+      logger.info('pty spawn: tmux has-session check', { id, name, elapsedMs: elapsed() })
       // Ensure the session exists as a detached session first. Using
       // `new-session -d` (not `new-session -A`) separates creation from
       // attachment: the session is created once, with the correct cwd, and
@@ -79,14 +84,17 @@ export class PtyManager {
       // The `has-session` guard prevents resetting the cwd on reattach.
       try {
         execFileSync(tmuxBin!, ['has-session', '-t', name], { stdio: 'ignore' })
+        logger.info('pty spawn: tmux session exists, attaching', { id, name, elapsedMs: elapsed() })
       } catch {
         // Session doesn't exist — create it detached with the initial cwd.
+        logger.info('pty spawn: tmux session not found, creating', { id, name, elapsedMs: elapsed() })
         execFileSync(tmuxBin!, [
           'new-session', '-d', '-s', name,
           '-x', String(Math.max(opts.cols || 80, 2)),
           '-y', String(Math.max(opts.rows || 24, 2)),
           '-c', opts.cwd
         ], { stdio: 'ignore' })
+        logger.info('pty spawn: tmux session created', { id, name, elapsedMs: elapsed() })
       }
       // Attach to the (now-guaranteed) existing session. When this client
       // exits (node-pty closes), tmux simply detaches — no SIGHUP to the
@@ -97,13 +105,7 @@ export class PtyManager {
     } else if (isRemote) {
       const hostname = opts.hostname as string
       const name = tmuxSessionName(id)
-      // Attempt to run tmux on the devpod via SSH so the remote shell session
-      // survives SSH disconnection (app close/restart). Two-step identical to
-      // the local tmux path: has-session? → if not, new-session -d → attach.
-      // The outer try falls back to plain `ssh <host>` if tmux is not installed.
-      try {
-        try {
-          execFileSync('ssh', [hostname, 'tmux', 'has-session', '-t', name], { stdio: 'ignore' })
+      logger.info('pty spawn: remote tmux has-session check', { id, hostname, name, elapsedMs: elapsed() })
         } catch {
           // Session doesn't exist (or tmux unavailable) — try to create it.
           // If tmux is not installed this also throws, caught by the outer catch.
@@ -132,6 +134,7 @@ export class PtyManager {
     }
 
     const gen = ++this.genCounter
+    logger.info('pty spawn: node-pty.spawn starting', { id, shell, elapsedMs: elapsed() })
 
     const proc = pty.spawn(shell, args, {
       name: 'xterm-color',
@@ -171,7 +174,7 @@ export class PtyManager {
     }
 
     this.ptys.set(id, { proc, gen, tmuxName: entryTmuxName, hostname: entryHostname })
-    logger.info('pty spawned', { id, shell, remote: isRemote, tmux: Boolean(entryTmuxName), cwd: opts.cwd, gen })
+    logger.info('pty spawned', { id, shell, remote: isRemote, tmux: Boolean(entryTmuxName), cwd: opts.cwd, gen, totalElapsedMs: elapsed() })
   }
 
   write(id: string, data: string): void {
