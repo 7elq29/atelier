@@ -181,6 +181,16 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
     sql: `
       ALTER TABLE sessions ADD COLUMN worktree_path TEXT;
     `
+  },
+  {
+    // fix-app-quit-interrupted-turn-notice: set when Gardenia closes or quits
+    // while a turn is in flight (`live.busy`); consumed once on the next
+    // resume/relaunch transcript load to insert a plain-language system
+    // notice (not a raw SDK "process exited" error).
+    name: '0009_pending_turn_interrupted_notice',
+    sql: `
+      ALTER TABLE sessions ADD COLUMN pending_turn_interrupted_notice INTEGER NOT NULL DEFAULT 0;
+    `
   }
 ]
 

@@ -6,6 +6,10 @@
 
 export type SessionMode = 'terminal' | 'claude-code'
 
+/** System transcript copy shown once after a mid-turn app close/quit (fix-app-quit-interrupted-turn-notice). */
+export const TURN_INTERRUPTED_NOTICE =
+  'The previous turn was stopped because Gardenia closed while the assistant was still working. You can continue from the transcript below.'
+
 /**
  * SDK permission-mode values Gardenia exposes to the user (11-composer-mode-
  * indicator). Deliberately a SUBSET of the real SDK's own `PermissionMode`

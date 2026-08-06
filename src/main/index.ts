@@ -19,6 +19,9 @@ const isDev = !app.isPackaged
 let mainWindow: BrowserWindow | null = null
 let ptyManager: PtyManager | null = null
 let portManager: PortForwardManager | null = null
+let sessionManager: SessionManager | null = null
+/** Prevents a second `before-quit` from re-entering async harness teardown. */
+let appQuitHarnessShutdownDone = false
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -113,8 +116,9 @@ app.whenReady().then(() => {
   // guidance) — sessions/turns are keyed off its own internal map, not
   // re-created per IPC call.
   const harness = new ClaudeAgentSdkHarness()
-  const sessionManager = new SessionManager(sessionStore, harness, createStaticHostResolver(), () => mainWindow)
-  registerIpcHandlers(sessionManager)
+  sessionManager = new SessionManager(sessionStore, harness, createStaticHostResolver(), () => mainWindow)
+  const manager = sessionManager
+  registerIpcHandlers(manager)
 
   logger.info('app ready', { version: app.getVersion(), platform: process.platform })
 
@@ -123,7 +127,7 @@ app.whenReady().then(() => {
   // Fire-and-forget: probe each session's recoverability in the background
   // and push session:stale events to the renderer for any that can't resume.
   // Deliberately delayed so the window has time to render before SSH probes start.
-  setTimeout(() => sessionManager.startupReconnect(), 1500)
+  setTimeout(() => manager.startupReconnect(), 1500)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
@@ -141,7 +145,29 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
-  ptyManager?.killAll()
-  portManager?.killAll()
+app.on('before-quit', (event) => {
+  if (appQuitHarnessShutdownDone) {
+    ptyManager?.killAll()
+    portManager?.killAll()
+    return
+  }
+  if (!sessionManager) {
+    ptyManager?.killAll()
+    portManager?.killAll()
+    return
+  }
+  event.preventDefault()
+  void sessionManager
+    .shutdownAllHarnessSessionsForAppQuit()
+    .catch((err) => {
+      logger.error('app quit harness shutdown failed', {
+        error: err instanceof Error ? err.message : String(err)
+      })
+    })
+    .finally(() => {
+      appQuitHarnessShutdownDone = true
+      ptyManager?.killAll()
+      portManager?.killAll()
+      app.quit()
+    })
 })

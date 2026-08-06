@@ -19,6 +19,7 @@ import type {
   SessionStatus,
   SlashCommandInfo
 } from '../../shared/session-types'
+import { TURN_INTERRUPTED_NOTICE } from '../../shared/session-types'
 import type {
   AskUserQuestionContent,
   CompactionContent,
@@ -547,6 +548,7 @@ export class SessionManager {
     if (!existing) throw new Error(`Unknown session: ${sessionId}`)
     const session = this.decorate(this.store.reopenSession(sessionId) ?? existing)
     this.finalizeStaleRunningToolCalls(sessionId)
+    this.deliverPendingTurnInterruptedNotice(sessionId)
     const messages = this.store.listMessages(sessionId)
     this.sendLifecycle({ type: 'session.resumed', session })
     return { session, messages }
@@ -1059,6 +1061,7 @@ export class SessionManager {
   // ── Close / Delete / Rename / Pin ────────────────────────────────────
 
   closeSession(sessionId: string): SessionRecord {
+    this.markInterruptedTurnNoticeIfBusy(sessionId)
     void this.harness.interrupt(sessionId).catch(() => undefined)
     const live = this.live.get(sessionId)
     this.finalizeStaleRunningToolCalls(sessionId, live)
@@ -1211,6 +1214,26 @@ export class SessionManager {
     for await (const event of events) {
       this.applyEvent(sessionId, event)
     }
+  }
+
+  private markInterruptedTurnNoticeIfBusy(sessionId: string): void {
+    const live = this.live.get(sessionId)
+    if (!live) return
+    const turnInFlight = live.busy || live.bufferMessageId != null || live.pendingTools.size > 0
+    if (turnInFlight) {
+      this.store.setPendingTurnInterruptedNotice(sessionId)
+    }
+  }
+
+  /** Inserts {@link TURN_INTERRUPTED_NOTICE} at most once per pending flag. */
+  private deliverPendingTurnInterruptedNotice(sessionId: string): void {
+    if (!this.store.consumePendingTurnInterruptedNotice(sessionId)) return
+    const message = this.store.addMessage({
+      sessionId,
+      role: 'system',
+      content: TURN_INTERRUPTED_NOTICE
+    })
+    this.sendMessage(sessionId, message)
   }
 
   private applyEvent(sessionId: string, event: HarnessEvent): void {
@@ -1556,6 +1579,33 @@ export class SessionManager {
     }
     if (updated && updated.name === title) {
       this.sendLifecycle({ type: 'session.updated', session: updated })
+    }
+  }
+
+  /**
+   * Gracefully interrupts every live claude-code session on app quit so SDK
+   * teardown surfaces `interrupted` (not `error`) and mid-turn sessions get
+   * {@link TURN_INTERRUPTED_NOTICE} on the next resume.
+   */
+  async shutdownAllHarnessSessionsForAppQuit(): Promise<void> {
+    for (const [sessionId, liveStream] of this.live.entries()) {
+      const turnInFlight =
+        liveStream.busy || liveStream.bufferMessageId != null || liveStream.pendingTools.size > 0
+      if (turnInFlight) {
+        this.store.setPendingTurnInterruptedNotice(sessionId)
+      }
+    }
+    const sessionIds = this.store
+      .listActiveSessions()
+      .filter((s) => s.mode === 'claude-code')
+      .map((s) => s.id)
+    await Promise.all(sessionIds.map((id) => this.harness.interrupt(id).catch(() => undefined)))
+    // Let each session's `consume()` loop apply `interrupted` before the DB closes.
+    await delay(750)
+    for (const sessionId of sessionIds) {
+      this.live.delete(sessionId)
+      this.connecting.delete(sessionId)
+      this.sendTurnState(sessionId, false)
     }
   }
 

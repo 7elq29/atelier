@@ -50,6 +50,7 @@ interface SessionRow {
   model_id: string | null
   effort: string | null
   worktree_path: string | null
+  pending_turn_interrupted_notice: number
 }
 
 interface MessageRow {
@@ -282,6 +283,24 @@ export class SessionStore {
    */
   markEverConnected(id: string): void {
     this.db.prepare('UPDATE sessions SET ever_connected = 1 WHERE id = ?').run(id)
+  }
+
+  /** Marks that the next resume should show {@link TURN_INTERRUPTED_NOTICE} once (fix-app-quit-interrupted-turn-notice). */
+  setPendingTurnInterruptedNotice(id: string): void {
+    this.db.prepare('UPDATE sessions SET pending_turn_interrupted_notice = 1 WHERE id = ?').run(id)
+  }
+
+  /**
+   * Returns true if a pending interrupted-turn notice was set, and clears the
+   * flag atomically so the notice is only ever delivered once per interrupt.
+   */
+  consumePendingTurnInterruptedNotice(id: string): boolean {
+    const row = this.db
+      .prepare('SELECT pending_turn_interrupted_notice FROM sessions WHERE id = ?')
+      .get(id) as { pending_turn_interrupted_notice: number } | undefined
+    if (!row || row.pending_turn_interrupted_notice !== 1) return false
+    this.db.prepare('UPDATE sessions SET pending_turn_interrupted_notice = 0 WHERE id = ?').run(id)
+    return true
   }
 
   /** Persists the session's current SDK permission mode (restore-mode-and-model-on-resume). Called at every site that updates the in-memory permissionModes Map. */
