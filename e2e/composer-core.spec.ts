@@ -156,6 +156,10 @@ test.describe('04-composer-core', () => {
       }, { timeout: 10_000 })
       .toBeGreaterThan(0)
 
+    const userBubble = page.locator('[data-testid="transcript-message"][data-role="user"]').last()
+    await expect(userBubble).toHaveText('first line\nsecond line')
+    await expect(userBubble).toHaveCSS('white-space', 'pre-wrap')
+
     // Wait for this turn to finish before the next test drives a new one.
     await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 30_000 })
     await appendComposerLog(page, 'enter-sends')

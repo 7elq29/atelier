@@ -750,6 +750,7 @@ input[type='range'] {
   border-radius: var(--r-lg) var(--r-lg) 4px var(--r-lg);
   padding: 11px 16px;
   font-size: var(--font-agent-message-size);
+  white-space: pre-wrap;
 }
 .msg-assistant {
   max-width: 84%;
