@@ -1,5 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -656,46 +656,55 @@ test.describe('07-secondary-panels', () => {
     expect(sessionDevpodId, 'devpod session must be the active row after creation').toBeTruthy()
     const rowDevpod = page.locator(`[data-testid="session-row"][data-session-id="${sessionDevpodId}"]`)
 
-    // 2. Wait for the PTY to fully attach — the remote tmux attach-session
-    //    connects via SSH then reattaches to the session, so we get the shell
-    //    prompt rather than the SSH login banner (the banner was shown at
-    //    `tmux new-session -d` time, inside the detached session buffer).
-    //    SSH + tmux new-session + attach over a real network typically takes
-    //    3-5 seconds, so we wait, then probe the shell with a unique marker
-    //    echo before typing the real commands — this is the only reliable way
-    //    to know the shell is actually responsive (a fixed timeout is not).
+    // Shell-readiness probe that distinguishes EXECUTED output from typed command text.
+    //
+    // The problem: xterm's textContent() contains BOTH the typed command (echoed by
+    // the terminal) AND the shell's actual output. Checking `textContent().toContain(X)`
+    // where X is part of the typed command fires immediately on typing — before the
+    // shell executes anything — giving a false "shell is ready" signal.
+    //
+    // Solution: `printf 'MARKER:'; pwd`
+    //   typed command text:  printf 'MARKER:'; pwd   ← contains `MARKER:'` (single quote)
+    //   shell output:        MARKER:/home/user/...   ← contains `MARKER:/` (slash)
+    // Searching for `MARKER:/` (with slash) uniquely identifies the OUTPUT; it cannot
+    // appear in the typed command text, which has a `'` immediately after `MARKER:`.
+    const cwdProbe = async (term: ReturnType<typeof page.getByTestId>, timeout: number) => {
+      const marker = `gdprb${Date.now()}`
+      await term.click()
+      await page.keyboard.type(`printf '${marker}:'; pwd`)
+      await page.keyboard.press('Enter')
+      // `marker:/` only appears in the shell output, never in the typed command text
+      await expect.poll(async () => term.textContent(), { timeout }).toContain(`${marker}:/`)
+      const content = await term.textContent() ?? ''
+      const idx = content.indexOf(`${marker}:/`)
+      // Slice from the `/` in the marker output to read the actual path
+      return content.slice(idx + marker.length + 1, idx + marker.length + 80)
+    }
+
+    // 2. Wait for the shell to be live, then verify it by actually executing a
+    //    command and reading its output (not just observing typed text).
     const termDevpod = page.getByTestId('terminal-body')
     await expect(termDevpod).toBeVisible({ timeout: 10_000 })
-    await termDevpod.click()
-    await page.waitForTimeout(5000) // SSH connect + tmux new-session + attach
+    await page.waitForTimeout(5000) // SSH + tmux new-session + attach typically 3-5s
 
-    const readyMarker = `gardenia-ready-${Date.now()}`
-    await page.keyboard.type(`echo ${readyMarker}`)
-    await page.keyboard.press('Enter')
-    await expect.poll(async () => termDevpod.textContent(), { timeout: 20_000 }).toContain(readyMarker)
-    log(`devpod tmux persistence: shell ready (echo marker ${readyMarker} confirmed)`)
+    const pathBefore = await cwdProbe(termDevpod, 25_000)
+    log(`devpod tmux persistence: initial cwd: ${pathBefore.slice(0, 50)}`)
 
-    // 3. cd into ~/go-code and confirm the cwd before switching away.
-    //    Use `echo <marker>:$(pwd)` — the marker prefix is unique so matching
-    //    it in textContent() proves the shell EXECUTED the echo (not just that
-    //    the command text appears in the terminal buffer as typed text).
+    // 3. cd into ~/go-code and confirm the cwd changed.
     await page.keyboard.type('cd ~/go-code')
     await page.keyboard.press('Enter')
     await page.waitForTimeout(300)
 
-    const cwdMarker = `gardenia-cwd-${Date.now()}`
-    await page.keyboard.type(`echo ${cwdMarker}:$(pwd)`)
-    await page.keyboard.press('Enter')
-    await expect.poll(async () => termDevpod.textContent(), { timeout: 10_000 }).toContain(`${cwdMarker}:`)
-    const beforeContent = await termDevpod.textContent() ?? ''
-    expect(beforeContent, 'cwd must be in go-code before switching away').toContain('go-code')
+    const pathAfterCd = await cwdProbe(termDevpod, 10_000)
+    expect(pathAfterCd, 'cwd must be in go-code before switching away').toContain('go-code')
     await page.screenshot({ path: join(artifactsDir, 'devpod-tmux-persistence-01-before-switch.png') })
-    log('devpod tmux persistence: go-code cwd confirmed before switch')
+    log(`devpod tmux persistence: go-code cwd confirmed before switch (path: ${pathAfterCd.slice(0, 50)})`)
 
     // 4. Create a local terminal-only session to switch to. This triggers
     //    selectSession() in App.tsx → React unmounts the devpod TerminalPanel
-    //    → its cleanup fires ptyKill → `ssh <host> tmux detach-client -s <name>`
-    //    (graceful remote detach, tmux session stays alive on the devpod) → proc.kill().
+    //    → its cleanup fires ptyKill → proc.kill() drops the SSH connection;
+    //    the remote tmux server detects the disconnect and detaches the client,
+    //    leaving the named tmux session (and its shell's cwd) alive on the devpod.
     await stubProjectFolder(electronApp, repoDir)
     await page.getByTestId('new-session-button').click()
     await page.getByTestId('pick-project-folder').click()
@@ -713,24 +722,15 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 10_000 })
     const termAfter = page.getByTestId('terminal-body')
     await expect(termAfter).toBeVisible({ timeout: 10_000 })
-    await termAfter.click()
-    // Remote reattach is slower than local: two extra SSH round-trips (has-session
-    // + attach-session) on top of the connection latency. Wait longer than the
-    // local tmux test does, then use a marker echo to confirm the shell is live
-    // before checking the cwd — same pattern as the initial-connect step above.
-    await page.waitForTimeout(6000)
+    await page.waitForTimeout(6000) // SSH reconnect + tmux has-session + attach
 
-    // 6. Probe the shell with a unique marker, then check cwd. Without remote
-    //    tmux the plain SSH session would have terminated on disconnect and a
-    //    fresh shell would start in the default home dir, failing this check.
-    const recheckMarker = `gardenia-recheck-${Date.now()}`
-    await page.keyboard.type(`echo ${recheckMarker}:$(pwd)`)
-    await page.keyboard.press('Enter')
-    await expect.poll(async () => termAfter.textContent(), { timeout: 25_000 }).toContain(`${recheckMarker}:`)
-    const afterContent = await termAfter.textContent() ?? ''
-    expect(afterContent, 'cwd must still be in go-code after SSH disconnect+reattach').toContain('go-code')
+    // 6. Verify the cwd is STILL go-code after reattach. Without remote tmux,
+    //    the SSH session ends on disconnect and a fresh shell starts in the
+    //    default home dir — the probe would return `/home/user` (no go-code).
+    const pathAfterReattach = await cwdProbe(termAfter, 25_000)
+    expect(pathAfterReattach, 'cwd must still be in go-code after SSH disconnect+reattach').toContain('go-code')
     await page.screenshot({ path: join(artifactsDir, 'devpod-tmux-persistence-03-after-reattach.png') })
-    log('devpod tmux persistence: cwd go-code survived SSH disconnect+reattach via remote tmux — OK')
+    log(`devpod tmux persistence: cwd go-code survived SSH disconnect+reattach via remote tmux — OK (path: ${pathAfterReattach.slice(0, 50)})`)
   })
 
   // ── 7. External links open the OS browser, never an embedded view ─────
@@ -766,4 +766,65 @@ test.describe('07-secondary-panels', () => {
     expect(page.url()).not.toContain('example.com')
     log(`shell.openExternal invoked with real Linkify-rendered link: ${openedUrl}`)
   })
+
+  // ── 6h. SSH ControlMaster: devpod terminal must create a mux socket ────────
+  // Fix: SSH slowness (13s per open, 3 cold crypto handshakes) was resolved by
+  // adding ControlMaster=auto + ControlPath=/tmp/gardenia-ssh-%C to all SSH
+  // execFileSync calls in pty.ts. After the first connection, subsequent SSH
+  // calls reuse the socket (<5ms each). This test verifies the socket is
+  // actually created, proving the ControlMaster path is exercised.
+  test('SSH ControlMaster: devpod terminal open creates a multiplexing socket in /tmp', async () => {
+    const hosts = await page.evaluate(() => window.gardenia.listHosts())
+    const envTarget = process.env.GARDENIA_TEST_DEVPOD
+    const devpodHost = envTarget
+      ? hosts.find((h) => h.sshHost === envTarget || h.id === envTarget)
+      : hosts[0]
+
+    test.skip(!devpodHost, 'No devpod configured — set GARDENIA_TEST_DEVPOD or configure a devpod host')
+    if (!devpodHost) return
+
+    log(`SSH ControlMaster: using host ${devpodHost.sshHost} (id=${devpodHost.id})`)
+
+    // Remove any pre-existing gardenia-ssh-* sockets so we can confirm a new
+    // one is created by this connection (not a leftover from a prior test).
+    const socketsBefore = readdirSync('/tmp').filter((f) => f.startsWith('gardenia-ssh-'))
+    socketsBefore.forEach((f) => {
+      try { require('node:fs').unlinkSync(`/tmp/${f}`) } catch { /* best-effort */ }
+    })
+
+    await stubProjectFolder(electronApp, '')
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId(`host-option-${devpodHost.id}`).click()
+    await page.getByTestId('remote-project-path').fill('/tmp')
+    await page.getByTestId('mode-terminal').click()
+    const t0 = Date.now()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 30_000 })
+
+    // Wait for the shell to be responsive.
+    const term = page.getByTestId('terminal-body')
+    await expect(term).toBeVisible({ timeout: 10_000 })
+    await term.click()
+    await page.waitForTimeout(3_000) // SSH + tmux attach
+
+    const marker = `ctrl-${Date.now()}`
+    await page.keyboard.type(`echo ${marker}`)
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => term.textContent(), { timeout: 20_000 }).toContain(marker)
+    log(`SSH ControlMaster: shell responsive in ${Date.now() - t0}ms`)
+
+    // The ControlMaster socket must now exist in /tmp.
+    // ControlPath=/tmp/gardenia-ssh-%C — %C is OpenSSH's SHA1 hash of the
+    // connection parameters, so the file name is a hex string.
+    const socketsAfter = readdirSync('/tmp').filter((f) => f.startsWith('gardenia-ssh-'))
+    log(`SSH ControlMaster: sockets in /tmp after connect: ${socketsAfter.join(', ')}`)
+    expect(
+      socketsAfter.length,
+      'ControlMaster socket must be present in /tmp — SSH_MUX_OPTS not applied if missing'
+    ).toBeGreaterThan(0)
+
+    await page.screenshot({ path: join(artifactsDir, '07-ssh-controlmaster.png') })
+  })
 })
+

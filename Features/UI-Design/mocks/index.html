@@ -966,128 +966,457 @@ kbd.kbd, .kbd {
     </div>
   </div>
 
-  <!-- ── New Session Modal — Creating worktree state ──────────────────── -->
+  <!-- ── Use-worktree: Creating state (Option A — interactive demo) ────── -->
   <div>
-    <div class="mock-section-label">New Session Modal — Creating worktree (use-worktree)</div>
-    <div style="display:flex; justify-content:center; padding: 0 24px;">
-      <div class="modal-dialog">
+    <div class="mock-section-label">Use worktree — Creating state (interactive demo)</div>
+    <div style="padding: 0 24px;">
 
-        <div class="modal-header">
-          <h2>New Session</h2>
-          <button class="close-btn">✕</button>
-        </div>
+      <style>
+        /* ── Worktree demo layout ──────────────────────────────────────── */
+        .wt-demo {
+          display: flex;
+          gap: 24px;
+          align-items: flex-start;
+        }
+        .wt-demo-left { position: relative; }
 
-        <div class="modal-body">
-          <!-- Project field -->
-          <div>
-            <div class="field-label">Project</div>
-            <div class="project-picker">
-              <span style="flex:1; color:var(--text-primary)">/home/user/code/my-project</span>
-              <span class="browse-hint">browse</span>
+        /* Sidebar miniature */
+        .wt-sidebar {
+          background: var(--bg-sidebar);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--r-lg);
+          padding: 8px 6px;
+          width: 220px;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          min-height: 160px;
+        }
+        .wt-sidebar-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 2px 6px 8px;
+          border-bottom: 1px solid var(--border-subtle);
+          margin-bottom: 4px;
+        }
+        .wt-sidebar-title { font-size: 12px; font-weight: 600; color: var(--text-tertiary); letter-spacing: 0.04em; text-transform: uppercase; }
+        .wt-new-btn {
+          background: none;
+          border: none;
+          color: var(--text-tertiary);
+          font-size: 18px;
+          cursor: pointer;
+          line-height: 1;
+          padding: 0 2px;
+          font-family: var(--font-ui);
+        }
+        .wt-new-btn:hover { color: var(--text-primary); }
+
+        /* Session row */
+        .wt-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 9px;
+          border-radius: var(--r-md);
+          cursor: pointer;
+          position: relative;
+          transition: opacity 0.3s;
+        }
+        .wt-row:hover:not(.wt-creating) { background: var(--bg-hover); }
+        .wt-row.wt-active { background: var(--bg-active); }
+        .wt-row.wt-creating {
+          opacity: 0.5;
+          cursor: default;
+          pointer-events: none;
+        }
+        .wt-indicator {
+          position: relative;
+          width: 15px;
+          height: 15px;
+          flex-shrink: 0;
+        }
+        .wt-dot { width: 100%; height: 100%; border-radius: 50%; }
+        .wt-badge {
+          position: absolute;
+          right: -3px; bottom: -3px;
+          width: 8px; height: 8px;
+          border-radius: 50%;
+          border: 2px solid var(--bg-sidebar);
+          box-sizing: content-box;
+          background: var(--text-tertiary);
+        }
+        .wt-badge.b-working { background: var(--accent); animation: pulse 1.6s infinite; }
+        .wt-badge.b-idle { background: var(--text-tertiary); }
+        .wt-badge.b-creating { background: var(--text-tertiary); animation: pulse 1.6s infinite; }
+        .wt-badge.b-ready { background: var(--accent); animation: pulse 1.6s infinite; }
+        .wt-name { font-size: 13.5px; color: var(--text-primary); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .wt-creating .wt-name { color: var(--text-secondary); }
+        .wt-sub { font-size: 11px; color: var(--text-tertiary); font-style: italic; padding: 1px 9px 4px 34px; }
+
+        /* Modal overlay (inside .wt-demo-left so it's positioned relative to sidebar) */
+        .wt-modal-backdrop {
+          position: absolute;
+          inset: -12px;
+          background: rgba(0,0,0,0.55);
+          border-radius: var(--r-lg);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 10;
+        }
+        .wt-modal {
+          background: var(--bg-panel);
+          border: 1px solid var(--border-default);
+          border-radius: var(--r-xl);
+          box-shadow: var(--shadow-popover);
+          width: 340px;
+          overflow: hidden;
+        }
+        .wt-modal-header {
+          padding: 12px 16px;
+          border-bottom: 1px solid var(--border-subtle);
+          display: flex;
+          align-items: center;
+        }
+        .wt-modal-header h3 { font-size: 15px; font-weight: 600; margin: 0; flex: 1; }
+        .wt-modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: var(--text-secondary); }
+        .wt-modal-field { font-size: 13px; }
+        .wt-modal-field strong { color: var(--text-primary); display: block; margin-bottom: 3px; font-size: 12px; font-weight: 500; }
+        .wt-modal-value {
+          background: var(--bg-input);
+          border: 1px solid var(--border-default);
+          border-radius: var(--r-sm);
+          padding: 6px 10px;
+          font-size: 12.5px;
+          color: var(--text-primary);
+        }
+        .wt-modal-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+        .wt-modal-check input { accent-color: var(--accent); }
+        .wt-modal-footer {
+          padding: 10px 16px;
+          border-top: 1px solid var(--border-subtle);
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+        }
+        .wt-btn {
+          background: var(--bg-panel-raised);
+          border: 1px solid var(--border-default);
+          border-radius: var(--r-sm);
+          color: var(--text-primary);
+          font-family: var(--font-ui);
+          font-size: 13px;
+          font-weight: 500;
+          padding: 6px 14px;
+          cursor: pointer;
+        }
+        .wt-btn-primary {
+          background: var(--accent);
+          border-color: transparent;
+          color: var(--accent-text-on);
+        }
+        .wt-btn-primary:hover { opacity: 0.9; }
+
+        /* Right panel: state info + sim controls */
+        .wt-controls {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .wt-state-badge {
+          display: inline-block;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          padding: 3px 10px;
+          border-radius: 100px;
+          border: 1px solid;
+          margin-bottom: 2px;
+        }
+        .wt-hint {
+          font-size: 12.5px;
+          color: var(--text-secondary);
+          line-height: 1.6;
+          padding: 8px 12px;
+          background: var(--bg-panel);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--r-sm);
+        }
+        .wt-sim-btn {
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--accent);
+          background: transparent;
+          border: 1px solid rgba(143,193,127,0.25);
+          border-radius: 100px;
+          padding: 4px 12px;
+          cursor: pointer;
+          font-family: var(--font-ui);
+        }
+        .wt-sim-btn:hover { background: var(--accent-dim); }
+        .wt-sim-btn.danger { color: var(--danger); border-color: rgba(217,143,116,0.25); }
+        .wt-sim-btn.danger:hover { background: var(--danger-dim); }
+        .wt-countdown { font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+        .wt-error-notice {
+          font-size: 12.5px;
+          color: var(--danger);
+          background: var(--danger-dim);
+          border: 1px solid rgba(217,143,116,0.2);
+          border-radius: var(--r-sm);
+          padding: 6px 12px;
+        }
+      </style>
+
+      <div class="wt-demo">
+
+        <!-- Left: sidebar + modal overlay -->
+        <div class="wt-demo-left">
+          <div class="wt-sidebar" id="wt-sidebar">
+            <div class="wt-sidebar-header">
+              <span class="wt-sidebar-title">Sessions</span>
+              <button class="wt-new-btn" id="wt-new-btn" title="New Session">＋</button>
+            </div>
+
+            <!-- Existing session -->
+            <div class="wt-row wt-active">
+              <div class="wt-indicator">
+                <div class="wt-dot" style="background:var(--sc-blue,#6ea8d4)"></div>
+                <div class="wt-badge b-working"></div>
+              </div>
+              <span class="wt-name">Fix auth token refresh</span>
+            </div>
+
+            <div class="wt-row">
+              <div class="wt-indicator">
+                <div class="wt-dot" style="background:var(--sc-purple,#a78bca)"></div>
+                <div class="wt-badge b-idle"></div>
+              </div>
+              <span class="wt-name">Refactor DB layer</span>
+            </div>
+
+            <!-- Creating session (hidden by default) -->
+            <div class="wt-row wt-creating" id="wt-creating-row" style="display:none">
+              <div class="wt-indicator">
+                <div class="wt-dot" style="background:var(--sc-green,#8fc17f)"></div>
+                <div class="wt-badge b-creating"></div>
+              </div>
+              <span class="wt-name" id="wt-creating-name">Fix memory leak</span>
+            </div>
+            <div class="wt-sub" id="wt-creating-sub" style="display:none">Setting up worktree…</div>
+
+            <!-- Ready session (hidden by default) -->
+            <div class="wt-row" id="wt-ready-row" style="display:none">
+              <div class="wt-indicator">
+                <div class="wt-dot" style="background:var(--sc-green,#8fc17f)"></div>
+                <div class="wt-badge b-ready"></div>
+              </div>
+              <span class="wt-name">Fix memory leak</span>
             </div>
           </div>
 
-          <!-- Session type -->
-          <div>
-            <div class="field-label">Session type</div>
-            <div class="segmented">
-              <button class="active">Claude Code</button>
-              <button>Terminal</button>
-            </div>
-          </div>
-
-          <!-- Host -->
-          <div>
-            <div class="field-label">Host</div>
-            <div class="host-options">
-              <label class="host-option">
-                <input type="radio" name="host-mock" />
-                <div class="host-option-main">
-                  <div class="host-title">Local</div>
-                  <div class="host-sub">Runs on this machine</div>
+          <!-- Modal overlay (hidden by default) -->
+          <div class="wt-modal-backdrop" id="wt-modal" style="display:none">
+            <div class="wt-modal">
+              <div class="wt-modal-header">
+                <h3>New Session</h3>
+                <button class="wt-new-btn" id="wt-cancel-btn">✕</button>
+              </div>
+              <div class="wt-modal-body">
+                <div class="wt-modal-field">
+                  <strong>Project</strong>
+                  <div class="wt-modal-value">/home/user/code/my-project</div>
                 </div>
-              </label>
-              <label class="host-option selected">
-                <input type="radio" name="host-mock" checked />
-                <div class="host-option-main">
-                  <div class="host-title">devpod-us-or</div>
-                  <div class="host-sub">devpod-us-or.example.com</div>
+                <div class="wt-modal-field">
+                  <strong>Host</strong>
+                  <div class="wt-modal-value">devpod-us-or · <span style="color:var(--accent)">running</span></div>
                 </div>
-                <span class="status-chip running">running</span>
-              </label>
+                <label class="wt-modal-check">
+                  <input type="checkbox" id="wt-use-worktree-check" checked />
+                  Use worktree
+                </label>
+              </div>
+              <div class="wt-modal-footer">
+                <button class="wt-btn" id="wt-cancel-btn2">Cancel</button>
+                <button class="wt-btn wt-btn-primary" id="wt-start-btn">Start Session</button>
+              </div>
             </div>
-          </div>
-
-          <!-- Initial prompt + Use worktree -->
-          <div>
-            <div class="field-label">
-              Initial prompt <span style="color:var(--text-tertiary); font-weight:400">(optional)</span>
-            </div>
-            <div style="background:var(--bg-panel-raised); border:1px solid var(--border-default); border-radius:var(--r-xl); overflow:hidden;">
-              <textarea
-                rows="2"
-                disabled
-                style="display:block; width:100%; background:transparent; border:none; outline:none; color:var(--text-secondary); font-family:var(--font-ui); font-size:17.5px; padding:14px 18px 8px; resize:none; line-height:1.5;"
-              >Fix the memory leak in the event loop</textarea>
-            </div>
-            <label class="worktree-label">
-              <input type="checkbox" checked disabled />
-              <span>
-                Use worktree
-                <span class="worktree-path-hint">— isolated copy at /home/user/code/my-project/.gardenia/worktrees/&lt;id&gt;</span>
-              </span>
-            </label>
           </div>
         </div>
 
-        <!-- Footer — creating state with progress indicator -->
-        <div class="modal-footer">
-          <div class="modal-footer-left">
-            <!-- Progress indicator (shown while creating && useWorktree, after 3s threshold) -->
-            <div class="modal-progress">
-              <span class="spinner"></span>
-              Creating worktree on remote host…
-            </div>
-          </div>
-          <button class="btn">Cancel</button>
-          <button class="btn btn-primary" disabled>Starting…</button>
-        </div>
+        <!-- Right: controls + hints -->
+        <div class="wt-controls">
+          <span class="wt-state-badge" id="wt-state-badge"
+            style="color:var(--accent);background:var(--accent-dim);border-color:rgba(143,193,127,0.25)">
+            IDLE
+          </span>
 
-      </div>
-    </div>
+          <div class="wt-hint" id="wt-hint">
+            Click <strong>＋</strong> in the sidebar to open the New Session modal.
+          </div>
 
-    <!-- Early phase (< 3 s): same modal, shorter message -->
-    <div style="margin-top:20px; display:flex; justify-content:center; padding: 0 24px;">
-      <div class="modal-dialog">
-        <div class="modal-header">
-          <h2>New Session</h2>
-          <button class="close-btn">✕</button>
-        </div>
-        <div class="modal-body" style="gap:12px;">
-          <div style="color:var(--text-tertiary); font-size:13px; font-style:italic">
-            (body same as above — truncated for brevity)
+          <div id="wt-sim-btns" style="display:none; display:flex; flex-direction:column; gap:6px;">
+            <div id="wt-countdown" class="wt-countdown" style="display:none"></div>
+            <button class="wt-sim-btn" id="wt-sim-ready" style="display:none">→ Simulate: worktree ready</button>
+            <button class="wt-sim-btn danger" id="wt-sim-fail" style="display:none">→ Simulate: worktree failed</button>
+            <button class="wt-sim-btn" id="wt-reset" style="display:none">↺ Reset</button>
           </div>
-        </div>
-        <div class="modal-footer">
-          <div class="modal-footer-left">
-            <!-- elapsedMs < 3000: shorter label -->
-            <div class="modal-progress">
-              <span class="spinner"></span>
-              Creating worktree…
-            </div>
+
+          <div class="wt-error-notice" id="wt-error" style="display:none">
+            Worktree creation failed — session removed from sidebar.
           </div>
-          <button class="btn">Cancel</button>
-          <button class="btn btn-primary" disabled>Starting…</button>
         </div>
       </div>
-    </div>
 
-    <div style="padding: 8px 24px; font-size: 12px; color: var(--text-tertiary); max-width: 560px; margin: 0 auto;">
-      Top panel = elapsed ≥ 3 s (remote host slow-path message). Bottom panel = elapsed &lt; 3 s (fast-path). Both: Start Session button disabled, spinner visible. No other modal changes.
     </div>
   </div>
 
 </div><!-- /.mock-page -->
+
+<script>
+// ── Worktree creating-state interactive demo ────────────────────────────────
+(function () {
+  'use strict';
+
+  function el(id) { return document.getElementById(id); }
+  function show(id) { el(id).style.display = ''; }
+  function hide(id) { el(id).style.display = 'none'; }
+
+  var S = 'idle'; // idle | modal | creating | ready | failed
+  var countdownT = null;
+  var countdownSec = 0;
+
+  function setStateBadge(text, color, bg, border) {
+    var b = el('wt-state-badge');
+    b.textContent = text;
+    b.style.color = color;
+    b.style.background = bg;
+    b.style.borderColor = border;
+  }
+
+  function clearCountdown() {
+    if (countdownT) { clearInterval(countdownT); countdownT = null; }
+    hide('wt-countdown');
+  }
+
+  function render() {
+    // Reset sim area
+    hide('wt-modal');
+    hide('wt-creating-row');
+    hide('wt-creating-sub');
+    hide('wt-ready-row');
+    hide('wt-sim-ready');
+    hide('wt-sim-fail');
+    hide('wt-reset');
+    hide('wt-error');
+    el('wt-sim-btns').style.display = 'none';
+
+    if (S === 'idle') {
+      setStateBadge('IDLE', 'var(--accent)', 'var(--accent-dim)', 'rgba(143,193,127,0.25)');
+      el('wt-hint').innerHTML = 'Click <strong>＋</strong> in the sidebar to open the New Session modal.';
+      el('wt-new-btn').disabled = false;
+    }
+    else if (S === 'modal') {
+      setStateBadge('MODAL OPEN', 'var(--text-secondary)', 'transparent', 'var(--border-default)');
+      el('wt-hint').innerHTML = 'Modal is open. Check "Use worktree" and click <strong>Start Session</strong>. The modal will close immediately and the session row will appear dimmed.';
+      show('wt-modal');
+      el('wt-new-btn').disabled = true;
+    }
+    else if (S === 'creating') {
+      setStateBadge('CREATING WORKTREE', 'var(--warning)', 'rgba(217,179,116,0.1)', 'rgba(217,179,116,0.25)');
+      el('wt-hint').innerHTML = 'Modal closed. Session row is visible but <strong>dimmed and non-interactive</strong> (opacity 0.5, pointer-events none). The git worktree is being created on the remote host in the background.';
+      show('wt-creating-row');
+      show('wt-creating-sub');
+      el('wt-sim-btns').style.display = 'flex';
+      show('wt-sim-ready');
+      show('wt-sim-fail');
+      show('wt-countdown');
+      el('wt-new-btn').disabled = false;
+    }
+    else if (S === 'ready') {
+      setStateBadge('READY', 'var(--accent)', 'var(--accent-dim)', 'rgba(143,193,127,0.25)');
+      el('wt-hint').innerHTML = 'Worktree created. Session row is now <strong>fully interactive</strong> — opacity restored, pulsing green dot (harness starting).';
+      show('wt-ready-row');
+      el('wt-sim-btns').style.display = 'flex';
+      show('wt-reset');
+    }
+    else if (S === 'failed') {
+      setStateBadge('FAILED', 'var(--danger)', 'var(--danger-dim)', 'rgba(217,143,116,0.25)');
+      el('wt-hint').innerHTML = 'Worktree creation failed. The session row has been <strong>removed from the sidebar</strong> (session:deleted event). No orphaned sessions.';
+      show('wt-error');
+      el('wt-sim-btns').style.display = 'flex';
+      show('wt-reset');
+    }
+  }
+
+  function startCountdown() {
+    clearCountdown();
+    countdownSec = 8;
+    el('wt-countdown').textContent = 'Auto-ready in ' + countdownSec + 's…';
+    countdownT = setInterval(function () {
+      countdownSec--;
+      if (countdownSec <= 0) {
+        clearCountdown();
+        S = 'ready';
+        render();
+      } else {
+        el('wt-countdown').textContent = 'Auto-ready in ' + countdownSec + 's…';
+      }
+    }, 1000);
+  }
+
+  // ── Event handlers ─────────────────────────────────────────────────────────
+
+  el('wt-new-btn').addEventListener('click', function () {
+    if (S !== 'idle' && S !== 'ready') return;
+    S = 'modal';
+    render();
+  });
+
+  el('wt-cancel-btn').addEventListener('click', function () {
+    S = 'idle';
+    render();
+  });
+  el('wt-cancel-btn2').addEventListener('click', function () {
+    S = 'idle';
+    render();
+  });
+
+  el('wt-start-btn').addEventListener('click', function () {
+    // Check if Use worktree is ticked — if not, skip creating state
+    var useWorktree = el('wt-use-worktree-check').checked;
+    // Modal closes immediately regardless
+    S = useWorktree ? 'creating' : 'ready';
+    render();
+    if (useWorktree) startCountdown();
+  });
+
+  el('wt-sim-ready').addEventListener('click', function () {
+    clearCountdown();
+    S = 'ready';
+    render();
+  });
+
+  el('wt-sim-fail').addEventListener('click', function () {
+    clearCountdown();
+    S = 'failed';
+    render();
+  });
+
+  el('wt-reset').addEventListener('click', function () {
+    clearCountdown();
+    S = 'idle';
+    render();
+  });
+
+  // Initial render
+  render();
+
+}());
+</script>
 
 <script>
 // ── Message Queue Interactive Demo ──────────────────────────────────────────

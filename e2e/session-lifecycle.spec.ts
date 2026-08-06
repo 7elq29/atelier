@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync, readdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -928,5 +929,107 @@ test.describe('02-session-lifecycle', () => {
       // which the assertions above already confirmed.
       expect(textsAfterSettling.some((t) => t.toLowerCase().includes('error'))).toBe(true)
     }
+  })
+})
+
+// ── use-worktree: pending state (creating-worktree) ──────────────────────────
+// Feature: when a session is created with "Use worktree" checked, the modal
+// closes immediately and a dimmed sidebar row shows "Setting up worktree…"
+// while the async worktree creation + harness start runs in the background.
+// On success the row transitions to a live status; on failure it disappears.
+test.describe('02-session-lifecycle (use-worktree)', () => {
+  let electronApp: ElectronApplication
+  let page: Page
+  let userDataDir: string
+  let gitRepoDir: string
+  let plainDir: string
+
+  test.beforeAll(async () => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-worktree-'))
+    seedSkipOnboarding(userDataDir)
+
+    // A real git repo with one commit so `git worktree add` succeeds.
+    gitRepoDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-gitrepo-'))
+    execFileSync('git', ['init'], { cwd: gitRepoDir, stdio: 'ignore' })
+    execFileSync('git', [
+      '-c', 'user.name=test', '-c', 'user.email=test@test.com',
+      'commit', '--allow-empty', '-m', 'init'
+    ], { cwd: gitRepoDir, stdio: 'ignore' })
+
+    // A plain directory with no .git — worktree creation will fail here.
+    plainDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-plain-'))
+
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+  })
+
+  test.afterAll(async () => {
+    await electronApp.close().catch(() => undefined)
+  })
+
+  test('use-worktree success: modal closes immediately, sidebar shows creating-worktree, transitions to live', async () => {
+    await stubProjectFolder(electronApp, gitRepoDir)
+    await openNewSessionModal(page)
+    await page.getByTestId('pick-project-folder').click()
+    await expect(page.getByTestId('pick-project-folder')).toContainText(gitRepoDir)
+    await page.getByTestId('mode-claude-code').click()
+
+    const checkbox = page.getByTestId('use-worktree-checkbox')
+    await checkbox.check()
+    await expect(checkbox).toBeChecked()
+
+    await page.getByTestId('start-session-button').click()
+
+    // Modal must close immediately — before worktree creation finishes.
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 3_000 })
+
+    // Sidebar row appears in creating-worktree state: dimmed, pulsing badge, label.
+    const creatingRow = page.locator('[data-testid="session-row"][data-status="creating-worktree"]')
+    await expect(creatingRow).toBeVisible({ timeout: 5_000 })
+    await expect(creatingRow.getByTestId('session-creating-label')).toContainText('Setting up worktree')
+
+    await page.screenshot({ path: join(artifactsDir, '02-worktree-creating-state.png') })
+
+    // Wait for the row to leave creating-worktree (harness started, worktree done).
+    await expect
+      .poll(
+        () => page.locator('[data-testid="session-row"][data-status="creating-worktree"]').count(),
+        { timeout: 30_000, intervals: [500] }
+      )
+      .toBe(0)
+
+    // DB must have worktree_path persisted for this session.
+    const rows = await queryDb<{ worktree_path: string | null }>(
+      page,
+      'SELECT worktree_path FROM sessions ORDER BY created_at DESC LIMIT 1'
+    )
+    expect(rows[0]?.worktree_path, 'worktree_path must be set in DB after successful creation').toBeTruthy()
+    expect(rows[0]?.worktree_path).toContain('.gardenia')
+
+    await page.screenshot({ path: join(artifactsDir, '02-worktree-created.png') })
+  })
+
+  test('use-worktree failure: non-git project causes session row to disappear after brief creating-worktree state', async () => {
+    await stubProjectFolder(electronApp, plainDir)
+    const countBefore = await page.locator('[data-testid="session-row"]').count()
+
+    await openNewSessionModal(page)
+    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('use-worktree-checkbox').check()
+    await page.getByTestId('start-session-button').click()
+
+    // Modal closes immediately even though worktree creation will fail.
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 3_000 })
+
+    // setupWorktreeAsync: createWorktree fails (not a git repo) → session:deleted
+    // The row appears briefly then disappears; final count must be back to before.
+    await expect
+      .poll(
+        () => page.locator('[data-testid="session-row"]').count(),
+        { timeout: 20_000, intervals: [300] }
+      )
+      .toBe(countBefore)
+
+    await page.screenshot({ path: join(artifactsDir, '02-worktree-failure-removed.png') })
   })
 })
