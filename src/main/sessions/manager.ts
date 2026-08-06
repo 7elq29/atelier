@@ -900,6 +900,11 @@ export class SessionManager {
     await this.harness.interrupt(sessionId)
   }
 
+  /** `/model <id>` validation against the live SDK — see `HarnessDriver.validateModel`. */
+  async validateModel(sessionId: string, model: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    return this.harness.validateModel(sessionId, model)
+  }
+
   // ── Interactive prompts (05-interactive-prompts) ─────────────────────
 
   /**

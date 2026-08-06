@@ -191,12 +191,19 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     await page.screenshot({ path: join(artifactsDir, '10f-model-picker-after-change.png') })
   })
 
-  test('/model <model-id> slash command force-switches to any model string without opening the picker', async ({}, testInfo) => {
+  test('/model <model-id> slash command force-switches to a real-but-uncurated model, validated against the live SDK', async ({}, testInfo) => {
     testInfo.setTimeout(60_000)
 
     const pickerButton = page.getByTestId('model-picker-button')
     const textarea = page.getByTestId('composer-input')
 
+    // `claude-sonnet-4-6[1m]` is a real, currently-accepted model (verified
+    // via a direct `Query.setModel()` probe) that is deliberately NOT in the
+    // small curated `MODEL_OPTIONS` picker list (see its doc comment) —
+    // this proves the fix's live-validation path (bug-model-command-
+    // rejects-invalid) still allows a genuine power-user override, not just
+    // the curated set.
+    //
     // Type `/model claude-sonnet-4-6[1m]` and press Enter — the popover closes
     // after the space (current word is no longer a slash token), so Enter
     // should go through handleSend's interception path, not selectSlash().
@@ -232,4 +239,39 @@ test.describe('10f-enrichment-model-effort-picker', () => {
 
     await page.screenshot({ path: join(artifactsDir, '10f-model-slash-after-turn.png') })
   })
+
+  test('bug-fix: /model <bad-id> is rejected via live SDK validation, pill unchanged, error shown in chat', async ({}, testInfo) => {
+    testInfo.setTimeout(60_000)
+
+    const pickerButton = page.getByTestId('model-picker-button')
+    const textarea = page.getByTestId('composer-input')
+
+    // Baseline: whatever the pill shows right now (claude-sonnet-4-6[1m] ·
+    // High, from the previous test) — this MUST be unchanged after the
+    // rejection below, proving the bogus id never got applied.
+    const beforeText = await pickerButton.textContent()
+    const beforeSessionStarts = sessionStartedModels(logPath, sessionId).length
+
+    await textarea.fill('/model aaa')
+    await textarea.press('Enter')
+
+    // Popover must not open, composer must clear (command consumed either way).
+    await expect(page.getByTestId('model-picker-popover')).toHaveCount(0)
+    await expect(textarea).toHaveValue('')
+
+    // The pill must NOT change to "aaa" — this is the exact bug being fixed.
+    await expect(pickerButton).toHaveText(beforeText ?? /.+/)
+
+    // A rejection message appears in the chat panel (reuses the existing
+    // `role: 'system'` transcript row type — see ChatTranscript.tsx).
+    const systemRow = page.locator('[data-testid="transcript-message"][data-role="system"]').last()
+    await expect(systemRow).toBeVisible()
+    await expect(systemRow).toContainText('Unknown model "aaa"')
+
+    await page.screenshot({ path: join(artifactsDir, '10f-model-slash-invalid-rejected.png') })
+
+    // No new SDK session/turn was ever started just from the rejected command.
+    expect(sessionStartedModels(logPath, sessionId).length).toBe(beforeSessionStarts)
+  })
 })
+

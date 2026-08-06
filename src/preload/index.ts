@@ -20,7 +20,8 @@ import type {
   SessionStreamEvent,
   SessionTokenUsageEvent,
   SessionTurnStateEvent,
-  SessionWorktreeProgressEvent
+  SessionWorktreeProgressEvent,
+  ModelValidationResult
 } from '../shared/session-types'
 import type {
   CommitInfo,
@@ -95,6 +96,8 @@ const api = {
   sendSessionMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment): Promise<void> =>
     ipcRenderer.invoke('session:sendMessage', sessionId, text, modelSelection, image),
   interruptSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:interrupt', sessionId),
+  validateModel: (sessionId: string, model: string): Promise<ModelValidationResult> =>
+    ipcRenderer.invoke('session:validateModel', sessionId, model),
   forkSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:fork', sessionId),
   restartSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:restart', sessionId),
   closeSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:close', sessionId),

@@ -542,6 +542,8 @@ export default function App(): JSX.Element {
                           queuedMessages={queuedMessages}
                           onCancelQueued={(index) => setQueuedMessages((prev) => prev.filter((_, i) => i !== index))}
                           tokenUsage={sessions.tokenUsageBySession[activeSession.id]}
+                          onAddLocalMessage={(content) => sessions.addLocalMessage(activeSession.id, content)}
+                          onValidateModel={(model) => sessions.validateModel(activeSession.id, model)}
                         />
                       )}
                     </div>

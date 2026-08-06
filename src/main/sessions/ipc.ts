@@ -80,6 +80,8 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
 
   ipcMain.handle('session:interrupt', (_event, sessionId: string) => manager.interrupt(sessionId))
 
+  ipcMain.handle('session:validateModel', (_event, sessionId: string, model: string) => manager.validateModel(sessionId, model))
+
   ipcMain.handle('session:fork', (_event, sessionId: string) => manager.forkSession(sessionId))
 
   ipcMain.handle('session:restart', (_event, sessionId: string) => manager.restartSession(sessionId))

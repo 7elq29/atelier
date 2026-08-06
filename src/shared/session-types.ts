@@ -148,6 +148,15 @@ export interface ImageAttachment {
   data: string
 }
 
+/**
+ * Result of `session:validateModel` — calls the SDK's own `Query.setModel()`
+ * on the connected session and reports whether it threw, used to validate a
+ * typed `/model <id>` against the SDK's real acceptance logic (no static
+ * list can substitute — see `ClaudeAgentSdkHarness.validateModel`'s doc
+ * comment for why).
+ */
+export type ModelValidationResult = { ok: true } | { ok: false; error: string }
+
 export interface MessageRecord {
   id: number
   sessionId: string

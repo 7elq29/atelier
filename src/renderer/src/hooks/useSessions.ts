@@ -4,6 +4,7 @@ import type {
   ImageAttachment,
   MessageRecord,
   ModelSelection,
+  ModelValidationResult,
   PromptDecision,
   RemoteHostOption,
   SessionGroupRecord,
@@ -32,6 +33,10 @@ export interface UseSessionsResult {
   resumeSession: (sessionId: string) => Promise<void>
   sendMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment) => Promise<void>
   interrupt: (sessionId: string) => Promise<void>
+  /** Validates a `/model <id>` against the SDK's live acceptance logic, on demand (not cached) — see `ModelValidationResult`'s doc comment. */
+  validateModel: (sessionId: string, model: string) => Promise<ModelValidationResult>
+  /** Appends a renderer-only system message to a session's transcript without any SDK/IPC round-trip — used to surface local validation errors (e.g. an unknown `/model <id>`) inline in the chat panel. */
+  addLocalMessage: (sessionId: string, content: string) => void
   respondToPrompt: (sessionId: string, requestId: string, decision: PromptDecision) => Promise<void>
   /** Shift+Tab / mode-pill click cycles default -> plan -> acceptEdits -> auto -> default (11-composer-mode-indicator). */
   cycleMode: (sessionId: string) => Promise<void>
@@ -197,6 +202,28 @@ export function useSessions(): UseSessionsResult {
     await window.gardenia.interruptSession(sessionId)
   }, [])
 
+  const validateModel = useCallback(async (sessionId: string, model: string): Promise<ModelValidationResult> => {
+    return window.gardenia.validateModel(sessionId, model)
+  }, [])
+
+  const addLocalMessage = useCallback((sessionId: string, content: string): void => {
+    setMessagesBySession((prev) => {
+      const list = prev[sessionId] ?? []
+      const message: MessageRecord = {
+        // Negative id keeps this row out of the way of real DB-issued
+        // positive ids, which `onSessionMessage`'s dedup-by-id check above
+        // relies on to distinguish "new row" from "update existing row".
+        id: -Date.now(),
+        sessionId,
+        role: 'system',
+        content,
+        rawEvent: null,
+        createdAt: new Date().toISOString()
+      }
+      return { ...prev, [sessionId]: [...list, message] }
+    })
+  }, [])
+
   const respondToPrompt = useCallback(
     async (sessionId: string, requestId: string, decision: PromptDecision): Promise<void> => {
       try {
@@ -330,6 +357,8 @@ export function useSessions(): UseSessionsResult {
     resumeSession,
     sendMessage,
     interrupt,
+    validateModel,
+    addLocalMessage,
     respondToPrompt,
     cycleMode,
     forkSession,

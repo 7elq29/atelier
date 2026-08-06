@@ -310,6 +310,37 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     logger.info('harness.interrupt(): input queue closed', { sessionId })
   }
 
+  /**
+   * Validates a `/model <id>` slash command against the SDK's own live
+   * acceptance logic, by calling the real `Query.setModel()` mutator on the
+   * connected session and reporting whether it threw — rather than checking
+   * against any static/curated list. Verified for real: `setModel()`
+   * succeeds for both curated ids (`claude-sonnet-5`) and deliberately
+   * uncurated-but-real ones (`claude-sonnet-4-6[1m]`, see Composer.tsx's
+   * `MODEL_OPTIONS` comment for why that family isn't in the small picker),
+   * and rejects genuine typos with the SDK's own error text (e.g. `Model
+   * "aaa" is restricted by your organization's settings. Using
+   * claude-sonnet-5 instead.`) — this is the only ground truth for "is this
+   * a real model", since the backend otherwise silently substitutes the
+   * default model for a bad id instead of erroring on it. `error: 'not
+   * connected'` when the session has no live query to call this on yet.
+   * The mutation itself is harmless even on success: Gardenia's own
+   * model/effort-change flow (see `manager.ts`'s "model/effort selection
+   * changed, applying from next turn") always forces a fresh reconnect on
+   * the next real turn regardless, discarding this query, so a validation
+   * call here never leaks into a turn the user didn't actually confirm.
+   */
+  async validateModel(sessionId: string, model: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const active = this.sessions.get(sessionId)
+    if (!active) return { ok: false, error: 'not connected' }
+    try {
+      await active.query.setModel(model)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
   async streamInput(sessionId: string, message: string, image?: HarnessImageInput): Promise<void> {
     const active = this.sessions.get(sessionId)
     if (!active) return
