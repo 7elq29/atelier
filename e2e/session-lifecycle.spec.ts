@@ -936,42 +936,68 @@ test.describe('02-session-lifecycle', () => {
 // Feature: when a session is created with "Use worktree" checked, the modal
 // closes immediately and a dimmed sidebar row shows "Setting up worktree…"
 // while the async worktree creation + harness start runs in the background.
-// On success the row transitions to a live status; on failure it disappears.
+// On success the row transitions to live and both chat and terminal run from
+// the worktree directory; on failure (non-git path) the row disappears.
+// Uses a minimal empty git repo created on the devpod in beforeAll so the
+// worktree checkout is instant (no files to check out), keeping the test fast.
 test.describe('02-session-lifecycle (use-worktree)', () => {
   let electronApp: ElectronApplication
   let page: Page
   let userDataDir: string
-  let gitRepoDir: string
-  let plainDir: string
+  let devpodHost: { id: string; sshHost: string; label: string; status: 'running' | 'sleeping' | 'unknown' } | undefined
+  let remoteGitDir: string | undefined  // minimal git repo on the devpod for fast worktree creation
+  let remoteNoGitDir: string | undefined // plain dir on the devpod for failure test
+
+  const SSH_TEST_OPTS = ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new']
 
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-worktree-'))
     seedSkipOnboarding(userDataDir)
-
-    // A real git repo with one commit so `git worktree add` succeeds.
-    gitRepoDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-gitrepo-'))
-    execFileSync('git', ['init'], { cwd: gitRepoDir, stdio: 'ignore' })
-    execFileSync('git', [
-      '-c', 'user.name=test', '-c', 'user.email=test@test.com',
-      'commit', '--allow-empty', '-m', 'init'
-    ], { cwd: gitRepoDir, stdio: 'ignore' })
-
-    // A plain directory with no .git — worktree creation will fail here.
-    plainDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-plain-'))
-
     ;({ app: electronApp, page } = await launchApp(userDataDir))
+    const hosts = await page.evaluate(() => window.gardenia.listHosts())
+    const envTarget = process.env.GARDENIA_TEST_DEVPOD
+    devpodHost = envTarget
+      ? hosts.find((h) => h.sshHost === envTarget || h.id === envTarget)
+      : hosts.find((h) => h.sshHost === 'qingqin-go.devpod-us-or') ?? hosts[0]
+
+    if (devpodHost) {
+      // Create a minimal empty git repo on the devpod — no files to check out,
+      // so worktree add completes in milliseconds instead of minutes.
+      const gitDirOut = execFileSync('ssh', [...SSH_TEST_OPTS, devpodHost.sshHost, 'mktemp', '-d'], { encoding: 'utf8' })
+      remoteGitDir = gitDirOut.trim()
+      execFileSync('ssh', [...SSH_TEST_OPTS, devpodHost.sshHost,
+        'git', 'init', remoteGitDir
+      ], { encoding: 'utf8' })
+      execFileSync('ssh', [...SSH_TEST_OPTS, devpodHost.sshHost,
+        'git', '-C', remoteGitDir, '-c', 'user.name=test', '-c', 'user.email=test@test.com',
+        'commit', '--allow-empty', '-m', 'init'
+      ], { encoding: 'utf8' })
+
+      // Create a plain directory (no .git) for the failure-path test.
+      const noDirOut = execFileSync('ssh', [...SSH_TEST_OPTS, devpodHost.sshHost, 'mktemp', '-d'], { encoding: 'utf8' })
+      remoteNoGitDir = noDirOut.trim()
+    }
   })
 
   test.afterAll(async () => {
+    if (devpodHost && remoteGitDir) {
+      execFileSync('ssh', [...SSH_TEST_OPTS, devpodHost.sshHost, 'rm', '-rf', remoteGitDir], { encoding: 'utf8' })
+    }
+    if (devpodHost && remoteNoGitDir) {
+      execFileSync('ssh', [...SSH_TEST_OPTS, devpodHost.sshHost, 'rm', '-rf', remoteNoGitDir], { encoding: 'utf8' })
+    }
     await electronApp.close().catch(() => undefined)
   })
 
-  test('use-worktree success: modal closes immediately, sidebar shows creating-worktree, transitions to live', async () => {
-    await stubProjectFolder(electronApp, gitRepoDir)
+  test('use-worktree success: modal closes immediately, sidebar shows creating-worktree, transitions to live; chat and terminal run from worktree', async () => {
+    test.setTimeout(2 * 60_000)
+    test.skip(!devpodHost || !remoteGitDir, 'No devpod configured — set GARDENIA_TEST_DEVPOD or configure a devpod host')
+    if (!devpodHost || !remoteGitDir) return
+
     await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
-    await expect(page.getByTestId('pick-project-folder')).toContainText(gitRepoDir)
     await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId(`host-option-${devpodHost.id}`).click()
+    await page.getByTestId('remote-project-path').fill(remoteGitDir)
 
     const checkbox = page.getByTestId('use-worktree-checkbox')
     await checkbox.check()
@@ -989,11 +1015,11 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
 
     await page.screenshot({ path: join(artifactsDir, '02-worktree-creating-state.png') })
 
-    // Wait for the row to leave creating-worktree (harness started, worktree done).
+    // Wait for the row to leave creating-worktree (worktree created, harness started).
     await expect
       .poll(
         () => page.locator('[data-testid="session-row"][data-status="creating-worktree"]').count(),
-        { timeout: 30_000, intervals: [500] }
+        { timeout: 60_000, intervals: [1_000] }
       )
       .toBe(0)
 
@@ -1006,23 +1032,51 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     expect(rows[0]?.worktree_path).toContain('.gardenia')
 
     await page.screenshot({ path: join(artifactsDir, '02-worktree-created.png') })
+
+    // Click the session and verify Claude is running from the worktree directory.
+    const sessionRow = page.locator('[data-testid="session-row"]').first()
+    await sessionRow.click()
+
+    const composer = page.getByTestId('composer-input')
+    await composer.fill('Print your current working directory path. Reply with only the path, nothing else.')
+    await page.getByTestId('send-button').click()
+    await expect
+      .poll(
+        async () => page.locator('[data-testid="transcript-message"][data-role="assistant"]').last().textContent(),
+        { timeout: 30_000 }
+      )
+      .toContain('.gardenia/worktrees')
+    await page.screenshot({ path: join(artifactsDir, '02-worktree-chat-in-worktree.png') })
+
+    // Terminal tab must also open in the worktree directory.
+    await page.getByTestId('tab-terminal').click()
+    const term = page.getByTestId('terminal-body')
+    await expect(term).toBeVisible({ timeout: 10_000 })
+    await term.click()
+    await page.waitForTimeout(3_000) // SSH + tmux attach
+    await page.keyboard.type('pwd')
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => term.textContent(), { timeout: 15_000 }).toContain('.gardenia/worktrees')
+    await page.screenshot({ path: join(artifactsDir, '02-worktree-terminal-in-worktree.png') })
   })
 
-  test('use-worktree failure: non-git project causes session row to disappear after brief creating-worktree state', async () => {
-    await stubProjectFolder(electronApp, plainDir)
+  test('use-worktree failure: non-git remote path causes session row to disappear', async () => {
+    test.skip(!devpodHost || !remoteNoGitDir, 'No devpod configured')
+    if (!devpodHost || !remoteNoGitDir) return
+
     const countBefore = await page.locator('[data-testid="session-row"]').count()
 
     await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
     await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId(`host-option-${devpodHost.id}`).click()
+    await page.getByTestId('remote-project-path').fill(remoteNoGitDir)
     await page.getByTestId('use-worktree-checkbox').check()
     await page.getByTestId('start-session-button').click()
 
     // Modal closes immediately even though worktree creation will fail.
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 3_000 })
 
-    // setupWorktreeAsync: createWorktree fails (not a git repo) → session:deleted
-    // The row appears briefly then disappears; final count must be back to before.
+    // setupWorktreeAsync: createWorktree fails → session:deleted → row gone.
     await expect
       .poll(
         () => page.locator('[data-testid="session-row"]').count(),

@@ -373,6 +373,25 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     logger.info('setPermissionMode: applied to live session', { sessionId, mode })
   }
 
+  /**
+   * Returns the current context usage for a live session, pulled directly
+   * from the SDK's own context-usage query (token-usage-indicator). Use this
+   * after a `result` harness event to get accurate token counts and the
+   * auto-compact threshold (the real cap before compaction kicks in, which is
+   * smaller than the model's total context window).
+   * Returns `null` if the session is not live (no query object available).
+   */
+  async getContextUsage(sessionId: string): Promise<{ totalTokens: number; autoCompactThreshold?: number } | null> {
+    const active = this.sessions.get(sessionId)
+    if (!active) return null
+    try {
+      const usage = await active.query.getContextUsage()
+      return { totalTokens: usage.totalTokens, autoCompactThreshold: usage.autoCompactThreshold }
+    } catch {
+      return null
+    }
+  }
+
   private async launch(
     prompt: string,
     opts: HarnessStartOptions & { cwd: string },

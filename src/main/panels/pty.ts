@@ -134,7 +134,8 @@ export class PtyManager {
           logger.info('pty spawn: remote tmux session not found, creating', { id, hostname, name, elapsedMs: elapsed() })
           execFileSync('ssh', [...SSH_MUX_OPTS, hostname, 'tmux', 'new-session', '-d', '-s', name,
             '-x', String(Math.max(opts.cols || 80, 2)),
-            '-y', String(Math.max(opts.rows || 24, 2))
+            '-y', String(Math.max(opts.rows || 24, 2)),
+            '-c', opts.cwd ?? '$HOME'
           ], { stdio: 'ignore' })
           logger.info('pty spawn: remote tmux session created', { id, hostname, name, elapsedMs: elapsed() })
         }

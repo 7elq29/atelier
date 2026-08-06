@@ -29,6 +29,23 @@ export class WorktreeError extends Error {
 }
 
 /**
+ * SSH options shared with pty.ts's SSH_MUX_OPTS: reuse the ControlMaster
+ * socket established by the PTY when available, and never block on interactive
+ * prompts (BatchMode=yes makes SSH fail fast instead of hanging on host-key
+ * or password prompts in a non-interactive context).
+ */
+const SSH_GIT_OPTS = [
+  '-o', 'ControlMaster=auto',
+  '-o', 'ControlPath=/tmp/gardenia-ssh-%C',
+  '-o', 'ControlPersist=300',
+  '-o', 'BatchMode=yes',
+  '-o', 'StrictHostKeyChecking=accept-new',
+]
+
+/** 5 min timeout for all SSH git calls — worktree add on large repos can take several minutes. */
+const SSH_EXEC_TIMEOUT_MS = 5 * 60_000
+
+/**
  * Creates a git worktree for a session.
  *
  * For local sessions: runs `git -C <projectPath> worktree add <worktreePath> -b <branch>`.
@@ -46,17 +63,26 @@ export async function createWorktree(projectPath: string, sessionId: string, hos
   if (hostname) {
     await execFile(
       'ssh',
-      [hostname, 'git', '-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch],
-      { encoding: 'utf8' }
+      [...SSH_GIT_OPTS, hostname, 'git', '-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch],
+      { encoding: 'utf8', timeout: SSH_EXEC_TIMEOUT_MS }
     )
+    // Resolve the path to an absolute one — `worktreePath` may contain `~`
+    // which git expands (through the SSH shell), but the harness cwd is used
+    // as a raw path and may not expand `~` itself.
+    const { stdout } = await execFile(
+      'ssh', [...SSH_GIT_OPTS, hostname, 'realpath', worktreePath],
+      { encoding: 'utf8', timeout: SSH_EXEC_TIMEOUT_MS }
+    )
+    const resolved = stdout.trim()
+    logger.info('worktree: created', { worktreePath: resolved, branch })
+    return resolved
   } else {
     await execFile('git', ['-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch], {
       encoding: 'utf8'
     })
+    logger.info('worktree: created', { worktreePath, branch })
+    return worktreePath
   }
-
-  logger.info('worktree: created', { worktreePath, branch })
-  return worktreePath
 }
 
 /**
@@ -84,8 +110,8 @@ export async function removeWorktree(worktreePath: string, sessionId: string, ho
 
   if (hostname) {
     try {
-      await execFile('ssh', [hostname, 'git', 'worktree', 'remove', worktreePath, '--force'], {
-        encoding: 'utf8'
+      await execFile('ssh', [...SSH_GIT_OPTS, hostname, 'git', 'worktree', 'remove', worktreePath, '--force'], {
+        encoding: 'utf8', timeout: SSH_EXEC_TIMEOUT_MS
       })
     } catch (err) {
       logger.warn('worktree: remote git worktree remove failed (ignored)', {
@@ -94,8 +120,8 @@ export async function removeWorktree(worktreePath: string, sessionId: string, ho
       })
     }
     try {
-      await execFile('ssh', [hostname, 'git', '-C', projectPath, 'branch', '-D', branch], {
-        encoding: 'utf8'
+      await execFile('ssh', [...SSH_GIT_OPTS, hostname, 'git', '-C', projectPath, 'branch', '-D', branch], {
+        encoding: 'utf8', timeout: SSH_EXEC_TIMEOUT_MS
       })
     } catch (err) {
       logger.warn('worktree: remote git branch -D failed (ignored)', {

@@ -802,6 +802,12 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
     await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 30_000 })
 
+    // Track this session's id so we can click back to it after switching away.
+    const devpodSessionId = await page
+      .locator('[data-testid="session-row"][data-active="true"]')
+      .getAttribute('data-session-id')
+    const devpodRow = page.locator(`[data-testid="session-row"][data-session-id="${devpodSessionId}"]`)
+
     // Wait for the shell to be responsive.
     const term = page.getByTestId('terminal-body')
     await expect(term).toBeVisible({ timeout: 10_000 })
@@ -823,6 +829,26 @@ test.describe('07-secondary-panels', () => {
       socketsAfter.length,
       'ControlMaster socket must be present in /tmp — SSH_MUX_OPTS not applied if missing'
     ).toBeGreaterThan(0)
+
+    // Switch to another session, then come back — the terminal must reconnect
+    // immediately via the ControlMaster socket. Without it, the reconnect
+    // requires 3 fresh SSH handshakes (~4.5s each = 13s total), which would
+    // blow the 6s poll timeout below.
+    await page.locator(`[data-testid="session-row"]:not([data-session-id="${devpodSessionId}"])`).first().click()
+    await page.waitForTimeout(800) // let ptyKill + tmux detach-client fire
+
+    const tReconnect = Date.now()
+    await devpodRow.click()
+    await expect(page.getByTestId('terminal-body')).toBeVisible({ timeout: 10_000 })
+    // The tmux session on the devpod is still alive — its scrollback buffer
+    // (including the marker echo from before) must appear immediately after
+    // reattach. A 6s timeout fits ControlMaster reconnect (<1s) but not a
+    // cold-handshake reconnect (~13s).
+    await expect.poll(
+      async () => page.getByTestId('terminal-body').textContent(),
+      { timeout: 6_000 }
+    ).toContain(marker)
+    log(`SSH ControlMaster: reconnect showed tmux content in ${Date.now() - tReconnect}ms`)
 
     await page.screenshot({ path: join(artifactsDir, '07-ssh-controlmaster.png') })
   })

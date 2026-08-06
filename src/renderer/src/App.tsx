@@ -564,7 +564,7 @@ export default function App(): JSX.Element {
                     {visitedTabs.has('terminal') && (
                       <TerminalPanel
                         ptyId={`${activeSession.id}:tab-terminal`}
-                        cwd={activeSession.projectPath}
+                        cwd={activeSession.worktreePath ?? activeSession.projectPath}
                         hostname={activeSession.hostname}
                         active={activeTab === 'terminal'}
                       />
@@ -583,7 +583,7 @@ export default function App(): JSX.Element {
                 {drawerOpen && (
                   <CompanionTerminalDrawer
                     sessionId={activeSession.id}
-                    cwd={activeSession.projectPath}
+                    cwd={activeSession.worktreePath ?? activeSession.projectPath}
                     hostname={activeSession.hostname}
                     height={drawerHeight}
                     onHeightChange={setDrawerHeight}

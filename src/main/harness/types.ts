@@ -252,7 +252,7 @@ export type HarnessEvent =
        * (the model's declared context length). Undefined only if the SDK
        * message somehow omitted it.
        */
-      modelUsage?: Record<string, { inputTokens: number; contextWindow: number }>
+      modelUsage?: Record<string, { inputTokens: number; contextWindow: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number }>
     }
   | {
       type: 'interrupted'
@@ -398,6 +398,15 @@ export interface HarnessDriver {
    * message either.
    */
   isActive(sessionId: string): boolean
+
+  /**
+   * Returns the current context window usage for a live session via the SDK's
+   * own `getContextUsage()` query — call this after a `result` event to get
+   * `totalTokens` (all token categories summed) and `autoCompactThreshold`
+   * (the cap before auto-compaction kicks in, smaller than the model's full
+   * context window). Returns `null` if the session is not live.
+   */
+  getContextUsage(sessionId: string): Promise<{ totalTokens: number; autoCompactThreshold?: number } | null>
 
   /**
    * Resolves a pending `permission_request` / `ask_user_question` /

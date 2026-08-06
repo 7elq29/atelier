@@ -566,7 +566,7 @@ export class SessionManager {
   ): Promise<HarnessSession> {
     const host = this.resolveHostFromSession(session.hostname)
     const startOpts = {
-      cwd: session.projectPath,
+      cwd: session.worktreePath ?? session.projectPath,
       host,
       keepAlive: true,
       ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
@@ -714,6 +714,9 @@ export class SessionManager {
   async reconnect(sessionId: string): Promise<void> {
     const session = this.store.getSession(sessionId)
     if (!session || session.mode !== 'claude-code') return
+    // Don't race with setupWorktreeAsync — while the worktree is being created
+    // the harness will be started by that path once creation completes.
+    if (this.creatingWorktree.has(sessionId)) return
     // Fix (fix-session-resume-stale-sigterm-and-no-connect-indicator): mark
     // this session as 'connecting' for the topbar's "Connecting…" pill for
     // the whole gap between triggering this reconnect and the harness
@@ -1367,19 +1370,27 @@ try {
           this.sendLifecycle({ type: 'session.updated', session: costUpdated })
         }
         this.sendTurnState(sessionId, false)
-        // token-usage-indicator: extract per-model token totals and push to
-        // renderer so the composer footer can display context window usage.
-        // `modelUsage` keys are model ids; we sum inputTokens across all models
-        // (handles multi-model sessions gracefully) and take the max contextWindow
-        // (all models in a single session normally report the same value).
-        if (event.modelUsage) {
-          const entries = Object.values(event.modelUsage)
-          if (entries.length > 0) {
-            const inputTokens = entries.reduce((sum, m) => sum + m.inputTokens, 0)
-            const contextWindow = Math.max(...entries.map((m) => m.contextWindow))
-            if (contextWindow > 0) this.sendTokenUsage(sessionId, inputTokens, contextWindow)
+        // token-usage-indicator: pull context usage directly from the SDK's
+        // own query — gives us `totalTokens` (all categories: user message,
+        // system prompt, MCP tools, cache reads, etc.) and `autoCompactThreshold`
+        // (the real cap before auto-compaction fires, which is smaller than
+        // the model's full context window). Falls back to modelUsage math if
+        // the session is no longer live.
+        void this.harness.getContextUsage(sessionId).then((ctx) => {
+          if (ctx && ctx.autoCompactThreshold) {
+            this.sendTokenUsage(sessionId, ctx.totalTokens, ctx.autoCompactThreshold)
+          } else if (event.modelUsage) {
+            const entries = Object.values(event.modelUsage)
+            if (entries.length > 0) {
+              const inputTokens = entries.reduce(
+                (sum, m) => sum + m.inputTokens + (m.cacheReadInputTokens ?? 0) + (m.cacheCreationInputTokens ?? 0),
+                0
+              )
+              const contextWindow = Math.max(...entries.map((m) => m.contextWindow))
+              if (contextWindow > 0) this.sendTokenUsage(sessionId, inputTokens, contextWindow)
+            }
           }
-        }
+        })
         if (event.isError) this.expirePendingPrompts(sessionId, live)
         if (live.turnCount >= AUTO_NAME_STARTING_FROM_TURN) {
           void this.maybeAutoName(sessionId).catch((err) =>
