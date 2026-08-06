@@ -14,6 +14,7 @@ import type {
   SessionGroupRecord,
   SessionLifecycleEvent,
   SessionRecord,
+  SessionStaleEvent,
   SessionStatus,
   SessionStatusEvent,
   SessionStreamDeltaEvent,
@@ -193,6 +194,12 @@ const api = {
     const listener = (_event: unknown, payload: SessionWorktreeProgressEvent): void => callback(payload)
     ipcRenderer.on('session:worktreeProgress', listener)
     return () => ipcRenderer.removeListener('session:worktreeProgress', listener)
+  },
+  /** Startup recoverability probe result — fired for sessions that can no longer be resumed. */
+  onSessionStale: (callback: (event: SessionStaleEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionStaleEvent): void => callback(payload)
+    ipcRenderer.on('session:stale', listener)
+    return () => ipcRenderer.removeListener('session:stale', listener)
   },
   /** Test-only: raw read-only SQL query against the real SQLite DB (see session:debugQueryDb handler). */
   debugQueryDb: <T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> =>

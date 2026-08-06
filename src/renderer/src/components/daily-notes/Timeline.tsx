@@ -29,7 +29,7 @@ interface TimelineProps {
   onCreate: (text: string, timeBlock: string) => void
   onDropExisting: (id: string, timeBlock: string) => void
   onDelete: (id: string) => void
-  /** 16-task-move-to-date: right-click a `.dn-tblock` -> "Move to..." menu. */
+  onUpdateText: (id: string, text: string) => void
   moveDateOptions: MoveDateOptions
   onMoveToDate: (id: string, targetDate: string) => void
 }
@@ -74,6 +74,7 @@ export default function Timeline({
   onCreate,
   onDropExisting,
   onDelete,
+  onUpdateText,
   moveDateOptions,
   onMoveToDate
 }: TimelineProps): JSX.Element {
@@ -81,6 +82,8 @@ export default function Timeline({
   const [nowMinutes, setNowMinutes] = useState(() => minutesNow())
   const containerRef = useRef<HTMLDivElement>(null)
   const [moveMenu, setMoveMenu] = useState<{ x: number; y: number; taskId: string } | null>(null)
+  const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null)
+  const [renameText, setRenameText] = useState('')
 
   const dragRef = useRef<DragInfo | null>(null)
   const [dragActive, setDragActive] = useState(false)
@@ -155,7 +158,7 @@ export default function Timeline({
     function onUp(): void {
       const drag = dragRef.current
       if (drag && (drag.liveStartMin !== drag.initialStartMin || drag.liveEndMin !== drag.initialEndMin)) {
-        onDropExisting(drag.taskId, `${minutesToTime(drag.liveStartMin)}–${minutesToTime(drag.liveEndMin)}`)
+        onDropExisting(drag.taskId, `${minutesToTime(drag.liveStartMin)}-${minutesToTime(drag.liveEndMin)}`)
       }
       dragRef.current = null
       setLiveBlock(null)
@@ -205,7 +208,7 @@ export default function Timeline({
     if ((e.target as HTMLElement).closest('.dn-tblock')) return
     const start = clampedStartForDefaultDuration(e.clientY)
     const end = start + DEFAULT_DURATION_MIN
-    setDraft({ timeBlock: `${minutesToTime(start)}–${minutesToTime(end)}`, text: '' })
+    setDraft({ timeBlock: `${minutesToTime(start)}-${minutesToTime(end)}`, text: '' })
   }
 
   const handleDrop = (e: React.DragEvent): void => {
@@ -214,7 +217,7 @@ export default function Timeline({
     if (!id) return
     const start = clampedStartForDefaultDuration(e.clientY)
     const end = start + DEFAULT_DURATION_MIN
-    onDropExisting(id, `${minutesToTime(start)}–${minutesToTime(end)}`)
+    onDropExisting(id, `${minutesToTime(start)}-${minutesToTime(end)}`)
   }
 
   const submitDraft = (): void => {
@@ -316,10 +319,6 @@ export default function Timeline({
               >
                 ✕
               </button>
-              <div className="dn-tb-range">
-                {minutesToTime(start)}–{minutesToTime(end)}
-                {` · ${end - start}m`}
-              </div>
               <div className="dn-tb-body">
                 <div
                   className="dn-tbox"
@@ -331,7 +330,31 @@ export default function Timeline({
                     onToggle(task.id)
                   }}
                 />
-                <span className="dn-tb-label">{task.text}</span>
+                {renamingTaskId === task.id ? (
+                  <input
+                    autoFocus
+                    className="dn-task-edit-input"
+                    value={renameText}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onChange={(e) => setRenameText(e.target.value)}
+                    onBlur={() => {
+                      if (renameText.trim()) onUpdateText(task.id, renameText.trim())
+                      setRenamingTaskId(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        if (renameText.trim()) onUpdateText(task.id, renameText.trim())
+                        setRenamingTaskId(null)
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault()
+                        setRenamingTaskId(null)
+                      }
+                    }}
+                  />
+                ) : (
+                  <span className="dn-tb-label">{task.text}</span>
+                )}
               </div>
               <div
                 className="dn-tblock-resize dn-tblock-resize-bottom"
@@ -355,7 +378,6 @@ export default function Timeline({
                 className="dn-tblock dn-tblock-draft"
                 style={{ top: `${top}px`, height: `${height}px`, left: `${LABEL_WIDTH}px`, right: 0 }}
               >
-                <div className="dn-tb-range">{draft.timeBlock}</div>
                 <input
                   autoFocus
                   className="input dn-draft-input"
@@ -382,6 +404,10 @@ export default function Timeline({
           y={moveMenu.y}
           options={moveDateOptions}
           onSelect={(targetDate) => onMoveToDate(moveMenu.taskId, targetDate)}
+          onRename={() => {
+            const task = tasks.find((t) => t.id === moveMenu.taskId)
+            if (task) { setRenameText(task.text); setRenamingTaskId(task.id) }
+          }}
           onClose={() => setMoveMenu(null)}
         />
       )}

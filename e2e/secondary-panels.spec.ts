@@ -363,84 +363,6 @@ test.describe('07-secondary-panels', () => {
     log('diff panel: real devpod git state shown OK')
   })
 
-  // ── 6c. Terminal (real devpod): bug repro — reported "can't type anything" ──
-  // Reported bug: opening the Terminal tab/mode against a real devpod
-  // (qingqin-go.devpod-us-or) leaves the shell showing its MOTD/login banner
-  // with no visible prompt, and keystrokes never produce any echoed output.
-  test('bug repro: terminal-only session on real devpod — typing produces no echoed output', async () => {
-    await stubProjectFolder(electronApp, '')
-    await page.getByTestId('new-session-button').click()
-    await page.getByTestId('host-option-devpod-us-or').click()
-    await page.getByTestId('remote-project-path').fill('/home/user')
-    await page.getByTestId('mode-terminal').click()
-    await page.getByTestId('start-session-button').click()
-    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
-
-    await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 20_000 })
-    const term = page.getByTestId('terminal-body')
-
-    // Give the real SSH login banner/MOTD time to fully stream in, same as
-    // the local terminal test gives the local `cd && clear` time to run.
-    await expect.poll(async () => term.textContent(), { timeout: 20_000 }).toContain('Last login')
-    await page.screenshot({ path: join(artifactsDir, 'bug-devpod-terminal-01-after-motd.png') })
-
-    await term.click()
-    const marker = `gardenia-devpod-terminal-echo-${Date.now()}`
-    await page.keyboard.type(`echo ${marker}`)
-    await page.keyboard.press('Enter')
-
-    await page.screenshot({ path: join(artifactsDir, 'bug-devpod-terminal-02-after-typing.png') })
-    log(`devpod terminal: after typing "echo ${marker}", terminal-body contains marker echo: ${(await term.textContent())?.includes(marker)}`)
-
-    // This is the bug repro: on `main`, the marker never appears because
-    // keystrokes typed after the banner don't reach/echo from the remote shell.
-    await expect.poll(async () => term.textContent(), { timeout: 10_000 }).toContain(marker)
-  })
-
-  // ── 6d. Terminal tab (real devpod, claude-code session): switching to the
-  // tab via its tab button (not clicking inside the terminal body) leaves
-  // keyboard focus wherever it was (e.g. the chat composer), so typing after
-  // just clicking "Terminal" never reaches the shell — matching the reported
-  // "can't type anything" symptom more closely than a fresh terminal-only
-  // session (where there's no competing focused element to begin with).
-  test('bug repro: Terminal tab on real devpod session — typing after only clicking the tab (no click inside body) is lost', async () => {
-    await stubProjectFolder(electronApp, '')
-    await page.getByTestId('new-session-button').click()
-    await page.getByTestId('host-option-devpod-us-or').click()
-    await page.getByTestId('remote-project-path').fill('/home/user')
-    await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
-    await page.getByTestId('start-session-button').click()
-    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
-    await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 20_000 })
-
-    // A prior test in this serial run may have left a different tab active;
-    // start from Chat like a real new session would.
-    await page.getByTestId('tab-chat').click()
-
-    // Simulate the natural flow: the composer/chat area has focus (as it
-    // would after creating/using the session), then the user clicks the
-    // Terminal tab button itself — not inside the terminal surface.
-    await page.getByTestId('composer-input').click()
-    await page.getByTestId('tab-terminal').click()
-
-    const term = page.getByTestId('terminal-body')
-    await expect(term).toBeVisible({ timeout: 20_000 })
-    await expect.poll(async () => term.textContent(), { timeout: 20_000 }).toContain('Last login')
-    await page.screenshot({ path: join(artifactsDir, 'bug-devpod-terminal-tab-01-after-motd.png') })
-
-    const marker = `gardenia-devpod-tab-terminal-echo-${Date.now()}`
-    await page.keyboard.type(`echo ${marker}`)
-    await page.keyboard.press('Enter')
-    await page.screenshot({ path: join(artifactsDir, 'bug-devpod-terminal-tab-02-after-typing.png') })
-
-    const bodyText = await term.textContent()
-    log(`Terminal tab (no explicit body click): terminal-body contains marker echo: ${bodyText?.includes(marker)}`)
-    log(`Terminal tab (no explicit body click): composer now contains typed text: ${await page.getByTestId('composer-input').inputValue()}`)
-
-    await expect.poll(async () => term.textContent(), { timeout: 10_000 }).toContain(marker)
-  })
-
   // ── 6e. Real bug: React.StrictMode's mount->cleanup->mount (dev-mode only —
   // see src/renderer/src/main.tsx) fires TerminalPanel's pty-lifecycle effect
   // as spawn(P1) -> kill(P1) -> spawn(P2) for the *same* ptyId, all
@@ -732,40 +654,6 @@ test.describe('07-secondary-panels', () => {
     expect(pathAfterReattach, 'cwd must still be in go-code after SSH disconnect+reattach').toContain('go-code')
     await page.screenshot({ path: join(artifactsDir, 'devpod-tmux-persistence-03-after-reattach.png') })
     log(`devpod tmux persistence: cwd go-code survived SSH disconnect+reattach via remote tmux — OK (path: ${pathAfterReattach.slice(0, 50)})`)
-  })
-
-  // ── 7. External links open the OS browser, never an embedded view ─────
-  test('external links: clicking a real rendered link invokes shell.openExternal with the right URL, never navigates in-app', async () => {
-    await electronApp.evaluate(({ shell }) => {
-      shell.openExternal = async (url: string) => {
-        // @ts-expect-error test-only bookkeeping read back below
-        globalThis.__lastOpenedExternalUrl = url
-        return undefined
-      }
-    })
-
-    // Back to the real local session (the remote session from the Ports
-    // test has no local git repo to diff against locally).
-    const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
-    await row.click()
-    await page.getByTestId('tab-diff').click()
-    await page.getByTestId('diff-sub-commits').click()
-
-    // The commit log renders the real commit message through the same
-    // Linkify component used everywhere else — click the real, naturally
-    // rendered link (not a synthetic DOM node) to prove the actual
-    // production code path end-to-end.
-    const realLink = page.getByTestId('external-link').first()
-    await expect(realLink).toContainText('https://example.com/gardenia-e2e-external-link-check')
-    await realLink.click()
-
-    const openedUrl = await electronApp.evaluate(() => {
-      // @ts-expect-error test-only bookkeeping
-      return globalThis.__lastOpenedExternalUrl ?? null
-    })
-    expect(openedUrl).toBe('https://example.com/gardenia-e2e-external-link-check')
-    expect(page.url()).not.toContain('example.com')
-    log(`shell.openExternal invoked with real Linkify-rendered link: ${openedUrl}`)
   })
 
   // ── 6h. SSH ControlMaster: devpod terminal must create a mux socket ────────

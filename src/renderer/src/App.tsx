@@ -7,7 +7,7 @@ import SettingsPanel from './components/SettingsPanel'
 import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
 import ChatTranscript from './components/chat/ChatTranscript'
 import TranscriptSearchBar from './components/chat/TranscriptSearchBar'
-import Composer from './components/chat/Composer'
+import Composer, { type ComposerHandle } from './components/chat/Composer'
 import TrackerRail from './components/chat/TrackerRail'
 import ExportMenu from './components/chat/ExportMenu'
 import TabBar, { type SessionTab } from './components/panels/TabBar'
@@ -43,7 +43,7 @@ export default function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
-  const [composerText, setComposerText] = useState('')
+  const composerRef = useRef<ComposerHandle>(null)
   // Defaults to Sonnet 5 (explicit override, always sent) rather than `null`
   // (no override, harness/SDK picks its own default) — the app's default
   // model must be Sonnet 5 even when the user never touches the composer's
@@ -58,6 +58,18 @@ export default function App(): JSX.Element {
   const [drawerHeight, setDrawerHeight] = useState(240)
   /** Messages queued while the active session was busy (message-queue). Drained FIFO when busy → idle. */
   const [queuedMessages, setQueuedMessages] = useState<string[]>([])
+
+  // Terminal keep-alive: maps ptyId → {cwd, hostname} for terminal-mode sessions
+  // that have been visited. These TerminalPanels stay mounted permanently (only CSS
+  // visibility changes on switch) so xterm + the tmux pty client are never torn down
+  // and re-created between session switches.
+  const [aliveTerminals, setAliveTerminals] = useState<Map<string, { cwd: string; hostname: string | null | undefined }>>(new Map())
+
+  // Tab-terminal keep-alive: same idea for claude-code sessions' terminal tab.
+  // Keyed by ptyId (`${sessionId}:tab-terminal`). Since the tab-bar lives inside
+  // the 56px topbar (above the content wrapper), these entries use the same
+  // terminal-cache-layer with top:0 and appear correctly below the tab-bar.
+  const [aliveTabTerminals, setAliveTabTerminals] = useState<Map<string, { cwd: string; hostname: string | null | undefined }>>(new Map())
 
   // ── In-conversation "Find in conversation" (10b-enrichment-full-text-search) ──
   const [transcriptSearchOpen, setTranscriptSearchOpen] = useState(false)
@@ -124,7 +136,7 @@ export default function App(): JSX.Element {
         if (sid && busyBySessionRef.current[sid]) {
           void sessions.interrupt(sid)
           if (lastSubmittedTextRef.current) {
-            setComposerText(lastSubmittedTextRef.current)
+            composerRef.current?.setValue(lastSubmittedTextRef.current)
           }
           return
         }
@@ -187,6 +199,37 @@ export default function App(): JSX.Element {
     // Also discard any queued messages — they were for the previous session.
     setQueuedMessages([])
   }, [activeSessionId])
+
+  // Register terminal-mode sessions in the keep-alive map the first time they
+  // become active. After registration the TerminalPanel never unmounts, so
+  // switching away and back is a CSS visibility toggle with no pty re-spawn.
+  const activeSession = activeSessionId
+    ? allSessions.find((s) => s.id === activeSessionId) ?? null
+    : null
+  useEffect(() => {
+    if (!activeSession || activeSession.mode !== 'terminal') return
+    setAliveTerminals((prev) => {
+      if (prev.has(activeSession.id)) return prev
+      const next = new Map(prev)
+      next.set(activeSession.id, { cwd: activeSession.projectPath, hostname: activeSession.hostname })
+      return next
+    })
+  }, [activeSession?.id, activeSession?.mode])
+
+  // Register claude-code tab-terminal sessions the first time the terminal tab
+  // is visited. The TerminalPanel stays mounted in the cache layer so switching
+  // between sessions never detaches the tmux client.
+  useEffect(() => {
+    if (!activeSession || activeSession.mode !== 'claude-code') return
+    if (activeTab !== 'terminal') return
+    const ptyId = `${activeSession.id}:tab-terminal`
+    setAliveTabTerminals((prev) => {
+      if (prev.has(ptyId)) return prev
+      const next = new Map(prev)
+      next.set(ptyId, { cwd: activeSession.worktreePath ?? activeSession.projectPath, hostname: activeSession.hostname })
+      return next
+    })
+  }, [activeSession?.id, activeSession?.mode, activeTab])
 
   function toggleTranscriptSearch(): void {
     setTranscriptSearchOpen((open) => {
@@ -324,13 +367,11 @@ export default function App(): JSX.Element {
       // the current turn completes. Image attachments can't be queued (the
       // queued-strip only shows text), so they fall through to the normal path.
       setQueuedMessages((prev) => [...prev, text.trim()])
-      setComposerText('')
       return
     }
-    // Save the trimmed text BEFORE clearing the composer — if the user presses
+    // Save the trimmed text BEFORE the composer clears — if the user presses
     // ESC while the turn is running, the global handler can restore it.
     lastSubmittedTextRef.current = text.trim()
-    setComposerText('')
     await sessions.sendMessage(activeSessionId, text.trim(), modelSelection ?? undefined, image)
   }
 
@@ -358,7 +399,6 @@ export default function App(): JSX.Element {
     await sessions.exportTranscript(activeSessionId, format)
   }
 
-  const activeSession = allSessions.find((s) => s.id === activeSessionId) ?? null
   const activeMessages = activeSessionId ? sessions.messagesBySession[activeSessionId] ?? [] : []
   const showOnboarding = loaded && !config.onboardingCompleted
 
@@ -438,6 +478,20 @@ export default function App(): JSX.Element {
           onDelete={(id) => {
             if (activeSessionId === id) setActiveSessionId(null)
             void sessions.deleteSession(id)
+            // Remove from keep-alive caches so TerminalPanels unmount and ptyKill runs.
+            setAliveTerminals((prev) => {
+              if (!prev.has(id)) return prev
+              const next = new Map(prev)
+              next.delete(id)
+              return next
+            })
+            setAliveTabTerminals((prev) => {
+              const ptyId = `${id}:tab-terminal`
+              if (!prev.has(ptyId)) return prev
+              const next = new Map(prev)
+              next.delete(ptyId)
+              return next
+            })
             // Kill the tmux server sessions for all pty variants of this
             // Gardenia session (terminal-only, tab terminal, companion drawer).
             // No-op if tmux is not installed or the sessions never existed.
@@ -449,6 +503,7 @@ export default function App(): JSX.Element {
           onRestart={(id) => void sessions.restartSession(id).then((forked) => setActiveSessionId(forked.id))}
           groups={sessions.groups}
           statuses={sessions.statuses}
+          staleSessionIds={sessions.staleSessionIds}
           messagesBySession={sessions.messagesBySession}
           onSetColor={(id, color) => void sessions.setColor(id, color)}
           onSetNotes={(id, notes) => void sessions.setNotes(id, notes)}
@@ -498,11 +553,39 @@ export default function App(): JSX.Element {
             )}
           </div>
 
+          {/* Content area below topbar — position:relative anchors the terminal keep-alive layer */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
+            {/* Terminal keep-alive layer: terminal-mode AND tab-terminal sessions stay
+                mounted here permanently. Switching sessions only toggles CSS visibility —
+                no xterm dispose/recreate, no tmux detach/reattach. Tab-bar lives inside
+                the 56px topbar above this wrapper, so top:0 here is already below it. */}
+            {(aliveTerminals.size > 0 || aliveTabTerminals.size > 0) && (
+              <div className="terminal-cache-layer">
+                {[...aliveTerminals.entries()].map(([ptyId, info]) => {
+                  const isActive = activeSession?.mode === 'terminal' && activeSession.id === ptyId
+                  return (
+                    <div key={ptyId} className={`terminal-cache-entry${isActive ? ' active' : ''}`}>
+                      <TerminalPanel ptyId={ptyId} cwd={info.cwd} hostname={info.hostname} active={isActive} />
+                    </div>
+                  )
+                })}
+                {[...aliveTabTerminals.entries()].map(([ptyId, info]) => {
+                  const sessionId = ptyId.replace(/:tab-terminal$/, '')
+                  const isActive = activeSession?.mode === 'claude-code' && activeSession.id === sessionId && activeTab === 'terminal'
+                  return (
+                    <div key={ptyId} className={`terminal-cache-entry${isActive ? ' active' : ''}`}>
+                      <TerminalPanel ptyId={ptyId} cwd={info.cwd} hostname={info.hostname} active={isActive} />
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
           {activeSession ? (
             activeSession.mode === 'terminal' ? (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }} data-testid="terminal-only-session">
-                <TerminalPanel ptyId={activeSession.id} cwd={activeSession.projectPath} hostname={activeSession.hostname} />
-              </div>
+              // TerminalPanel lives in the keep-alive layer above. This placeholder
+              // keeps the layout slot and provides the testid for e2e tests.
+              <div style={{ flex: 1 }} data-testid="terminal-only-session" />
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -522,8 +605,7 @@ export default function App(): JSX.Element {
                       </div>
                       {activeSession.mode === 'claude-code' && (
                         <Composer
-                          value={composerText}
-                          onChange={setComposerText}
+                          ref={composerRef}
                           onSend={(text, image) => void handleSend(text, image)}
                           onInterrupt={() => void handleInterrupt()}
                           busy={sessions.busyBySession[activeSession.id] ?? false}
@@ -554,7 +636,10 @@ export default function App(): JSX.Element {
                       <DiffPanel
                         projectPath={activeSession.projectPath}
                         hostname={activeSession.hostname}
-                        onAddComment={(note) => setComposerText((prev) => (prev ? `${prev}\n\n${note}` : note))}
+                        onAddComment={(note) => {
+                          const prev = composerRef.current?.getValue() ?? ''
+                          composerRef.current?.setValue(prev ? `${prev}\n\n${note}` : note)
+                        }}
                       />
                     )}
                   </div>
@@ -569,14 +654,8 @@ export default function App(): JSX.Element {
                   </div>
 
                   <div className={`tab-content${activeTab === 'terminal' ? '' : ' hidden'}`} data-tab="terminal">
-                    {visitedTabs.has('terminal') && (
-                      <TerminalPanel
-                        ptyId={`${activeSession.id}:tab-terminal`}
-                        cwd={activeSession.worktreePath ?? activeSession.projectPath}
-                        hostname={activeSession.hostname}
-                        active={activeTab === 'terminal'}
-                      />
-                    )}
+                    {/* TerminalPanel lives in the terminal-cache-layer above this session subtree.
+                        This empty div keeps the tab layout slot; the cache entry overlays it. */}
                   </div>
 
                   {Boolean(activeSession.hostname) && (
@@ -616,6 +695,7 @@ export default function App(): JSX.Element {
               </div>
             </div>
           )}
+          </div>
         </div>
 
         {date && <DailyNotesSidebar date={date} onClose={() => setDate(null)} />}

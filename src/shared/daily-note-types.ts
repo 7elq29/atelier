@@ -32,7 +32,7 @@ export interface DailyTask {
   scheduled?: string
   completion?: string
   due?: string
-  /** e.g. "09:30–10:00" */
+  /** e.g. "09:30-10:00" */
   timeBlock?: string
   externalLinks: ExternalLink[]
   delegatedTo?: string

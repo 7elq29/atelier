@@ -148,5 +148,5 @@ export default function TerminalPanel({
     void window.gardenia.ptyResize(ptyId, term.cols, term.rows)
   }, [config.theme, config.fontSizes.terminal, ptyId])
 
-  return <div ref={containerRef} className="term-body" data-testid="terminal-body" />
+  return <div ref={containerRef} className="term-body" data-testid={active ? 'terminal-body' : undefined} />
 }

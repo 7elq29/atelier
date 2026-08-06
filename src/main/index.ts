@@ -120,6 +120,11 @@ app.whenReady().then(() => {
 
   mainWindow = createWindow()
 
+  // Fire-and-forget: probe each session's recoverability in the background
+  // and push session:stale events to the renderer for any that can't resume.
+  // Deliberately delayed so the window has time to render before SSH probes start.
+  setTimeout(() => sessionManager.startupReconnect(), 1500)
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
   })

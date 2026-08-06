@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { MessageRecord, SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
+import { parseStructuredContent } from '../../../shared/chat-content'
 import SpendStatusChip from './SpendStatusChip'
 
 interface SidebarProps {
@@ -22,6 +23,7 @@ interface SidebarProps {
   // ── 06-session-organization ──────────────────────────────────────────
   groups: SessionGroupRecord[]
   statuses: Record<string, SessionStatus>
+  staleSessionIds: Set<string>
   messagesBySession: Record<string, MessageRecord[]>
   onSetColor: (sessionId: string, color: string) => void
   onSetNotes: (sessionId: string, notes: string) => void
@@ -65,6 +67,27 @@ function hashCode(s: string): number {
 function displayStatus(session: SessionRecord, closed: boolean, statuses: Record<string, SessionStatus>): SessionStatus {
   if (closed || session.mode === 'terminal') return 'disconnected'
   return statuses[session.id] ?? 'idle'
+}
+
+/** Derives the CSS class suffix for the session indicator dot.
+ *  When status is 'waiting', distinguishes input-wait (purple) from
+ *  blocked-wait (orange) by inspecting the last assistant message. */
+function dotStatusClass(status: SessionStatus, messages: MessageRecord[] | undefined): string {
+  if (status !== 'waiting') return status
+  if (messages) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m.role === 'user') break
+      if (m.role === 'assistant') {
+        const parsed = parseStructuredContent(m.content)
+        if (parsed && (parsed.kind === 'permission_request' || parsed.kind === 'ask_user_question' || parsed.kind === 'plan_proposed')) {
+          return 'waiting-blocked'
+        }
+        break
+      }
+    }
+  }
+  return 'waiting-input'
 }
 
 /**
@@ -230,6 +253,7 @@ function SessionRow({
   active,
   closed,
   status,
+  dotStatus,
   draggable,
   onSelect,
   onRename,
@@ -251,6 +275,7 @@ function SessionRow({
   active: boolean
   closed: boolean
   status: SessionStatus
+  dotStatus: string
   draggable: boolean
   onSelect: () => void
   onRename: (name: string) => void
@@ -308,9 +333,8 @@ function SessionRow({
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
-      <span className="session-indicator" title={`Color: custom · Status: ${status}`}>
-        <span className="color-core" data-testid="session-dot" style={{ background: colorVar(session) }} />
-        <span className={'status-badge status-' + status} data-testid="session-status-badge" />
+      <span className="session-indicator" title={`Status: ${status}`}>
+        <span className={'color-core status-' + dotStatus} data-testid="session-dot" />
       </span>
       <div className="session-main hide-on-collapse">
         {editing ? (
@@ -336,7 +360,11 @@ function SessionRow({
           </div>
         )}
         <div className="session-meta">
-          <span>{session.hostname ?? session.projectPath.split('/').filter(Boolean).pop()}</span>
+          {dotStatus === 'waiting-blocked' ? (
+            <span style={{ color: 'var(--warning)' }}>Needs approval</span>
+          ) : (
+            <span>{session.hostname ?? session.projectPath.split('/').filter(Boolean).pop()}</span>
+          )}
           {closed && <span className="row-tag">closed</span>}
           {session.tags.map((tag) => (
             <span className="row-tag" key={tag} data-testid="tag-pill">
@@ -491,6 +519,7 @@ export default function Sidebar({
   onRestart,
   groups,
   statuses,
+  staleSessionIds,
   messagesBySession,
   onSetColor,
   onSetNotes,
@@ -592,6 +621,7 @@ export default function Sidebar({
         active={session.id === activeSessionId}
         closed={closed}
         status={displayStatus(session, closed, statuses)}
+        dotStatus={staleSessionIds.has(session.id) ? 'stale' : dotStatusClass(displayStatus(session, closed, statuses), messagesBySession[session.id])}
         draggable={!closed}
         onSelect={() => onSelectSession(session)}
         onRename={(name) => onRename(session.id, name)}

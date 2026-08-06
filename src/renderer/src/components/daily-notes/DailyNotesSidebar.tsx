@@ -10,8 +10,6 @@ export interface DailyNotesSidebarProps {
   onClose: () => void
 }
 
-type CollapsibleSection = 'unscheduled' | 'tracker'
-
 interface AddTaskInputProps {
   testId: string
   buttonLabel?: string
@@ -97,22 +95,14 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
     updateTask
   } = useDailyNote(date)
   const containerRef = useRef<HTMLDivElement>(null)
-  const { weights, startResize } = useSectionResize(containerRef)
-  const [collapsedSections, setCollapsedSections] = useState<Set<CollapsibleSection>>(new Set())
+  const sectionsRef = useRef<HTMLDivElement>(null)
+  const { weights, startResize } = useSectionResize(sectionsRef)
+  const [addingUnscheduled, setAddingUnscheduled] = useState(false)
   // 16-task-move-to-date: "today" for the "Move to..." menu's relative
   // labels (tomorrow/weekday-name/next-week) is the date of the note
   // currently open — the app has no other-date navigation today, so this is
   // always the real "today" (or GARDENIA_TEST_DATE in tests).
   const moveDateOptions = useMemo(() => computeMoveDateOptions(date), [date])
-
-  function toggleSection(section: CollapsibleSection): void {
-    setCollapsedSections((prev) => {
-      const next = new Set(prev)
-      if (next.has(section)) next.delete(section)
-      else next.add(section)
-      return next
-    })
-  }
 
   if (!vaultConfigured) {
     return (
@@ -175,9 +165,6 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
   const doneCount = note.tasks.filter((t) => !t.isNote && t.status === 'done').length
   const progressPct = totalActionable > 0 ? (doneCount / totalActionable) * 100 : 0
 
-  const unscheduledCollapsed = collapsedSections.has('unscheduled')
-  const trackerCollapsed = collapsedSections.has('tracker')
-
   return (
     <div className="daily-notes-panel" data-testid="daily-notes-panel" ref={containerRef}>
       <div className="dn-head">
@@ -216,7 +203,8 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
         </div>
       )}
 
-      <div className="dn-section" style={{ flexGrow: weights.timeline }} data-testid="timeline-section">
+      <div ref={sectionsRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+      <div className="dn-section" style={{ flex: `${weights.timeline} 1 0px` }} data-testid="timeline-section">
         <div className="dn-section-head">Timeline</div>
         <Timeline
           tasks={dayPlanTasks}
@@ -224,100 +212,96 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
           onCreate={(text, timeBlock) => addTask(text, 'day-plan', timeBlock)}
           onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
           onDelete={deleteTask}
+          onUpdateText={(id, text) => updateTask(id, { text })}
           moveDateOptions={moveDateOptions}
           onMoveToDate={moveTaskToDate}
         />
       </div>
 
-      {!unscheduledCollapsed && (
-        <div className="dn-resize-handle" onMouseDown={startResize('timeline', 'unscheduled')} />
-      )}
+      <div className="dn-resize-handle" onMouseDown={startResize('timeline', 'unscheduled')} />
 
       <div
         className="dn-section"
-        style={{ flexGrow: unscheduledCollapsed ? 0 : weights.unscheduled }}
+        style={{ flex: `${weights.unscheduled} 1 0px` }}
         data-testid="unscheduled-section"
       >
-        <button
-          type="button"
-          className="dn-section-head dn-section-head-toggle"
-          data-testid="unscheduled-collapse-toggle"
-          onClick={() => toggleSection('unscheduled')}
-        >
-          <span className={`dn-chevron${unscheduledCollapsed ? '' : ' expanded'}`}>▶</span>
-          Unscheduled
-        </button>
-        {!unscheduledCollapsed && (
-          <>
-            <div
-              className="dn-section-body scroll-y"
-              data-testid="unscheduled-body"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault()
-                const id = e.dataTransfer.getData('text/task-id')
-                if (id) moveTask(id, 'unscheduled', undefined)
+        <div className="dn-section-head dn-section-head-row">
+          <span>Unscheduled</span>
+          <button
+            type="button"
+            className="btn btn-icon btn-sm"
+            data-testid="add-unscheduled-task-btn"
+            onClick={() => setAddingUnscheduled(true)}
+          >
+            +
+          </button>
+        </div>
+        {addingUnscheduled && (
+          <div className="dn-inline-add">
+            <input
+              autoFocus
+              className="input"
+              placeholder="New task…"
+              data-testid="add-unscheduled-task-input"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                  addTask(e.currentTarget.value.trim(), 'unscheduled')
+                  setAddingUnscheduled(false)
+                }
+                if (e.key === 'Escape') setAddingUnscheduled(false)
               }}
-            >
-              {unscheduledTasks.map((task) => (
-                <TaskItem
-                  key={task.id}
-                  task={task}
-                  onToggle={toggleTask}
-                  onDelete={deleteTask}
-                  onUpdateText={(id, text) => updateTask(id, { text })}
-                  onUpdateTags={(id, tags) => updateTask(id, { tags })}
-                  moveDateOptions={moveDateOptions}
-                  onMoveToDate={moveTaskToDate}
-                />
-              ))}
-            </div>
-            <div className="dn-add-task-footer">
-              <AddTaskInput testId="add-unscheduled-task" onAdd={(text) => addTask(text, 'unscheduled')} />
-            </div>
-          </>
+              onBlur={() => setAddingUnscheduled(false)}
+            />
+          </div>
         )}
+        <div
+          className="dn-section-body scroll-y"
+          data-testid="unscheduled-body"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault()
+            const id = e.dataTransfer.getData('text/task-id')
+            if (id) moveTask(id, 'unscheduled', undefined)
+          }}
+        >
+          {unscheduledTasks.map((task) => (
+            <TaskItem
+              key={task.id}
+              task={task}
+              onToggle={toggleTask}
+              onDelete={deleteTask}
+              onUpdateText={(id, text) => updateTask(id, { text })}
+              onUpdateTags={(id, tags) => updateTask(id, { tags })}
+              moveDateOptions={moveDateOptions}
+              onMoveToDate={moveTaskToDate}
+            />
+          ))}
+        </div>
       </div>
 
-      {!unscheduledCollapsed && !trackerCollapsed && (
-        <div className="dn-resize-handle" onMouseDown={startResize('unscheduled', 'trackers')} />
-      )}
+      <div className="dn-resize-handle" onMouseDown={startResize('unscheduled', 'trackers')} />
 
       <div
         className="dn-section"
-        style={{ flexGrow: trackerCollapsed ? 0 : weights.trackers }}
+        style={{ flex: `${weights.trackers} 1 0px` }}
         data-testid="trackers-section"
       >
-        <button
-          type="button"
-          className="dn-section-head dn-section-head-toggle"
-          data-testid="trackers-collapse-toggle"
-          onClick={() => toggleSection('tracker')}
-        >
-          <span className={`dn-chevron${trackerCollapsed ? '' : ' expanded'}`}>▶</span>
-          Trackers
-        </button>
-        {!trackerCollapsed && (
-          <>
-            <div className="dn-section-body scroll-y" data-testid="trackers-body">
-              {trackerTasks.map((task) => (
-                <TaskItem
-                  key={task.id}
-                  task={task}
-                  testId="tracker-task"
-                  draggable={false}
-                  onToggle={toggleTask}
-                  onDelete={deleteTask}
-                  onUpdateText={(id, text) => updateTask(id, { text })}
-                  onUpdateTags={(id, tags) => updateTask(id, { tags })}
-                />
-              ))}
-            </div>
-            <div className="dn-add-task-footer">
-              <AddTaskInput testId="add-tracker-task" onAdd={(text) => addTask(text, 'tracker')} />
-            </div>
-          </>
-        )}
+        <div className="dn-section-head">Trackers</div>
+        <div className="dn-section-body scroll-y" data-testid="trackers-body">
+          {trackerTasks.map((task) => (
+            <TaskItem
+              key={task.id}
+              task={task}
+              testId="tracker-task"
+              draggable={false}
+              onToggle={toggleTask}
+              onDelete={deleteTask}
+              onUpdateText={(id, text) => updateTask(id, { text })}
+              onUpdateTags={(id, tags) => updateTask(id, { tags })}
+            />
+          ))}
+        </div>
+      </div>
       </div>
     </div>
   )

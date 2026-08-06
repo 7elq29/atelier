@@ -987,7 +987,33 @@ input[type='range'] {
 .composer-wrap { padding: 12px 28px 20px; }
 .composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; }
 .composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
-.composer-box textarea { width: 100%; border: none; border-top-left-radius: var(--r-xl); border-top-right-radius: var(--r-xl); background: transparent; color: var(--text-primary); padding: 11px 13px 4px; font-family: var(--font-ui); font-size: var(--text-base); resize: none; outline: none; min-height: 22px; max-height: 160px; line-height: 1.5; overflow-y: auto; }
+.composer-box textarea { width: 100%; border: none; border-top-left-radius: var(--r-xl); border-top-right-radius: var(--r-xl); background: transparent; color: var(--text-primary); padding: 11px 13px 4px; font-family: var(--font-ui); font-size: var(--text-base); resize: none; outline: none; min-height: 22px; max-height: 160px; line-height: 1.5; overflow-y: auto; caret-color: transparent; }
+
+/* Block cursor overlay — positioned absolutely within .composer-box (position:relative) */
+.composer-cursor {
+  position: absolute;
+  width: 0.5em;
+  height: var(--text-base);
+  pointer-events: none;
+  z-index: 5;
+  border-radius: 1px;
+}
+.composer-cursor.cursor-typing {
+  background: var(--text-primary);
+}
+.composer-cursor.cursor-idle {
+  background: var(--text-primary);
+  animation: composer-cursor-blink 1.1s step-end infinite;
+}
+.composer-cursor.cursor-unfocused {
+  background: transparent;
+  border: 1.5px solid var(--text-secondary);
+  opacity: 0.7;
+}
+@keyframes composer-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
 /* Native (Chromium) scrollbar is only ever shown by the `overflow-y: auto`
    above when content actually overflows the 160px cap — there's no
    scrollbar at all otherwise. The `-webkit-scrollbar-track` margin insets
@@ -1153,42 +1179,34 @@ input[type='range'] {
   display: none;
 }
 
-/* Sidebar-row status badge (distinct from the topbar's larger .status-dot) —
-   small dot anchored to the bottom-right of the session color swatch. */
-.session-indicator .status-badge {
-  position: absolute;
-  right: -3px;
-  bottom: -3px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 2px solid var(--bg-sidebar);
-  box-sizing: content-box;
-  background: var(--text-tertiary);
-}
-.session-row:hover .session-indicator .status-badge {
-  border-color: var(--bg-hover);
-}
-.session-row.active .session-indicator .status-badge {
-  border-color: var(--bg-active);
-}
-.session-indicator .status-badge.status-working {
+/* Sidebar-row session indicator: the color-core square takes the status color. */
+.session-indicator .color-core.status-working {
   background: var(--accent);
   animation: pulse 1.6s infinite;
 }
-.session-indicator .status-badge.status-waiting {
+.session-indicator .color-core.status-connecting {
+  background: var(--text-tertiary);
+  animation: pulse 1.6s infinite;
+}
+.session-indicator .color-core.status-waiting-input {
+  background: var(--sc-purple);
+}
+.session-indicator .color-core.status-waiting-blocked {
   background: var(--warning);
   animation: pulse 1.6s infinite;
 }
-.session-indicator .status-badge.status-idle {
+.session-indicator .color-core.status-idle {
   background: var(--text-tertiary);
 }
-.session-indicator .status-badge.status-disconnected {
+.session-indicator .color-core.status-disconnected {
   background: var(--text-disabled);
 }
-.session-indicator .status-badge.status-creating-worktree {
+.session-indicator .color-core.status-creating-worktree {
   background: var(--text-tertiary);
   animation: pulse 1.6s infinite;
+}
+.session-indicator .color-core.status-stale {
+  background: var(--text-disabled);
 }
 /* Dim the whole row and block interaction while the worktree is being set up. */
 .session-row[data-status="creating-worktree"] {
@@ -1335,6 +1353,28 @@ input[type='range'] {
 /* ===== Terminal tab ===== */
 .term-body { flex: 1; min-height: 0; overflow: hidden; background: var(--bg-code); padding: 4px; }
 .term-body .xterm-viewport { background: transparent !important; }
+
+/* ===== Terminal keep-alive layer ===== */
+/* All terminal-mode session panels stay mounted in this layer. Only the active
+   one is visible — switching sessions toggles CSS visibility instead of
+   unmounting/remounting xterm (which would trigger tmux detach+reattach). */
+.terminal-cache-layer {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+}
+.terminal-cache-entry {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  visibility: hidden;
+  pointer-events: none;
+}
+.terminal-cache-entry.active {
+  visibility: visible;
+  pointer-events: auto;
+}
 .drawer-handle { height: 6px; background: var(--border-subtle); cursor: row-resize; flex-shrink: 0; }
 .drawer-handle:hover { background: var(--accent); }
 .drawer { flex-shrink: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border-default); }

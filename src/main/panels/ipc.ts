@@ -36,8 +36,8 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
   ipcMain.handle('panel:files:write', (_e, path: string, content: string, hostname?: string | null) => writeFileContent(path, content, hostname))
 
   // ── Terminal (pty) ───────────────────────────────────────────────────
-  ipcMain.handle('panel:pty:spawn', (_e, opts: { id: string; cwd: string; hostname?: string | null; cols: number; rows: number }) => {
-    ptyManager.spawn(opts.id, opts)
+  ipcMain.handle('panel:pty:spawn', async (_e, opts: { id: string; cwd: string; hostname?: string | null; cols: number; rows: number }) => {
+    await ptyManager.spawn(opts.id, opts)
     return true
   })
   ipcMain.handle('panel:pty:write', (_e, id: string, data: string) => ptyManager.write(id, data))

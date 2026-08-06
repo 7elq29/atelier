@@ -28,6 +28,8 @@ export interface UseSessionsResult {
   tokenUsageBySession: Record<string, { inputTokens: number; contextWindow: number }>
   /** Worktree creation progress per session (use-worktree) — integer 0–100 while creating-worktree, deleted when done. */
   worktreeProgressBySession: Record<string, number>
+  /** Sessions detected as unrecoverable on startup (transcript gone or tmux dead). */
+  staleSessionIds: Set<string>
   refresh: () => Promise<void>
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
@@ -79,6 +81,7 @@ export function useSessions(): UseSessionsResult {
   const [commandsBySession, setCommandsBySession] = useState<Record<string, SlashCommandInfo[]>>({})
   const [tokenUsageBySession, setTokenUsageBySession] = useState<Record<string, { inputTokens: number; contextWindow: number }>>({})
   const [worktreeProgressBySession, setWorktreeProgressBySession] = useState<Record<string, number>>({})
+  const [staleSessionIds, setStaleSessionIds] = useState<Set<string>>(new Set())
   const messagesRef = useRef(messagesBySession)
   messagesRef.current = messagesBySession
 
@@ -165,6 +168,10 @@ export function useSessions(): UseSessionsResult {
     const offWorktreeProgress = window.gardenia.onSessionWorktreeProgress(({ sessionId, percent }) => {
       setWorktreeProgressBySession((prev) => ({ ...prev, [sessionId]: percent }))
     })
+    // Startup recoverability: mark sessions whose transcript/tmux is gone.
+    const offStale = window.gardenia.onSessionStale(({ sessionId }) => {
+      setStaleSessionIds((prev) => { const next = new Set(prev); next.add(sessionId); return next })
+    })
     return () => {
       offMessage()
       offDelta()
@@ -175,6 +182,7 @@ export function useSessions(): UseSessionsResult {
       offCommands()
       offTokenUsage()
       offWorktreeProgress()
+      offStale()
     }
   }, [refresh, refreshGroups])
 
@@ -352,6 +360,7 @@ export function useSessions(): UseSessionsResult {
     commandsBySession,
     tokenUsageBySession,
     worktreeProgressBySession,
+    staleSessionIds,
     refresh,
     createSession,
     resumeSession,

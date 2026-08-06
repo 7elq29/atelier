@@ -20,9 +20,13 @@
  * interactive login shell on the remote box instead of a local shell.
  */
 import * as pty from 'node-pty'
-import { execFileSync } from 'child_process'
+import { execFileSync, execFile } from 'child_process'
+import { promisify } from 'util'
 import type { BrowserWindow } from 'electron'
 import { logger } from '../logger'
+import { ShellPoolManager } from './shell-pool'
+
+const execFileAsync = promisify(execFile)
 
 /**
  * Shared SSH multiplexing options for ControlMaster connection reuse.
@@ -41,8 +45,10 @@ const SSH_MUX_OPTS = [
 // Detect tmux once at startup — avoids per-spawn overhead and lets us log a
 // single clear warning when it's missing rather than one per spawn.
 let tmuxBin: string | null = null
+let shellPool: ShellPoolManager | null = null
 try {
   tmuxBin = execFileSync('which', ['tmux'], { encoding: 'utf8' }).trim()
+  shellPool = new ShellPoolManager(tmuxBin)
   logger.info('tmux available', { path: tmuxBin })
 } catch {
   logger.warn('tmux not found — terminals will use a plain shell (no session persistence across restarts)')
@@ -72,7 +78,7 @@ export class PtyManager {
 
   constructor(private readonly getWindow: () => BrowserWindow | null) {}
 
-  spawn(id: string, opts: { cwd: string; hostname?: string | null; cols: number; rows: number }): void {
+  async spawn(id: string, opts: { cwd: string; hostname?: string | null; cols: number; rows: number }): Promise<void> {
     this.kill(id)
     const t0 = Date.now()
     const elapsed = (): number => Date.now() - t0
@@ -85,6 +91,8 @@ export class PtyManager {
     // Accumulated for the PtyEntry written after spawn — set in each branch below.
     let entryTmuxName: string | undefined
     let entryHostname: string | undefined
+    // Set when a pool session was claimed so we cd to the real cwd after spawn.
+    let claimedFromPool = false
 
     logger.info('pty spawn: start', { id, isRemote, useTmux, cwd: opts.cwd })
 
@@ -97,18 +105,28 @@ export class PtyManager {
       // thereafter survives client disconnects without restarting the shell.
       // The `has-session` guard prevents resetting the cwd on reattach.
       try {
-        execFileSync(tmuxBin!, ['has-session', '-t', name], { stdio: 'ignore' })
+        await execFileAsync(tmuxBin!, ['has-session', '-t', name])
         logger.info('pty spawn: tmux session exists, attaching', { id, name, elapsedMs: elapsed() })
       } catch {
-        // Session doesn't exist — create it detached with the initial cwd.
-        logger.info('pty spawn: tmux session not found, creating', { id, name, elapsedMs: elapsed() })
-        execFileSync(tmuxBin!, [
-          'new-session', '-d', '-s', name,
-          '-x', String(Math.max(opts.cols || 80, 2)),
-          '-y', String(Math.max(opts.rows || 24, 2)),
-          '-c', opts.cwd
-        ], { stdio: 'ignore' })
-        logger.info('pty spawn: tmux session created', { id, name, elapsedMs: elapsed() })
+        // Session doesn't exist — try pool first, fall back to fresh new-session.
+        const poolName = shellPool?.claim() ?? null
+        if (poolName !== null) {
+          logger.info('pty spawn: claiming from pool', { id, name, poolName, elapsedMs: elapsed() })
+          await execFileAsync(tmuxBin!, ['rename-session', '-t', poolName, name])
+          claimedFromPool = true
+          shellPool!.replenish()
+          logger.info('pty spawn: pool claim complete', { id, name, elapsedMs: elapsed() })
+        } else {
+          // Pool empty — create fresh session.
+          logger.info('pty spawn: tmux session not found, creating', { id, name, elapsedMs: elapsed() })
+          await execFileAsync(tmuxBin!, [
+            'new-session', '-d', '-s', name,
+            '-x', String(Math.max(opts.cols || 80, 2)),
+            '-y', String(Math.max(opts.rows || 24, 2)),
+            '-c', opts.cwd
+          ])
+          logger.info('pty spawn: tmux session created', { id, name, elapsedMs: elapsed() })
+        }
       }
       // Attach to the (now-guaranteed) existing session. When this client
       // exits (node-pty closes), tmux simply detaches — no SIGHUP to the
@@ -124,19 +142,22 @@ export class PtyManager {
       // survives SSH disconnection (app close/restart). Two-step identical to
       // the local tmux path: has-session? → if not, new-session -d → attach.
       // The outer try falls back to plain `ssh <host>` if tmux is not installed.
+      // 10 s timeout per SSH command prevents an unreachable host from blocking
+      // the IPC handler — the renderer awaits this promise before proceeding.
+      const SSH_TIMEOUT = 10_000
       try {
         try {
-          execFileSync('ssh', [...SSH_MUX_OPTS, hostname, 'tmux', 'has-session', '-t', name], { stdio: 'ignore' })
+          await execFileAsync('ssh', [...SSH_MUX_OPTS, hostname, 'tmux', 'has-session', '-t', name], { timeout: SSH_TIMEOUT })
           logger.info('pty spawn: remote tmux session exists, attaching', { id, hostname, name, elapsedMs: elapsed() })
         } catch {
           // Session doesn't exist (or tmux unavailable) — try to create it.
           // If tmux is not installed this also throws, caught by the outer catch.
           logger.info('pty spawn: remote tmux session not found, creating', { id, hostname, name, elapsedMs: elapsed() })
-          execFileSync('ssh', [...SSH_MUX_OPTS, hostname, 'tmux', 'new-session', '-d', '-s', name,
+          await execFileAsync('ssh', [...SSH_MUX_OPTS, hostname, 'tmux', 'new-session', '-d', '-s', name,
             '-x', String(Math.max(opts.cols || 80, 2)),
             '-y', String(Math.max(opts.rows || 24, 2)),
             '-c', opts.cwd ?? '$HOME'
-          ], { stdio: 'ignore' })
+          ], { timeout: SSH_TIMEOUT })
           logger.info('pty spawn: remote tmux session created', { id, hostname, name, elapsedMs: elapsed() })
         }
         // `-t` allocates a PTY for the SSH connection so tmux attach gets a
@@ -194,7 +215,11 @@ export class PtyManager {
     // the terminal starts on a clean prompt in the right directory.
     // With tmux, cwd is set via the -c flag above; we intentionally do NOT
     // cd+clear on reattach so the user's shell state is preserved.
+    // Pool claim exception: the pool session starts in $HOME, so we cd to the
+    // real project cwd after attach just like the plain shell path does.
     if (!isRemote && !useTmux) {
+      proc.write(`cd ${JSON.stringify(opts.cwd)} && clear\r`)
+    } else if (claimedFromPool) {
       proc.write(`cd ${JSON.stringify(opts.cwd)} && clear\r`)
     }
 
@@ -268,5 +293,6 @@ export class PtyManager {
   /** Kills every live pty — called on app shutdown so real shell child processes never keep the app process alive (they hold ref'd libuv handles otherwise). */
   killAll(): void {
     for (const id of [...this.ptys.keys()]) this.kill(id)
+    shellPool?.cleanup()
   }
 }

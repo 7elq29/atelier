@@ -332,7 +332,10 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
    */
   async validateModel(sessionId: string, model: string): Promise<{ ok: true } | { ok: false; error: string }> {
     const active = this.sessions.get(sessionId)
-    if (!active) return { ok: false, error: 'not connected' }
+    // No live subprocess between turns — can't call setModel(), so allow
+    // optimistically. An invalid id will surface on the next send via the
+    // normal harness error path rather than blocking the user here.
+    if (!active) return { ok: true }
     try {
       await active.query.setModel(model)
       return { ok: true }

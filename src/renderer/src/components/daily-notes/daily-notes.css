@@ -119,6 +119,24 @@
   flex-shrink: 0;
 }
 
+/* Header row with collapse toggle + optional "+" button */
+.dn-section-head-row {
+  align-items: center;
+  padding-right: 12px;
+}
+.dn-section-head-row .dn-section-head-toggle {
+  flex: 1;
+}
+
+.dn-inline-add {
+  padding: 0 18px 6px;
+  flex-shrink: 0;
+}
+.dn-inline-add .input {
+  width: 100%;
+  font-size: 13.5px;
+}
+
 .dn-section-body {
   padding: 0 18px 16px;
   overflow-y: auto;
@@ -135,6 +153,17 @@
   cursor: pointer;
   gap: 6px;
   text-align: left;
+}
+
+/* When the toggle is a child inside a row (Unscheduled), reset browser button defaults */
+.dn-section-head-row .dn-section-head-toggle {
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  font-family: inherit;
+  padding: 0;
 }
 
 .dn-chevron {
@@ -365,6 +394,8 @@
   border-radius: 4px;
   border: 1.5px solid var(--border-strong);
   flex-shrink: 0;
+  cursor: pointer;
+  position: relative;
 }
 .dn-tblock.done .dn-tbox {
   background: var(--border-strong);
@@ -373,6 +404,22 @@
 .dn-tbox.done {
   background: var(--accent);
   border-color: var(--accent);
+}
+.dn-task-chip.done .dn-tbox {
+  background: var(--border-strong);
+  border-color: var(--border-strong);
+}
+.dn-task-chip.done .dn-tbox::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: 2px solid #fff;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg);
 }
 
 /* Current-time line: an absolutely-positioned horizontal overlay across the
@@ -466,4 +513,35 @@
   height: 1px;
   background: var(--border-subtle);
   margin: 4px 2px;
+}
+
+/* Submenu flyout for "Move to…" */
+.dn-submenu-parent {
+  position: relative;
+  justify-content: space-between;
+}
+.dn-submenu-arrow {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+.dn-submenu {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: -4px;
+  width: 170px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-popover);
+  padding: 4px;
+  z-index: 90;
+}
+.dn-submenu-parent:hover .dn-submenu {
+  display: block;
+}
+.dn-submenu-left {
+  left: auto;
+  right: 100%;
 }

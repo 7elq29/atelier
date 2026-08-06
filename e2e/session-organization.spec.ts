@@ -387,16 +387,16 @@ test.describe('06-session-organization', () => {
     )
 
     const rowC = page.locator(`[data-testid="session-row"][data-session-id="${sessionC}"]`)
-    await expect(rowC.getByTestId('session-status-badge')).toHaveClass(/status-working/, { timeout: 20_000 })
+    await expect(rowC.getByTestId('session-dot')).toHaveClass(/status-working/, { timeout: 20_000 })
     // sessionA (still the active/focused session) must be unaffected.
     await expect(
-      page.locator(`[data-testid="session-row"][data-session-id="${sessionA}"]`).getByTestId('session-status-badge')
+      page.locator(`[data-testid="session-row"][data-session-id="${sessionA}"]`).getByTestId('session-dot')
     ).not.toHaveClass(/status-working/)
 
     await page.screenshot({ path: join(artifactsDir, '06-multi-session-status-working.png') })
 
     await sendPromise
-    await expect(rowC.getByTestId('session-status-badge')).toHaveClass(/status-waiting/, { timeout: 60_000 })
+    await expect(rowC.getByTestId('session-dot')).toHaveClass(/status-waiting/, { timeout: 60_000 })
 
     appendOrgLog('multi-session-status', { activeAtTimeOfCall: sessionA, workedOnInBackground: sessionC })
     appendMainLog(userDataDir)

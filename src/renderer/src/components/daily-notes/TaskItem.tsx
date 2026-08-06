@@ -138,7 +138,6 @@ export default function TaskItem({
         />
       ) : (
         <span
-          onClick={() => onToggle(task.id)}
           onDoubleClick={(e) => {
             e.stopPropagation()
             setEditText(task.text)
@@ -221,6 +220,7 @@ export default function TaskItem({
           y={moveMenu.y}
           options={moveDateOptions}
           onSelect={(targetDate) => onMoveToDate(task.id, targetDate)}
+          onRename={() => { setEditText(task.text); setEditing(true) }}
           onClose={() => setMoveMenu(null)}
         />
       )}

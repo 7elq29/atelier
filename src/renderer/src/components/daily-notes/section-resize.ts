@@ -15,7 +15,7 @@ export type SectionKey = 'timeline' | 'unscheduled' | 'trackers'
 
 export type SectionWeights = Record<SectionKey, number>
 
-const DEFAULT_WEIGHTS: SectionWeights = { timeline: 2, unscheduled: 1, trackers: 1 }
+const DEFAULT_WEIGHTS: SectionWeights = { timeline: 2, unscheduled: 2, trackers: 1 }
 
 function loadWeights(): SectionWeights {
   try {
@@ -54,6 +54,7 @@ export function useSectionResize(containerRef: React.RefObject<HTMLElement>): Us
     startY: number
     startUpper: number
     startLower: number
+    totalAllWeights: number
     containerHeight: number
   } | null>(null)
 
@@ -68,8 +69,11 @@ export function useSectionResize(containerRef: React.RefObject<HTMLElement>): Us
           startY: e.clientY,
           startUpper: weights[upper],
           startLower: weights[lower],
+          totalAllWeights: weights.timeline + weights.unscheduled + weights.trackers,
           containerHeight
         }
+        document.body.style.userSelect = 'none'
+        document.body.style.cursor = 'row-resize'
       },
     [containerRef, weights]
   )
@@ -79,8 +83,7 @@ export function useSectionResize(containerRef: React.RefObject<HTMLElement>): Us
       const drag = dragRef.current
       if (!drag) return
       const deltaPx = e.clientY - drag.startY
-      const totalWeight = drag.startUpper + drag.startLower
-      const deltaWeight = (deltaPx / drag.containerHeight) * totalWeight
+      const deltaWeight = (deltaPx / drag.containerHeight) * drag.totalAllWeights
       const nextUpper = Math.max(MIN_WEIGHT, drag.startUpper + deltaWeight)
       const nextLower = Math.max(MIN_WEIGHT, drag.startLower - deltaWeight)
       setWeights((prev) => ({ ...prev, [drag.upper]: nextUpper, [drag.lower]: nextLower }))
@@ -88,6 +91,8 @@ export function useSectionResize(containerRef: React.RefObject<HTMLElement>): Us
     const onUp = (): void => {
       if (dragRef.current) {
         dragRef.current = null
+        document.body.style.userSelect = ''
+        document.body.style.cursor = ''
         setWeights((current) => {
           saveWeights(current)
           return current

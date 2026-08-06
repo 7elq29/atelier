@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { FileTreeNode } from '../../../../shared/panel-types'
 import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 
@@ -233,9 +233,12 @@ interface AttachedImage extends ImageAttachment {
   previewUrl: string
 }
 
+export interface ComposerHandle {
+  setValue(text: string): void
+  getValue(): string
+}
+
 interface ComposerProps {
-  value: string
-  onChange: (text: string) => void
   onSend: (text: string, image?: ImageAttachment) => void
   onInterrupt: () => void
   /** True while a turn is in flight for the active session — shows Stop alongside Send, per e2e-test-plan.md/spec.md. */
@@ -412,9 +415,37 @@ async function readAttachedImage(file: File | Blob): Promise<AttachedImage | nul
  * image at a time (dropping/pasting a second one replaces the first — no
  * multi-attach UI, per spec.md's minimal scope).
  */
-export default function Composer({
-  value,
-  onChange,
+/** Calculates the pixel position of the caret within a textarea using the
+ *  mirror-div technique: clones the textarea's styles into a hidden div,
+ *  inserts a marker span at `position`, and reads its offset coordinates.
+ *  Returns coordinates relative to the textarea element's top-left corner
+ *  (including its own padding), adjusted for the current scroll position. */
+function getCaretCoordinates(ta: HTMLTextAreaElement, position: number): { top: number; left: number } {
+  const PROPS = ['borderBottomWidth','borderLeftWidth','borderRightWidth','borderTopWidth',
+    'boxSizing','fontFamily','fontSize','fontStyle','fontVariant','fontWeight',
+    'letterSpacing','lineHeight','paddingBottom','paddingLeft','paddingRight','paddingTop',
+    'textIndent','textRendering','textTransform','width','wordSpacing','overflowWrap','wordWrap']
+  const div = document.createElement('div')
+  const cs = window.getComputedStyle(ta)
+  PROPS.forEach((p) => { (div.style as unknown as Record<string, string>)[p] = (cs as unknown as Record<string, string>)[p] })
+  div.style.position = 'absolute'
+  div.style.visibility = 'hidden'
+  div.style.whiteSpace = 'pre-wrap'
+  div.style.overflow = 'hidden'
+  div.style.top = '0'
+  div.style.left = '0'
+  document.body.appendChild(div)
+  div.textContent = ta.value.slice(0, position)
+  const marker = document.createElement('span')
+  marker.textContent = '​'
+  div.appendChild(marker)
+  const top = marker.offsetTop - ta.scrollTop
+  const left = marker.offsetLeft
+  document.body.removeChild(div)
+  return { top, left }
+}
+
+export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   onSend,
   onInterrupt,
   busy,
@@ -430,7 +461,8 @@ export default function Composer({
   tokenUsage,
   onAddLocalMessage,
   onValidateModel
-}: ComposerProps): JSX.Element {
+}: ComposerProps, ref): JSX.Element {
+  const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [popover, setPopover] = useState<PopoverState>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -441,6 +473,47 @@ export default function Composer({
   // the full command and pressing Enter/Tab, or clicking its slash-item, can
   // open the SAME real popover the footer button opens.
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
+
+  // Block cursor state
+  const [cursorPhase, setCursorPhase] = useState<'typing' | 'idle' | 'unfocused'>('unfocused')
+  const [cursorPos, setCursorPos] = useState<{ top: number; left: number } | null>(null)
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const updateCursorPos = useCallback(() => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const coords = getCaretCoordinates(ta, ta.selectionStart ?? 0)
+    // Add the textarea's own offset within .composer-box (its offsetParent).
+    setCursorPos({ top: coords.top + ta.offsetTop, left: coords.left + ta.offsetLeft })
+  }, [])
+
+  const onTextareaFocus = useCallback(() => {
+    setCursorPhase('idle')
+    updateCursorPos()
+  }, [updateCursorPos])
+
+  const onTextareaBlur = useCallback(() => {
+    if (typingTimer.current) clearTimeout(typingTimer.current)
+    setCursorPhase('unfocused')
+    updateCursorPos()
+  }, [updateCursorPos])
+
+  const onTextareaKeyActivity = useCallback(() => {
+    setCursorPhase('typing')
+    updateCursorPos()
+    if (typingTimer.current) clearTimeout(typingTimer.current)
+    typingTimer.current = setTimeout(() => setCursorPhase('idle'), 500)
+  }, [updateCursorPos])
+
+  // Keep cursor position in sync whenever value changes.
+  useEffect(() => {
+    updateCursorPos()
+  }, [value, updateCursorPos])
+
+  useImperativeHandle(ref, () => ({
+    setValue,
+    getValue: () => value,
+  }), [value])
 
   // Real file list for @-mentions: same IPC the Files panel (07) already
   // uses to walk the session's real project_path on disk — no fixture/fake
@@ -467,7 +540,7 @@ export default function Composer({
   // dropped rather than shown twice.
   const slashCommands: SlashCommand[] = useMemo(() => {
     const local: SlashCommand[] = [
-      { cmd: '/clear', desc: 'Clear the composer', run: () => onChange('') },
+      { cmd: '/clear', desc: 'Clear the composer', run: () => setValue('') },
       { cmd: '/interrupt', desc: 'Stop the current in-flight turn', run: () => onInterrupt() },
       { cmd: '/fork', desc: 'Fork this session into a new one', run: () => onFork() },
       { cmd: '/model', desc: 'Open the model/effort picker', run: () => setModelPickerOpen(true) }
@@ -495,7 +568,7 @@ export default function Composer({
       })
       .map((c) => ({ cmd: `/${c.name}`, desc: c.description || c.argumentHint || 'Session command' }))
     return [...local, ...live]
-  }, [onChange, onInterrupt, onFork, liveSlashCommands])
+  }, [onInterrupt, onFork, liveSlashCommands])
 
 
   // Auto-grow: mirrors mocks/index.html's onComposerInput exactly —
@@ -544,7 +617,7 @@ export default function Composer({
     if (text.startsWith('/model ')) {
       const arg = text.slice('/model '.length).trim()
       if (arg) {
-        onChange('')
+        setValue('')
         const result = await onValidateModel(arg)
         if (!result.ok) {
           onAddLocalMessage(`Unknown model "${arg}": ${result.error}`)
@@ -555,6 +628,7 @@ export default function Composer({
       }
     }
     onSend(text, attachedImage ? { mimeType: attachedImage.mimeType, data: attachedImage.data } : undefined)
+    setValue('')
     setAttachedImage(null)
   }
 
@@ -613,7 +687,7 @@ export default function Composer({
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>): void {
     const text = e.target.value
-    onChange(text)
+    setValue(text)
     updatePopoverFromCursor(text, e.target.selectionStart ?? text.length)
   }
 
@@ -624,7 +698,7 @@ export default function Composer({
     const before = value.slice(0, popover.tokenStart)
     const after = value.slice(cursor)
     const inserted = `@${path} `
-    onChange(before + inserted + after)
+    setValue(before + inserted + after)
     setPopover(null)
     const newCursor = before.length + inserted.length
     requestAnimationFrame(() => {
@@ -646,7 +720,7 @@ export default function Composer({
       // opening this popover (that's how the CLI/SDK's own local slash
       // commands / custom project commands execute server-side).
       const text = (before + command.cmd + after).trim()
-      onChange('')
+      setValue('')
       setPopover(null)
       onSend(text)
       requestAnimationFrame(() => ta?.focus())
@@ -657,7 +731,7 @@ export default function Composer({
     // real action — so the typed `/token` is removed rather than left
     // sitting in the composer as literal text to send, and it NEVER reaches
     // `onSend`/`session:sendMessage`.
-    onChange(before + after)
+    setValue(before + after)
     setPopover(null)
     command.run()
     requestAnimationFrame(() => ta?.focus())
@@ -750,7 +824,7 @@ export default function Composer({
       const cursor = ta.selectionStart
       const nextNewline = value.indexOf('\n', cursor)
       const killEnd = nextNewline === -1 ? value.length : nextNewline
-      onChange(value.slice(0, cursor) + value.slice(killEnd))
+      setValue(value.slice(0, cursor) + value.slice(killEnd))
       requestAnimationFrame(() => ta.setSelectionRange(cursor, cursor))
       return
     }
@@ -831,8 +905,19 @@ export default function Composer({
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onKeyUp={onTextareaKeyActivity}
+          onClick={updateCursorPos}
+          onFocus={onTextareaFocus}
+          onBlur={onTextareaBlur}
           onPaste={handlePaste}
         />
+        {cursorPos && (cursorPhase !== 'unfocused' || value.length > 0) && (
+          <span
+            aria-hidden="true"
+            className={`composer-cursor cursor-${cursorPhase}`}
+            style={{ top: cursorPos.top, left: cursorPos.left }}
+          />
+        )}
         {queuedMessages.length > 0 && (
           <div className="queued-strips-list">
             {queuedMessages.map((msg, idx) => (
@@ -911,4 +996,4 @@ export default function Composer({
       </div>
     </div>
   )
-}
+})

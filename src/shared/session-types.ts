@@ -131,6 +131,11 @@ export interface SessionStatusEvent {
   status: SessionStatus
 }
 
+export interface SessionStaleEvent {
+  sessionId: string
+  stale: boolean
+}
+
 export type MessageRole = 'user' | 'assistant' | 'system'
 
 /**
