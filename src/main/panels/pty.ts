@@ -106,13 +106,23 @@ export class PtyManager {
       const hostname = opts.hostname as string
       const name = tmuxSessionName(id)
       logger.info('pty spawn: remote tmux has-session check', { id, hostname, name, elapsedMs: elapsed() })
+      // Attempt to run tmux on the devpod via SSH so the remote shell session
+      // survives SSH disconnection (app close/restart). Two-step identical to
+      // the local tmux path: has-session? → if not, new-session -d → attach.
+      // The outer try falls back to plain `ssh <host>` if tmux is not installed.
+      try {
+        try {
+          execFileSync('ssh', [hostname, 'tmux', 'has-session', '-t', name], { stdio: 'ignore' })
+          logger.info('pty spawn: remote tmux session exists, attaching', { id, hostname, name, elapsedMs: elapsed() })
         } catch {
           // Session doesn't exist (or tmux unavailable) — try to create it.
           // If tmux is not installed this also throws, caught by the outer catch.
+          logger.info('pty spawn: remote tmux session not found, creating', { id, hostname, name, elapsedMs: elapsed() })
           execFileSync('ssh', [hostname, 'tmux', 'new-session', '-d', '-s', name,
             '-x', String(Math.max(opts.cols || 80, 2)),
             '-y', String(Math.max(opts.rows || 24, 2))
           ], { stdio: 'ignore' })
+          logger.info('pty spawn: remote tmux session created', { id, hostname, name, elapsedMs: elapsed() })
         }
         // `-t` allocates a PTY for the SSH connection so tmux attach gets a
         // real terminal; without it the attach output is garbled.
@@ -120,7 +130,7 @@ export class PtyManager {
         args = [hostname, '-t', 'tmux', 'attach-session', '-t', name]
         entryTmuxName = name
         entryHostname = hostname
-        logger.info('remote tmux session ready', { hostname, name })
+        logger.info('pty spawn: remote tmux ready', { hostname, name, elapsedMs: elapsed() })
       } catch (err) {
         // tmux not installed on the devpod — fall back to a plain interactive
         // SSH session (no persistence across disconnects).
