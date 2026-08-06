@@ -24,6 +24,20 @@ import { execFileSync } from 'child_process'
 import type { BrowserWindow } from 'electron'
 import { logger } from '../logger'
 
+/**
+ * Shared SSH multiplexing options for ControlMaster connection reuse.
+ * The first call to a host establishes a master socket; all subsequent calls
+ * reuse it (~5ms each) instead of doing a full crypto handshake (~4.5s each).
+ * ControlPath uses %C (SHA1 hash of connection params) to guarantee a unique
+ * socket per host without manual path management, and avoids Unix socket path
+ * length overflow on long hostnames.
+ */
+const SSH_MUX_OPTS = [
+  '-o', 'ControlMaster=auto',
+  '-o', 'ControlPath=/tmp/gardenia-ssh-%C',
+  '-o', 'ControlPersist=300',
+]
+
 // Detect tmux once at startup — avoids per-spawn overhead and lets us log a
 // single clear warning when it's missing rather than one per spawn.
 let tmuxBin: string | null = null
@@ -112,13 +126,13 @@ export class PtyManager {
       // The outer try falls back to plain `ssh <host>` if tmux is not installed.
       try {
         try {
-          execFileSync('ssh', [hostname, 'tmux', 'has-session', '-t', name], { stdio: 'ignore' })
+          execFileSync('ssh', [...SSH_MUX_OPTS, hostname, 'tmux', 'has-session', '-t', name], { stdio: 'ignore' })
           logger.info('pty spawn: remote tmux session exists, attaching', { id, hostname, name, elapsedMs: elapsed() })
         } catch {
           // Session doesn't exist (or tmux unavailable) — try to create it.
           // If tmux is not installed this also throws, caught by the outer catch.
           logger.info('pty spawn: remote tmux session not found, creating', { id, hostname, name, elapsedMs: elapsed() })
-          execFileSync('ssh', [hostname, 'tmux', 'new-session', '-d', '-s', name,
+          execFileSync('ssh', [...SSH_MUX_OPTS, hostname, 'tmux', 'new-session', '-d', '-s', name,
             '-x', String(Math.max(opts.cols || 80, 2)),
             '-y', String(Math.max(opts.rows || 24, 2))
           ], { stdio: 'ignore' })
@@ -127,7 +141,7 @@ export class PtyManager {
         // `-t` allocates a PTY for the SSH connection so tmux attach gets a
         // real terminal; without it the attach output is garbled.
         shell = 'ssh'
-        args = [hostname, '-t', 'tmux', 'attach-session', '-t', name]
+        args = [...SSH_MUX_OPTS, hostname, '-t', 'tmux', 'attach-session', '-t', name]
         entryTmuxName = name
         entryHostname = hostname
         logger.info('pty spawn: remote tmux ready', { hostname, name, elapsedMs: elapsed() })
@@ -136,7 +150,7 @@ export class PtyManager {
         // SSH session (no persistence across disconnects).
         logger.warn('remote tmux not available — falling back to plain ssh', { hostname, error: String(err) })
         shell = 'ssh'
-        args = [hostname]
+        args = [...SSH_MUX_OPTS, hostname]
       }
     } else {
       shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh')
@@ -208,7 +222,7 @@ export class PtyManager {
         // Remote tmux: SSH in to detach the client from the remote tmux session.
         // This leaves the session alive on the devpod so the next spawn reattaches.
         try {
-          execFileSync('ssh', [entry.hostname, 'tmux', 'detach-client', '-s', entry.tmuxName], { stdio: 'ignore' })
+          execFileSync('ssh', [...SSH_MUX_OPTS, entry.hostname, 'tmux', 'detach-client', '-s', entry.tmuxName], { stdio: 'ignore' })
         } catch { /* session may already be detached or gone */ }
       } else if (tmuxBin) {
         // Local tmux: detach all clients from the session before closing the pty —
