@@ -189,12 +189,12 @@ test.describe('06-session-organization', () => {
     appendOrgLog('notes-after-relaunch', dbRows)
   })
 
-  test('app notes: create, edit in Monaco, persist across relaunch', async () => {
+  test('app notes: create, edit in Atomic live preview, persist across relaunch', async () => {
     await page.getByTestId('new-app-note-button').click()
     const row = page.locator('[data-testid="app-note-row"]').first()
     await expect(row).toHaveClass(/active/)
 
-    const editor = page.getByTestId('app-note-editor').getByTestId('monaco-editor')
+    const editor = page.getByTestId('app-note-editor').getByTestId('atomic-note-editor')
     await expect(editor).toBeVisible({ timeout: 10_000 })
     await editor.click()
     await page.keyboard.type('# Release checklist\n\n- [ ] Run e2e')
@@ -215,7 +215,7 @@ test.describe('06-session-organization', () => {
     await expect(page.getByTestId('app-notes-list')).toBeVisible({ timeout: 15_000 })
     await page.locator('[data-testid="app-note-row"]').first().click()
     await expect(page.getByTestId('app-note-editor')).toBeVisible()
-    await expect(page.locator('.view-line', { hasText: 'Release checklist' }).first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('app-note-editor').getByText('Release checklist')).toBeVisible({ timeout: 10_000 })
 
     const noteId = (await page.locator('[data-testid="app-note-row"]').first().getAttribute('data-note-id')) as string
     await page.locator('body').click({ position: { x: 5, y: 5 } })

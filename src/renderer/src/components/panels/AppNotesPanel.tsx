@@ -1,23 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import * as monaco from 'monaco-editor'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AtomicCodeMirrorEditor,
+  type AtomicCodeMirrorEditorHandle
+} from '@atomic-editor/editor'
+import '@atomic-editor/editor/styles.css'
+import { Prec } from '@codemirror/state'
+import { keymap } from '@codemirror/view'
 import type { AppNoteRecord } from '../../../../shared/app-note-types'
-import { registerEmacsMonacoKeybindings } from '../../editor/emacs-monaco-keybindings'
-import { ensureAtelierMonacoThemes, monacoThemeId } from '../../editor/atelier-monaco-theme'
-
-ensureAtelierMonacoThemes()
 
 type OpenNoteTab = { id: string; noteId: string; isDirty: boolean }
-
-function modelUriForNote(noteId: string): monaco.Uri {
-  return monaco.Uri.parse(`inmemory://app-notes/${noteId}`)
-}
 
 function noteLabel(note: AppNoteRecord | undefined): string {
   const t = note?.title?.trim()
   return t || 'Untitled note'
 }
 
-/** In-app notes — Monaco editor + Files-style tabs (no file tree). */
+/** In-app notes — Atomic Editor live-preview markdown + Files-style tabs. */
 export default function AppNotesPanel({
   notes,
   activeNoteId,
@@ -39,18 +37,14 @@ export default function AppNotesPanel({
   openTabsRef.current = openTabs
   activeTabIdRef.current = activeTabId
 
-  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
+  const editorHandleRef = useRef<AtomicCodeMirrorEditorHandle | null>(null)
   const saveRef = useRef<(() => Promise<void>) | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const suppressModelChangeRef = useRef(false)
 
   const activeTab = openTabs.find((t) => t.id === activeTabId) ?? openTabs[0]
-  const boundNoteId = activeTab?.noteId
-  const boundNoteContent = notes.find((n) => n.id === boundNoteId)?.content ?? ''
-
-  useEffect(() => {
-    monaco.editor.setTheme(monacoThemeId(effectiveTheme))
-  }, [effectiveTheme])
+  const boundNoteId = activeTab?.noteId ?? activeNoteId
+  const boundNote = notes.find((n) => n.id === boundNoteId)
+  const boundNoteContent = boundNote?.content ?? ''
 
   useEffect(() => {
     setOpenTabs((prev) => {
@@ -67,71 +61,45 @@ export default function AppNotesPanel({
   }, [activeNoteId])
 
   const saveCurrent = useCallback(async () => {
-    const editor = editorRef.current
     const tab = openTabsRef.current.find((t) => t.id === activeTabIdRef.current)
-    if (!editor || !tab) return
-    await onUpdateNote(tab.noteId, { content: editor.getValue() })
+    if (!tab) return
+    const content = editorHandleRef.current?.getMarkdown()
+    if (content === undefined) return
+    await onUpdateNote(tab.noteId, { content })
     setOpenTabs((prev) => prev.map((t) => (t.id === tab.id ? { ...t, isDirty: false } : t)))
   }, [onUpdateNote])
   saveRef.current = saveCurrent
 
-  const editorContainerRef = useCallback((node: HTMLDivElement | null) => {
-    if (!node) {
-      editorRef.current?.dispose()
-      editorRef.current = null
-      return
-    }
-    if (editorRef.current) return
-    const editor = monaco.editor.create(node, {
-      theme: monacoThemeId(effectiveTheme),
-      automaticLayout: true,
-      readOnly: false,
-      minimap: { enabled: true },
-      scrollBeyondLastLine: false,
-      fontSize: 13,
-      lineHeight: 21,
-      fontFamily: '"SF Mono", "JetBrains Mono", Menlo, Consolas, monospace',
-      padding: { top: 10 },
-      folding: true,
-      wordWrap: 'on',
-      suggest: { showWords: false }
-    })
-    editorRef.current = editor
-    registerEmacsMonacoKeybindings(editor)
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      void saveRef.current?.()
-    })
-  }, [effectiveTheme])
+  const noteEditorExtensions = useMemo(
+    () => [
+      Prec.high(
+        keymap.of([
+          {
+            key: 'Mod-s',
+            run: () => {
+              void saveRef.current?.()
+              return true
+            }
+          }
+        ])
+      )
+    ],
+    []
+  )
+
+  const handleMarkdownChange = useCallback(() => {
+    setOpenTabs((prev) =>
+      prev.map((t) => (t.id === activeTabIdRef.current ? { ...t, isDirty: true } : t))
+    )
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => void saveRef.current?.(), 600)
+  }, [])
 
   useEffect(() => {
-    const editor = editorRef.current
-    const tab = openTabsRef.current.find((t) => t.id === activeTabId)
-    if (!editor || !tab || !boundNoteId) return
-    const note = notes.find((n) => n.id === tab.noteId)
-    if (!note) return
-
-    const uri = modelUriForNote(note.id)
-    let model = monaco.editor.getModel(uri)
-    if (!model) {
-      model = monaco.editor.createModel(note.content, 'markdown', uri)
-    } else {
-      const tabDirty = openTabsRef.current.find((t) => t.id === activeTabId)?.isDirty
-      if (!tabDirty && model.getValue() !== boundNoteContent) {
-        suppressModelChangeRef.current = true
-        model.setValue(boundNoteContent)
-        suppressModelChangeRef.current = false
-      }
-    }
-    editor.setModel(model)
-
-    const sub = model.onDidChangeContent(() => {
-      if (suppressModelChangeRef.current) return
-      setOpenTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, isDirty: true } : t)))
+    return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => void saveRef.current?.(), 600)
-    })
-    return () => sub.dispose()
-  }, [activeTabId, boundNoteId, boundNoteContent, notes])
+    }
+  }, [])
 
   function activateTab(tabId: string): void {
     const tab = openTabs.find((t) => t.id === tabId)
@@ -157,6 +125,7 @@ export default function AppNotesPanel({
     <div
       className="files-panel app-notes-panel"
       data-testid="app-notes-panel"
+      data-effective-theme={effectiveTheme}
       style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}
     >
       {showTabBar && (
@@ -188,11 +157,23 @@ export default function AppNotesPanel({
         </div>
       )}
       <div
-        className="file-view"
+        className="file-view app-notes-editor-surface"
         data-testid="app-note-editor"
         style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}
       >
-        <div ref={editorContainerRef} data-testid="monaco-editor" style={{ flex: 1, minHeight: 0 }} />
+        {boundNote ? (
+          <div className="app-notes-atomic-host" data-testid="atomic-note-editor" style={{ flex: 1, minHeight: 0 }}>
+            <AtomicCodeMirrorEditor
+              key={boundNoteId}
+              documentId={boundNoteId}
+              markdownSource={boundNoteContent}
+              editorHandleRef={editorHandleRef}
+              onMarkdownChange={handleMarkdownChange}
+              extensions={noteEditorExtensions}
+              blurEditorOnMount
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   )

@@ -4,7 +4,7 @@
 
 1. Sidebar **Sessions** list (agent sessions), **Terminals** section, then **Notes** after a separator.
 2. **+** under Notes creates a note in SQLite and opens the main editor.
-3. Editor matches Files: Monaco, tab bar (when 2+ open), debounced save + ⌘S.
+3. Editor: **Atomic Editor** (Obsidian-style live preview markdown), tab bar when 2+ open, debounced save + ⌘S. Files panel stays Monaco.
 4. Top bar: editable note title; selecting a session clears note focus.
 5. Row **⋯** menu: Rename, Delete (removes from SQLite; clears main editor if that note was open).
 
