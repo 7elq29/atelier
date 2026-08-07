@@ -1006,7 +1006,8 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         )}
         {busy && !harnessDisconnected && (
           <div className="composer-turn-status" data-testid="composer-turn-status">
-            {sdkChrome?.apiRetryText ?? 'Waiting for model…'}
+            <span className="spinner" data-testid="composer-working-spinner" aria-hidden="true" />
+            <span>{sdkChrome?.apiRetryText ?? 'Waiting for model…'}</span>
           </div>
         )}
         {attachedImage && (
@@ -1111,6 +1112,12 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             )
           })()}
           <div className="spacer" />
+          {busy && (
+            <span className="working-pill" data-testid="composer-working-pill">
+              <span className="spinner" />
+              Working…
+            </span>
+          )}
           <ModelPicker
             selection={modelSelection}
             onChange={onModelSelectionChange}

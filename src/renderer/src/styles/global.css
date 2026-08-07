@@ -2563,6 +2563,9 @@ input[type='range'] {
 .composer-status-chip.danger { border-color: var(--danger); color: var(--danger); }
 
 .composer-turn-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12.5px;
   line-height: 1.35;
   color: var(--text-tertiary);
