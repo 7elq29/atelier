@@ -456,10 +456,91 @@ export async function warmRemoteGitHost(sshHost: string): Promise<void> {
 
 /** Current branch for composer context bar (null if not a repo or detached). */
 export async function getGitBranch(projectPath: string, sshHost?: string | null): Promise<string | null> {
-  const inside = await runGit(projectPath, ['rev-parse', '--is-inside-work-tree'], sshHost)
-  if (inside.code !== 0 || inside.stdout.trim() !== 'true') return null
-  const res = await runGit(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'], sshHost)
-  if (res.code !== 0) return null
-  const name = res.stdout.trim()
-  return name === 'HEAD' ? null : name
+  const verify = await runGit(projectPath, ['rev-parse', '--is-inside-work-tree'], sshHost)
+  if (verify.code !== 0 || verify.stdout.trim() !== 'true') return null
+  const r = await runGit(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'], sshHost)
+  if (r.code !== 0) return null
+  const name = r.stdout.trim()
+  if (!name || name === 'HEAD') return null
+  return name
+}
+
+/** Current HEAD hash, or null if not a repo / no commits. */
+export async function resolveHead(projectPath: string, sshHost?: string | null): Promise<string | null> {
+  const verify = await runGit(projectPath, ['rev-parse', '--is-inside-work-tree'], sshHost)
+  if (verify.code !== 0 || verify.stdout.trim() !== 'true') return null
+  const r = await runGit(projectPath, ['rev-parse', 'HEAD'], sshHost)
+  if (r.code !== 0) return null
+  const hash = r.stdout.trim()
+  return hash || null
+}
+
+/** Working tree + staged numstat for one path vs HEAD (or empty tree when no HEAD). */
+export async function getPathWorkingTreeNumstat(
+  projectPath: string,
+  filePath: string,
+  sshHost?: string | null
+): Promise<{ additions: number; deletions: number } | null> {
+  const hasHead = (await runGit(projectPath, ['rev-parse', '--verify', 'HEAD'], sshHost)).code === 0
+  const target = hasHead ? 'HEAD' : EMPTY_TREE
+  let additions = 0
+  let deletions = 0
+  for (const args of [
+    ['diff', '--no-color', '--numstat', target, '--', filePath],
+    ['diff', '--no-color', '--numstat', '--cached', '--', filePath]
+  ]) {
+    const r = await runGit(projectPath, args, sshHost)
+    if (r.code !== 0) continue
+    for (const f of parseNumstatLines(r.stdout.split('\n'))) {
+      additions += f.additions
+      deletions += f.deletions
+    }
+  }
+  if (additions === 0 && deletions === 0) return null
+  return { additions, deletions }
+}
+
+export async function listCommitsInRange(
+  projectPath: string,
+  oldHead: string,
+  newHead: string,
+  sshHost?: string | null
+): Promise<Array<{ hash: string; subject: string; committedAt: string }>> {
+  const r = await runGit(
+    projectPath,
+    ['log', '--format=%H%x09%s%x09%ct', `${oldHead}..${newHead}`],
+    sshHost
+  )
+  if (r.code !== 0) return []
+  const out: Array<{ hash: string; subject: string; committedAt: string }> = []
+  for (const line of r.stdout.split('\n')) {
+    if (!line.trim()) continue
+    const [hash, subject, ct] = line.split('\t')
+    if (!hash || !subject) continue
+    const sec = parseInt(ct ?? '0', 10)
+    out.push({
+      hash,
+      subject,
+      committedAt: Number.isFinite(sec) ? new Date(sec * 1000).toISOString() : new Date().toISOString()
+    })
+  }
+  return out
+}
+
+export async function listCommitChangedPaths(
+  projectPath: string,
+  commit: string,
+  sshHost?: string | null
+): Promise<string[]> {
+  const r = await runGit(projectPath, ['show', '--name-only', '--pretty=format:', commit], sshHost)
+  if (r.code !== 0) return []
+  return r.stdout
+    .split('\n')
+    .map((p) => p.trim())
+    .filter(Boolean)
+}
+
+export async function latestReflogSubject(projectPath: string, sshHost?: string | null): Promise<string> {
+  const r = await runGit(projectPath, ['reflog', '-1', '--format=%gs'], sshHost)
+  return r.stdout.trim()
 }

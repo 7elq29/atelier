@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import ChatUncommittedChanges from './ChatUncommittedChanges'
 import type { DiffSummary } from '../../../../shared/panel-types'
-import type { SessionFileEdit } from '../../../../shared/session-file-edits'
+import type { SessionChangesCap } from '../../../../shared/session-changes-cap'
 import { truncateContextPath } from '../../utils/truncateContextPath'
 import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 
@@ -266,8 +266,9 @@ interface ComposerProps {
   gitWorkspacePath?: string
   /** Preloaded git summary for branch refresh when Claude cwd matches workspace. */
   diffSummary?: DiffSummary | null
-  /** Files edited in this session (from Claude file-edit tools, persisted in SQLite). */
-  sessionFileEdits?: SessionFileEdit[] | null
+  /** Pending files + session commits for the chat changes cap. */
+  sessionChangesCap?: SessionChangesCap | null
+  onOpenCommitInDiff?: (hash: string) => void
   /** Preloaded workspace file paths for @-mentions (relative paths). */
   mentionFilePaths?: string[]
   /** Chat changes cap: open Diff › Changes for this repo-relative path. */
@@ -475,7 +476,8 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   hostname,
   gitWorkspacePath,
   diffSummary,
-  sessionFileEdits,
+  sessionChangesCap,
+  onOpenCommitInDiff,
   mentionFilePaths,
   onOpenChangedFile,
   onFork,
@@ -886,8 +888,9 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       <div className="composer-stack">
         {gitWorkspacePath && onOpenChangedFile && (
           <ChatUncommittedChanges
-            sessionFileEdits={sessionFileEdits}
+            items={sessionChangesCap?.items}
             onOpenFile={onOpenChangedFile}
+            onOpenCommit={(hash) => onOpenCommitInDiff?.(hash)}
           />
         )}
       <div

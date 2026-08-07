@@ -8,10 +8,15 @@ export {
   getFileDiff,
   getGitBranch,
   getWorkingTreeFilePair,
+  getPathWorkingTreeNumstat,
   invalidateGitRepository,
+  latestReflogSubject,
+  listCommitChangedPaths,
+  listCommitsInRange,
   listCommits,
   listWorktrees,
   mergeWorktreeBranch,
   removeWorktree,
+  resolveHead,
   warmRemoteGitHost
 } from './git-repository'

@@ -1,21 +1,25 @@
-# Chat session file changes cap
+# Chat session changes cap
 
 ## User flow
 
-1. On **Chat**, when the session has at least one completed Claude file-edit tool call (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`), a collapsible cap appears **above** the composer (95% width, centered), matching `Features/UI-Design/mocks/index.html` (`data-testid="chat-uncommitted-changes"`).
-2. Header shows chevron + `N File(s)`; file rows show basename and `+`/`-` line stats (same rules as collapsed edit tool summaries in the transcript).
-3. Clicking a file row switches to **Diff › Changes** and selects that file (loads hunks from git working tree).
+1. On **Chat**, when the session has pending file changes and/or session-attributed commits, a collapsible cap appears **above** the composer (`data-testid="chat-uncommitted-changes"`).
+2. Header shows chevron + count of **changes** (pending files + commit rows combined).
+3. **File rows:** basename + `+`/`-` from `git diff HEAD` for that path (one row per path). Click → **Diff › Changes**, select file.
+4. **Commit rows:** truncated subject (no +/-). Click → **Diff › Commits**, open that commit.
+5. Items sorted **newest activity first** (e.g. after edit → commit → edit again: file row for second edit + earlier commit row both visible).
 
 ## Data
 
-- Rollups are persisted in SQLite (`session_file_edits`) and updated on each successful `tool_call_end` for file-edit tools; also backfilled from stored tool-call messages on migration.
-- The cap reads `sessionFileEdits` from session workspace preload (`session:openReady` / `session:workspaceUpdated`), not from `git diff`.
+- **Touched paths:** Claude completed file-edit tools register repo-relative paths in SQLite (`session_touched_paths`); membership survives commit.
+- **Pending files:** Reconciled from `git diff HEAD` (and staged) per touched path; row removed when diff empty (revert, restore, or commit).
+- **Session commits:** On `HEAD` advance (workspace git refresh), new commits in `oldHead..newHead` that touch a session path are stored (`session_cap_commits`). **Pull/fetch** HEAD moves are excluded via reflog heuristic.
+- Cap payload `sessionChangesCap.items` via `session:openReady` / `session:workspaceUpdated`.
 
 ## UI
 
-Tokens/classes from mock: `.composer-stack`, `.chat-changes-card`, `.chat-changes-head`, `.chat-changes-file`, `.chat-changes-add`/`.chat-changes-del`; composer context bar unchanged inside `.composer-box`.
+Mock tokens: `.chat-changes-card`, `.chat-changes-file`, `.chat-changes-commit`, `.chat-changes-add`/`.chat-changes-del`.
 
 ## Done criteria
 
-- E2e in `secondary-panels.spec.ts`: after a real Edit tool call, cap lists the file; click file → Diff tab + selected file; row persisted in `session_file_edits`.
+- E2e in `secondary-panels.spec.ts`: edit, revert, commit row + navigation, edit→commit→edit, resume snapshot.
 - `npm run build` clean; targeted `e2e/secondary-panels.spec.ts`.

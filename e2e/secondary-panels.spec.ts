@@ -30,6 +30,39 @@ async function approveAllPendingPermissions(page: Page): Promise<void> {
 }
 
 /** Turn is idle when the Stop control is gone (Send stays visible but shows Queue while busy). */
+async function ensureAcceptEditsMode(page: Page, sessionId: string): Promise<void> {
+  await page.evaluate(async (id) => {
+    await window.atelier.cycleSessionMode(id)
+    await window.atelier.cycleSessionMode(id)
+  }, sessionId)
+  await expect(page.getByTestId('composer-mode-pill')).toHaveAttribute('data-mode', 'acceptEdits', { timeout: 10_000 })
+}
+
+async function editFileOnce(
+  page: Page,
+  sessionId: string,
+  absolutePath: string,
+  oldString: string,
+  newString: string
+): Promise<void> {
+  await page.getByTestId('composer-input').fill(
+    `First use the Read tool once on ${JSON.stringify(absolutePath)}. ` +
+      `Then use the Edit tool exactly once on the same file with old_string exactly ${JSON.stringify(oldString)} ` +
+      `and new_string exactly ${JSON.stringify(newString)}. ` +
+      'Then reply with exactly the word DONE. Use exactly those two tool calls in that order and no others.'
+  )
+  await page.getByTestId('send-button').click()
+  await waitForTurnIdle(page, 90_000)
+}
+
+async function expandCap(page: Page): Promise<void> {
+  const cap = page.getByTestId('chat-uncommitted-changes')
+  const toggle = cap.locator('.chat-changes-toggle')
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click()
+  }
+}
+
 async function waitForTurnIdle(page: Page, timeoutMs = 90_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -143,7 +176,7 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('tab-strip')).toBeVisible()
   })
 
-  test('chat: session file edits cap opens diff on file click', async () => {
+  test('chat: session changes cap — file row, git stats, diff navigation', async () => {
     test.setTimeout(120_000)
     await page.getByTestId('tab-chat').click()
     await waitForTurnIdle(page, 60_000)
@@ -151,28 +184,16 @@ test.describe('07-secondary-panels', () => {
     await expect(cap).toHaveCount(0)
 
     await page.getByTestId('composer-input').click()
-    await page.evaluate(async (id) => {
-      await window.atelier.cycleSessionMode(id)
-      await window.atelier.cycleSessionMode(id)
-    }, sessionId)
-    const modePill = page.getByTestId('composer-mode-pill')
-    await expect(modePill).toHaveAttribute('data-mode', 'acceptEdits', { timeout: 10_000 })
+    await ensureAcceptEditsMode(page, sessionId)
 
     const editTarget = join(repoDir, 'a.txt')
-    await page.getByTestId('composer-input').fill(
-      `First use the Read tool once on ${JSON.stringify(editTarget)}. ` +
-        `Then use the Edit tool exactly once on the same file with old_string exactly "a\\n" ` +
-        `and new_string exactly "hello from e2e\\n". ` +
-        'Then reply with exactly the word DONE. Use exactly those two tool calls in that order and no others.'
-    )
-    await page.getByTestId('send-button').click()
-
-    await waitForTurnIdle(page, 90_000)
+    await editFileOnce(page, sessionId, editTarget, 'a\n', 'hello from e2e\n')
 
     await expect(cap).toBeVisible({ timeout: 30_000 })
     await expect(cap).toHaveClass(/collapsed/)
-    await cap.getByRole('button', { name: /\d+ Files?/ }).click()
+    await cap.getByRole('button', { name: /\d+ change/i }).click()
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toBeVisible()
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)
     await cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' }).click()
     await expect(page.getByTestId('tab-diff')).toHaveClass(/active/)
     const diff = page.getByTestId('diff-panel-active')
@@ -182,11 +203,97 @@ test.describe('07-secondary-panels', () => {
     })
 
     const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
-    expect(snap?.sessionFileEdits?.some((f) => f.path === 'a.txt')).toBe(true)
+    const fileItem = snap?.sessionChangesCap?.items.find((i) => i.kind === 'file' && i.path === 'a.txt')
+    expect(fileItem?.kind).toBe('file')
+    if (fileItem?.kind === 'file') {
+      expect(fileItem.additions + fileItem.deletions).toBeGreaterThan(0)
+    }
 
     await page.screenshot({ path: join(artifactsDir, '07-chat-uncommitted-changes.png') })
-    log('chat session file edits cap -> diff OK')
+    log('chat session changes cap -> diff OK')
     await page.getByTestId('tab-chat').click()
+  })
+
+  test('chat: second edit on same file keeps a single cap row', async () => {
+    test.setTimeout(120_000)
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    const editTarget = join(repoDir, 'a.txt')
+    await editFileOnce(page, sessionId, editTarget, 'hello from e2e\n', 'hello twice\n')
+    await expect(cap).toBeVisible({ timeout: 30_000 })
+    await expandCap(page)
+    await expect(cap.getByTestId('chat-changes-file')).toHaveCount(1)
+    log('second edit -> single file row OK')
+  })
+
+  test('chat: reverting file content removes the file cap row', async () => {
+    test.setTimeout(120_000)
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    const editTarget = join(repoDir, 'a.txt')
+    await editFileOnce(page, sessionId, editTarget, 'hello twice\n', 'a\n')
+    await expect(cap).toHaveCount(0, { timeout: 30_000 })
+    log('revert -> cap hidden OK')
+  })
+
+  test('chat: session-attributed commit row and navigation to Diff › Commits', async () => {
+    test.setTimeout(180_000)
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    const editTarget = join(repoDir, 'a.txt')
+    await editFileOnce(page, sessionId, editTarget, 'a\n', 'pending commit\n')
+
+    await page.getByTestId('composer-input').fill(
+      `Use the Bash tool exactly once with command ${JSON.stringify(`cd ${repoDir} && git add a.txt && git commit -m "e2e session cap commit"`)}. ` +
+        'Then reply with exactly the word DONE.'
+    )
+    await page.getByTestId('send-button').click()
+    await waitForTurnIdle(page, 120_000)
+    await page.evaluate(
+      (id) => window.atelier.refreshSessionWorkspace(id, true),
+      sessionId
+    )
+
+    await expect(cap).toBeVisible({ timeout: 60_000 })
+    await expandCap(page)
+    await expect(cap.getByTestId('chat-changes-file')).toHaveCount(0)
+    const commitRow = cap.getByTestId('chat-changes-commit').filter({ hasText: 'e2e session cap commit' })
+    await expect(commitRow).toBeVisible({ timeout: 30_000 })
+    await commitRow.click()
+    await expect(page.getByTestId('tab-diff')).toHaveClass(/active/)
+    const diff = page.getByTestId('diff-panel-active')
+    await expect(diff.getByTestId('diff-commit-detail')).toBeVisible({ timeout: 15_000 })
+    await expect(diff.getByTestId('diff-commit-detail')).toContainText('e2e session cap commit')
+    await page.screenshot({ path: join(artifactsDir, '07-chat-changes-commit-nav.png') })
+    log('commit row -> diff commits OK')
+    await page.getByTestId('tab-chat').click()
+  })
+
+  test('chat: after commit, a new edit shows commit row and one file row', async () => {
+    test.setTimeout(120_000)
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    const editTarget = join(repoDir, 'a.txt')
+    await editFileOnce(page, sessionId, editTarget, 'pending commit\n', 'second round\n')
+    await expect(cap).toBeVisible({ timeout: 30_000 })
+    await expandCap(page)
+    await expect(cap.getByTestId('chat-changes-commit').filter({ hasText: 'e2e session cap commit' })).toHaveCount(1)
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)
+    log('edit after commit -> file + commit rows OK')
+  })
+
+  test('chat: changes cap restores from SQLite after relaunch', async () => {
+    test.setTimeout(120_000)
+    await electronApp.close()
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+    await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
+    await page.getByTestId('tab-chat').click()
+    await waitForTurnIdle(page, 60_000)
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect(cap).toBeVisible({ timeout: 60_000 })
+    await expandCap(page)
+    await expect(cap.getByTestId('chat-changes-commit').filter({ hasText: 'e2e session cap commit' })).toHaveCount(1)
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)
+    const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
+    expect(snap?.sessionChangesCap?.items.some((i) => i.kind === 'commit')).toBe(true)
+    expect(snap?.sessionChangesCap?.items.some((i) => i.kind === 'file' && i.path === 'a.txt')).toBe(true)
+    log('cap restore after relaunch OK')
   })
 
   // ── 1. Tab bar: switching hides/shows via class, doesn't unmount ───────
