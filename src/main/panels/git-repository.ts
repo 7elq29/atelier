@@ -3,69 +3,63 @@
  * status fetch per refresh, cached snapshots, lazy per-file hunks, lazy
  * commits/worktrees. Remote devpod sessions use multiplexed SSH via ssh-exec.ts.
  */
-import { execFile } from 'node:child_process'
 import type { CommitInfo, DiffFileChange, DiffFileContentPair, DiffFileStatus, DiffSummary, WorktreeInfo } from '../../shared/panel-types'
 import { readFileForPreview } from './files'
 import { join } from 'node:path'
-import { remoteCdTarget, shQuote } from '../shell-quote'
-import { sshExec, warmSshMux } from '../ssh-exec'
-import { gitPatchOutputUsable, numstatPathForGit, parseNumstatLines, parseUnifiedDiff, runGit } from './git-core'
+import { warmSshMux } from '../ssh-exec'
+import {
+  clearGitRepoRootCache,
+  gitPatchOutputUsable,
+  numstatPathForGit,
+  parseNumstatLines,
+  parseUnifiedDiff,
+  pickParsedDiffFile,
+  resolveGitRepoRoot,
+  runGit,
+  runGitAtRepoRoot,
+  runGitDiffPatch,
+  runGitShowPatch
+} from './git-core'
 
 const EMPTY_TREE = '4b825dc642cb6eb6a060e54bf8d69288fbee4904'
-
-const STATUS_SCRIPT = `
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo ATELIER_NOT_REPO
-  exit 0
-fi
-branch=$(git rev-parse --abbrev-ref HEAD)
-echo "ATELIER_BRANCH=$branch"
-if git rev-parse --verify HEAD >/dev/null 2>&1; then
-  echo ATELIER_HAS_HEAD=1
-  git diff --no-color --numstat HEAD
-else
-  echo ATELIER_HAS_HEAD=0
-  git diff --no-color --numstat ${EMPTY_TREE}
-fi
-`.trim()
 
 function repoKey(projectPath: string, sshHost?: string | null): string {
   return `${sshHost ?? 'local'}\0${projectPath}`
 }
 
-async function execStatusScript(projectPath: string, sshHost?: string | null): Promise<ExecResult> {
-  if (sshHost) {
-    await warmSshMux(sshHost)
-    const cmd = `cd ${remoteCdTarget(projectPath)} && ${STATUS_SCRIPT}`
-    return sshExec(sshHost, cmd)
-  }
-  return new Promise((resolve) => {
-    execFile('sh', ['-c', `cd ${shQuote(projectPath)} && ${STATUS_SCRIPT}`], { maxBuffer: 1024 * 1024 * 32 }, (err, stdout, stderr) => {
-      const code = (err as NodeJS.ErrnoException & { code?: number })?.code
-      resolve({ stdout, stderr, code: typeof code === 'number' ? code : err ? 1 : 0 })
-    })
-  })
-}
-
-type ExecResult = { stdout: string; stderr: string; code: number }
-
-function parseStatusOutput(raw: string): { isRepo: boolean; branch: string | null; hasHead: boolean; files: DiffFileChange[] } {
-  const lines = raw.split('\n')
-  if (lines[0]?.trim() === 'ATELIER_NOT_REPO') {
+/** Working tree vs HEAD at the git toplevel (not scoped to session projectPath). */
+async function fetchWorkingTreeChanges(
+  projectPath: string,
+  sshHost?: string | null
+): Promise<{ isRepo: boolean; branch: string | null; hasHead: boolean; files: DiffFileChange[] }> {
+  const inside = await runGit(projectPath, ['rev-parse', '--is-inside-work-tree'], sshHost)
+  if (inside.stdout.trim() !== 'true') {
     return { isRepo: false, branch: null, hasHead: false, files: [] }
   }
-  let branch: string | null = null
-  let hasHead = false
-  const numstatLines: string[] = []
-  for (const line of lines) {
-    if (line.startsWith('ATELIER_BRANCH=')) {
-      const name = line.slice('ATELIER_BRANCH='.length).trim()
-      branch = name === 'HEAD' ? null : name
-    } else if (line.startsWith('ATELIER_HAS_HEAD=1')) hasHead = true
-    else if (line.startsWith('ATELIER_HAS_HEAD=0')) hasHead = false
-    else if (line.trim() && !line.startsWith('ATELIER_')) numstatLines.push(line)
+
+  const branchRes = await runGitAtRepoRoot(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'], sshHost)
+  const branchRaw = branchRes.stdout.trim()
+  const branch = branchRaw === 'HEAD' || !branchRaw ? null : branchRaw
+
+  const hasHead = (await runGitAtRepoRoot(projectPath, ['rev-parse', '--verify', 'HEAD'], sshHost)).code === 0
+  const diffTarget = hasHead ? 'HEAD' : EMPTY_TREE
+  const numstat = await runGitAtRepoRoot(projectPath, ['diff', '--no-color', '--numstat', diffTarget], sshHost)
+
+  const files = parseNumstatLines(numstat.stdout.split('\n'))
+  const seen = new Set(files.map((f) => f.path))
+
+  const untracked = await runGitAtRepoRoot(
+    projectPath,
+    ['ls-files', '--others', '--exclude-standard'],
+    sshHost
+  )
+  for (const line of untracked.stdout.split('\n')) {
+    const path = line.trim()
+    if (!path || seen.has(path)) continue
+    seen.add(path)
+    files.push({ path, status: 'added', additions: 0, deletions: 0, hunks: [] })
   }
-  const files = parseNumstatLines(numstatLines)
+
   return { isRepo: true, branch, hasHead, files }
 }
 
@@ -82,6 +76,7 @@ class GitRepositoryManager {
   private readonly inFlight = new Map<string, Promise<DiffSummary>>()
 
   invalidate(projectPath: string, sshHost?: string | null): void {
+    clearGitRepoRootCache(projectPath, sshHost)
     this.cache.delete(repoKey(projectPath, sshHost))
   }
 
@@ -99,8 +94,7 @@ class GitRepositoryManager {
     if (pending) return pending
 
     const work = (async (): Promise<DiffSummary> => {
-      const res = await execStatusScript(projectPath, sshHost)
-      const parsed = parseStatusOutput(res.stdout)
+      const parsed = await fetchWorkingTreeChanges(projectPath, sshHost)
       if (!parsed.isRepo) {
         const summary: DiffSummary = { isRepo: false, branch: null, files: [] }
         this.cache.set(key, { summary, hasHead: false, commits: null, worktrees: null, fetchedAt: Date.now() })
@@ -135,7 +129,7 @@ class GitRepositoryManager {
     if (!summary.isRepo) return { isRepo: false, branch: null, files: [] }
 
     // -m --first-parent: merge commits and root commits get a real patch (plain `git show` is often empty).
-    const res = await runGit(
+    const res = await runGitAtRepoRoot(
       projectPath,
       ['show', '-m', '--first-parent', '--no-color', '--numstat', '--format=', commit],
       sshHost
@@ -143,18 +137,6 @@ class GitRepositoryManager {
     if (res.code !== 0) return { isRepo: true, branch: null, files: [] }
     const files = parseNumstatLines(res.stdout.split('\n')).map((f) => ({ ...f, hunks: [] }))
     return { isRepo: true, branch: null, files }
-  }
-
-  private pickParsedCommitFile(parsed: DiffFileChange[], filePath: string): DiffFileChange | undefined {
-    const gitPath = numstatPathForGit(filePath)
-    return parsed.find(
-      (f) =>
-        f.path === filePath ||
-        f.path === gitPath ||
-        f.oldPath === filePath ||
-        f.oldPath === gitPath ||
-        (gitPath.length > 0 && (f.path.endsWith(`/${gitPath}`) || gitPath.endsWith(`/${f.path}`)))
-    )
   }
 
   private mergeCommitFileStub(stub: DiffFileChange, parsed: DiffFileChange): DiffFileChange {
@@ -190,25 +172,39 @@ class GitRepositoryManager {
 
     const parseForFile = (stdout: string): DiffFileChange | undefined => {
       const parsed = parseUnifiedDiff(stdout)
-      return this.pickParsedCommitFile(parsed, filePath) ?? this.pickParsedCommitFile(parsed, gitPath)
+      return pickParsedDiffFile(parsed, filePath, gitPath)
     }
 
     let parsed: DiffFileChange | undefined
 
+    const parentRev = await runGit(projectPath, ['rev-parse', `${commit}^`], sshHost)
+    if (parentRev.code === 0 && parentRev.stdout.trim()) {
+      const blobDiff = await runGitDiffPatch(
+        projectPath,
+        ['--no-color', '-U3', `${commit}^:${gitPath}`, `${commit}:${gitPath}`],
+        sshHost
+      )
+      if (gitPatchOutputUsable(blobDiff.code, blobDiff.stdout)) {
+        parsed = parseForFile(blobDiff.stdout)
+      }
+    }
+
     const base = await this.commitDiffParentBase(projectPath, commit, sshHost)
-    const diffRes = await runGit(
-      projectPath,
-      ['diff', '--no-color', '-U3', base, commit, '--', gitPath],
-      sshHost
-    )
-    if (gitPatchOutputUsable(diffRes.code, diffRes.stdout)) {
-      parsed = parseForFile(diffRes.stdout)
+    if (!parsed?.hunks.length) {
+      const diffRes = await runGitDiffPatch(
+        projectPath,
+        ['--no-color', '-U3', base, commit, '--', gitPath],
+        sshHost
+      )
+      if (gitPatchOutputUsable(diffRes.code, diffRes.stdout)) {
+        parsed = parseForFile(diffRes.stdout) ?? parsed
+      }
     }
 
     if (!parsed?.hunks.length) {
-      const show = await runGit(
+      const show = await runGitShowPatch(
         projectPath,
-        ['show', '-m', '--first-parent', '--no-color', '-U3', '--format=', commit, '--', gitPath],
+        ['-m', '--first-parent', '--no-color', '-U3', '--format=', commit, '--', gitPath],
         sshHost
       )
       if (gitPatchOutputUsable(show.code, show.stdout)) {
@@ -217,9 +213,9 @@ class GitRepositoryManager {
     }
 
     if (!parsed?.hunks.length) {
-      const showPlain = await runGit(
+      const showPlain = await runGitShowPatch(
         projectPath,
-        ['show', '--no-color', '-U3', '--format=', commit, '--', gitPath],
+        ['--no-color', '-U3', '--format=', commit, '--', gitPath],
         sshHost
       )
       if (gitPatchOutputUsable(showPlain.code, showPlain.stdout)) {
@@ -236,9 +232,18 @@ class GitRepositoryManager {
   async loadFileDiff(projectPath: string, filePath: string, sshHost?: string | null): Promise<DiffFileChange | null> {
     const key = repoKey(projectPath, sshHost)
     const entry = this.cache.get(key)
-    const hasHead = entry?.hasHead ?? (await runGit(projectPath, ['rev-parse', '--verify', 'HEAD'], sshHost)).code === 0
+    const hasHead = entry?.hasHead ?? (await runGitAtRepoRoot(projectPath, ['rev-parse', '--verify', 'HEAD'], sshHost)).code === 0
     const target = hasHead ? 'HEAD' : EMPTY_TREE
-    const diff = await runGit(projectPath, ['diff', '--no-color', '-U3', target, '--', filePath], sshHost)
+
+    const tracked = await runGitAtRepoRoot(projectPath, ['ls-files', '--error-unmatch', '--', filePath], sshHost)
+    let diff = await runGitDiffPatch(projectPath, ['--no-color', '-U3', target, '--', filePath], sshHost)
+    if (!gitPatchOutputUsable(diff.code, diff.stdout) && tracked.code !== 0) {
+      diff = await runGitDiffPatch(projectPath, ['--no-color', '-U3', '--no-index', '/dev/null', filePath], sshHost)
+    }
+    if (!gitPatchOutputUsable(diff.code, diff.stdout)) {
+      const stub = entry?.summary.files.find((f) => f.path === filePath)
+      return stub ? { ...stub, hunks: [] } : null
+    }
     const parsed = parseUnifiedDiff(diff.stdout)
     const file = parsed[0]
     if (!file) {
@@ -337,7 +342,8 @@ class GitRepositoryManager {
 
     let modified = ''
     if (status !== 'deleted') {
-      const abs = join(projectPath, filePath)
+      const root = await resolveGitRepoRoot(projectPath, sshHost)
+      const abs = join(root, filePath)
       const read = await readFileForPreview(abs, sshHost)
       if (read.kind !== 'text' && read.kind !== 'html') return null
       modified = read.content

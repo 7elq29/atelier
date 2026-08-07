@@ -9,6 +9,7 @@ import type { SessionRecord } from '../../shared/session-types'
 import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
 import type { DiffSummary } from '../../shared/panel-types'
 import { getDiffSummary } from '../panels/git'
+import { resolveGitRepoRoot } from '../panels/git-core'
 import { walkFileTree, listWorkspaceFiles } from '../panels/files'
 import type { PtyManager } from '../panels/pty'
 import { logger } from '../logger'
@@ -172,27 +173,29 @@ export class WorkspaceService {
       return
     }
 
-    const gitDir = join(workspacePath, '.git')
-    let debounce: ReturnType<typeof setTimeout> | undefined
-    const watchers: FSWatcher[] = []
-    const schedule = (): void => {
-      if (debounce) clearTimeout(debounce)
-      debounce = setTimeout(() => {
-        void this.refreshWorkspace(session, false).catch(() => undefined)
-      }, LOCAL_GIT_DEBOUNCE_MS)
-    }
-    for (const rel of ['index', 'HEAD']) {
-      try {
-        watchers.push(watch(join(gitDir, rel), schedule))
-      } catch {
-        // not a git repo or path missing
-      }
-    }
-    this.monitors.set(session.id, {
-      stop: () => {
+    void (async () => {
+      const gitDir = join(await resolveGitRepoRoot(workspacePath, null), '.git')
+      let debounce: ReturnType<typeof setTimeout> | undefined
+      const watchers: FSWatcher[] = []
+      const schedule = (): void => {
         if (debounce) clearTimeout(debounce)
-        for (const w of watchers) w.close()
+        debounce = setTimeout(() => {
+          void this.refreshWorkspace(session, false).catch(() => undefined)
+        }, LOCAL_GIT_DEBOUNCE_MS)
       }
-    })
+      for (const rel of ['index', 'HEAD']) {
+        try {
+          watchers.push(watch(join(gitDir, rel), schedule))
+        } catch {
+          // not a git repo or path missing
+        }
+      }
+      this.monitors.set(session.id, {
+        stop: () => {
+          if (debounce) clearTimeout(debounce)
+          for (const w of watchers) w.close()
+        }
+      })
+    })()
   }
 }
