@@ -169,11 +169,11 @@ test.describe('audit: window-resize layout integrity across sizes and states', (
   const TEST_DATE = '2026-07-31'
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-resize-audit-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-resize-audit-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-resize-audit-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-resize-audit-project-'))
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-resize-audit-vault-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-resize-audit-vault-'))
     const vaultRoot = join(vaultParent, 'vault')
     const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31')
     mkdirSync(noteDir, { recursive: true })
@@ -204,7 +204,7 @@ test.describe('audit: window-resize layout integrity across sizes and states', (
 
     electronApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TEST_DATE }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: TEST_DATE }
     })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -393,9 +393,9 @@ test.describe('audit: pass-2 per-card assertions (isolated app)', () => {
 
   test.beforeAll(async ({}, testInfo) => {
     testInfo.setTimeout(60_000)
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-resize-audit-cards-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-resize-audit-cards-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-resize-audit-cards-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-resize-audit-cards-project-'))
     electronApp = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')

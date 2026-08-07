@@ -646,7 +646,7 @@ export default function Sidebar({
     <div className={'sidebar' + (collapsed ? ' collapsed' : '')} data-testid="sidebar">
       <div className="sidebar-top">
         <div className="app-mark" />
-        <div className="app-name hide-on-collapse">Gardenia</div>
+        <div className="app-name hide-on-collapse">Atelier</div>
       </div>
       <div className="hide-on-collapse">
         <SpendStatusChip />

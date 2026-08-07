@@ -60,9 +60,9 @@ test.describe('bug-repro: AskUserQuestionCard submits instantly on first click, 
   let projectDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-aq-submit-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-aq-submit-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-aq-submit-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-aq-submit-project-'))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 
@@ -92,7 +92,7 @@ test.describe('bug-repro: AskUserQuestionCard submits instantly on first click, 
     await expect(card).toBeVisible({ timeout: 30_000 })
     await expect(card).toHaveAttribute('data-status', 'pending')
 
-    const logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+    const logPath = await page.evaluate(() => window.atelier.getLogFilePath())
     const logBeforeClick = readFileSync(logPath, 'utf-8')
     expect(logBeforeClick).not.toContain('respondToPrompt: dispatching to harness')
 

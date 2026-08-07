@@ -101,7 +101,7 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
   // 16-task-move-to-date: "today" for the "Move to..." menu's relative
   // labels (tomorrow/weekday-name/next-week) is the date of the note
   // currently open — the app has no other-date navigation today, so this is
-  // always the real "today" (or GARDENIA_TEST_DATE in tests).
+  // always the real "today" (or ATELIER_TEST_DATE in tests).
   const moveDateOptions = useMemo(() => computeMoveDateOptions(date), [date])
 
   if (!vaultConfigured) {
@@ -114,7 +114,7 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
           </button>
         </div>
         <div className="dn-empty-state" data-testid="vault-not-configured">
-          No vault configured. Set GARDENIA_VAULT_ROOT (or GARDENIA_TEST_VAULT_ROOT for tests).
+          No vault configured. Set ATELIER_VAULT_ROOT (or ATELIER_TEST_VAULT_ROOT for tests).
         </div>
       </div>
     )

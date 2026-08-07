@@ -52,10 +52,10 @@ test.describe('fix-confirmed: newly-created note survives an immediate task add 
   let notePath: string
 
   test.beforeAll(async () => {
-    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-immediate-edit-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-immediate-edit-'))
     seedSkipOnboarding(userDataDir)
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-immediate-edit-vault-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-immediate-edit-vault-'))
     vaultRoot = join(vaultParent, 'vault')
     // No template seeded — falls back to the built-in skeleton; irrelevant to
     // this race, which reproduces regardless of what generateNewNote emits.
@@ -67,7 +67,7 @@ test.describe('fix-confirmed: newly-created note survives an immediate task add 
 
     electronApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TEST_DATE }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: TEST_DATE }
     })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')

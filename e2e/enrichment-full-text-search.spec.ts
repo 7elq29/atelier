@@ -64,7 +64,7 @@ async function createSessionWithReply(
 
 /** Raw read-only SQL query against the app's real SQLite DB, via the same `debug:queryDb` IPC channel other specs use. */
 async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = []): Promise<T[]> {
-  return activePage.evaluate(({ sql: query, params: bindings }) => window.gardenia.debugQueryDb<T>(query, bindings), {
+  return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugQueryDb<T>(query, bindings), {
     sql,
     params
   })
@@ -89,11 +89,11 @@ test.describe('10b-enrichment-full-text-search', () => {
   const SESSION_B_SNIPPET = 'quantum lighthouse'
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-fts-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-fts-'))
     seedSkipOnboarding(userDataDir)
-    projectDirA = mkdtempSync(join(tmpdir(), 'gardenia-e2e-fts-project-a-'))
+    projectDirA = mkdtempSync(join(tmpdir(), 'atelier-e2e-fts-project-a-'))
     writeFileSync(join(projectDirA, 'README.md'), '# project a\n')
-    projectDirB = mkdtempSync(join(tmpdir(), 'gardenia-e2e-fts-project-b-'))
+    projectDirB = mkdtempSync(join(tmpdir(), 'atelier-e2e-fts-project-b-'))
     writeFileSync(join(projectDirB, 'README.md'), '# project b\n')
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })

@@ -15,8 +15,8 @@ export default function PortsPanel({ sessionId, sshHost }: { sessionId: string; 
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    void window.gardenia.portsList(sessionId).then(setForwards)
-    const unsub = window.gardenia.onPortsUpdated((all) => {
+    void window.atelier.portsList(sessionId).then(setForwards)
+    const unsub = window.atelier.onPortsUpdated((all) => {
       setForwards(all.filter((f) => f.sessionId === sessionId))
     })
     return unsub
@@ -28,10 +28,10 @@ export default function PortsPanel({ sessionId, sshHost }: { sessionId: string; 
     if (!lp || !rp || !remoteHost.trim()) return
     setBusy(true)
     try {
-      await window.gardenia.portsAdd(sessionId, sshHost, lp, remoteHost.trim(), rp)
+      await window.atelier.portsAdd(sessionId, sshHost, lp, remoteHost.trim(), rp)
       setLocalPort('')
       setRemotePort('')
-      const all = await window.gardenia.portsList(sessionId)
+      const all = await window.atelier.portsList(sessionId)
       setForwards(all)
     } finally {
       setBusy(false)
@@ -57,7 +57,7 @@ export default function PortsPanel({ sessionId, sshHost }: { sessionId: string; 
               </span>
               <button
                 className="btn btn-icon btn-sm"
-                onClick={() => void window.gardenia.portsRemove(f.id)}
+                onClick={() => void window.atelier.portsRemove(f.id)}
                 data-testid="port-remove"
               >
                 ✕

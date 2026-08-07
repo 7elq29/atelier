@@ -73,13 +73,13 @@ let vaultRoot: string
 let notePath: string
 
 test.beforeAll(async () => {
-  userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-'))
+  userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-'))
   // Pre-seed onboarding as completed (08-global-nav-and-settings) so its
   // modal backdrop doesn't intercept clicks meant for the Daily Notes panel.
   mkdirSync(join(userDataDir, 'data'), { recursive: true })
   writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
-  const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-'))
+  const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-'))
   vaultRoot = join(vaultParent, 'vault')
   const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31')
   mkdirSync(noteDir, { recursive: true })
@@ -93,8 +93,8 @@ test.beforeAll(async () => {
     args: [mainEntry, `--user-data-dir=${userDataDir}`],
     env: {
       ...process.env,
-      GARDENIA_TEST_VAULT_ROOT: vaultRoot,
-      GARDENIA_TEST_DATE: TEST_DATE
+      ATELIER_TEST_VAULT_ROOT: vaultRoot,
+      ATELIER_TEST_DATE: TEST_DATE
     }
   })
   page = await electronApp.firstWindow()
@@ -108,7 +108,7 @@ test.afterAll(async () => {
   // tombstone-diff decision logged via logger.info in daily-notes-handlers.ts)
   // into the sync log artifact.
   try {
-    const logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+    const logPath = await page.evaluate(() => window.atelier.getLogFilePath())
     const lines = readFileSync(logPath, 'utf-8')
       .trim()
       .split('\n')
@@ -326,7 +326,7 @@ test('resizing sections keeps independent scroll and persists weights', async ()
   // Weight object is the source of truth (drives flex-grow); pixel height is
   // also checked but with tolerance since flex rounding/min-height can blur
   // an exact px delta.
-  const storedWeights = await page.evaluate(() => localStorage.getItem('gardenia.dailyNotes.sectionWeights'))
+  const storedWeights = await page.evaluate(() => localStorage.getItem('atelier.dailyNotes.sectionWeights'))
   expect(storedWeights).toBeTruthy()
   const weights = JSON.parse(storedWeights!)
   expect(weights.timeline).toBeGreaterThan(2) // grew from the default weight of 2
@@ -351,7 +351,7 @@ test('regression: external delete racing an in-flight write does not resurrect t
   // fresh-disk-read + tombstone diff. This simulates a write already
   // "in flight" (payload captured, not yet persisted) at the moment an
   // external edit lands.
-  await page.evaluate(() => window.gardenia.testDelayNextWrite(1500))
+  await page.evaluate(() => window.atelier.testDelayNextWrite(1500))
 
   // Trigger a local mutation to an UNRELATED task (toggle Standup done) —
   // this schedules a debounced write (500ms) whose captured payload still
@@ -410,7 +410,7 @@ test('regression: external delete racing an in-flight write does not resurrect t
   // main-process log must show the write's *captured* incoming payload
   // still contained the doomed task's id, and the tombstone diff is what
   // dropped it.
-  const logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+  const logPath = await page.evaluate(() => window.atelier.getLogFilePath())
   const logLines = readFileSync(logPath, 'utf-8')
     .trim()
     .split('\n')
@@ -467,7 +467,7 @@ test('UC-18: window focus regain re-reads the note from disk, distinct from (and
 // into the fixture above, so both the original simple-fixture coverage and
 // this real-world-shape coverage exist independently going forward. A
 // separate launch is needed because the displayed date is fixed for the
-// whole Electron session (via GARDENIA_TEST_DATE), so a second date's
+// whole Electron session (via ATELIER_TEST_DATE), so a second date's
 // fixture needs a second session.
 test.describe('real-world content shapes (multi-link tasks, no-link tasks, single tracker, emoji heading)', () => {
   const SHAPES_DATE = '2026-07-30'
@@ -506,11 +506,11 @@ type: daily
   }
 
   test.beforeAll(async () => {
-    shapesUserDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-shapes-'))
+    shapesUserDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-shapes-'))
     mkdirSync(join(shapesUserDataDir, 'data'), { recursive: true })
     writeFileSync(join(shapesUserDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-shapes-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-shapes-'))
     shapesVaultRoot = join(vaultParent, 'vault')
     const noteDir = join(shapesVaultRoot, '01.dailynotes', '2026', 'Jul', '31')
     mkdirSync(noteDir, { recursive: true })
@@ -520,8 +520,8 @@ type: daily
       args: [mainEntry, `--user-data-dir=${shapesUserDataDir}`],
       env: {
         ...process.env,
-        GARDENIA_TEST_VAULT_ROOT: shapesVaultRoot,
-        GARDENIA_TEST_DATE: SHAPES_DATE
+        ATELIER_TEST_VAULT_ROOT: shapesVaultRoot,
+        ATELIER_TEST_DATE: SHAPES_DATE
       }
     })
     shapesPage = await shapesApp.firstWindow()
@@ -602,11 +602,11 @@ test.describe('current-time marker relative to an in-progress task', () => {
   test.beforeAll(async () => {
     test.skip(!inDisplayWindow, 'real wall-clock time is outside the displayed 06:00-22:00 window (with margin)')
 
-    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-inprogress-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-inprogress-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-inprogress-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-inprogress-'))
     const vaultRoot = join(vaultParent, 'vault')
     const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31')
     mkdirSync(noteDir, { recursive: true })
@@ -630,7 +630,7 @@ type: daily
 
     inProgressApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: DATE }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: DATE }
     })
     inProgressPage = await inProgressApp.firstWindow()
     await inProgressPage.waitForLoadState('domcontentloaded')
@@ -706,11 +706,11 @@ type: daily
   }
 
   test.beforeAll(async () => {
-    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-grid-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-grid-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-grid-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-grid-'))
     gridVaultRoot = join(vaultParent, 'vault')
     // Path uses the ISO week number (see resolveNotePath in
     // daily-note-io.ts), not the day-of-month — 2026-07-29 falls in ISO
@@ -722,7 +722,7 @@ type: daily
 
     gridApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: gridVaultRoot, GARDENIA_TEST_DATE: DATE }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: gridVaultRoot, ATELIER_TEST_DATE: DATE }
     })
     gridPage = await gridApp.firstWindow()
     await gridPage.waitForLoadState('domcontentloaded')
@@ -901,7 +901,7 @@ type: daily
 // ── Carry-over on note creation (UC-2) ──────────────────────────────────
 //
 // Own launch + own fixture vault (like the describe blocks above), since the
-// displayed date is fixed per-Electron-session via GARDENIA_TEST_DATE and
+// displayed date is fixed per-Electron-session via ATELIER_TEST_DATE and
 // this scenario inherently needs two dates: a prior day with an existing
 // note (seeded on disk) and a not-yet-existing "today" whose creation should
 // pull that prior day's still-open tasks forward. Both dates stay in ISO
@@ -945,11 +945,11 @@ type: daily
   }
 
   test.beforeAll(async () => {
-    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-carryover-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-carryover-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-carryover-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-carryover-'))
     carryVaultRoot = join(vaultParent, 'vault')
     const noteDir = join(carryVaultRoot, '01.dailynotes', '2026', 'Jul', '31')
     mkdirSync(noteDir, { recursive: true })
@@ -962,8 +962,8 @@ type: daily
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
       env: {
         ...process.env,
-        GARDENIA_TEST_VAULT_ROOT: carryVaultRoot,
-        GARDENIA_TEST_DATE: NEW_DATE
+        ATELIER_TEST_VAULT_ROOT: carryVaultRoot,
+        ATELIER_TEST_DATE: NEW_DATE
       }
     })
     carryPage = await carryApp.firstWindow()
@@ -1090,11 +1090,11 @@ type: daily
   }
 
   test.beforeAll(async () => {
-    affUserDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-affordances-'))
+    affUserDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-affordances-'))
     mkdirSync(join(affUserDataDir, 'data'), { recursive: true })
     writeFileSync(join(affUserDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-affordances-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-affordances-'))
     affVaultRoot = join(vaultParent, 'vault')
     // Folder is the ISO WEEK number (`ww` in resolveNotePath), not the
     // day-of-month — Jul 29 2026 falls in ISO week 31, same as the other
@@ -1108,8 +1108,8 @@ type: daily
       args: [mainEntry, `--user-data-dir=${affUserDataDir}`],
       env: {
         ...process.env,
-        GARDENIA_TEST_VAULT_ROOT: affVaultRoot,
-        GARDENIA_TEST_DATE: AFFORDANCES_DATE
+        ATELIER_TEST_VAULT_ROOT: affVaultRoot,
+        ATELIER_TEST_DATE: AFFORDANCES_DATE
       }
     })
     affPage = await affApp.firstWindow()

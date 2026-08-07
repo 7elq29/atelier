@@ -58,9 +58,9 @@ test.describe('bug-fix: tracker rail collapsed state is reachable via a real tog
   let projectDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-rail-collapse-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-rail-collapse-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-rail-collapse-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-rail-collapse-project-'))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 

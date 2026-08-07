@@ -111,7 +111,7 @@ async function stubProjectFolder(app: ElectronApplication, path: string): Promis
 }
 
 async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = []): Promise<T[]> {
-  return activePage.evaluate(({ sql: query, params: bindings }) => window.gardenia.debugQueryDb<T>(query, bindings), {
+  return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugQueryDb<T>(query, bindings), {
     sql,
     params
   })
@@ -143,12 +143,12 @@ test.describe('session-cost-tracking (fix-session-cost-total-overcounted)', () =
   let totalAfterThreeTurns: number
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-cost2-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-cost2-'))
     seedSkipOnboarding(userDataDir)
-    localProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-cost2-project-'))
+    localProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-cost2-project-'))
     writeFileSync(join(localProjectDir, 'README.md'), '# test project\n')
     ;({ app: electronApp, page } = await launchApp(userDataDir))
-    logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+    logPath = await page.evaluate(() => window.atelier.getLogFilePath())
   })
 
   test.afterAll(async () => {

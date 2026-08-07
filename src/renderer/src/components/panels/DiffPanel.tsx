@@ -33,9 +33,9 @@ export default function DiffPanel({
 
   async function refresh(): Promise<void> {
     const [diff, log, wts] = await Promise.all([
-      window.gardenia.gitDiff(projectPath, hostname),
-      window.gardenia.gitCommits(projectPath, hostname),
-      window.gardenia.gitWorktrees(projectPath, hostname)
+      window.atelier.gitDiff(projectPath, hostname),
+      window.atelier.gitCommits(projectPath, hostname),
+      window.atelier.gitWorktrees(projectPath, hostname)
     ])
     setSummary(diff)
     setCommits(log)
@@ -54,9 +54,9 @@ export default function DiffPanel({
     setWorktreeError(null)
     const branch = newWorktreeBranch.trim()
     if (!branch) return
-    const path = `${projectPath}/.gardenia/worktrees/${branch}`
+    const path = `${projectPath}/.atelier/worktrees/${branch}`
     try {
-      await window.gardenia.gitWorktreeAdd(projectPath, path, branch, hostname)
+      await window.atelier.gitWorktreeAdd(projectPath, path, branch, hostname)
       setNewWorktreeBranch('')
       await refresh()
     } catch (err) {
@@ -67,7 +67,7 @@ export default function DiffPanel({
   async function handleMergeWorktree(branch: string): Promise<void> {
     setWorktreeError(null)
     try {
-      await window.gardenia.gitWorktreeMerge(projectPath, branch, hostname)
+      await window.atelier.gitWorktreeMerge(projectPath, branch, hostname)
       await refresh()
     } catch (err) {
       setWorktreeError(err instanceof Error ? err.message : String(err))
@@ -77,7 +77,7 @@ export default function DiffPanel({
   async function handleRemoveWorktree(path: string): Promise<void> {
     setWorktreeError(null)
     try {
-      await window.gardenia.gitWorktreeRemove(projectPath, path, hostname)
+      await window.atelier.gitWorktreeRemove(projectPath, path, hostname)
       await refresh()
     } catch (err) {
       setWorktreeError(err instanceof Error ? err.message : String(err))

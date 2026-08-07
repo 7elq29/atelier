@@ -84,11 +84,11 @@ test.describe('bug-57: external Obsidian edit moving a task from Tasks to Backlo
   let notePath: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug57-userdata-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug57-userdata-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug57-vault-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug57-vault-'))
     vaultRoot = join(vaultParent, 'vault')
     const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31')
     mkdirSync(noteDir, { recursive: true })
@@ -99,7 +99,7 @@ test.describe('bug-57: external Obsidian edit moving a task from Tasks to Backlo
 
     electronApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TEST_DATE }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: TEST_DATE }
     })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -135,7 +135,7 @@ test.describe('bug-57: external Obsidian edit moving a task from Tasks to Backlo
     await page.screenshot({ path: join(artifactsDir, '57-obsidian-timeline-sync-after.png') })
 
     // Log evidence: the watcher did observe and reparse the external change.
-    const logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+    const logPath = await page.evaluate(() => window.atelier.getLogFilePath())
     const logLines = readFileSync(logPath, 'utf-8')
       .trim()
       .split('\n')

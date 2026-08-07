@@ -41,7 +41,7 @@ async function openNewSessionModal(page: Page): Promise<void> {
 async function logTranscriptState(page: Page, sessionId: string, label: string): Promise<void> {
   const rows = await page.evaluate(
     (id) =>
-      window.gardenia.debugQueryDb<{ role: string; content: string; created_at: string }>(
+      window.atelier.debugQueryDb<{ role: string; content: string; created_at: string }>(
         'SELECT role, content, created_at FROM messages WHERE session_id = ? ORDER BY id ASC',
         [id]
       ),
@@ -60,16 +60,16 @@ test.describe('05-interactive-prompts', () => {
   let projectDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-prompts-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-prompts-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-prompts-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-prompts-project-'))
     writeFileSync(join(projectDir, 'README.md'), '# test project\n')
     // A real (but instant, offline) "npm test" script — avoids npm's slow
     // registry-lookup/ENOENT path when no package.json exists, which made
     // the permission test's Bash calls flaky/slow in earlier runs.
     writeFileSync(
       join(projectDir, 'package.json'),
-      JSON.stringify({ name: 'gardenia-e2e-prompts-project', version: '0.0.0', scripts: { test: 'echo test-ran' } }, null, 2)
+      JSON.stringify({ name: 'atelier-e2e-prompts-project', version: '0.0.0', scripts: { test: 'echo test-ran' } }, null, 2)
     )
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
@@ -132,7 +132,7 @@ test.describe('05-interactive-prompts', () => {
         async () => {
           const rows = await page.evaluate(
             (id) =>
-              window.gardenia.debugQueryDb<{ content: string }>(
+              window.atelier.debugQueryDb<{ content: string }>(
                 "SELECT content FROM messages WHERE session_id = ? AND role='assistant' AND content NOT LIKE '{%' ORDER BY id DESC LIMIT 1",
                 [id]
               ),
@@ -154,7 +154,7 @@ test.describe('05-interactive-prompts', () => {
     await page.getByTestId('pick-project-folder').click()
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
-      'Use the Bash tool to run exactly: npm test -- --gardenia-e2e-marker-one. ' +
+      'Use the Bash tool to run exactly: npm test -- --atelier-e2e-marker-one. ' +
         'Report the exit code and first line of output in one sentence.'
     )
     await page.getByTestId('start-session-button').click()
@@ -179,7 +179,7 @@ test.describe('05-interactive-prompts', () => {
 
     const toolCard1 = page
       .locator('[data-testid="tool-card"][data-tool-name="Bash"]')
-      .filter({ hasText: 'gardenia-e2e-marker-one' })
+      .filter({ hasText: 'atelier-e2e-marker-one' })
     await expect(toolCard1).toBeVisible({ timeout: 10_000 })
     await expect(toolCard1).toHaveAttribute('data-tool-status', 'error', { timeout: 10_000 })
     await toolCard1.click()
@@ -195,9 +195,9 @@ test.describe('05-interactive-prompts', () => {
     // is scoped to "the session" for the DURATION of one live SDK
     // connection, not guaranteed to survive a resume reconnect.
     await page.getByTestId('composer-input').fill(
-      'Use the Bash tool to run exactly: npm test -- --gardenia-e2e-marker-two. ' +
+      'Use the Bash tool to run exactly: npm test -- --atelier-e2e-marker-two. ' +
         'Immediately after that command finishes (whether it succeeds or fails), in the SAME turn use the Bash tool again ' +
-        'to run exactly: npm test -- --gardenia-e2e-marker-three. Then report what happened to both in one sentence.'
+        'to run exactly: npm test -- --atelier-e2e-marker-three. Then report what happened to both in one sentence.'
     )
     await page.getByTestId('send-button').click()
 
@@ -210,7 +210,7 @@ test.describe('05-interactive-prompts', () => {
 
     const toolCard2 = page
       .locator('[data-testid="tool-card"][data-tool-name="Bash"]')
-      .filter({ hasText: 'gardenia-e2e-marker-two' })
+      .filter({ hasText: 'atelier-e2e-marker-two' })
     await expect(toolCard2).toBeVisible({ timeout: 30_000 })
     await expect(toolCard2).toHaveAttribute('data-tool-status', 'completed', { timeout: 30_000 })
 
@@ -220,7 +220,7 @@ test.describe('05-interactive-prompts', () => {
 
     const toolCard3 = page
       .locator('[data-testid="tool-card"][data-tool-name="Bash"]')
-      .filter({ hasText: 'gardenia-e2e-marker-three' })
+      .filter({ hasText: 'atelier-e2e-marker-three' })
     await expect(toolCard3).toBeVisible({ timeout: 30_000 })
     await expect(toolCard3).toHaveAttribute('data-tool-status', 'completed', { timeout: 30_000 })
 
@@ -238,7 +238,7 @@ test.describe('05-interactive-prompts', () => {
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('plan-mode-checkbox').check()
     await page.getByTestId('initial-prompt').fill(
-      'Make a short 2-step plan to create a file called gardenia-plan-test.txt containing exactly the text hello-plan, ' +
+      'Make a short 2-step plan to create a file called atelier-plan-test.txt containing exactly the text hello-plan, ' +
         'then call ExitPlanMode to present the plan for approval. Do not create the file or call any other tool first.'
     )
     await page.getByTestId('start-session-button').click()
@@ -250,7 +250,7 @@ test.describe('05-interactive-prompts', () => {
 
     const planCard1 = page.getByTestId('plan-card').first()
     await expect(planCard1).toBeVisible({ timeout: 45_000 })
-    await expect(planCard1.getByTestId('plan-body')).toContainText('gardenia-plan-test.txt')
+    await expect(planCard1.getByTestId('plan-body')).toContainText('atelier-plan-test.txt')
     await page.screenshot({ path: join(artifactsDir, '05-plan.png') })
 
     // Reject: the note says so, actions hide, and the file must NOT exist.
@@ -265,7 +265,7 @@ test.describe('05-interactive-prompts', () => {
       .poll(async () => {
         const rows = await page.evaluate(
           (id) =>
-            window.gardenia.debugQueryDb<{ c: number }>(
+            window.atelier.debugQueryDb<{ c: number }>(
               "SELECT COUNT(*) as c FROM messages WHERE session_id = ? AND role='assistant' AND content NOT LIKE '{%'",
               [id]
             ),
@@ -277,7 +277,7 @@ test.describe('05-interactive-prompts', () => {
 
     // Ask again, expect a second plan card, this time accept it.
     await page.getByTestId('composer-input').fill(
-      'Please propose the exact same plan again (create gardenia-plan-test.txt containing hello-plan) via ExitPlanMode.'
+      'Please propose the exact same plan again (create atelier-plan-test.txt containing hello-plan) via ExitPlanMode.'
     )
     await page.getByTestId('send-button').click()
 

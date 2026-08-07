@@ -65,11 +65,11 @@ test.describe('10f-enrichment-model-effort-picker', () => {
   let logPath: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-model-picker-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-model-picker-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-model-picker-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-model-picker-project-'))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
-    logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+    logPath = await page.evaluate(() => window.atelier.getLogFilePath())
   })
 
   test.afterAll(async () => {
@@ -172,7 +172,7 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     // silently-dropped/failed reconnect.
     const assistantRows = await page.evaluate(
       (id) =>
-        window.gardenia.debugQueryDb<{ content: string }>(
+        window.atelier.debugQueryDb<{ content: string }>(
           "SELECT content FROM messages WHERE session_id = ? AND role='assistant' AND content NOT LIKE '{%' ORDER BY id ASC",
           [id]
         ),

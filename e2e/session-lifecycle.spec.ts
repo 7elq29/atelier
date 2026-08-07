@@ -1,8 +1,9 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { tmpdir, homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { TURN_INTERRUPTED_NOTICE } from '../src/shared/session-types'
 
 const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
@@ -45,7 +46,7 @@ async function stubProjectFolder(app: ElectronApplication, path: string): Promis
  * UI"), against the app's own live connection.
  */
 async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = []): Promise<T[]> {
-  return activePage.evaluate(({ sql: query, params: bindings }) => window.gardenia.debugQueryDb<T>(query, bindings), {
+  return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugQueryDb<T>(query, bindings), {
     sql,
     params
   })
@@ -77,9 +78,9 @@ test.describe('02-session-lifecycle', () => {
   let forkedSessionId: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-lifecycle-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-lifecycle-'))
     seedSkipOnboarding(userDataDir)
-    localProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-project-'))
+    localProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-project-'))
     writeFileSync(join(localProjectDir, 'README.md'), '# test project\n')
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
@@ -392,7 +393,7 @@ test.describe('02-session-lifecycle', () => {
     await expect
       .poll(
         async () => {
-          const messages = await page.evaluate((id) => window.gardenia.listSessionMessages(id), remoteSessionId)
+          const messages = await page.evaluate((id) => window.atelier.listSessionMessages(id), remoteSessionId)
           return messages.some((m) => m.role === 'assistant' && m.content.includes('PONGREMOTE'))
         },
         { timeout: 90_000 }
@@ -463,7 +464,7 @@ test.describe('02-session-lifecycle', () => {
     await expect
       .poll(
         async () => {
-          const messages = await page.evaluate((id) => window.gardenia.listSessionMessages(id), tildeSessionId)
+          const messages = await page.evaluate((id) => window.atelier.listSessionMessages(id), tildeSessionId)
           return messages.some((m) => m.role === 'assistant' && m.content.includes('PONGTILDE'))
         },
         { timeout: 90_000 }
@@ -536,7 +537,7 @@ test.describe('02-session-lifecycle', () => {
   // message, which then replays on every future resume as if the reconnect
   // itself had just failed. Separately, there was no "connecting" UI at all.
   test('bug: resume after close does not replay a stale SIGTERM error, and no connect indicator gets stuck visible', async () => {
-    const bugProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug-sigterm-project-'))
+    const bugProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug-sigterm-project-'))
     writeFileSync(join(bugProjectDir, 'README.md'), '# test project\n')
 
     await stubProjectFolder(electronApp, bugProjectDir)
@@ -658,7 +659,7 @@ test.describe('02-session-lifecycle', () => {
   })
 
   test('bug: resume after close does not leave a Bash tool chip stuck in the running state', async () => {
-    const bugProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug-stale-tool-running-'))
+    const bugProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug-stale-tool-running-'))
     writeFileSync(join(bugProjectDir, 'README.md'), '# test project\n')
 
     await stubProjectFolder(electronApp, bugProjectDir)
@@ -695,7 +696,7 @@ test.describe('02-session-lifecycle', () => {
       parentToolUseId: null
     })
     await page.evaluate(
-      ({ sql, params }) => window.gardenia.debugExecDb(sql, params),
+      ({ sql, params }) => window.atelier.debugExecDb(sql, params),
       {
         sql: `INSERT INTO messages (session_id, role, content, raw_event, created_at) VALUES (?, 'assistant', ?, NULL, ?)`,
         params: [sessionId, runningToolContent, new Date().toISOString()]
@@ -732,7 +733,7 @@ test.describe('02-session-lifecycle', () => {
   // directory before resume makes the real SDK subprocess spawn/run fail
   // for a real reason, unrelated to closeSession()'s interrupt.
   test('bug repro safety net: a genuine reconnect failure (not caused by our own interrupt) still surfaces an error', async () => {
-    const doomedProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug-genuine-fail-'))
+    const doomedProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug-genuine-fail-'))
     writeFileSync(join(doomedProjectDir, 'README.md'), '# test project\n')
 
     await stubProjectFolder(electronApp, doomedProjectDir)
@@ -807,7 +808,7 @@ test.describe('02-session-lifecycle', () => {
   // of by a remote devpod restart.
   test('bug: resume() against a conversation the CLI backend has lost falls back to a fresh session instead of failing forever', async ({}, testInfo) => {
     testInfo.setTimeout(180_000)
-    const bugProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-bug-lost-conversation-'))
+    const bugProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug-lost-conversation-'))
     writeFileSync(join(bugProjectDir, 'README.md'), '# test project\n')
 
     await stubProjectFolder(electronApp, bugProjectDir)
@@ -1052,11 +1053,11 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
   const SSH_TEST_OPTS = ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new']
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-worktree-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-worktree-'))
     seedSkipOnboarding(userDataDir)
     ;({ app: electronApp, page } = await launchApp(userDataDir))
-    const hosts = await page.evaluate(() => window.gardenia.listHosts())
-    const envTarget = process.env.GARDENIA_TEST_DEVPOD
+    const hosts = await page.evaluate(() => window.atelier.listHosts())
+    const envTarget = process.env.ATELIER_TEST_DEVPOD
     devpodHost = envTarget
       ? hosts.find((h) => h.sshHost === envTarget || h.id === envTarget)
       : hosts.find((h) => h.sshHost === 'qingqin-go.devpod-us-or') ?? hosts[0]
@@ -1092,7 +1093,7 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
 
   test('use-worktree success: modal closes immediately, sidebar shows creating-worktree, transitions to live; chat and terminal run from worktree', async () => {
     test.setTimeout(2 * 60_000)
-    test.skip(!devpodHost || !remoteGitDir, 'No devpod configured — set GARDENIA_TEST_DEVPOD or configure a devpod host')
+    test.skip(!devpodHost || !remoteGitDir, 'No devpod configured — set ATELIER_TEST_DEVPOD or configure a devpod host')
     if (!devpodHost || !remoteGitDir) return
 
     await openNewSessionModal(page)
@@ -1130,7 +1131,7 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
       'SELECT worktree_path FROM sessions ORDER BY created_at DESC LIMIT 1'
     )
     expect(rows[0]?.worktree_path, 'worktree_path must be set in DB after successful creation').toBeTruthy()
-    expect(rows[0]?.worktree_path).toContain('.gardenia')
+    expect(rows[0]?.worktree_path).toContain('.atelier')
 
     await page.screenshot({ path: join(artifactsDir, '02-worktree-created.png') })
 
@@ -1146,7 +1147,7 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
         async () => page.locator('[data-testid="transcript-message"][data-role="assistant"]').last().textContent(),
         { timeout: 30_000 }
       )
-      .toContain('.gardenia/worktrees')
+      .toContain('.atelier/worktrees')
     await page.screenshot({ path: join(artifactsDir, '02-worktree-chat-in-worktree.png') })
 
     // Terminal tab must also open in the worktree directory.
@@ -1157,7 +1158,7 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     await page.waitForTimeout(3_000) // SSH + tmux attach
     await page.keyboard.type('pwd')
     await page.keyboard.press('Enter')
-    await expect.poll(async () => term.textContent(), { timeout: 15_000 }).toContain('.gardenia/worktrees')
+    await expect.poll(async () => term.textContent(), { timeout: 15_000 }).toContain('.atelier/worktrees')
     await page.screenshot({ path: join(artifactsDir, '02-worktree-terminal-in-worktree.png') })
   })
 
@@ -1186,5 +1187,67 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
       .toBe(countBefore)
 
     await page.screenshot({ path: join(artifactsDir, '02-worktree-failure-removed.png') })
+  })
+})
+
+test.describe('02-session-lifecycle (gardenia worktree migration)', () => {
+  test('legacy .gardenia/worktrees paths migrate to .atelier on launch', async () => {
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-gardenia-migrate-'))
+    seedSkipOnboarding(userDataDir)
+
+    const projectDir = mkdtempSync(join(tmpdir(), 'atelier-gardenia-migrate-repo-'))
+    execFileSync('git', ['init', '-b', 'main'], { cwd: projectDir })
+    writeFileSync(join(projectDir, 'README.md'), '# migrate\n')
+    execFileSync('git', ['add', 'README.md'], { cwd: projectDir })
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: projectDir })
+
+    const sessionId = randomUUID()
+    const legacyWorktreePath = join(projectDir, '.gardenia', 'worktrees', sessionId)
+    const branch = `gardenia-${sessionId.slice(0, 8)}`
+    mkdirSync(dirname(legacyWorktreePath), { recursive: true })
+    execFileSync('git', ['worktree', 'add', '-b', branch, legacyWorktreePath], { cwd: projectDir })
+
+    const { app, page } = await launchApp(userDataDir)
+    try {
+      await page.evaluate(
+        ({ sessionId: id, projectPath, worktreePath }) => {
+          return window.atelier.debugExecDb(
+            `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order, worktree_path, permission_mode)
+             VALUES (?, 'legacy worktree', 0, ?, 'claude-code', NULL, NULL, 0, NULL, datetime('now'), NULL, NULL, 0, ?, 'default')`,
+            [id, projectPath, worktreePath]
+          )
+        },
+        { sessionId, projectPath: projectDir, worktreePath: legacyWorktreePath }
+      )
+
+      await page.evaluate(() =>
+        window.atelier.debugExecDb(`DELETE FROM migrations WHERE name = '0010_gardenia_to_atelier_worktrees'`)
+      )
+
+      await app.close()
+
+      const relaunch = await launchApp(userDataDir)
+      try {
+        const rows = await queryDb<{ worktree_path: string | null }>(
+          relaunch.page,
+          'SELECT worktree_path FROM sessions WHERE id = ?',
+          [sessionId]
+        )
+        const migratedPath = rows[0]?.worktree_path
+        expect(migratedPath).toContain('/.atelier/worktrees/')
+        expect(existsSync(migratedPath!), 'migrated worktree directory must exist').toBe(true)
+        expect(existsSync(legacyWorktreePath), 'legacy worktree directory must be gone').toBe(false)
+
+        const branches = execFileSync('git', ['-C', projectDir, 'branch', '--list', 'atelier-*'], {
+          encoding: 'utf8'
+        })
+        expect(branches).toContain(`atelier-${sessionId.slice(0, 8)}`)
+      } finally {
+        await relaunch.app.close()
+      }
+    } finally {
+      await app.close().catch(() => undefined)
+      rmSync(projectDir, { recursive: true, force: true })
+    }
   })
 })

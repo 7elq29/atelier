@@ -87,9 +87,9 @@ export function useSessions(): UseSessionsResult {
 
   const refresh = useCallback(async () => {
     const [active, history, tags] = await Promise.all([
-      window.gardenia.listActiveSessions(),
-      window.gardenia.listHistorySessions(),
-      window.gardenia.listAllTags()
+      window.atelier.listActiveSessions(),
+      window.atelier.listHistorySessions(),
+      window.atelier.listAllTags()
     ])
     setActiveSessions(active)
     setHistorySessions(history)
@@ -97,16 +97,16 @@ export function useSessions(): UseSessionsResult {
   }, [])
 
   const refreshGroups = useCallback(async () => {
-    setGroups(await window.gardenia.listGroups())
+    setGroups(await window.atelier.listGroups())
   }, [])
 
   useEffect(() => {
     refresh()
     refreshGroups()
-    window.gardenia.listHosts().then(setHosts)
-    window.gardenia.listSessionStatuses().then(setStatuses)
+    window.atelier.listHosts().then(setHosts)
+    window.atelier.listSessionStatuses().then(setStatuses)
 
-    const offMessage = window.gardenia.onSessionMessage(({ sessionId, message }) => {
+    const offMessage = window.atelier.onSessionMessage(({ sessionId, message }) => {
       setMessagesBySession((prev) => {
         const list = prev[sessionId] ?? []
         const idx = list.findIndex((m) => m.id === message.id)
@@ -120,7 +120,7 @@ export function useSessions(): UseSessionsResult {
         return { ...prev, [sessionId]: next }
       })
     })
-    const offDelta = window.gardenia.onSessionStreamDelta(({ sessionId, messageId, text }) => {
+    const offDelta = window.atelier.onSessionStreamDelta(({ sessionId, messageId, text }) => {
       // Token-level live render: patches the in-progress message's content
       // directly in renderer state on every delta, without a DB round-trip
       // — the eventual `session:message` push above commits the final text.
@@ -134,7 +134,7 @@ export function useSessions(): UseSessionsResult {
         return { ...prev, [sessionId]: next }
       })
     })
-    const offLifecycle = window.gardenia.onSessionLifecycle(() => {
+    const offLifecycle = window.atelier.onSessionLifecycle(() => {
       // Any lifecycle change (created/renamed/closed/resumed/forked/deleted/
       // updated) can move a session between active/pinned/history — simplest
       // correct thing is to just refetch both lists.
@@ -143,33 +143,33 @@ export function useSessions(): UseSessionsResult {
     // Concurrent per-session status (06-session-organization): pushed for
     // EVERY session independently of which one is focused/active, so this
     // patches statuses[sessionId] directly rather than refetching everything.
-    const offStatus = window.gardenia.onSessionStatus(({ sessionId, status }) => {
+    const offStatus = window.atelier.onSessionStatus(({ sessionId, status }) => {
       setStatuses((prev) => ({ ...prev, [sessionId]: status }))
     })
-    const offGroup = window.gardenia.onGroupChanged(() => {
+    const offGroup = window.atelier.onGroupChanged(() => {
       refreshGroups()
       refresh()
     })
-    const offTurnState = window.gardenia.onSessionTurnState(({ sessionId, busy }) => {
+    const offTurnState = window.atelier.onSessionTurnState(({ sessionId, busy }) => {
       setBusyBySession((prev) => (prev[sessionId] === busy ? prev : { ...prev, [sessionId]: busy }))
     })
     // Live slash-command registry (bug #56): always REPLACE the cached list
     // for this session, never merge — matches SessionCommandsEvent's own
     // doc comment (the SDK's own commands_changed push is itself a full
     // replacement, not a delta).
-    const offCommands = window.gardenia.onSessionCommands(({ sessionId, commands }) => {
+    const offCommands = window.atelier.onSessionCommands(({ sessionId, commands }) => {
       setCommandsBySession((prev) => ({ ...prev, [sessionId]: commands }))
     })
     // token-usage-indicator: update per-session token counts after each turn.
-    const offTokenUsage = window.gardenia.onSessionTokenUsage(({ sessionId, inputTokens, contextWindow }) => {
+    const offTokenUsage = window.atelier.onSessionTokenUsage(({ sessionId, inputTokens, contextWindow }) => {
       setTokenUsageBySession((prev) => ({ ...prev, [sessionId]: { inputTokens, contextWindow } }))
     })
     // use-worktree: track git worktree add progress per session.
-    const offWorktreeProgress = window.gardenia.onSessionWorktreeProgress(({ sessionId, percent }) => {
+    const offWorktreeProgress = window.atelier.onSessionWorktreeProgress(({ sessionId, percent }) => {
       setWorktreeProgressBySession((prev) => ({ ...prev, [sessionId]: percent }))
     })
     // Startup recoverability: mark sessions whose transcript/tmux is gone.
-    const offStale = window.gardenia.onSessionStale(({ sessionId }) => {
+    const offStale = window.atelier.onSessionStale(({ sessionId }) => {
       setStaleSessionIds((prev) => { const next = new Set(prev); next.add(sessionId); return next })
     })
     return () => {
@@ -188,7 +188,7 @@ export function useSessions(): UseSessionsResult {
 
   const createSession = useCallback(
     async (opts: CreateSessionOptions): Promise<SessionRecord> => {
-      const session = await window.gardenia.createSession(opts)
+      const session = await window.atelier.createSession(opts)
       await refresh()
       return session
     },
@@ -196,22 +196,22 @@ export function useSessions(): UseSessionsResult {
   )
 
   const resumeSession = useCallback(async (sessionId: string): Promise<void> => {
-    const { messages } = await window.gardenia.resumeSession(sessionId)
+    const { messages } = await window.atelier.resumeSession(sessionId)
     // Full stored transcript rendered immediately; the live reconnect (main
     // process) streams any NEW events in over session:message afterward.
     setMessagesBySession((prev) => ({ ...prev, [sessionId]: messages }))
   }, [])
 
   const sendMessage = useCallback(async (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment): Promise<void> => {
-    await window.gardenia.sendSessionMessage(sessionId, text, modelSelection, image)
+    await window.atelier.sendSessionMessage(sessionId, text, modelSelection, image)
   }, [])
 
   const interrupt = useCallback(async (sessionId: string): Promise<void> => {
-    await window.gardenia.interruptSession(sessionId)
+    await window.atelier.interruptSession(sessionId)
   }, [])
 
   const validateModel = useCallback(async (sessionId: string, model: string): Promise<ModelValidationResult> => {
-    return window.gardenia.validateModel(sessionId, model)
+    return window.atelier.validateModel(sessionId, model)
   }, [])
 
   const addLocalMessage = useCallback((sessionId: string, content: string): void => {
@@ -235,7 +235,7 @@ export function useSessions(): UseSessionsResult {
   const respondToPrompt = useCallback(
     async (sessionId: string, requestId: string, decision: PromptDecision): Promise<void> => {
       try {
-        await window.gardenia.respondToPrompt(sessionId, requestId, decision)
+        await window.atelier.respondToPrompt(sessionId, requestId, decision)
       } catch (err) {
         // Can legitimately fail if the turn already ended in error and the
         // card's prompt was expired server-side (see manager.ts's
@@ -250,29 +250,29 @@ export function useSessions(): UseSessionsResult {
 
   /** Shift+Tab / mode-pill click cycles default -> plan -> acceptEdits -> auto -> default (11-composer-mode-indicator). The main process broadcasts `session.updated` itself, so — same pattern as setPinned/setColor/etc. above — this doesn't need to patch local state or call refresh() itself. */
   const cycleMode = useCallback(async (sessionId: string): Promise<void> => {
-    await window.gardenia.cycleSessionMode(sessionId)
+    await window.atelier.cycleSessionMode(sessionId)
   }, [])
 
   const forkSession = useCallback(async (sessionId: string): Promise<SessionRecord> => {
-    const forked = await window.gardenia.forkSession(sessionId)
-    const messages = await window.gardenia.listSessionMessages(forked.id)
+    const forked = await window.atelier.forkSession(sessionId)
+    const messages = await window.atelier.listSessionMessages(forked.id)
     setMessagesBySession((prev) => ({ ...prev, [forked.id]: messages }))
     return forked
   }, [])
 
   const restartSession = useCallback(async (sessionId: string): Promise<SessionRecord> => {
-    const forked = await window.gardenia.restartSession(sessionId)
-    const messages = await window.gardenia.listSessionMessages(forked.id)
+    const forked = await window.atelier.restartSession(sessionId)
+    const messages = await window.atelier.listSessionMessages(forked.id)
     setMessagesBySession((prev) => ({ ...prev, [forked.id]: messages }))
     return forked
   }, [])
 
   const closeSession = useCallback(async (sessionId: string): Promise<void> => {
-    await window.gardenia.closeSession(sessionId)
+    await window.atelier.closeSession(sessionId)
   }, [])
 
   const deleteSession = useCallback(async (sessionId: string): Promise<void> => {
-    await window.gardenia.deleteSession(sessionId)
+    await window.atelier.deleteSession(sessionId)
     setMessagesBySession((prev) => {
       const next = { ...prev }
       delete next[sessionId]
@@ -281,70 +281,70 @@ export function useSessions(): UseSessionsResult {
   }, [])
 
   const renameSession = useCallback(async (sessionId: string, name: string): Promise<void> => {
-    await window.gardenia.renameSession(sessionId, name)
+    await window.atelier.renameSession(sessionId, name)
   }, [])
 
   const setPinned = useCallback(async (sessionId: string, pinned: boolean): Promise<void> => {
-    await window.gardenia.setSessionPinned(sessionId, pinned)
+    await window.atelier.setSessionPinned(sessionId, pinned)
   }, [])
 
   const exportTranscript = useCallback(
     async (sessionId: string, format: 'markdown' | 'json'): Promise<string | null> => {
-      return window.gardenia.exportTranscript(sessionId, format)
+      return window.atelier.exportTranscript(sessionId, format)
     },
     []
   )
 
   const setColor = useCallback(async (sessionId: string, color: string): Promise<void> => {
-    await window.gardenia.setSessionColor(sessionId, color)
+    await window.atelier.setSessionColor(sessionId, color)
   }, [])
 
   const setNotes = useCallback(async (sessionId: string, notes: string): Promise<void> => {
-    await window.gardenia.setSessionNotes(sessionId, notes)
+    await window.atelier.setSessionNotes(sessionId, notes)
   }, [])
 
   const addTag = useCallback(async (sessionId: string, tag: string): Promise<void> => {
-    await window.gardenia.addSessionTag(sessionId, tag)
+    await window.atelier.addSessionTag(sessionId, tag)
     await refresh()
   }, [refresh])
 
   const removeTag = useCallback(async (sessionId: string, tag: string): Promise<void> => {
-    await window.gardenia.removeSessionTag(sessionId, tag)
+    await window.atelier.removeSessionTag(sessionId, tag)
     await refresh()
   }, [refresh])
 
   const setSessionGroup = useCallback(async (sessionId: string, groupId: string | null): Promise<void> => {
-    await window.gardenia.setSessionGroup(sessionId, groupId)
+    await window.atelier.setSessionGroup(sessionId, groupId)
   }, [])
 
   const reorderSessionsFn = useCallback(
     async (groupId: string | null | undefined, orderedIds: string[]): Promise<void> => {
-      await window.gardenia.reorderSessions(groupId, orderedIds)
+      await window.atelier.reorderSessions(groupId, orderedIds)
     },
     []
   )
 
   const createGroup = useCallback(async (name: string): Promise<SessionGroupRecord> => {
-    const group = await window.gardenia.createGroup(name)
+    const group = await window.atelier.createGroup(name)
     await refreshGroups()
     return group
   }, [refreshGroups])
 
   const renameGroup = useCallback(async (groupId: string, name: string): Promise<void> => {
-    await window.gardenia.renameGroup(groupId, name)
+    await window.atelier.renameGroup(groupId, name)
   }, [])
 
   const setGroupCollapsed = useCallback(async (groupId: string, collapsed: boolean): Promise<void> => {
-    await window.gardenia.setGroupCollapsed(groupId, collapsed)
+    await window.atelier.setGroupCollapsed(groupId, collapsed)
     await refreshGroups()
   }, [refreshGroups])
 
   const deleteGroup = useCallback(async (groupId: string): Promise<void> => {
-    await window.gardenia.deleteGroup(groupId)
+    await window.atelier.deleteGroup(groupId)
   }, [])
 
   const reorderGroups = useCallback(async (orderedIds: string[]): Promise<void> => {
-    await window.gardenia.reorderGroups(orderedIds)
+    await window.atelier.reorderGroups(orderedIds)
     await refreshGroups()
   }, [refreshGroups])
 

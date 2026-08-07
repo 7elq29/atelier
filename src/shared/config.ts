@@ -20,7 +20,7 @@ export interface GitIdentity {
   email: string
 }
 
-export interface GardeniaConfig {
+export interface AtelierConfig {
   /** First-run wizard has been completed — never show it again once true. */
   onboardingCompleted: boolean
   theme: ThemeMode
@@ -34,7 +34,7 @@ export interface GardeniaConfig {
   gitIdentity: GitIdentity
 }
 
-export const DEFAULT_CONFIG: GardeniaConfig = {
+export const DEFAULT_CONFIG: AtelierConfig = {
   onboardingCompleted: false,
   theme: 'dark',
   sidebarCollapsed: false,

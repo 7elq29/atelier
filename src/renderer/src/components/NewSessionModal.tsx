@@ -50,7 +50,7 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
   useEffect(() => {
     if (!isOpen) return
     let cancelled = false
-    window.gardenia
+    window.atelier
       .listRecentProjectPaths(hostId)
       .then((paths) => {
         if (!cancelled) setRecentPaths(paths)
@@ -68,7 +68,7 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
   const isRemote = hostId !== 'local'
 
   async function pickFolder(): Promise<void> {
-    const picked = await window.gardenia.pickProjectFolder()
+    const picked = await window.atelier.pickProjectFolder()
     if (picked) setProjectPath(picked)
   }
 
@@ -214,12 +214,12 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
                   Use worktree
                   {projectPath && (
                     <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
-                      — isolated copy at {projectPath}/.gardenia/worktrees/&lt;id&gt;
+                      — isolated copy at {projectPath}/.atelier/worktrees/&lt;id&gt;
                     </span>
                   )}
                   {!projectPath && (
                     <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
-                      — isolated copy at &lt;project&gt;/.gardenia/worktrees/&lt;id&gt;
+                      — isolated copy at &lt;project&gt;/.atelier/worktrees/&lt;id&gt;
                     </span>
                   )}
                 </span>

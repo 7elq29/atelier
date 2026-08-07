@@ -3,6 +3,10 @@ import { app } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { logger } from './logger'
+import {
+  migrateLegacyGardeniaDatabaseFile,
+  runGardeniaToAtelierWorktreeMigration
+} from './migrations/gardenia-to-atelier'
 import { runHistoricalCostBackfill } from './sessions/historical-cost-recompute'
 
 let db: Database.Database | undefined
@@ -170,9 +174,9 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
   {
     // use-worktree: optional isolated git worktree per session. When the
     // user enables "Use worktree" in the New Session modal for a local
-    // claude-code session, Gardenia creates a git worktree at
-    // `<project>/.gardenia/worktrees/<session-id>` on a new branch
-    // `gardenia-<session-id-prefix>`, runs Claude Code inside that
+    // claude-code session, Atelier creates a git worktree at
+    // `<project>/.atelier/worktrees/<session-id>` on a new branch
+    // `atelier-<session-id-prefix>`, runs Claude Code inside that
     // worktree path instead of the original project path, and removes both
     // the worktree directory and its branch when the session is deleted.
     // Null for sessions that were not created with useWorktree, or for
@@ -183,7 +187,7 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
     `
   },
   {
-    // fix-app-quit-interrupted-turn-notice: set when Gardenia closes or quits
+    // fix-app-quit-interrupted-turn-notice: set when Atelier closes or quits
     // while a turn is in flight (`live.busy`); consumed once on the next
     // resume/relaunch transcript load to insert a plain-language system
     // notice (not a raw SDK "process exited" error).
@@ -229,12 +233,14 @@ export function openDatabase(): Database.Database {
 
   const dataDir = join(app.getPath('userData'), 'data')
   mkdirSync(dataDir, { recursive: true })
-  const dbPath = join(dataDir, 'gardenia.sqlite')
+  migrateLegacyGardeniaDatabaseFile(dataDir)
+  const dbPath = join(dataDir, 'atelier.sqlite')
 
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   runMigrations(db)
+  runGardeniaToAtelierWorktreeMigration(db)
   // fix-session-cost-historical-backfill (one-time, tracked as
   // '0006_historical_cost_recompute_from_jsonl' in the same `migrations`
   // table `runMigrations` uses — not a plain-SQL entry in MIGRATIONS above
@@ -252,7 +258,7 @@ export function openDatabase(): Database.Database {
   // match `raw_event LIKE '%total_cost%'`).
   //
   // BUT the SDK's own on-disk JSONL transcript for the session (written by
-  // the `claude` CLI, keyed by the exact same session id Gardenia uses as
+  // the `claude` CLI, keyed by the exact same session id Atelier uses as
   // `sessions.id` — see `ClaudeAgentSdkHarness.launch`'s `sessionId`/`resume`
   // option — at `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`,
   // locally or on the session's remote host) DOES durably retain every

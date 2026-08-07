@@ -2,8 +2,8 @@
  * Git worktree helpers for isolated session workspaces (use-worktree).
  *
  * Each claude-code session created with "Use worktree" gets its own git
- * worktree at `<project>/.gardenia/worktrees/<sessionId>` on a fresh branch
- * `gardenia-<sessionId-prefix>`. Claude Code runs inside that path instead of
+ * worktree at `<project>/.atelier/worktrees/<sessionId>` on a fresh branch
+ * `atelier-<sessionId-prefix>`. Claude Code runs inside that path instead of
  * the main project root, so its file edits never touch the original working
  * tree. The worktree and its branch are cleaned up when the session is
  * deleted.
@@ -36,7 +36,7 @@ export class WorktreeError extends Error {
  */
 const SSH_GIT_OPTS = [
   '-o', 'ControlMaster=auto',
-  '-o', 'ControlPath=/tmp/gardenia-ssh-%C',
+  '-o', 'ControlPath=/tmp/atelier-ssh-%C',
   '-o', 'ControlPersist=300',
   '-o', 'BatchMode=yes',
   '-o', 'StrictHostKeyChecking=accept-new',
@@ -117,8 +117,8 @@ export async function createWorktree(
   hostname?: string,
   onProgress?: (pct: number) => void
 ): Promise<string> {
-  const worktreePath = join(projectPath, '.gardenia', 'worktrees', sessionId)
-  const branch = `gardenia-${sessionId.slice(0, 8)}`
+  const worktreePath = join(projectPath, '.atelier', 'worktrees', sessionId)
+  const branch = `atelier-${sessionId.slice(0, 8)}`
 
   logger.info('worktree: creating', { projectPath, worktreePath, branch, hostname })
 
@@ -155,7 +155,7 @@ export async function createWorktree(
  * Removes a session's git worktree and its branch.
  *
  * Walks up from `worktreePath` to find the main repo root (skips the
- * `.gardenia/worktrees/<id>` path segments). For remote sessions, git
+ * `.atelier/worktrees/<id>` path segments). For remote sessions, git
  * commands are run via `ssh <hostname>` — the local `existsSync` check is
  * skipped since the path lives on the remote host. Errors from either git
  * call are swallowed and logged — a failed cleanup must never block session
@@ -168,9 +168,9 @@ export async function removeWorktree(worktreePath: string, sessionId: string, ho
   }
 
   // Derive the main repo root: go up 3 levels from
-  // `<project>/.gardenia/worktrees/<sessionId>`.
+  // `<project>/.atelier/worktrees/<sessionId>`.
   const projectPath = dirname(dirname(dirname(worktreePath)))
-  const branch = `gardenia-${sessionId.slice(0, 8)}`
+  const branch = `atelier-${sessionId.slice(0, 8)}`
 
   logger.info('worktree: removing', { worktreePath, projectPath, branch, hostname })
 

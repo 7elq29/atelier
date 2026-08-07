@@ -123,7 +123,7 @@ async function waitForCondition(page: Page, predicate: () => Promise<boolean>, t
  */
 async function logTranscriptState(page: Page, sessionId: string, label: string): Promise<void> {
   const rows = await page.evaluate(
-    (id) => window.gardenia.debugQueryDb<{ role: string; content: string; created_at: string }>(
+    (id) => window.atelier.debugQueryDb<{ role: string; content: string; created_at: string }>(
       'SELECT role, content, created_at FROM messages WHERE session_id = ? ORDER BY id ASC',
       [id]
     ),
@@ -144,9 +144,9 @@ test.describe('03-chat-surface-core', () => {
 
   test.beforeAll(async () => {
     writeFileSync(chatLogPath, '')
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-chat-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-chat-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-chat-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-chat-project-'))
     // Deliberately only 2 files: several tests below (e.g. the tool-call
     // sequence-collapse test) instruct the model to read exactly a.txt and
     // b.txt and assert an exact "Read 2 files" count — a stray unreferenced
@@ -222,7 +222,7 @@ test.describe('03-chat-surface-core', () => {
       .poll(
         async () => {
           const rows = await page.evaluate(
-            (id) => window.gardenia.debugQueryDb<{ c: number }>(
+            (id) => window.atelier.debugQueryDb<{ c: number }>(
               "SELECT COUNT(*) as c FROM messages WHERE session_id = ? AND role='assistant' AND content NOT LIKE '{%'",
               [id]
             ),
@@ -614,7 +614,7 @@ test.describe('03-chat-surface-core', () => {
       }
     })
 
-    const targetUrl = 'https://example.com/gardenia-markdown-link-test'
+    const targetUrl = 'https://example.com/atelier-markdown-link-test'
     await page.getByTestId('composer-input').fill(
       `Reply with exactly this Markdown link and nothing else, do not use any tools: [Example Site](${targetUrl})`
     )
@@ -642,7 +642,7 @@ test.describe('03-chat-surface-core', () => {
   test('user messages are NOT Markdown-rendered: literal ** / ` stay literal', async () => {
     async function assistantReplyCount(): Promise<number> {
       const rows = await page.evaluate(
-        (id) => window.gardenia.debugQueryDb<{ c: number }>(
+        (id) => window.atelier.debugQueryDb<{ c: number }>(
           "SELECT COUNT(*) as c FROM messages WHERE session_id = ? AND role='assistant' AND content NOT LIKE '{%'",
           [id]
         ),

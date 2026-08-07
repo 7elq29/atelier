@@ -14,10 +14,10 @@
  * `0006_historical_cost_recompute_from_jsonl` doc comment for the full
  * investigation), but the `claude` CLI/SDK itself writes a JSONL transcript
  * for every session at `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`
- * — keyed by the EXACT same session id Gardenia stores as `sessions.id`
+ * — keyed by the EXACT same session id Atelier stores as `sessions.id`
  * (see `ClaudeAgentSdkHarness.launch`, which passes `sessionId`/`resume`
  * through to the SDK unchanged) — and that transcript's `assistant` entries
- * each carry a raw `usage` block untouched by Gardenia's own cost bug. That
+ * each carry a raw `usage` block untouched by Atelier's own cost bug. That
  * lets us independently recompute the real historical cost from known
  * per-model token rates, the same way Morpheus's history scanner and
  * `session-cost-tracking.spec.ts` already do for going-forward proof.

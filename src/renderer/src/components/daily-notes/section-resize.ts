@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const STORAGE_KEY = 'gardenia.dailyNotes.sectionWeights'
+const STORAGE_KEY = 'atelier.dailyNotes.sectionWeights'
 const MIN_WEIGHT = 0.4
 
 export type SectionKey = 'timeline' | 'unscheduled' | 'trackers'

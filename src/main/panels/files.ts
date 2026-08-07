@@ -38,7 +38,7 @@ const MIME_BY_EXT: Record<string, string> = {
  */
 const SSH_MUX_OPTS = [
   '-o', 'ControlMaster=auto',
-  '-o', 'ControlPath=/tmp/gardenia-ssh-%C',
+  '-o', 'ControlPath=/tmp/atelier-ssh-%C',
   '-o', 'ControlPersist=300',
 ]
 

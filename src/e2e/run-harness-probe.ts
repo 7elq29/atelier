@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     process.exitCode = 1
   }
 
-  const cwd = mkdtempSync(path.join(tmpdir(), 'gardenia-harness-probe-'))
+  const cwd = mkdtempSync(path.join(tmpdir(), 'atelier-harness-probe-'))
   console.log(`[probe] using scratch cwd: ${cwd}`)
 
   const harness = new ClaudeAgentSdkHarness()

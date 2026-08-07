@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   if (!existsSync(artifactsDir)) mkdirSync(artifactsDir, { recursive: true })
   const logPath = path.join(artifactsDir, '01-interrupt.log')
 
-  const cwd = mkdtempSync(path.join(tmpdir(), 'gardenia-interrupt-probe-'))
+  const cwd = mkdtempSync(path.join(tmpdir(), 'atelier-interrupt-probe-'))
   console.log(`[probe] using scratch cwd: ${cwd}`)
 
   const harness = new ClaudeAgentSdkHarness()

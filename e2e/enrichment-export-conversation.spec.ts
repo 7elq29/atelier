@@ -53,7 +53,7 @@ async function waitForFile(path: string, timeoutMs = 15_000): Promise<string> {
 
 /** Raw read-only SQL query against the app's real SQLite DB, via the same `debug:queryDb` IPC channel other specs use. */
 async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = []): Promise<T[]> {
-  return activePage.evaluate(({ sql: query, params: bindings }) => window.gardenia.debugQueryDb<T>(query, bindings), {
+  return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugQueryDb<T>(query, bindings), {
     sql,
     params
   })
@@ -70,11 +70,11 @@ test.describe('10c-enrichment-export-conversation', () => {
   let sessionId: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-export-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-export-'))
     seedSkipOnboarding(userDataDir)
-    localProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-export-project-'))
+    localProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-export-project-'))
     writeFileSync(join(localProjectDir, 'README.md'), '# test project\n')
-    exportDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-export-out-'))
+    exportDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-export-out-'))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 

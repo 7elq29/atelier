@@ -1,7 +1,7 @@
-import type { GardeniaApi } from './index'
+import type { AtelierApi } from './index'
 
 declare global {
   interface Window {
-    gardenia: GardeniaApi
+    atelier: AtelierApi
   }
 }

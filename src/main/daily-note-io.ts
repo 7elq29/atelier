@@ -1,5 +1,5 @@
 /**
- * daily-note-io.ts — Pure-function parser/serializer for Gardenia's Obsidian
+ * daily-note-io.ts — Pure-function parser/serializer for Atelier's Obsidian
  * daily-note format. No `fs`/Electron imports: all disk access is handled by
  * the caller (src/main/daily-notes-handlers.ts).
  *
@@ -22,7 +22,7 @@
  * it minted this call (`mintedIds`). It's the caller's job (see
  * daily-notes-handlers.ts's `persistMintedGids`) to write a freshly-minted
  * `[gid:: ...]` back to the file the first time it's encountered — a task
- * hand-typed in Obsidian (no Gardenia-authored gid) would otherwise be
+ * hand-typed in Obsidian (no Atelier-authored gid) would otherwise be
  * minted a brand-new random id on every independent parse, which breaks the
  * "id is stable" invariant this module's other comments rely on
  * (fix-gidless-task-id-not-persisted).

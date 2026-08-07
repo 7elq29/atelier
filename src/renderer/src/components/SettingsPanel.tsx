@@ -1,11 +1,11 @@
 import { useState, type MouseEvent } from 'react'
-import type { GardeniaConfig } from '../../../shared/config'
+import type { AtelierConfig } from '../../../shared/config'
 
 interface SettingsPanelProps {
   isOpen: boolean
   onClose: () => void
-  config: GardeniaConfig
-  onUpdate: (partial: Partial<GardeniaConfig>) => void
+  config: AtelierConfig
+  onUpdate: (partial: Partial<AtelierConfig>) => void
   onReplayOnboarding: () => void
 }
 
@@ -34,8 +34,8 @@ export default function SettingsPanel({
   }
 
   async function sendTestNotification(): Promise<void> {
-    const ok = await window.gardenia.debugNotify(
-      'Gardenia',
+    const ok = await window.atelier.debugNotify(
+      'Atelier',
       'This is a test notification triggered from Settings.'
     )
     setNotifyStatus(ok ? 'Notification sent.' : 'Notifications are not supported on this platform.')

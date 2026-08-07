@@ -6,7 +6,7 @@
  * pool (tmux rename-session, ~0ms) instead of running tmux new-session + waiting
  * for the shell to boot (~1s). replenish() refills the pool in the background.
  *
- * Pool sessions are named `gardenia-pool-<hex>` and start in the user's home
+ * Pool sessions are named `atelier-pool-<hex>` and start in the user's home
  * directory. After claiming, the caller writes `cd <cwd> && clear` to the pty
  * to navigate to the real project directory.
  */
@@ -19,7 +19,7 @@ import { logger } from '../logger'
 
 const execFileAsync = promisify(execFile)
 const POOL_SIZE = 2
-export const POOL_PREFIX = 'gardenia-pool-'
+export const POOL_PREFIX = 'atelier-pool-'
 
 interface PoolShell {
   name: string

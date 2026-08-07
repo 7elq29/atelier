@@ -11,7 +11,7 @@ let page: Page
 let userDataDir: string
 
 test.beforeAll(async () => {
-  userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-'))
+  userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-'))
 
   electronApp = await electron.launch({
     args: [mainEntry, `--user-data-dir=${userDataDir}`]
@@ -24,8 +24,8 @@ test.afterAll(async () => {
   await electronApp.close()
 })
 
-test('window title is Gardenia', async () => {
-  await expect.poll(() => page.title()).toBe('Gardenia')
+test('window title is Atelier', async () => {
+  await expect.poll(() => page.title()).toBe('Atelier')
 })
 
 test('#root has rendered children', async () => {
@@ -37,16 +37,16 @@ test('IPC round-trip returns a real app version', async () => {
   // There is no visible "debug corner" in the normal UI (see
   // bug-remove-version-corner.spec.ts) — the app:getVersion IPC bridge is
   // exercised directly here instead of reading it off the DOM.
-  const directVersion = await page.evaluate(() => window.gardenia.getAppVersion())
+  const directVersion = await page.evaluate(() => window.atelier.getAppVersion())
   expect(directVersion).toMatch(/^\d+\.\d+\.\d+/)
 
   // Calling it a second time should be stable/idempotent.
-  const secondCall = await page.evaluate(() => window.gardenia.getAppVersion())
+  const secondCall = await page.evaluate(() => window.atelier.getAppVersion())
   expect(secondCall).toBe(directVersion)
 })
 
 test('main-process log file contains "app ready" and IPC entries', async () => {
-  const logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+  const logPath = await page.evaluate(() => window.atelier.getLogFilePath())
   expect(existsSync(logPath)).toBe(true)
 
   const contents = readFileSync(logPath, 'utf-8')

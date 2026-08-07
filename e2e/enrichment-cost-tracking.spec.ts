@@ -39,7 +39,7 @@ async function openNewSessionModal(page: Page): Promise<void> {
 
 /** Raw read-only SQL query against the app's real SQLite DB, via the same `debug:queryDb` IPC channel other specs use. */
 async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = []): Promise<T[]> {
-  return activePage.evaluate(({ sql: query, params: bindings }) => window.gardenia.debugQueryDb<T>(query, bindings), {
+  return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugQueryDb<T>(query, bindings), {
     sql,
     params
   })
@@ -47,7 +47,7 @@ async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = [])
 
 /** Appends the real main-process log's "session cost updated" lines (from SessionManager's `case 'result'`) into the proof artifact. */
 async function appendCostLog(page: Page, label: string): Promise<void> {
-  const logFilePath = await page.evaluate(() => window.gardenia.getLogFilePath())
+  const logFilePath = await page.evaluate(() => window.atelier.getLogFilePath())
   if (!existsSync(logFilePath)) return
   const raw = readFileSync(logFilePath, 'utf-8')
   const lines = raw.split('\n').filter((l) => /session cost updated/.test(l))
@@ -72,9 +72,9 @@ test.describe('10a-enrichment-cost-tracking', () => {
   let firstTurnCost: number
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-cost-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-cost-'))
     seedSkipOnboarding(userDataDir)
-    localProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-cost-project-'))
+    localProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-cost-project-'))
     writeFileSync(join(localProjectDir, 'README.md'), '# test project\n')
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })

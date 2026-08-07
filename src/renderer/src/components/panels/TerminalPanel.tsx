@@ -82,18 +82,18 @@ export default function TerminalPanel({
     const dims = fitAddon.proposeDimensions()
     const cols = dims?.cols || 100
     const rows = dims?.rows || 30
-    void window.gardenia.ptySpawn({ id: ptyId, cwd, hostname: hostname ?? null, cols, rows })
+    void window.atelier.ptySpawn({ id: ptyId, cwd, hostname: hostname ?? null, cols, rows })
 
     const dataDisposable = term.onData((data) => {
-      void window.gardenia.ptyWrite(ptyId, data)
+      void window.atelier.ptyWrite(ptyId, data)
     })
-    const unsub = window.gardenia.onPtyData(({ id, data }) => {
+    const unsub = window.atelier.onPtyData(({ id, data }) => {
       if (id !== ptyId) return
       term.write(data)
     })
 
     fitAddon.fit()
-    void window.gardenia.ptyResize(ptyId, term.cols, term.rows)
+    void window.atelier.ptyResize(ptyId, term.cols, term.rows)
 
     return () => {
       unsub()
@@ -101,7 +101,7 @@ export default function TerminalPanel({
       term.dispose()
       termRef.current = null
       fitAddonRef.current = null
-      void window.gardenia.ptyKill(ptyId)
+      void window.atelier.ptyKill(ptyId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ptyId])
@@ -121,7 +121,7 @@ export default function TerminalPanel({
     if (!term || !fitAddon) return
     term.focus()
     fitAddon.fit()
-    void window.gardenia.ptyResize(ptyId, term.cols, term.rows)
+    void window.atelier.ptyResize(ptyId, term.cols, term.rows)
   }, [active, ptyId])
 
   useEffect(() => {
@@ -132,7 +132,7 @@ export default function TerminalPanel({
       const fitAddon = fitAddonRef.current
       if (!term || !fitAddon) return
       fitAddon.fit()
-      void window.gardenia.ptyResize(ptyId, term.cols, term.rows)
+      void window.atelier.ptyResize(ptyId, term.cols, term.rows)
     })
     observer.observe(container)
     return () => observer.disconnect()
@@ -145,7 +145,7 @@ export default function TerminalPanel({
     term.options.theme = readTheme()
     term.options.fontSize = config.fontSizes.terminal
     fitAddon.fit()
-    void window.gardenia.ptyResize(ptyId, term.cols, term.rows)
+    void window.atelier.ptyResize(ptyId, term.cols, term.rows)
   }, [config.theme, config.fontSizes.terminal, ptyId])
 
   return <div ref={containerRef} className="term-body" data-testid={active ? 'terminal-body' : undefined} />

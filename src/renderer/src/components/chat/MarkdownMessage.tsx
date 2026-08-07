@@ -25,7 +25,7 @@ import { openExternalLink } from '../panels/Linkify'
  * override, no `inline` prop (react-markdown v9+ dropped it) needed.
  *
  * The one required custom override is `a`: links must open via the same
- * `openExternalLink()` / `window.gardenia.openExternal()` IPC path
+ * `openExternalLink()` / `window.atelier.openExternal()` IPC path
  * `Linkify.tsx` already uses for auto-linkified plain URLs — never a raw
  * in-app navigation.
  *

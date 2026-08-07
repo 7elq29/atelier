@@ -2,7 +2,7 @@
  * Org-wide AI harness-pool spend indicator — ported from Morpheus's
  * `cost-spend-status.ts` (origin/main, commit f09a4b18 "Replace session
  * cost tracking with spendstatus (#87)"). Same endpoint, same `usso` auth
- * flow, same defensive response parsing; adapted to Gardenia's plain
+ * flow, same defensive response parsing; adapted to Atelier's plain
  * directly-instantiated module style instead of Morpheus's DI container.
  *
  * Every failure here (missing `usso`, offline network, non-200 response)
@@ -234,7 +234,7 @@ async function fetchSpendStatus(email: string, forceRefresh = false): Promise<Re
  * degrade gracefully (see `spend-status-ipc.ts`).
  */
 export async function getSpendStatus(): Promise<SpendStatus> {
-  if (process.env.GARDENIA_DISABLE_SPEND_STATUS === '1') {
+  if (process.env.ATELIER_DISABLE_SPEND_STATUS === '1') {
     throw new Error('Spend status is disabled for this process')
   }
 

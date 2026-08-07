@@ -44,10 +44,10 @@ test.describe('fix-confirmed: daily-notes timeline right-click creates a task at
   let vaultRoot: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-dn-time-edit-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-dn-time-edit-'))
     seedSkipOnboarding(userDataDir)
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-dn-time-edit-vault-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-dn-time-edit-vault-'))
     vaultRoot = join(vaultParent, 'vault')
     const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31')
     mkdirSync(noteDir, { recursive: true })
@@ -59,7 +59,7 @@ test.describe('fix-confirmed: daily-notes timeline right-click creates a task at
 
     electronApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TEST_DATE }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: TEST_DATE }
     })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')

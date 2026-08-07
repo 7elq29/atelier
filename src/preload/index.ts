@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { GardeniaConfig } from '../shared/config'
+import type { AtelierConfig } from '../shared/config'
 import type { DailyNote, ReadDailyNoteResult } from '../shared/daily-note-types'
 import type {
   CreateSessionOptions,
@@ -47,9 +47,9 @@ const api = {
     ipcRenderer.send('renderer:log', { level, msg, extra })
   },
   /** Reads the persisted app config (theme, font sizes, onboarding flag, etc). */
-  getConfig: (): Promise<GardeniaConfig> => ipcRenderer.invoke('config:get'),
+  getConfig: (): Promise<AtelierConfig> => ipcRenderer.invoke('config:get'),
   /** Merges + persists a partial config update, returns the resulting full config. */
-  setConfig: (partial: Partial<GardeniaConfig>): Promise<GardeniaConfig> =>
+  setConfig: (partial: Partial<AtelierConfig>): Promise<AtelierConfig> =>
     ipcRenderer.invoke('config:set', partial),
   /** Debug-only: fires a real OS notification via Electron's Notification API. */
   debugNotify: (title: string, body: string): Promise<boolean> =>
@@ -232,7 +232,7 @@ const api = {
   ptyWrite: (id: string, data: string): Promise<void> => ipcRenderer.invoke('panel:pty:write', id, data),
   ptyResize: (id: string, cols: number, rows: number): Promise<void> => ipcRenderer.invoke('panel:pty:resize', id, cols, rows),
   ptyKill: (id: string): Promise<void> => ipcRenderer.invoke('panel:pty:kill', id),
-  /** Kill the tmux server session for this pty id (call on Gardenia session delete, not close). No-op if tmux is not installed. */
+  /** Kill the tmux server session for this pty id (call on Atelier session delete, not close). No-op if tmux is not installed. */
   ptyKillTmuxSession: (id: string): Promise<void> => ipcRenderer.invoke('panel:pty:killTmuxSession', id),
   onPtyData: (callback: (payload: { id: string; data: string }) => void): (() => void) => {
     const listener = (_event: unknown, payload: { id: string; data: string }): void => callback(payload)
@@ -260,7 +260,7 @@ const api = {
   getSpendStatus: (): Promise<SpendStatus | null> => ipcRenderer.invoke('spendStatus:get')
 }
 
-contextBridge.exposeInMainWorld('gardenia', api)
+contextBridge.exposeInMainWorld('atelier', api)
 
-export type GardeniaApi = typeof api
+export type AtelierApi = typeof api
 

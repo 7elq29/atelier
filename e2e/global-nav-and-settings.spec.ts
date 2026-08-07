@@ -64,7 +64,7 @@ test.describe('command palette', () => {
   const secondaryName = 'billing-invoice-tool'
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-palette-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-palette-'))
     // Pre-seed onboarding as completed so it doesn't block the palette tests.
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
@@ -188,7 +188,7 @@ test.describe('collapsed rail mode', () => {
   let userDataDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-rail-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-rail-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
@@ -222,7 +222,7 @@ test.describe('settings: theme + independent font sizes', () => {
   let userDataDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-settings-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-settings-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
@@ -325,7 +325,7 @@ test.describe('Escape key closes any open overlay, not just the command palette'
   let userDataDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-escape-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-escape-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
@@ -394,7 +394,7 @@ test.describe('desktop notification debug trigger', () => {
   let userDataDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-notify-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-notify-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
@@ -411,14 +411,14 @@ test.describe('desktop notification debug trigger', () => {
 
     await expect(page.getByTestId('notify-status')).toBeVisible()
 
-    const logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+    const logPath = await page.evaluate(() => window.atelier.getLogFilePath())
     await expect
       .poll(() => {
         if (!existsSync(logPath)) return false
         const lines = readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean)
         return lines.some((l) => {
           const entry = JSON.parse(l)
-          return entry.msg === 'notification shown' && entry.title === 'Gardenia'
+          return entry.msg === 'notification shown' && entry.title === 'Atelier'
         })
       })
       .toBe(true)
@@ -432,7 +432,7 @@ test.describe('onboarding — first-run wizard shows once', () => {
   let userDataDir: string
 
   test.beforeAll(() => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-onboarding-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-onboarding-'))
     // Deliberately no pre-seeded config.json — this is a genuinely fresh profile.
   })
 
@@ -472,7 +472,7 @@ test.describe('onboarding — first-run wizard shows once', () => {
   // activated it — e.g. opening the Command Palette *on top of* the
   // still-open, unfinished onboarding wizard.
   test('keyboard focus cannot escape the onboarding modal into the sidebar behind it', async () => {
-    const freshDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-onboarding-focus-'))
+    const freshDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-onboarding-focus-'))
     const { app, page } = await launchApp(freshDir)
     await expect(page.getByTestId('onboarding-wizard')).toBeVisible()
 
@@ -503,22 +503,22 @@ test.describe('onboarding — first-run wizard shows once', () => {
 // behavior when that dependency is disabled — not a specific dollar figure.
 test.describe('sidebar spend-status chip', () => {
   test('does not render, and the app does not error, when spend status is disabled', async () => {
-    const freshDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-spend-status-disabled-'))
-    process.env.GARDENIA_DISABLE_SPEND_STATUS = '1'
+    const freshDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-spend-status-disabled-'))
+    process.env.ATELIER_DISABLE_SPEND_STATUS = '1'
     try {
       const { app, page } = await launchApp(freshDir)
       await expect(page.getByTestId('sidebar')).toBeVisible()
       await expect(page.getByTestId('spend-status-chip')).toHaveCount(0)
       await app.close()
     } finally {
-      delete process.env.GARDENIA_DISABLE_SPEND_STATUS
+      delete process.env.ATELIER_DISABLE_SPEND_STATUS
       rmSync(freshDir, { recursive: true, force: true })
     }
   })
 
   test('renders a real $spent/$cap readout when the fetch succeeds, or stays absent without erroring otherwise', async () => {
-    const freshDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-spend-status-live-'))
-    delete process.env.GARDENIA_DISABLE_SPEND_STATUS
+    const freshDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-spend-status-live-'))
+    delete process.env.ATELIER_DISABLE_SPEND_STATUS
     const { app, page } = await launchApp(freshDir)
     await expect(page.getByTestId('sidebar')).toBeVisible()
 

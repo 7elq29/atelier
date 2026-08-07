@@ -103,11 +103,11 @@ let tomorrowNotePath: string
 
 test.describe('16-task-move-to-date: right-click "Move to..." context menu', () => {
   test.beforeAll(async () => {
-    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-move-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-move-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-vault-move-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-move-'))
     vaultRoot = join(vaultParent, 'vault')
 
     const week32Dir = join(vaultRoot, '01.dailynotes', '2026', 'Aug', '32')
@@ -123,7 +123,7 @@ test.describe('16-task-move-to-date: right-click "Move to..." context menu', () 
 
     electronApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TODAY }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: TODAY }
     })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -307,12 +307,12 @@ test.describe('16-task-move-to-date: right-click "Move to..." context menu', () 
 // ── Visual confirmation on the target date ──────────────────────────────
 //
 // The main describe block above never navigates the UI to another date (the
-// app has no other-date nav; GARDENIA_TEST_DATE fixes the displayed date for
+// app has no other-date nav; ATELIER_TEST_DATE fixes the displayed date for
 // a whole Electron session — same constraint documented throughout
 // obsidian-integration.spec.ts). To visually confirm the moved task actually
 // renders on its new date, launch a second Electron instance against the
 // SAME on-disk vault (now already mutated by the tests above) with
-// GARDENIA_TEST_DATE pointed at tomorrow's (newly-created) target note.
+// ATELIER_TEST_DATE pointed at tomorrow's (newly-created) target note.
 // Uses the "Write PR description" move rather than the "Standup" one for
 // this screenshot: Standup was seeded already-done, and a done task's
 // dimmed/strikethrough styling (`.dn-task-chip.done span` — pre-existing,
@@ -320,13 +320,13 @@ test.describe('16-task-move-to-date: right-click "Move to..." context menu', () 
 // still-open "Write PR description" task is clearer to visually inspect.
 test.describe('16-task-move-to-date: visual confirmation on the target date', () => {
   test('the moved "Write PR description" task renders in tomorrow\'s newly-created note\'s Unscheduled/Backlog list', async () => {
-    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-userdata-move-verify-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-move-verify-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
     const verifyApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TOMORROW }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: TOMORROW }
     })
     try {
       const verifyPage = await verifyApp.firstWindow()

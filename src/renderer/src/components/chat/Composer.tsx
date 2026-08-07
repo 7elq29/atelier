@@ -257,7 +257,7 @@ interface ComposerProps {
    * `query.initializationResult()` / mid-session `commands_changed` pushes),
    * not a hand-maintained client array. Empty until the harness's first push
    * for this session lands (typically within the same tick or two as
-   * session start/resume). Gardenia's own client-only conveniences (`/clear`,
+   * session start/resume). Atelier's own client-only conveniences (`/clear`,
    * `/interrupt`, `/fork`, `/model`) are added on top of this list locally —
    * see `slashCommands` below — since the SDK has no concept of them.
    */
@@ -300,7 +300,7 @@ interface SlashCommand {
    * selecting/submitting this command swallows the typed token and runs
    * this instead; it is NEVER forwarded to `session:sendMessage` (bug #56's
    * "must not regress" scenario). Omitted entirely for a live, SDK-reported
-   * command Gardenia has no special UI for — those are dispatched as a real
+   * command Atelier has no special UI for — those are dispatched as a real
    * prompt turn instead (see `selectSlash` below).
    */
   run?: () => void
@@ -355,7 +355,7 @@ async function readAttachedImage(file: File | Blob): Promise<AttachedImage | nul
  * `/partial` only triggers when it's the very first token in the composer
  * (matches the mock's `val.trim() === lastWord` guard — a slash command is
  * the whole input, not a token mid-sentence) and opens a popover listing:
- *   - Four LOCAL, Gardenia-only real actions Gardenia intercepts (bug #56 —
+ *   - Four LOCAL, Atelier-only real actions Atelier intercepts (bug #56 —
  *     these never reach `session:sendMessage`, since the SDK has no concept
  *     of any of them):
  *       - `/clear`     — clears the composer (same as selecting-all + delete)
@@ -373,7 +373,7 @@ async function readAttachedImage(file: File | Blob): Promise<AttachedImage | nul
  *     `query.initializationResult()` / mid-session `commands_changed` push —
  *     see `main/harness/claude-agent-sdk-harness.ts`) — real built-ins
  *     (`/compact`, `/cost`, `/usage`, ...), project/plugin commands, or
- *     dynamically-discovered skills. Gardenia has no special UI for any of
+ *     dynamically-discovered skills. Atelier has no special UI for any of
  *     these, so selecting one is NOT swallowed into a local action — it is
  *     dispatched through `onSend` as an ordinary prompt turn, exactly like
  *     typing it out in full and pressing Enter without ever opening this
@@ -384,7 +384,7 @@ async function readAttachedImage(file: File | Blob): Promise<AttachedImage | nul
  * The four local commands above are exactly the ones the SDK's own list
  * might also legitimately report (e.g. a real Claude Code session likely
  * has genuine `/model` and `/clear` built-ins) — when that happens they're
- * de-duplicated in favor of Gardenia's local action, never doubled up in
+ * de-duplicated in favor of Atelier's local action, never doubled up in
  * the popover (see `slashCommands`' `localNames` filter).
  *
  * Selecting a slash command always removes the typed token from the
@@ -524,7 +524,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       setFileList([])
       return undefined
     }
-    window.gardenia.filesTree(projectPath).then((tree) => {
+    window.atelier.filesTree(projectPath).then((tree) => {
       if (!cancelled) setFileList(flattenFiles(tree))
     })
     return () => {
@@ -532,11 +532,11 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     }
   }, [projectPath])
 
-  // bug #56: the four commands Gardenia handles itself, merged on top of
+  // bug #56: the four commands Atelier handles itself, merged on top of
   // whatever the harness's live registry reports. `localNames` also drives
   // de-duplication below — if the SDK's own list happens to report one of
   // these names too (a real session likely does report a genuine `/model`
-  // and `/clear`), Gardenia's local action wins and the live entry is
+  // and `/clear`), Atelier's local action wins and the live entry is
   // dropped rather than shown twice.
   const slashCommands: SlashCommand[] = useMemo(() => {
     const local: SlashCommand[] = [
@@ -559,7 +559,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const seenNames = new Set(local.map((c) => c.cmd.slice(1)))
     // No `run` here on purpose — see `selectSlash`'s handling of a command
     // with no `run`: it forwards the command through as a real prompt turn
-    // instead of swallowing it into a local action Gardenia doesn't have.
+    // instead of swallowing it into a local action Atelier doesn't have.
     const live: SlashCommand[] = liveSlashCommands
       .filter((c) => {
         if (seenNames.has(c.name)) return false
@@ -714,7 +714,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const before = value.slice(0, popover.tokenStart)
     const after = value.slice(cursor)
     if (!command.run) {
-      // A live, SDK-reported command Gardenia has no special UI for (bug
+      // A live, SDK-reported command Atelier has no special UI for (bug
       // #56) — do NOT swallow it. Dispatch it through as a REAL prompt turn,
       // exactly like typing it out in full and pressing Enter without ever
       // opening this popover (that's how the CLI/SDK's own local slash
@@ -726,7 +726,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       requestAnimationFrame(() => ta?.focus())
       return
     }
-    // Local Gardenia action (/clear, /interrupt, /fork, /model): unlike the
+    // Local Atelier action (/clear, /interrupt, /fork, /model): unlike the
     // static mock (which just inserts the command text), this must run a
     // real action — so the typed `/token` is removed rather than left
     // sitting in the composer as literal text to send, and it NEVER reaches
@@ -900,7 +900,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         <textarea
           ref={textareaRef}
           data-testid="composer-input"
-          placeholder="Message Gardenia…"
+          placeholder="Message Atelier…"
           rows={1}
           value={value}
           onChange={handleChange}

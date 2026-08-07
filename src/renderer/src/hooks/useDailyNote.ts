@@ -55,11 +55,11 @@ export function useDailyNote(date: string): UseDailyNoteResult {
     let cancelled = false
     setLoading(true)
 
-    window.gardenia.getVaultRoot().then((root) => {
+    window.atelier.getVaultRoot().then((root) => {
       if (!cancelled) setVaultConfigured(root !== null)
     })
 
-    window.gardenia
+    window.atelier
       .readDailyNote(date)
       .then((result) => {
         if (cancelled) return
@@ -71,8 +71,8 @@ export function useDailyNote(date: string): UseDailyNoteResult {
         if (!cancelled) setLoading(false)
       })
 
-    window.gardenia.watchDailyNote(date).catch(() => {})
-    const unsub = window.gardenia.onDailyNoteChanged((updatedNote) => {
+    window.atelier.watchDailyNote(date).catch(() => {})
+    const unsub = window.atelier.onDailyNoteChanged((updatedNote) => {
       if (cancelled) return
       if (writeTimerRef.current) {
         clearTimeout(writeTimerRef.current)
@@ -95,7 +95,7 @@ export function useDailyNote(date: string): UseDailyNoteResult {
     const onFocus = (): void => {
       if (cancelled) return
       if (writeTimerRef.current !== null) return
-      window.gardenia
+      window.atelier
         .readDailyNote(date)
         .then((result) => {
           if (cancelled) return
@@ -108,7 +108,7 @@ export function useDailyNote(date: string): UseDailyNoteResult {
 
     return () => {
       cancelled = true
-      window.gardenia.unwatchDailyNote().catch(() => {})
+      window.atelier.unwatchDailyNote().catch(() => {})
       unsub()
       window.removeEventListener('focus', onFocus)
       if (writeTimerRef.current) clearTimeout(writeTimerRef.current)
@@ -116,10 +116,10 @@ export function useDailyNote(date: string): UseDailyNoteResult {
   }, [date])
 
   const createNote = useCallback(() => {
-    window.gardenia.createDailyNote(date).then((result) => {
+    window.atelier.createDailyNote(date).then((result) => {
       setNote(result.note)
       setExists(true)
-      window.gardenia.watchDailyNote(date).catch(() => {})
+      window.atelier.watchDailyNote(date).catch(() => {})
     })
   }, [date])
 
@@ -127,7 +127,7 @@ export function useDailyNote(date: string): UseDailyNoteResult {
     (updatedNote: DailyNote) => {
       if (writeTimerRef.current) clearTimeout(writeTimerRef.current)
       writeTimerRef.current = setTimeout(() => {
-        window.gardenia.writeDailyNote(date, updatedNote).catch(() => {})
+        window.atelier.writeDailyNote(date, updatedNote).catch(() => {})
       }, WRITE_DEBOUNCE_MS)
     },
     [date]
@@ -214,9 +214,9 @@ export function useDailyNote(date: string): UseDailyNoteResult {
         if (writeTimerRef.current) {
           clearTimeout(writeTimerRef.current)
           writeTimerRef.current = null
-          if (note) await window.gardenia.writeDailyNote(date, note).catch(() => {})
+          if (note) await window.atelier.writeDailyNote(date, note).catch(() => {})
         }
-        const result = await window.gardenia.moveTaskToDate(date, id, targetDate)
+        const result = await window.atelier.moveTaskToDate(date, id, targetDate)
         setNote(result.sourceNote)
         setExists(true)
       }
@@ -237,7 +237,7 @@ export function useDailyNote(date: string): UseDailyNoteResult {
             ? 'Could not move this task — it changed or was removed before the move completed. Refreshed from disk.'
             : `Failed to move task: ${message}`
         )
-        await window.gardenia
+        await window.atelier
           .readDailyNote(date)
           .then((result) => {
             setNote(result.note)

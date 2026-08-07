@@ -89,9 +89,9 @@ test.describe('bug-fix: model picker now surfaces the full verified catalog (fab
   let projectDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-model-list-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-model-list-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-model-list-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-model-list-project-'))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 

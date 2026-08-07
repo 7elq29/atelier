@@ -68,7 +68,7 @@ async function createLocalSession(
 }
 
 async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = []): Promise<T[]> {
-  return activePage.evaluate(({ sql: query, params: bindings }) => window.gardenia.debugQueryDb<T>(query, bindings), {
+  return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugQueryDb<T>(query, bindings), {
     sql,
     params
   })
@@ -97,9 +97,9 @@ test.describe('06-session-organization', () => {
   let groupId: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-org-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-org-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-org-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-org-project-'))
     writeFileSync(join(projectDir, 'README.md'), '# org test project\n')
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
@@ -382,7 +382,7 @@ test.describe('06-session-organization', () => {
     // Real SDK call into sessionC — deliberately NOT the active session —
     // driven directly over the same IPC channel the composer uses.
     const sendPromise = page.evaluate(
-      (id) => window.gardenia.sendSessionMessage(id, 'Count slowly to 3 out loud, then reply with exactly: DELTA'),
+      (id) => window.atelier.sendSessionMessage(id, 'Count slowly to 3 out loud, then reply with exactly: DELTA'),
       sessionC
     )
 

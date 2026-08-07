@@ -51,9 +51,9 @@ test.describe('11-composer-mode-indicator', () => {
   let projectDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-mode-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-mode-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-mode-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-mode-project-'))
     writeFileSync(join(projectDir, 'README.md'), '# test project\n')
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
@@ -148,7 +148,7 @@ test.describe('11-composer-mode-indicator', () => {
       .poll(async () => {
         const rows = await page.evaluate(
           (id) =>
-            window.gardenia.debugQueryDb<{ c: number }>(
+            window.atelier.debugQueryDb<{ c: number }>(
               "SELECT COUNT(*) as c FROM messages WHERE session_id = ? AND role='assistant' AND content LIKE '%mode-persist-ack%'",
               [id]
             ),

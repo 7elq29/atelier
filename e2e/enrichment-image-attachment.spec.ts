@@ -137,7 +137,7 @@ async function dispatchFileEvent(
  * mention of a file path.
  */
 async function appendAttachmentLog(page: Page, label: string): Promise<string> {
-  const logFilePath = await page.evaluate(() => window.gardenia.getLogFilePath())
+  const logFilePath = await page.evaluate(() => window.atelier.getLogFilePath())
   if (!existsSync(logFilePath)) return ''
   const raw = readFileSync(logFilePath, 'utf-8')
   const lines = raw.split('\n').filter((l) => l.includes('harness.streamInput() called'))
@@ -158,9 +158,9 @@ test.describe('10g-enrichment-image-attachment', () => {
 
   test.beforeAll(async () => {
     writeFileSync(attachmentLogPath, '')
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-image-attach-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-image-attach-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-image-attach-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-image-attach-project-'))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 
@@ -236,7 +236,7 @@ test.describe('10g-enrichment-image-attachment', () => {
     // not a plain-text mention of a file path.
     const userRows = await page.evaluate(
       (id) =>
-        window.gardenia.debugQueryDb<{ content: string }>(
+        window.atelier.debugQueryDb<{ content: string }>(
           "SELECT content FROM messages WHERE session_id = ? AND role='user' ORDER BY id DESC LIMIT 1",
           [id]
         ),
@@ -266,7 +266,7 @@ test.describe('10g-enrichment-image-attachment', () => {
     // with the real test image (solid red) — not a canned/mocked answer.
     const assistantRows = await page.evaluate(
       (id) =>
-        window.gardenia.debugQueryDb<{ content: string }>(
+        window.atelier.debugQueryDb<{ content: string }>(
           "SELECT content FROM messages WHERE session_id = ? AND role='assistant' AND content NOT LIKE '{%' ORDER BY id DESC LIMIT 1",
           [id]
         ),

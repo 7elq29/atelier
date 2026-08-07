@@ -7,7 +7,7 @@
  * Features/09-obsidian-integration/spec.md: Playground's daily-note sync
  * derives task ids from line number, so an external delete racing an
  * in-flight full-file rewrite can resurrect the deleted task (the rewrite
- * just re-serializes whatever the renderer still has in memory). Gardenia's
+ * just re-serializes whatever the renderer still has in memory). Atelier's
  * tasks instead carry a persistent `gid` (see daily-note-io.ts), and every
  * write goes through a tombstone diff: reread the file fresh from disk right
  * before writing, and drop any task id that used to be known-good but is no
@@ -187,12 +187,12 @@ function loadNoteTemplate(vaultRoot: string): string | null {
 }
 
 function resolveVaultRoot(): string | null {
-  return process.env.GARDENIA_TEST_VAULT_ROOT ?? process.env.GARDENIA_VAULT_ROOT ?? null
+  return process.env.ATELIER_TEST_VAULT_ROOT ?? process.env.ATELIER_VAULT_ROOT ?? null
 }
 
 /** Today's date as YYYY-MM-DD (local time), overridable for deterministic e2e runs. */
 function resolveDefaultDate(): string {
-  if (process.env.GARDENIA_TEST_DATE) return process.env.GARDENIA_TEST_DATE
+  if (process.env.ATELIER_TEST_DATE) return process.env.ATELIER_TEST_DATE
   const now = new Date()
   const yyyy = now.getFullYear()
   const mm = String(now.getMonth() + 1).padStart(2, '0')
@@ -269,7 +269,7 @@ async function ensureNoteExists(
 
 
 export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | null): void {
-  const isTestMode = process.env.GARDENIA_TEST_VAULT_ROOT !== undefined
+  const isTestMode = process.env.ATELIER_TEST_VAULT_ROOT !== undefined
 
   ipcMain.handle('daily-note:getVaultRoot', () => resolveVaultRoot())
   ipcMain.handle('daily-note:getDefaultDate', () => resolveDefaultDate())
@@ -292,7 +292,7 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
 
   ipcMain.handle('daily-note:create', async (_event, date: string) => {
     const vaultRoot = resolveVaultRoot()
-    if (!vaultRoot) throw new Error('no vault root configured (GARDENIA_VAULT_ROOT / GARDENIA_TEST_VAULT_ROOT)')
+    if (!vaultRoot) throw new Error('no vault root configured (ATELIER_VAULT_ROOT / ATELIER_TEST_VAULT_ROOT)')
     const { note, raw } = await ensureNoteExists(date, vaultRoot)
     return { note, raw, exists: true }
   })

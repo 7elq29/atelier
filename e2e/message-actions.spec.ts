@@ -44,9 +44,9 @@ test.describe('10d-enrichment-message-actions', () => {
   let projectDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-msgactions-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-msgactions-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-msgactions-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-msgactions-project-'))
     writeFileSync(join(projectDir, 'README.md'), '# test project\n')
     ;({ app: electronApp, page } = await launchApp(userDataDir))
 

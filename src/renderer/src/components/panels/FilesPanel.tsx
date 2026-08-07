@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as monaco from 'monaco-editor'
 import type { FileReadResult, FileTreeNode } from '../../../../shared/panel-types'
 
-// ── Monaco theme matching the Soft Paper / Gardenia dark palette ─────────────
-monaco.editor.defineTheme('gardenia-dark', {
+// ── Monaco theme matching the Soft Paper / Atelier dark palette ─────────────
+monaco.editor.defineTheme('atelier-dark', {
   base: 'vs-dark',
   inherit: true,
   rules: [
@@ -175,7 +175,7 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     setExpanded(new Set())
     setLoadingDirs(new Set())
     setDirChildren(new Map())
-    void window.gardenia.filesTree(projectPath, hostname).then(setTree)
+    void window.atelier.filesTree(projectPath, hostname).then(setTree)
   }, [projectPath, hostname])
 
   // ── Bootstrap Monaco via callback ref ────────────────────────────────────
@@ -190,7 +190,7 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     }
     if (editorRef.current) return
     const editor = monaco.editor.create(node, {
-      theme: 'gardenia-dark',
+      theme: 'atelier-dark',
       automaticLayout: true,
       readOnly: false,
       minimap: { enabled: true },
@@ -219,7 +219,7 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     const editor = editorRef.current
     if (!path || !editor) return
     setSaveError(null)
-    const result = await window.gardenia.filesWrite(path, editor.getValue(), hostname)
+    const result = await window.atelier.filesWrite(path, editor.getValue(), hostname)
     if (result.ok) {
       setIsDirty(false)
     } else {
@@ -278,7 +278,7 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     setExpanded((prev) => new Set(prev).add(node.path))
     if (!dirChildren.has(node.path)) {
       setLoadingDirs((prev) => new Set(prev).add(node.path))
-      const children = await window.gardenia.filesDir(projectPath, node.path, hostname)
+      const children = await window.atelier.filesDir(projectPath, node.path, hostname)
       setDirChildren((prev) => new Map(prev).set(node.path, children))
       setLoadingDirs((prev) => { const s = new Set(prev); s.delete(node.path); return s })
     }
@@ -291,7 +291,7 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     setFileResult(null)
     setIsDirty(false)
     setSaveError(null)
-    const result = await window.gardenia.filesRead(node.path, hostname)
+    const result = await window.atelier.filesRead(node.path, hostname)
     setFileResult(result)
   }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run Gardenia's dev build with full functionality from a plain terminal.
+# Run Atelier's dev build with full functionality from a plain terminal.
 #
 # Why this exists: the Claude Agent SDK harness authenticates by inheriting
 # whatever's in the shell's environment (ANTHROPIC_BASE_URL, etc.) — but those
@@ -11,9 +11,9 @@
 #
 # Usage:
 #   ./scripts/dev-full.sh                  # SDK/chat features only
-#   GARDENIA_VAULT_ROOT=/path/to/vault ./scripts/dev-full.sh   # + Obsidian integration
+#   ATELIER_VAULT_ROOT=/path/to/vault ./scripts/dev-full.sh   # + Obsidian integration
 #
-# Do NOT set GARDENIA_VAULT_ROOT to your real Obsidian vault unless you've
+# Do NOT set ATELIER_VAULT_ROOT to your real Obsidian vault unless you've
 # already verified this build's Obsidian sync against a disposable copy —
 # it does real file writes.
 
@@ -47,10 +47,10 @@ else
   echo "warning: ~/.nvm/nvm.sh not found — assuming node is already on PATH." >&2
 fi
 
-if [ -n "${GARDENIA_VAULT_ROOT:-}" ]; then
-  echo "Obsidian integration enabled: GARDENIA_VAULT_ROOT=$GARDENIA_VAULT_ROOT"
+if [ -n "${ATELIER_VAULT_ROOT:-}" ]; then
+  echo "Obsidian integration enabled: ATELIER_VAULT_ROOT=$ATELIER_VAULT_ROOT"
 else
-  echo "Obsidian integration disabled (no GARDENIA_VAULT_ROOT set) — Daily Notes panel will show 'No vault configured'."
+  echo "Obsidian integration disabled (no ATELIER_VAULT_ROOT set) — Daily Notes panel will show 'No vault configured'."
 fi
 
 exec npm run dev

@@ -568,7 +568,7 @@ export class SessionManager {
    * initial prompt, then closed/interrupted, or whose earlier attempts all
    * failed before ever completing the CLI's init handshake) gets routed
    * through `harness.startWithId()` instead — a genuinely fresh conversation
-   * as far as the CLI is concerned, just one that reuses the id Gardenia
+   * as far as the CLI is concerned, just one that reuses the id Atelier
    * already fixed in its own SQLite row, so the rest of the app (transcript,
    * IPC, etc.) never needs to know the id changed, because it doesn't.
    */
@@ -1620,7 +1620,7 @@ export class SessionManager {
    */
   startupReconnect(): void {
     const execFileAsync = promisify(execFile)
-    const SSH_MUX_OPTS = ['-o', 'ControlMaster=auto', '-o', 'ControlPath=/tmp/gardenia-ssh-%C', '-o', 'ControlPersist=300']
+    const SSH_MUX_OPTS = ['-o', 'ControlMaster=auto', '-o', 'ControlPath=/tmp/atelier-ssh-%C', '-o', 'ControlPersist=300']
     const TMUX_TIMEOUT_MS = 8000
 
     const markStale = (sessionId: string): void => {
@@ -1628,7 +1628,7 @@ export class SessionManager {
     }
 
     const tmuxName = (s: SessionRecord) =>
-      `gardenia-${s.id.replace(/[^a-zA-Z0-9-]/g, '-')}`.slice(0, 50)
+      `atelier-${s.id.replace(/[^a-zA-Z0-9-]/g, '-')}`.slice(0, 50)
 
     for (const session of this.store.listActiveSessions()) {
       if (session.mode === 'terminal') {

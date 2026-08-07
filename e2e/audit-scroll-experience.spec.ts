@@ -15,7 +15,7 @@ import { join } from 'node:path'
  *      visible viewport afterward.
  *   2. Asserts containers that should NOT scroll (topbar, composer footer)
  *      don't have an accidental inner scrollbar.
- *   3. Seeds a real fixture vault (GARDENIA_TEST_VAULT_ROOT) with enough
+ *   3. Seeds a real fixture vault (ATELIER_TEST_VAULT_ROOT) with enough
  *      timed/unscheduled/tracker items to force real overflow in Daily
  *      Notes' three sections — fixing pass 1's "never saw real vault
  *      content" gap.
@@ -91,9 +91,9 @@ test.describe('audit: real scroll-experience verification (not just overflow met
 
   test.beforeAll(async ({}, testInfo) => {
     testInfo.setTimeout(60_000)
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-scroll-audit-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-scroll-audit-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-scroll-audit-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-scroll-audit-project-'))
 
     // A project with many files, so the `@`-mention popover has enough
     // matches to actually overflow its own 220px max-height.
@@ -101,7 +101,7 @@ test.describe('audit: real scroll-experience verification (not just overflow met
       writeFileSync(join(projectDir, `file-${String(i).padStart(2, '0')}.txt`), `contents ${i}\n`)
     }
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-scroll-audit-vault-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-scroll-audit-vault-'))
     const vaultRoot = join(vaultParent, 'vault')
     const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31')
     mkdirSync(noteDir, { recursive: true })
@@ -125,7 +125,7 @@ test.describe('audit: real scroll-experience verification (not just overflow met
 
     electronApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TEST_DATE }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: TEST_DATE }
     })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')

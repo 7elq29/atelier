@@ -1,10 +1,10 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_CONFIG, type GardeniaConfig } from '../shared/config'
+import { DEFAULT_CONFIG, type AtelierConfig } from '../shared/config'
 import { logger } from './logger'
 
-let cached: GardeniaConfig | undefined
+let cached: AtelierConfig | undefined
 let configPath: string | undefined
 
 function getConfigPath(): string {
@@ -16,7 +16,7 @@ function getConfigPath(): string {
   return configPath
 }
 
-function mergeConfig(base: GardeniaConfig, partial: Partial<GardeniaConfig>): GardeniaConfig {
+function mergeConfig(base: AtelierConfig, partial: Partial<AtelierConfig>): AtelierConfig {
   return {
     ...base,
     ...partial,
@@ -30,13 +30,13 @@ function mergeConfig(base: GardeniaConfig, partial: Partial<GardeniaConfig>): Ga
  * falling back to defaults for anything missing/corrupt. Cached in-memory after
  * the first load per process lifetime.
  */
-export function loadConfig(): GardeniaConfig {
+export function loadConfig(): AtelierConfig {
   if (cached) return cached
 
   const path = getConfigPath()
   if (existsSync(path)) {
     try {
-      const raw = JSON.parse(readFileSync(path, 'utf-8')) as Partial<GardeniaConfig>
+      const raw = JSON.parse(readFileSync(path, 'utf-8')) as Partial<AtelierConfig>
       cached = mergeConfig(DEFAULT_CONFIG, raw)
     } catch (err) {
       logger.warn('failed to parse config.json, falling back to defaults', {
@@ -50,7 +50,7 @@ export function loadConfig(): GardeniaConfig {
   return cached
 }
 
-export function saveConfig(partial: Partial<GardeniaConfig>): GardeniaConfig {
+export function saveConfig(partial: Partial<AtelierConfig>): AtelierConfig {
   const current = loadConfig()
   cached = mergeConfig(current, partial)
   writeFileSync(getConfigPath(), JSON.stringify(cached, null, 2))

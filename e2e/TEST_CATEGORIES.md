@@ -34,7 +34,7 @@ iterating.
 | | |
 |---|---|
 | **Spec files** | `app-shell.spec.ts` |
-| **Source paths** | `src/main/index.ts`, `src/main/logger.ts`, `src/main/config.ts`, `src/renderer/src/styles/*` (shared.css tokens), preload bridge (`window.gardenia`) |
+| **Source paths** | `src/main/index.ts`, `src/main/logger.ts`, `src/main/config.ts`, `src/renderer/src/styles/*` (shared.css tokens), preload bridge (`window.atelier`) |
 | **Catches** | Window title/launch, `#root` mounting, the `app:getVersion` IPC round-trip, main-process log file creation (`app ready`, IPC entries), and that the shell renders real design tokens instead of Electron/browser defaults. |
 
 ### 2. Session Lifecycle (New Session, Modes, Resume/Fork/Rename/Delete)
@@ -107,7 +107,7 @@ iterating.
 |---|---|
 | **Spec files** | `secondary-panels.spec.ts` |
 | **Source paths** | `src/renderer/src/components/panels/*` (`DiffPanel.tsx`, `FilesPanel.tsx`, `PortsPanel.tsx`, `TerminalPanel.tsx`, `TabBar.tsx`, `CompanionTerminalDrawer.tsx`), `src/main/panels/*` (`git.ts`, `files.ts`, `ports.ts`, `pty.ts`, `ipc.ts`) |
-| **Catches** | Tab strip switching (chat/diff/files/ports), git diff sub-tabs (changes/commits/worktrees) including worktree add/merge/remove and diff inline comments, file tree browsing + content/image/HTML preview, port forwarding rows (add/remove/status), real PTY-backed terminal panel and the companion terminal drawer. SSH ControlMaster: verifies that opening a devpod terminal creates a `/tmp/gardenia-ssh-*` multiplexing socket (proving `SSH_MUX_OPTS` are applied so subsequent SSH calls reuse the socket instead of doing a full crypto handshake). |
+| **Catches** | Tab strip switching (chat/diff/files/ports), git diff sub-tabs (changes/commits/worktrees) including worktree add/merge/remove and diff inline comments, file tree browsing + content/image/HTML preview, port forwarding rows (add/remove/status), real PTY-backed terminal panel and the companion terminal drawer. SSH ControlMaster: verifies that opening a devpod terminal creates a `/tmp/atelier-ssh-*` multiplexing socket (proving `SSH_MUX_OPTS` are applied so subsequent SSH calls reuse the socket instead of doing a full crypto handshake). |
 
 ### 11. Daily Notes & Obsidian Sync
 

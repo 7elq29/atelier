@@ -36,7 +36,7 @@ function getStream(): WriteStream {
     try {
       logsDir = join(app.getPath('userData'), 'logs')
     } catch {
-      logsDir = join(tmpdir(), 'gardenia-standalone-logs')
+      logsDir = join(tmpdir(), 'atelier-standalone-logs')
     }
     mkdirSync(logsDir, { recursive: true })
     logFilePath = join(logsDir, 'main.log')

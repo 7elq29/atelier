@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { loadConfig, saveConfig } from './config'
 import { closeDatabase, openDatabase } from './db'
 import { getLogFilePath, logger, rendererLogger } from './logger'
-import type { GardeniaConfig } from '../shared/config'
+import type { AtelierConfig } from '../shared/config'
 import { registerDailyNoteHandlers } from './daily-notes-handlers'
 import { ClaudeAgentSdkHarness } from './harness'
 import { SessionStore } from './sessions/store'
@@ -27,7 +27,7 @@ function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: 'Gardenia',
+    title: 'Atelier',
     // Native title bar — desktop-only, no custom chrome.
     titleBarStyle: 'default',
     webPreferences: {
@@ -81,7 +81,7 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
 
   ipcMain.handle('config:get', () => loadConfig())
 
-  ipcMain.handle('config:set', (_event, partial: Partial<GardeniaConfig>) => saveConfig(partial))
+  ipcMain.handle('config:set', (_event, partial: Partial<AtelierConfig>) => saveConfig(partial))
 
   // Debug-only trigger for desktop notifications: there's no real "session
   // needs attention" event yet (that lands with the session/chat surfaces),

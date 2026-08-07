@@ -38,7 +38,7 @@ export default function SpendStatusChip(): JSX.Element | null {
     let cancelled = false
 
     const load = (): void => {
-      void window.gardenia.getSpendStatus().then((next) => {
+      void window.atelier.getSpendStatus().then((next) => {
         if (!cancelled) setData(next)
       })
     }
@@ -58,7 +58,7 @@ export default function SpendStatusChip(): JSX.Element | null {
       type="button"
       className="spend-status-chip"
       data-testid="spend-status-chip"
-      onClick={() => void window.gardenia.openExternal(COST_INSIGHTS_URL)}
+      onClick={() => void window.atelier.openExternal(COST_INSIGHTS_URL)}
       title={formatTooltip(data)}
       aria-label={`AI spend ${formatLabel(data)}`}
     >

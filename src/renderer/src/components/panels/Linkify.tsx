@@ -7,7 +7,7 @@
 const URL_RE = /(https?:\/\/[^\s)]+)/g
 
 export function openExternalLink(url: string): void {
-  void window.gardenia.openExternal(url)
+  void window.atelier.openExternal(url)
 }
 
 export default function Linkify({ text }: { text: string }): JSX.Element {

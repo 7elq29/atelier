@@ -15,7 +15,7 @@ interface CommandPaletteProps {
    * Cross-session content search (10b-enrichment-full-text-search): given the
    * current typed query, resolves extra `PaletteItem`s to append to the
    * "Session" results — e.g. message-content matches from
-   * `window.gardenia.searchMessages`. Optional so callers that don't need
+   * `window.atelier.searchMessages`. Optional so callers that don't need
    * content search (or tests exercising the palette in isolation) can omit
    * it entirely. Debounced internally; results for a stale query are
    * discarded if a newer one has since resolved.

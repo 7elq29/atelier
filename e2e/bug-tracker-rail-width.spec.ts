@@ -56,9 +56,9 @@ test.describe('bug-repro: tracker rail is 290px wide, mock specifies 244px', () 
   let projectDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-rail-width-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-rail-width-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-rail-width-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-rail-width-project-'))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 

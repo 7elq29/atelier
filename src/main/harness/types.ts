@@ -52,7 +52,7 @@ export interface HarnessStartOptions {
    * Environment variables for the underlying process/client. When omitted,
    * the harness inherits `process.env` as-is (this is how auth — e.g.
    * `ANTHROPIC_BASE_URL` — flows through without any credential handling
-   * in Gardenia itself). Ignored for remote sessions (the remote host's own
+   * in Atelier itself). Ignored for remote sessions (the remote host's own
    * `claude` settings supply its auth).
    */
   env?: NodeJS.ProcessEnv
@@ -357,7 +357,7 @@ export interface HarnessDriver {
    * (fix-no-conversation-found-remote-resume). Passes the SDK the same
    * `sessionId` option `start()` uses (never `resume`) — this is a genuinely
    * fresh conversation as far as the underlying CLI is concerned, just one
-   * whose id Gardenia already fixed in its own SQLite row (e.g. reopening a
+   * whose id Atelier already fixed in its own SQLite row (e.g. reopening a
    * session that was closed/interrupted before it ever completed a real
    * turn, so the CLI never actually recorded a conversation for it — calling
    * `resume()` for that id fails with "No conversation found"). See

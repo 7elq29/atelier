@@ -62,7 +62,7 @@ async function stubProjectFolder(app: ElectronApplication, path: string): Promis
 async function literalModelMessageCount(page: Page, sessionId: string): Promise<number> {
   const rows = await page.evaluate(
     (sid) =>
-      window.gardenia.debugQueryDb<{ id: number }>(
+      window.atelier.debugQueryDb<{ id: number }>(
         "SELECT id FROM messages WHERE session_id = ? AND role = 'user' AND content = '/model'",
         [sid]
       ),
@@ -81,9 +81,9 @@ test.describe('bug-fix: /model is intercepted locally (opens ModelPicker), never
   let sessionId: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-slash-model-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-slash-model-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-slash-model-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-slash-model-project-'))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 

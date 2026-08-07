@@ -83,7 +83,7 @@ export default function App(): JSX.Element {
   const [pendingJumpMessageId, setPendingJumpMessageId] = useState<number | null>(null)
 
   useEffect(() => {
-    window.gardenia.getDefaultDate().then(setDate)
+    window.atelier.getDefaultDate().then(setDate)
   }, [])
 
   // Theme: really flips `data-theme` on <html> — this is the one source of
@@ -331,11 +331,11 @@ export default function App(): JSX.Element {
   // *content*, not just session name (the mock only ever defined name
   // matching — see CommandPalette.tsx's doc comment for why this reuses the
   // exact same `cp-item` row rather than adding a new palette page/modal).
-  // Backed by `window.gardenia.searchMessages` -> SQLite FTS5. Stripped of
+  // Backed by `window.atelier.searchMessages` -> SQLite FTS5. Stripped of
   // its `FTS_SNIPPET_START/END` markers here since `PaletteItem.label` is
   // plain text, not markup.
   async function searchSessionContent(query: string): Promise<PaletteItem[]> {
-    const hits: MessageSearchHit[] = await window.gardenia.searchMessages(query)
+    const hits: MessageSearchHit[] = await window.atelier.searchMessages(query)
     return hits
       .map((hit): PaletteItem | null => {
         const session = allSessions.find((s) => s.id === hit.sessionId)
@@ -493,11 +493,11 @@ export default function App(): JSX.Element {
               return next
             })
             // Kill the tmux server sessions for all pty variants of this
-            // Gardenia session (terminal-only, tab terminal, companion drawer).
+            // Atelier session (terminal-only, tab terminal, companion drawer).
             // No-op if tmux is not installed or the sessions never existed.
-            void window.gardenia.ptyKillTmuxSession(id)
-            void window.gardenia.ptyKillTmuxSession(`${id}:tab-terminal`)
-            void window.gardenia.ptyKillTmuxSession(`${id}:companion`)
+            void window.atelier.ptyKillTmuxSession(id)
+            void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`)
+            void window.atelier.ptyKillTmuxSession(`${id}:companion`)
           }}
           onFork={(id) => void sessions.forkSession(id).then((forked) => setActiveSessionId(forked.id))}
           onRestart={(id) => void sessions.restartSession(id).then((forked) => setActiveSessionId(forked.id))}
@@ -521,7 +521,7 @@ export default function App(): JSX.Element {
         <div className="main-area">
           <div className="topbar">
             <span className="title" data-testid="main-title">
-              {activeSession ? activeSession.name : 'Gardenia'}
+              {activeSession ? activeSession.name : 'Atelier'}
             </span>
             {activeSession && activeSession.mode === 'claude-code' && (
               <>
@@ -615,7 +615,7 @@ export default function App(): JSX.Element {
                           onModelSelectionChange={(selection) => {
                             setModelSelection(selection)
                             if (activeSessionId && selection) {
-                              void window.gardenia.setSessionModelSelection(activeSessionId, selection)
+                              void window.atelier.setSessionModelSelection(activeSessionId, selection)
                             }
                           }}
                           liveSlashCommands={sessions.commandsBySession[activeSession.id] ?? []}

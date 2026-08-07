@@ -16,7 +16,7 @@ import { join } from 'node:path'
  * (src/main/db.ts migration `0005_project_path_history`), populated by
  * `SessionStore.recordProjectPathUsage` whenever `SessionManager.createSession`
  * successfully creates a session (src/main/sessions/manager.ts), and read
- * back via `session:listRecentProjectPaths` -> `window.gardenia.listRecentProjectPaths`
+ * back via `session:listRecentProjectPaths` -> `window.atelier.listRecentProjectPaths`
  * to populate a `<datalist>` on the remote path input
  * (`#remote-project-path-history`, `data-testid="remote-project-path-history"`).
  *
@@ -76,7 +76,7 @@ test.describe('bug-repro: new-session remote path history', () => {
   let userDataDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-path-history-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-path-history-'))
     seedSkipOnboarding(userDataDir)
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
@@ -131,7 +131,7 @@ test.describe('bug-repro: new-session remote path history', () => {
   })
 
   test('path history persists across an app relaunch (read from SQLite, not just in-memory state)', async () => {
-    // Relaunch against the SAME userDataDir (same gardenia.sqlite file) —
+    // Relaunch against the SAME userDataDir (same atelier.sqlite file) —
     // if history only lived in React state it would be gone here.
     await electronApp.close()
     ;({ app: electronApp, page } = await launchApp(userDataDir))

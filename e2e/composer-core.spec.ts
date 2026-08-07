@@ -46,7 +46,7 @@ async function openNewSessionModal(page: Page): Promise<void> {
  * inspectable trail alongside the DOM/DB assertions below.
  */
 async function appendComposerLog(page: Page, label: string): Promise<void> {
-  const logFilePath = await page.evaluate(() => window.gardenia.getLogFilePath())
+  const logFilePath = await page.evaluate(() => window.atelier.getLogFilePath())
   if (!existsSync(logFilePath)) return
   const raw = readFileSync(logFilePath, 'utf-8')
   const lines = raw
@@ -66,9 +66,9 @@ test.describe('04-composer-core', () => {
 
   test.beforeAll(async () => {
     writeFileSync(composerLogPath, '')
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-composer-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-composer-'))
     seedSkipOnboarding(userDataDir)
-    projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-composer-project-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-composer-project-'))
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 
@@ -146,7 +146,7 @@ test.describe('04-composer-core', () => {
       .poll(async () => {
         const rows = await page.evaluate(
           (id) =>
-            window.gardenia.debugQueryDb<{ c: number }>(
+            window.atelier.debugQueryDb<{ c: number }>(
               "SELECT COUNT(*) as c FROM messages WHERE session_id = ? AND role='user' AND content LIKE '%second line%'",
               [id]
             ),
@@ -209,7 +209,7 @@ test.describe('04-composer-core', () => {
       .poll(async () => {
         const rows = await page.evaluate(
           (id) =>
-            window.gardenia.debugQueryDb<{ c: number }>(
+            window.atelier.debugQueryDb<{ c: number }>(
               "SELECT COUNT(*) as c FROM messages WHERE session_id = ? AND role='user' AND content LIKE '%SECONDDONE%'",
               [id]
             ),
@@ -228,7 +228,7 @@ test.describe('04-composer-core', () => {
 
     const assistantRows = await page.evaluate(
       (id) =>
-        window.gardenia.debugQueryDb<{ content: string }>(
+        window.atelier.debugQueryDb<{ content: string }>(
           "SELECT content FROM messages WHERE session_id = ? AND role='assistant' AND content NOT LIKE '{%' ORDER BY id ASC",
           [id]
         ),
@@ -268,7 +268,7 @@ test.describe('04-composer-core', () => {
       .poll(async () => {
         const rows = await page.evaluate(
           (id) =>
-            window.gardenia.debugQueryDb<{ c: number }>(
+            window.atelier.debugQueryDb<{ c: number }>(
               "SELECT COUNT(*) as c FROM messages WHERE session_id = ? AND role='assistant' AND content NOT LIKE '{%' AND length(content) > 0",
               [id]
             ),

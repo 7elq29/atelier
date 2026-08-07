@@ -5,15 +5,15 @@ import { join } from 'node:path'
 
 /**
  * Acceptance test for fix-gidless-task-id-not-persisted (see
- * Documents/Default/03.projects/Gardenia/Bugs/fix-gidless-task-id-not-persisted/spec.md
+ * Documents/Default/03.projects/Atelier/Bugs/fix-gidless-task-id-not-persisted/spec.md
  * and the root-cause investigation it references,
- * Documents/Default/03.projects/Gardenia/Bugs/fix-move-task-not-found-root-cause/spec.md).
+ * Documents/Default/03.projects/Atelier/Bugs/fix-move-task-not-found-root-cause/spec.md).
  *
  * Root cause: `daily-note-io.ts`'s `parseDailyNote` minted a brand-new random
  * `gid` (`mintTaskId()`) EVERY time it parsed a task line with no `[gid::]`
  * tag, and nothing persisted that minted id back to disk until some renderer
  * mutation happened to round-trip it. A task hand-typed directly in Obsidian
- * (never touched via Gardenia's UI) would therefore get a different,
+ * (never touched via Atelier's UI) would therefore get a different,
  * independently-minted id on every separate parse — including
  * `daily-notes-handlers.ts`'s own fresh re-parse inside the
  * `daily-note:move-task` handler, decoupled from whatever id the renderer's
@@ -41,7 +41,7 @@ const TOMORROW = '2026-08-04'
 
 /** A task line with NO `[gid::]` tag — exactly what a hand-typed Obsidian
  * task, or a task carried from the vault template, looks like before it's
- * ever been touched by Gardenia's own mutate/write path. */
+ * ever been touched by Atelier's own mutate/write path. */
 function gidlessSeedContent(): string {
   return `---
 date: ${TEST_DATE}
@@ -71,11 +71,11 @@ test.describe('fix-gidless-task-id-not-persisted: moving a task that has never h
   let notePath: string
 
   test.beforeAll(async () => {
-    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-gidless-userdata-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-gidless-userdata-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-gidless-vault-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-gidless-vault-'))
     vaultRoot = join(vaultParent, 'vault')
     const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Aug', '32')
     mkdirSync(noteDir, { recursive: true })
@@ -86,7 +86,7 @@ test.describe('fix-gidless-task-id-not-persisted: moving a task that has never h
 
     electronApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TEST_DATE }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: TEST_DATE }
     })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -139,7 +139,7 @@ test.describe('fix-gidless-task-id-not-persisted: moving a task that has never h
     await page.screenshot({ path: join(artifactsDir, 'bug-move-task-not-found-gidless-task.png') })
 
     // ...and log evidence confirms a committed move, never a "not found".
-    const logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+    const logPath = await page.evaluate(() => window.atelier.getLogFilePath())
     const logContent = readFileSync(logPath, 'utf-8')
     expect(logContent).not.toContain('daily-note move-task: task not found in source note')
     expect(logContent).toContain('daily-note move-task committed')

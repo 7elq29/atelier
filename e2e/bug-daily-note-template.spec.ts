@@ -65,10 +65,10 @@ test.describe('fix-confirmed: daily note creation uses the real vault template',
   let newNotePath: string
 
   test.beforeAll(async () => {
-    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-dn-template-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-dn-template-'))
     seedSkipOnboarding(userDataDir)
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-dn-template-vault-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-dn-template-vault-'))
     vaultRoot = join(vaultParent, 'vault')
     mkdirSync(join(vaultRoot, '92.templates'), { recursive: true })
     writeFileSync(join(vaultRoot, '92.templates', 'Daily Note Template.md'), REAL_TEMPLATE, 'utf-8')
@@ -80,7 +80,7 @@ test.describe('fix-confirmed: daily note creation uses the real vault template',
 
     electronApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TEST_DATE }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: TEST_DATE }
     })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')

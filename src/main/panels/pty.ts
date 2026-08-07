@@ -8,11 +8,11 @@
  * shells that never share state.
  *
  * tmux session backing: when tmux is installed locally each terminal is
- * backed by a named tmux session (`gardenia-<sanitized-id>`). The pty spawns
+ * backed by a named tmux session (`atelier-<sanitized-id>`). The pty spawns
  * `tmux new-session -A -s <name>` which *attaches* if the session already
- * exists and *creates* it otherwise. This means closing Gardenia (which kills
+ * exists and *creates* it otherwise. This means closing Atelier (which kills
  * the pty client) leaves the tmux session alive on the tmux server, and
- * reopening Gardenia reattaches to the same session — running processes,
+ * reopening Atelier reattaches to the same session — running processes,
  * shell history and working directory are all preserved. If tmux is not
  * installed the code falls back transparently to the original plain shell.
  *
@@ -38,7 +38,7 @@ const execFileAsync = promisify(execFile)
  */
 const SSH_MUX_OPTS = [
   '-o', 'ControlMaster=auto',
-  '-o', 'ControlPath=/tmp/gardenia-ssh-%C',
+  '-o', 'ControlPath=/tmp/atelier-ssh-%C',
   '-o', 'ControlPersist=300',
 ]
 
@@ -61,7 +61,7 @@ try {
  */
 function tmuxSessionName(id: string): string {
   const sanitized = id.replace(/[^a-zA-Z0-9-]/g, '-')
-  return `gardenia-${sanitized}`.slice(0, 50)
+  return `atelier-${sanitized}`.slice(0, 50)
 }
 
 interface PtyEntry {
@@ -265,13 +265,13 @@ export class PtyManager {
       // already dead
     }
     // Intentionally does NOT kill the tmux server session — it must persist
-    // so Gardenia can reattach next time it opens. Use killTmuxSession() when
-    // the Gardenia session is permanently deleted by the user.
+    // so Atelier can reattach next time it opens. Use killTmuxSession() when
+    // the Atelier session is permanently deleted by the user.
   }
 
   /**
    * Kill the backing tmux server session for this pty id.
-   * Call this when the Gardenia session is permanently deleted — not merely
+   * Call this when the Atelier session is permanently deleted — not merely
    * when the app closes. No-op if tmux is not installed or if the session
    * never existed (tmux exit code is ignored).
    */

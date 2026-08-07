@@ -1,5 +1,5 @@
-appId: com.gardenia.app
-productName: Gardenia
+appId: com.atelier.app
+productName: Atelier
 directories:
   buildResources: build
   output: release

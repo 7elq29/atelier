@@ -32,7 +32,7 @@ async function stubProjectFolder(app: ElectronApplication, path: string): Promis
 
 /** Real fixture project dir with a few real files on disk — no fake/fixture file list, `@file` mentions must resolve against these via the same `filesTree` IPC the Files panel (07-secondary-panels) already uses. */
 function buildFixtureProject(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-mentions-project-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atelier-e2e-mentions-project-'))
   mkdirSync(join(dir, 'src'), { recursive: true })
   writeFileSync(join(dir, 'src', 'index.ts'), "export function hello(): string {\n  return 'hi'\n}\n")
   writeFileSync(join(dir, 'src', 'utils.ts'), 'export const noop = (): void => {}\n')
@@ -55,11 +55,11 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
   let logPath: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-mentions-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-mentions-'))
     seedSkipOnboarding(userDataDir)
     projectDir = buildFixtureProject()
     ;({ app: electronApp, page } = await launchApp(userDataDir))
-    logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+    logPath = await page.evaluate(() => window.atelier.getLogFilePath())
   })
 
   test.afterAll(async () => {
@@ -138,7 +138,7 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
     const popover = page.getByTestId('slash-popover')
     await expect(popover).toBeVisible()
     const items = page.getByTestId('slash-item')
-    // Local, Gardenia-only commands (bug #56) always come first, in this
+    // Local, Atelier-only commands (bug #56) always come first, in this
     // fixed order, since Composer.tsx merges `[...local, ...live]`.
     // Anything AFTER them is the harness's LIVE SDK command registry
     // (`liveSlashCommands`, sourced from `query.initializationResult()` /
@@ -218,7 +218,7 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
       .toBeGreaterThan(rowsBefore)
 
     const sessionRows = await page.evaluate(() =>
-      window.gardenia.debugQueryDb<{ id: string; project_path: string }>('SELECT id, project_path FROM sessions', [])
+      window.atelier.debugQueryDb<{ id: string; project_path: string }>('SELECT id, project_path FROM sessions', [])
     )
     const forkedRow = sessionRows.find((r) => r.id !== sessionId)
     expect(forkedRow).toBeTruthy()

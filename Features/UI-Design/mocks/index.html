@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  Gardenia UI mocks — message queue indicator
+  Atelier UI mocks — message queue indicator
   Shows the composer in five states:
     A) Idle — normal Send button
     B) Busy — Working… + Stop + Queue button (Send relabeled); no queued messages
@@ -16,7 +16,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Gardenia — Message Queue Mock</title>
+<title>Atelier — Message Queue Mock</title>
 <style>
 /* ── Design tokens (mirrors tokens.css exactly) ─────────────────────────── */
 :root {
@@ -714,7 +714,7 @@ kbd.kbd, .kbd {
 </head>
 <body>
 
-<div class="mock-label">Gardenia UI Mocks — Message Queue Indicator (message-queue)</div>
+<div class="mock-label">Atelier UI Mocks — Message Queue Indicator (message-queue)</div>
 
 <div class="mock-page">
 
@@ -723,7 +723,7 @@ kbd.kbd, .kbd {
     <div class="mock-section-label">A — Idle (baseline, no change)</div>
     <div class="composer-wrap">
       <div class="composer-box">
-        <textarea placeholder="Message Gardenia…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
+        <textarea placeholder="Message Atelier…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
         <div class="composer-footer">
           <span class="mode-pill">● Default</span>
           <div class="spacer"></div>
@@ -744,7 +744,7 @@ kbd.kbd, .kbd {
     <div class="mock-section-label">B — Busy, no queued message (existing behavior)</div>
     <div class="composer-wrap">
       <div class="composer-box">
-        <textarea placeholder="Message Gardenia…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
+        <textarea placeholder="Message Atelier…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
         <div class="composer-footer">
           <span class="mode-pill">● Default</span>
           <div class="spacer"></div>
@@ -764,7 +764,7 @@ kbd.kbd, .kbd {
     <div class="mock-section-label">C — Busy + 1 queued message (NEW)</div>
     <div class="composer-wrap">
       <div class="composer-box">
-        <textarea placeholder="Message Gardenia…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
+        <textarea placeholder="Message Atelier…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
 
         <!--
           .queued-strip — NEW element, inserted between <textarea> and .composer-footer.
@@ -808,7 +808,7 @@ kbd.kbd, .kbd {
     <div class="mock-section-label">D — Busy + 2 queued (count scales)</div>
     <div class="composer-wrap">
       <div class="composer-box">
-        <textarea placeholder="Message Gardenia…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
+        <textarea placeholder="Message Atelier…" rows="1" style="height:52px;overflow-y:hidden"></textarea>
 
         <!-- Only the first queued message is shown as a strip row; for 2+
              messages the label reads "Queued ×N". -->
@@ -848,7 +848,7 @@ kbd.kbd, .kbd {
     <div class="mock-section-label">E — Queue draining (next queued message about to run → auto to A)</div>
     <div class="composer-wrap">
       <div class="composer-box">
-        <textarea placeholder="Message Gardenia…" rows="1" style="height:52px;overflow-y:hidden" disabled></textarea>
+        <textarea placeholder="Message Atelier…" rows="1" style="height:52px;overflow-y:hidden" disabled></textarea>
         <div class="composer-footer">
           <span class="mode-pill">● Default</span>
           <div class="spacer"></div>
@@ -895,7 +895,7 @@ kbd.kbd, .kbd {
 
       <div class="composer-box">
 
-        <textarea id="dq-ta" placeholder="Message Gardenia…" rows="2"
+        <textarea id="dq-ta" placeholder="Message Atelier…" rows="2"
           style="min-height:52px;"></textarea>
 
         <!-- State C: single queued message strip -->
@@ -1452,7 +1452,7 @@ kbd.kbd, .kbd {
       el('dq-send').style.background = '';
       el('dq-send').style.color = '';
       el('dq-send').style.borderColor = '';
-      el('dq-ta').placeholder = 'Message Gardenia…';
+      el('dq-ta').placeholder = 'Message Atelier…';
       el('dq-hint').innerHTML =
         '↑ Type a message and click <strong>Send</strong> to start a turn. ' +
         '(<kbd class="kbd">⌘↵</kbd> also works)';
@@ -1512,7 +1512,7 @@ kbd.kbd, .kbd {
       setSB('E — Draining…', 'var(--warning)', 'rgba(217,179,116,0.1)', 'rgba(217,179,116,0.25)');
       show('dq-draining'); show('dq-stop');
       el('dq-ta').disabled = true;
-      el('dq-ta').placeholder = 'Message Gardenia…';
+      el('dq-ta').placeholder = 'Message Atelier…';
       el('dq-hint').innerHTML =
         '⟳ The next queued message is about to run… auto-returning to A in 1.5 s.';
       drainT = setTimeout(function () {

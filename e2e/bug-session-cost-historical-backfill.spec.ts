@@ -19,7 +19,7 @@ import { join } from 'node:path'
  * UPDATE — but the SDK's own on-disk JSONL transcript for a session
  * (written by the `claude` CLI at
  * `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`, keyed by the exact
- * same session id Gardenia stores) DOES durably retain every turn's raw
+ * same session id Atelier stores) DOES durably retain every turn's raw
  * `usage`, untouched by the bug. Verified for real against the actual
  * corrupted session's remote transcript: recomputing from usage (deduping
  * Claude Code's repeated streaming `assistant` JSONL lines, which share
@@ -36,7 +36,7 @@ import { join } from 'node:path'
  *
  * This spec seeds BOTH outcomes against a throwaway fixture DB + fixture
  * JSONL (never touching the user's real
- * `~/Library/Application Support/gardenia/data/gardenia.sqlite`):
+ * `~/Library/Application Support/atelier/data/atelier.sqlite`):
  *  1. A session whose fixture transcript exists — expect its corrupted
  *     total_cost_usd to be recomputed to the exact dollar figure its
  *     token usage implies.
@@ -72,14 +72,14 @@ async function launchApp(userDataDir: string, home: string): Promise<{ app: Elec
 }
 
 async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = []): Promise<T[]> {
-  return activePage.evaluate(({ sql: query, params: bindings }) => window.gardenia.debugQueryDb<T>(query, bindings), {
+  return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugQueryDb<T>(query, bindings), {
     sql,
     params
   })
 }
 
 async function execDb(activePage: Page, sql: string, params: unknown[] = []): Promise<void> {
-  await activePage.evaluate(({ sql: query, params: bindings }) => window.gardenia.debugExecDb(query, bindings), {
+  await activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugExecDb(query, bindings), {
     sql,
     params
   })
@@ -103,9 +103,9 @@ function fixtureJsonl(model: string, usage: Record<string, number>): string {
 
 test.describe('fix-session-cost-historical-backfill', () => {
   test('recomputes a corrupted total from its JSONL transcript, and resets to 0 when no transcript exists', async () => {
-    const fakeHome = mkdtempSync(join(tmpdir(), 'gardenia-e2e-home-'))
-    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-cost-backfill-'))
-    const localProjectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-project-'))
+    const fakeHome = mkdtempSync(join(tmpdir(), 'atelier-e2e-home-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-cost-backfill-'))
+    const localProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-project-'))
     seedSkipOnboarding(userDataDir)
 
     const recomputeSessionId = 'e2e-recompute-11111111-1111-1111-1111-111111111111'

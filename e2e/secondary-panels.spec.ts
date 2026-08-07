@@ -44,7 +44,7 @@ function git(cwd: string, args: string[]): string {
 
 /** Real throwaway git fixture repo: two commits, then an uncommitted change, for a real diff/commit/worktree round-trip. */
 function buildFixtureRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-panels-repo-'))
+  const dir = mkdtempSync(join(tmpdir(), 'atelier-e2e-panels-repo-'))
   git(dir, ['init', '-q'])
   git(dir, ['config', 'user.email', 'e2e@example.com'])
   git(dir, ['config', 'user.name', 'E2E Test'])
@@ -56,7 +56,7 @@ function buildFixtureRepo(): string {
 
   writeFileSync(join(dir, 'src', 'index.js'), "// entrypoint\nfunction hello() {\n  return 'hello world'\n}\n")
   git(dir, ['add', '.'])
-  git(dir, ['commit', '-q', '-m', 'Change greeting (see https://example.com/gardenia-e2e-external-link-check)'])
+  git(dir, ['commit', '-q', '-m', 'Change greeting (see https://example.com/atelier-e2e-external-link-check)'])
 
   // Real uncommitted change so the Diff tab has something live to show.
   writeFileSync(join(dir, 'src', 'index.js'), "// entrypoint\nfunction hello() {\n  return 'hello world!'\n}\n\nmodule.exports = { hello }\n")
@@ -101,7 +101,7 @@ test.describe('07-secondary-panels', () => {
   let sessionId: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-panels-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-panels-'))
     seedSkipOnboarding(userDataDir)
     repoDir = buildFixtureRepo()
     log(`fixture repo created at ${repoDir}`)
@@ -373,7 +373,7 @@ test.describe('07-secondary-panels', () => {
   // leaking through under the same id even after P2 has taken over — this
   // is what corrupted a real user's terminal into duplicated/garbled
   // "cd ... && clear" lines and made it look like typing did nothing.
-  // Reproduced here via the real `window.gardenia` IPC bridge (same bridge
+  // Reproduced here via the real `window.atelier` IPC bridge (same bridge
   // TerminalPanel itself uses) so it doesn't depend on flaky React dev-mode
   // timing to trigger.
   test('bug repro: rapid respawn under the same ptyId leaks the killed process\'s output forever', async () => {
@@ -382,10 +382,10 @@ test.describe('07-secondary-panels', () => {
     await page.evaluate(
       ({ id, cwd }) => {
         ;(window as unknown as { __raceLog: string[] }).__raceLog = []
-        ;(window as unknown as { __raceUnsub: () => void }).__raceUnsub = window.gardenia.onPtyData(({ id: evId, data }) => {
+        ;(window as unknown as { __raceUnsub: () => void }).__raceUnsub = window.atelier.onPtyData(({ id: evId, data }) => {
           if (evId === id) (window as unknown as { __raceLog: string[] }).__raceLog.push(data)
         })
-        void window.gardenia.ptySpawn({ id, cwd, hostname: null, cols: 100, rows: 30 })
+        void window.atelier.ptySpawn({ id, cwd, hostname: null, cols: 100, rows: 30 })
       },
       { id: raceId, cwd: repoDir }
     )
@@ -394,15 +394,15 @@ test.describe('07-secondary-panels', () => {
     // P1 (the soon-to-be-killed process) is made to continuously produce
     // output, guaranteeing it's mid-write at the exact moment it's killed —
     // the real-world race is timing-dependent; this makes it deterministic.
-    await page.evaluate((id) => void window.gardenia.ptyWrite(id, 'yes P1-LEAK-MARKER\r'), raceId)
+    await page.evaluate((id) => void window.atelier.ptyWrite(id, 'yes P1-LEAK-MARKER\r'), raceId)
     await page.waitForTimeout(500)
 
     // Simulate StrictMode's synchronous cleanup+remount: kill P1, then
     // immediately spawn P2 for the identical id, no await in between.
     await page.evaluate(
       (id) => {
-        void window.gardenia.ptyKill(id)
-        void window.gardenia.ptySpawn({ id, cwd: '/tmp', hostname: null, cols: 100, rows: 30 })
+        void window.atelier.ptyKill(id)
+        void window.atelier.ptySpawn({ id, cwd: '/tmp', hostname: null, cols: 100, rows: 30 })
       },
       raceId
     )
@@ -428,7 +428,7 @@ test.describe('07-secondary-panels', () => {
     log(`rapid respawn race: pty.ts dropped ${droppedForRace.length} stale-data event(s) for this race: ${JSON.stringify(droppedForRace)}`)
 
     await page.evaluate(() => (window as unknown as { __raceUnsub: () => void }).__raceUnsub())
-    await page.evaluate((id) => void window.gardenia.ptyKill(id), raceId)
+    await page.evaluate((id) => void window.atelier.ptyKill(id), raceId)
 
     // Confirms the race was actually hit (P1 really was still mid-write when
     // replaced) *and* that it was correctly intercepted before ever reaching
@@ -550,15 +550,15 @@ test.describe('07-secondary-panels', () => {
   // The shell's cwd and running processes are fully preserved across the
   // SSH disconnection because tmux keeps the session alive on the devpod.
   test('devpod tmux persistence: remote shell cwd survives TerminalPanel unmount+remount via session switch', async () => {
-    // Resolve which devpod host to use. Prefer the GARDENIA_TEST_DEVPOD env
+    // Resolve which devpod host to use. Prefer the ATELIER_TEST_DEVPOD env
     // var (matched by sshHost or id), otherwise take the first available host.
-    const hosts = await page.evaluate(() => window.gardenia.listHosts())
-    const envTarget = process.env.GARDENIA_TEST_DEVPOD
+    const hosts = await page.evaluate(() => window.atelier.listHosts())
+    const envTarget = process.env.ATELIER_TEST_DEVPOD
     const devpodHost = envTarget
       ? hosts.find((h) => h.sshHost === envTarget || h.id === envTarget)
       : hosts[0]
 
-    test.skip(!devpodHost, 'No devpod configured — set GARDENIA_TEST_DEVPOD env var or configure a devpod host')
+    test.skip(!devpodHost, 'No devpod configured — set ATELIER_TEST_DEVPOD env var or configure a devpod host')
     if (!devpodHost) return
 
     log(`devpod tmux persistence: using host ${devpodHost.sshHost} (id=${devpodHost.id})`)
@@ -659,25 +659,25 @@ test.describe('07-secondary-panels', () => {
 
   // ── 6h. SSH ControlMaster: devpod terminal must create a mux socket ────────
   // Fix: SSH slowness (13s per open, 3 cold crypto handshakes) was resolved by
-  // adding ControlMaster=auto + ControlPath=/tmp/gardenia-ssh-%C to all SSH
+  // adding ControlMaster=auto + ControlPath=/tmp/atelier-ssh-%C to all SSH
   // execFileSync calls in pty.ts. After the first connection, subsequent SSH
   // calls reuse the socket (<5ms each). This test verifies the socket is
   // actually created, proving the ControlMaster path is exercised.
   test('SSH ControlMaster: devpod terminal open creates a multiplexing socket in /tmp', async () => {
-    const hosts = await page.evaluate(() => window.gardenia.listHosts())
-    const envTarget = process.env.GARDENIA_TEST_DEVPOD
+    const hosts = await page.evaluate(() => window.atelier.listHosts())
+    const envTarget = process.env.ATELIER_TEST_DEVPOD
     const devpodHost = envTarget
       ? hosts.find((h) => h.sshHost === envTarget || h.id === envTarget)
       : hosts[0]
 
-    test.skip(!devpodHost, 'No devpod configured — set GARDENIA_TEST_DEVPOD or configure a devpod host')
+    test.skip(!devpodHost, 'No devpod configured — set ATELIER_TEST_DEVPOD or configure a devpod host')
     if (!devpodHost) return
 
     log(`SSH ControlMaster: using host ${devpodHost.sshHost} (id=${devpodHost.id})`)
 
-    // Remove any pre-existing gardenia-ssh-* sockets so we can confirm a new
+    // Remove any pre-existing atelier-ssh-* sockets so we can confirm a new
     // one is created by this connection (not a leftover from a prior test).
-    const socketsBefore = readdirSync('/tmp').filter((f) => f.startsWith('gardenia-ssh-'))
+    const socketsBefore = readdirSync('/tmp').filter((f) => f.startsWith('atelier-ssh-'))
     socketsBefore.forEach((f) => {
       try { require('node:fs').unlinkSync(`/tmp/${f}`) } catch { /* best-effort */ }
     })
@@ -711,9 +711,9 @@ test.describe('07-secondary-panels', () => {
     log(`SSH ControlMaster: shell responsive in ${Date.now() - t0}ms`)
 
     // The ControlMaster socket must now exist in /tmp.
-    // ControlPath=/tmp/gardenia-ssh-%C — %C is OpenSSH's SHA1 hash of the
+    // ControlPath=/tmp/atelier-ssh-%C — %C is OpenSSH's SHA1 hash of the
     // connection parameters, so the file name is a hex string.
-    const socketsAfter = readdirSync('/tmp').filter((f) => f.startsWith('gardenia-ssh-'))
+    const socketsAfter = readdirSync('/tmp').filter((f) => f.startsWith('atelier-ssh-'))
     log(`SSH ControlMaster: sockets in /tmp after connect: ${socketsAfter.join(', ')}`)
     expect(
       socketsAfter.length,

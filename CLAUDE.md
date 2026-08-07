@@ -1,4 +1,4 @@
-# Gardenia — Engineering Rules
+# Atelier — Engineering Rules
 
 This file governs how any feature or bug in this repo is planned, built, and
 verified. It applies to every task, whether done directly or via a subagent.

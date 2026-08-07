@@ -7,7 +7,7 @@ import { join } from 'node:path'
  * Bug repro: real user hit `Error: task not found in source note: <gid>`
  * twice in a row via "Move to tomorrow" on Timeline tasks, against their
  * real, actively-used Obsidian vault. See
- * `Documents/Default/03.projects/Gardenia/Bugs/fix-move-task-not-found-in-source-note/spec.md`.
+ * `Documents/Default/03.projects/Atelier/Bugs/fix-move-task-not-found-in-source-note/spec.md`.
  *
  * Root cause (confirmed below, not assumed): `daily-notes-handlers.ts`'s
  * `daily-note:move-task` handler re-reads the source note fresh from disk
@@ -117,11 +117,11 @@ test.describe('fix-move-task-not-found-in-source-note: stale Timeline "Move to..
   let notePath: string
 
   test.beforeAll(async () => {
-    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-movebug-userdata-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-movebug-userdata-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-movebug-vault-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-movebug-vault-'))
     vaultRoot = join(vaultParent, 'vault')
     const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Aug', '32')
     mkdirSync(noteDir, { recursive: true })
@@ -132,7 +132,7 @@ test.describe('fix-move-task-not-found-in-source-note: stale Timeline "Move to..
 
     electronApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TEST_DATE }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: TEST_DATE }
     })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -169,7 +169,7 @@ test.describe('fix-move-task-not-found-in-source-note: stale Timeline "Move to..
     await expect
       .poll(
         async () => {
-          const logPath = await page.evaluate(() => window.gardenia.getLogFilePath())
+          const logPath = await page.evaluate(() => window.atelier.getLogFilePath())
           return readFileSync(logPath, 'utf-8')
         },
         { timeout: 5000 }
@@ -247,11 +247,11 @@ test.describe('fix-move-task-not-found-in-source-note: rapid double-fire on the 
   const GID = 'b2000000-0000-4000-8000-000000000099'
 
   test.beforeAll(async () => {
-    const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-movebug-doublefire-userdata-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-movebug-doublefire-userdata-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
     writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
 
-    const vaultParent = mkdtempSync(join(tmpdir(), 'gardenia-e2e-movebug-doublefire-vault-'))
+    const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-movebug-doublefire-vault-'))
     vaultRoot = join(vaultParent, 'vault')
     const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Aug', '32')
     mkdirSync(noteDir, { recursive: true })
@@ -282,7 +282,7 @@ type: daily
 
     electronApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
-      env: { ...process.env, GARDENIA_TEST_VAULT_ROOT: vaultRoot, GARDENIA_TEST_DATE: TEST_DATE }
+      env: { ...process.env, ATELIER_TEST_VAULT_ROOT: vaultRoot, ATELIER_TEST_DATE: TEST_DATE }
     })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -297,8 +297,8 @@ type: daily
     const results: Array<{ ok: boolean; error?: string }> = await page.evaluate(
       async ({ date, id, target }) => {
         const settled = await Promise.allSettled([
-          window.gardenia.moveTaskToDate(date, id, target),
-          window.gardenia.moveTaskToDate(date, id, target)
+          window.atelier.moveTaskToDate(date, id, target),
+          window.atelier.moveTaskToDate(date, id, target)
         ])
         return settled.map((s) => (s.status === 'fulfilled' ? { ok: true } : { ok: false, error: String(s.reason) }))
       },

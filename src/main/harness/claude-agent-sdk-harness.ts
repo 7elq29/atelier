@@ -10,10 +10,10 @@
  * itself. Unless a caller explicitly passes `opts.env`, the SDK's `env`
  * option is left `undefined`, which per the SDK's own contract means "the
  * subprocess inherits process.env" — i.e. whatever ambient environment
- * launched the Gardenia process (same as how the `claude` CLI picks up
+ * launched the Atelier process (same as how the `claude` CLI picks up
  * ANTHROPIC_BASE_URL on this machine) flows straight through.
  *
- * The SDK package ships ESM-only (`"type": "module"`), while Gardenia's
+ * The SDK package ships ESM-only (`"type": "module"`), while Atelier's
  * main process is bundled as CommonJS by electron-vite. A static
  * `import ... from '@anthropic-ai/claude-agent-sdk'` would be transpiled to
  * a `require()` and throw ERR_REQUIRE_ESM, so the module is loaded lazily
@@ -324,7 +324,7 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
    * a real model", since the backend otherwise silently substitutes the
    * default model for a bad id instead of erroring on it. `error: 'not
    * connected'` when the session has no live query to call this on yet.
-   * The mutation itself is harmless even on success: Gardenia's own
+   * The mutation itself is harmless even on success: Atelier's own
    * model/effort-change flow (see `manager.ts`'s "model/effort selection
    * changed, applying from next turn") always forces a fresh reconnect on
    * the next real turn regardless, discarding this query, so a validation
@@ -655,7 +655,7 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
  *    `destination` overridden to `'session'`) is what makes "always allow
  *    this pattern" actually skip future prompts for matching calls — the
  *    SDK's own permission engine short-circuits `canUseTool` entirely for
- *    the rest of the session, it isn't something Gardenia re-implements.
+ *    the rest of the session, it isn't something Atelier re-implements.
  */
 function makeCanUseTool(sessionId: string, active: ActiveSession): CanUseTool {
   function waitForResponse(requestId: string, emit: () => HarnessEvent): Promise<PromptResponse> {

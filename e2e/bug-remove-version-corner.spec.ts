@@ -48,7 +48,7 @@ test.describe('bug-repro: permanent version corner not present in either mock', 
   let userDataDir: string
 
   test.beforeAll(async () => {
-    userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-debug-corner-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-debug-corner-'))
     seedSkipOnboarding(userDataDir)
     electronApp = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
     page = await electronApp.firstWindow()

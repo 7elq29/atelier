@@ -66,23 +66,23 @@ async function stubProjectFolder(app: ElectronApplication, path: string): Promis
 }
 
 async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = []): Promise<T[]> {
-  return activePage.evaluate(({ sql: query, params: bindings }) => window.gardenia.debugQueryDb<T>(query, bindings), {
+  return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugQueryDb<T>(query, bindings), {
     sql,
     params
   })
 }
 
 async function execDb(activePage: Page, sql: string, params: unknown[] = []): Promise<void> {
-  await activePage.evaluate(({ sql: query, params: bindings }) => window.gardenia.debugExecDb(query, bindings), {
+  await activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugExecDb(query, bindings), {
     sql,
     params
   })
 }
 
 test('bug-repro: plan card renders real markdown, and an expired prompt shows a note with no dead buttons', async () => {
-  const userDataDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-plan-expiry-'))
+  const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-plan-expiry-'))
   seedSkipOnboarding(userDataDir)
-  const projectDir = mkdtempSync(join(tmpdir(), 'gardenia-e2e-plan-expiry-project-'))
+  const projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-plan-expiry-project-'))
   writeFileSync(join(projectDir, 'README.md'), '# test project\n')
 
   const { app: electronApp, page } = await launchApp(userDataDir)
