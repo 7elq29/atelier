@@ -17,6 +17,7 @@ import TabBar, { type SessionTab } from './components/panels/TabBar'
 import DiffPanel from './components/panels/DiffPanel'
 import FilesPanel from './components/panels/FilesPanel'
 import AppNotesPanel from './components/panels/AppNotesPanel'
+import DailyNoteEditorPanel from './components/panels/DailyNoteEditorPanel'
 import PortsPanel from './components/panels/PortsPanel'
 import TerminalPanel from './components/panels/TerminalPanel'
 import CompanionTerminalDrawer from './components/panels/CompanionTerminalDrawer'
@@ -106,6 +107,7 @@ export default function App(): JSX.Element {
   const [deleteLinkedPrompt, setDeleteLinkedPrompt] = useState<{ sessionId: string; sessionName: string } | null>(null)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [activeAppNoteId, setActiveAppNoteId] = useState<string | null>(null)
+  const [activeDailyNoteDate, setActiveDailyNoteDate] = useState<string | null>(null)
   const composerRefs = useRef<Map<string, ComposerHandle>>(new Map())
   /** Picker overrides until the next session-list refresh picks up persisted model columns. */
   const [modelSelectionBySession, setModelSelectionBySession] = useState<Record<string, ModelSelection>>({})
@@ -347,6 +349,7 @@ export default function App(): JSX.Element {
 
   async function selectSession(session: SessionRecord): Promise<void> {
     setActiveAppNoteId(null)
+    setActiveDailyNoteDate(null)
     setActiveSessionId(session.id)
     setActiveTab('chat')
     setVisitedTabs(new Set(['chat']))
@@ -394,11 +397,19 @@ export default function App(): JSX.Element {
   }, [allSessions, sessions])
 
   const selectAppNote = useCallback((noteId: string) => {
+    setActiveDailyNoteDate(null)
     setActiveAppNoteId(noteId)
   }, [])
 
+  const selectDailyNote = useCallback(async () => {
+    setActiveAppNoteId(null)
+    const d = activeDailyNoteDate ?? (await window.atelier.getDefaultDate())
+    setActiveDailyNoteDate(d)
+  }, [activeDailyNoteDate])
+
   const createAppNote = useCallback(async () => {
     const note = await appNotes.createNote()
+    setActiveDailyNoteDate(null)
     setActiveAppNoteId(note.id)
   }, [appNotes])
 
@@ -703,6 +714,7 @@ export default function App(): JSX.Element {
 
   const composerDockVisible = Boolean(
     !activeAppNote &&
+    !activeDailyNoteDate &&
     activeSession?.mode === 'claude-code' &&
     !activeSessionDisconnected &&
     activeTab === 'chat'
@@ -809,7 +821,9 @@ export default function App(): JSX.Element {
           terminalShellHostBySessionId={terminalShellHostBySessionId}
           appNotes={appNotes.notes}
           activeAppNoteId={activeAppNoteId}
+          activeDailyNote={activeDailyNoteDate !== null}
           onSelectAppNote={selectAppNote}
+          onSelectDailyNote={() => void selectDailyNote()}
           onCreateAppNote={() => void createAppNote()}
           onRenameAppNote={(id, title) => void appNotes.updateNote(id, { title })}
           onDeleteAppNote={(id) => void deleteAppNote(id)}
@@ -818,7 +832,9 @@ export default function App(): JSX.Element {
         <div className="main-area">
           <div className="topbar">
             <span className="title" data-testid="main-title">
-              {activeAppNote ? (
+              {activeDailyNoteDate ? (
+                'Daily note'
+              ) : activeAppNote ? (
                 <input
                   className="input app-note-title-input"
                   data-testid="app-note-title-input"
@@ -841,7 +857,7 @@ export default function App(): JSX.Element {
                 'Atelier'
               )}
             </span>
-            {activeSession && !activeAppNote && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
+            {activeSession && !activeAppNote && !activeDailyNoteDate && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
               <>
                 <TabBar activeTab={activeTab} onSelect={selectTab} showPorts={Boolean(activeSession.hostname)} />
                 <div className="topbar-spacer" />
@@ -903,7 +919,14 @@ export default function App(): JSX.Element {
               </div>
             )}
 
-          {activeAppNote ? (
+          {activeDailyNoteDate ? (
+            <DailyNoteEditorPanel
+              key={activeDailyNoteDate}
+              initialDate={activeDailyNoteDate}
+              effectiveTheme={effectiveTheme}
+              onViewDateChange={setActiveDailyNoteDate}
+            />
+          ) : activeAppNote ? (
             <AppNotesPanel
               notes={appNotes.notes}
               activeNoteId={activeAppNote.id}

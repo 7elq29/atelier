@@ -41,7 +41,9 @@ interface SidebarProps {
   terminalShellHostBySessionId: Record<string, string | null>
   appNotes: AppNoteRecord[]
   activeAppNoteId: string | null
+  activeDailyNote: boolean
   onSelectAppNote: (noteId: string) => void
+  onSelectDailyNote: () => void
   onCreateAppNote: () => void
   onRenameAppNote: (noteId: string, title: string) => void
   onDeleteAppNote: (noteId: string) => void
@@ -654,7 +656,9 @@ export default function Sidebar({
   terminalShellHostBySessionId,
   appNotes,
   activeAppNoteId,
+  activeDailyNote,
   onSelectAppNote,
+  onSelectDailyNote,
   onCreateAppNote,
   onRenameAppNote,
   onDeleteAppNote
@@ -1032,6 +1036,33 @@ export default function Sidebar({
             </button>
           </div>
           <div className="session-list session-list--natural" data-testid="app-notes-list">
+            <div
+              className={`session-row app-note-row app-note-row--daily hide-on-collapse${activeDailyNote ? ' active' : ''}`}
+              data-testid="daily-note-row"
+              data-active={activeDailyNote ? 'true' : 'false'}
+              role="button"
+              tabIndex={0}
+              onClick={onSelectDailyNote}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelectDailyNote()
+                }
+              }}
+            >
+              <span className="session-indicator" aria-hidden="true">
+                <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-tertiary)' }}>
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+              </span>
+              <div className="session-main">
+                <div className="session-name">Daily note</div>
+                <div className="session-meta">
+                  <span className="row-tag">Obsidian vault</span>
+                </div>
+              </div>
+            </div>
             {appNotes.length === 0 && (
               <div className="history-empty-hint">Create a note with the icon above.</div>
             )}

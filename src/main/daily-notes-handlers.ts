@@ -17,8 +17,16 @@ import { ipcMain, dialog, type BrowserWindow } from 'electron'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, watch, type FSWatcher } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, basename } from 'node:path'
-import type { DailyNote, DailyTask, RawSections } from '../shared/daily-note-types'
-import { parseDailyNote, serializeDailyNote, resolveNotePath, generateNewNote, getTaskIds } from './daily-note-io'
+import type { DailyNote, DailyTask, RawSections, DailyNoteNotesSliceResult } from '../shared/daily-note-types'
+import {
+  parseDailyNote,
+  serializeDailyNote,
+  resolveNotePath,
+  generateNewNote,
+  getTaskIds,
+  extractNotesBodyFromAfterTasks,
+  mergeNotesBodyIntoAfterTasks
+} from './daily-note-io'
 import { logger } from './logger'
 import { loadConfig } from './config'
 
@@ -316,6 +324,38 @@ async function ensureNoteExists(
   return { note, raw, path, created: true }
 }
 
+function vaultRelativePath(absPath: string, vaultRoot: string): string {
+  const root = vaultRoot.replace(/\/$/, '')
+  if (absPath.startsWith(`${root}/`)) return absPath.slice(root.length + 1)
+  if (absPath.startsWith(root)) return absPath.slice(root.length).replace(/^\//, '')
+  return absPath
+}
+
+async function readNotesSliceForDate(
+  date: string,
+  settings: VaultSettings,
+  createIfMissing: boolean
+): Promise<DailyNoteNotesSliceResult> {
+  const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
+  const rel = vaultRelativePath(path, settings.root)
+  let created = false
+
+  if (!existsSync(path)) {
+    if (!createIfMissing) {
+      return { exists: false, notesBody: '', vaultRelativePath: rel, created: false }
+    }
+    await ensureNoteExists(date, settings)
+    created = true
+  }
+
+  const content = await readFile(path, 'utf-8')
+  const { note, raw, mintedIds } = parseDailyNote(content, date)
+  persistMintedGids(path, note, raw, mintedIds)
+  recordKnownIds(path, getTaskIds(note))
+  const { notesBody } = extractNotesBodyFromAfterTasks(raw.afterTasks)
+  logger.info('daily-note read notes slice', { path, created, bodyLength: notesBody.length })
+  return { exists: true, notesBody, vaultRelativePath: rel, created }
+}
 
 export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | null): void {
   const isTestMode = process.env.ATELIER_TEST_VAULT_ROOT !== undefined
@@ -344,6 +384,39 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
     recordKnownIds(path, getTaskIds(note))
     logger.info('daily-note read', { path, taskCount: note.tasks.length })
     return { note, raw, exists: true }
+  })
+
+  ipcMain.handle('daily-note:read-notes-slice', async (_event, date: string, createIfMissing?: boolean) => {
+    const settings = resolveVaultSettings()
+    if (!settings) throw new Error('no vault root configured (ATELIER_VAULT_ROOT / Settings → Vault)')
+    return readNotesSliceForDate(date, settings, Boolean(createIfMissing))
+  })
+
+  ipcMain.handle('daily-note:write-notes-slice', async (_event, date: string, notesBody: string) => {
+    const settings = resolveVaultSettings()
+    if (!settings) throw new Error('no vault root configured')
+
+    const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
+    if (!existsSync(path)) throw new Error(`daily note not found for ${date}`)
+
+    const freshContent = await readFile(path, 'utf-8')
+    const parsed = parseDailyNote(freshContent, date)
+    persistMintedGids(path, parsed.note, parsed.raw, parsed.mintedIds)
+    recordKnownIds(path, getTaskIds(parsed.note))
+
+    const mergedAfter = mergeNotesBodyIntoAfterTasks(parsed.raw.afterTasks, notesBody)
+    const newRaw: RawSections = { ...parsed.raw, afterTasks: mergedAfter }
+    const serialized = serializeDailyNote(parsed.note, newRaw)
+
+    const tmpPath = `${path}.tmp`
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(tmpPath, serialized, 'utf-8')
+    renameSync(tmpPath, path)
+    recordWrittenContent(path, serialized)
+    recordKnownIds(path, getTaskIds(parsed.note))
+    notifyDailyNoteChanged(getMainWindow, parsed.note)
+    logger.info('daily-note write notes slice committed', { path, bodyLength: notesBody.length })
+    return { ok: true as const }
   })
 
   ipcMain.handle('daily-note:create', async (_event, date: string) => {
