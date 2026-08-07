@@ -325,6 +325,7 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('file-quick-open')).toHaveCount(0)
     await expect(page.getByTestId('tab-files')).toHaveClass(/active/)
     await expect(page.getByTestId('monaco-editor')).toBeVisible()
+    await expect(page.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 15_000 })
     await page.screenshot({ path: join(artifactsDir, '07-file-quick-open.png') })
     log('file quick open: split dir/search OK')
   })
