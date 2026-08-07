@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding, reconnectClosedSessionFromHistory } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -13,27 +14,11 @@ const lifecycleLogPath = join(artifactsDir, '02-lifecycle.log')
 mkdirSync(artifactsDir, { recursive: true })
 writeFileSync(lifecycleLogPath, '')
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   return { app, page }
-}
-
-/** Stubs Electron's native folder-picker dialog to return a fixed path, so New Session can be driven headlessly. */
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
 }
 
 /**
@@ -47,6 +32,13 @@ async function stubProjectFolder(app: ElectronApplication, path: string): Promis
  */
 async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = []): Promise<T[]> {
   return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugQueryDb<T>(query, bindings), {
+    sql,
+    params
+  })
+}
+
+async function execDb(activePage: Page, sql: string, params: unknown[] = []): Promise<{ changes: number }> {
+  return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugExecDb(query, bindings), {
     sql,
     params
   })
@@ -91,12 +83,9 @@ test.describe('02-session-lifecycle', () => {
 
   // ── 1. Create (local) ──────────────────────────────────────────────
   test('create local: session appears in sidebar and starts streaming a real response', async () => {
-    await stubProjectFolder(electronApp, localProjectDir)
-    await openNewSessionModal(page)
+        await openNewSessionModal(page)
 
-    await page.getByTestId('pick-project-folder').click()
-    await expect(page.getByTestId('pick-project-folder')).toContainText(localProjectDir)
-
+    await page.getByTestId('project-path').fill(localProjectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
     await page.getByTestId('start-session-button').click()
@@ -118,6 +107,47 @@ test.describe('02-session-lifecycle', () => {
       .toBeGreaterThan(0)
 
     await page.screenshot({ path: join(artifactsDir, '02-create.png') })
+  })
+
+  test('startup-idle: sessions inactive 1h+ skip auto reconnect until Reconnect restores panels', async () => {
+    const staleAt = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+    await execDb(page, 'UPDATE sessions SET last_active_at = ? WHERE id = ?', [staleAt, localSessionId])
+
+    await electronApp.close()
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+
+    const row = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await expect(row).toHaveAttribute('data-status', 'startup-idle', { timeout: 10_000 })
+
+    const startupIdleDot = row.getByTestId('session-dot')
+    await expect(startupIdleDot).toHaveClass(/status-startup-idle/)
+    const startupIdleDotBg = await startupIdleDot.evaluate((el) => getComputedStyle(el).backgroundColor)
+    const textTertiaryBg = await page.evaluate(() => {
+      const probe = document.createElement('div')
+      document.body.appendChild(probe)
+      probe.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary').trim()
+      const rgb = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return rgb
+    })
+    expect(startupIdleDotBg).toBe(textTertiaryBg)
+
+    const log = appendMainLog(userDataDir)
+    expect(log).toContain('startupReconnect: skipping auto reconnect (session startup-idle)')
+
+    await row.click()
+    await expect(page.getByTestId('session-disconnected-panel')).toBeVisible()
+    await expect(page.getByTestId('tab-strip')).toHaveCount(0)
+    await expect(page.getByTestId('composer-input')).toHaveCount(0)
+
+    await page.getByTestId('session-reconnect-button').click()
+    await expect(page.getByTestId('connecting-pill')).toBeVisible({ timeout: 15_000 })
+    await expect(row).not.toHaveAttribute('data-status', 'startup-idle', { timeout: 90_000 })
+    await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 90_000 })
+    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 90_000 })
+
+    await page.screenshot({ path: join(artifactsDir, '02-startup-idle-reconnect.png') })
   })
 
   // ── 2. Rename + auto-naming regression guard (Bug #93) ──────────────
@@ -193,7 +223,14 @@ test.describe('02-session-lifecycle', () => {
 
     await expect(page.locator(`[data-group="pinned"] [data-session-id="${localSessionId}"]`)).toHaveCount(0)
     await expect(page.locator(`[data-group="ungrouped"] [data-session-id="${localSessionId}"]`)).toHaveCount(0)
-    await expect(page.locator(`[data-group="history"] [data-session-id="${localSessionId}"]`)).toHaveCount(1)
+    const historyRow = page.locator(`[data-group="history"] [data-session-id="${localSessionId}"]`)
+    await expect(historyRow).toHaveCount(1)
+    await expect(historyRow.getByTestId('resume-button')).toHaveCount(0)
+    await expect(historyRow).toHaveAttribute('data-status', 'startup-idle')
+
+    await historyRow.click()
+    await expect(page.getByTestId('session-disconnected-panel')).toBeVisible()
+    await expect(page.getByTestId('tab-strip')).toHaveCount(0)
 
     appendMainLog(userDataDir)
   })
@@ -206,9 +243,7 @@ test.describe('02-session-lifecycle', () => {
     const historyRow = page.locator(`[data-group="history"] [data-session-id="${localSessionId}"]`)
     await expect(historyRow).toBeVisible({ timeout: 15_000 })
 
-    await historyRow.getByTestId('resume-button').click()
-
-    // Full transcript (both turns: PING/PONG + both assistant replies) must
+    await reconnectClosedSessionFromHistory(page, localSessionId)
     // render — not just the last message — and it must come from SQLite
     // (available essentially immediately, well before a live SDK turn could
     // complete).
@@ -363,7 +398,7 @@ test.describe('02-session-lifecycle', () => {
     testInfo.setTimeout(180_000)
     await openNewSessionModal(page)
     await page.getByTestId('host-option-devpod-us-or').click()
-    await page.getByTestId('remote-project-path').fill('/home/user')
+    await page.getByTestId('project-path').fill('/home/user')
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PONGREMOTE')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -408,7 +443,7 @@ test.describe('02-session-lifecycle', () => {
     await remoteRowEl.getByTestId('menu-close').click()
     const historyRemote = page.locator(`[data-group="history"] [data-session-id="${remoteSessionId}"]`)
     await expect(historyRemote).toBeVisible({ timeout: 10_000 })
-    await historyRemote.getByTestId('resume-button').click()
+    await reconnectClosedSessionFromHistory(page, remoteSessionId)
 
     await expect
       .poll(
@@ -431,13 +466,13 @@ test.describe('02-session-lifecycle', () => {
   test('remote: project path "~" expands to $HOME on the remote host instead of breaking cd', async ({}, testInfo) => {
     // Regression test for the bug where `cd '~'` (single-quoted, so never
     // tilde-expanded by the remote shell) failed with
-    // "zsh:cd:1: no such file or directory: ~". The remote-project-path
+    // "zsh:cd:1: no such file or directory: ~". The project-path
     // field is free text (see NewSessionModal), and typing a bare `~` for
     // "home directory" is completely natural — this must work.
     testInfo.setTimeout(180_000)
     await openNewSessionModal(page)
     await page.getByTestId('host-option-devpod-us-or').click()
-    await page.getByTestId('remote-project-path').fill('~')
+    await page.getByTestId('project-path').fill('~')
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PONGTILDE')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -540,9 +575,8 @@ test.describe('02-session-lifecycle', () => {
     const bugProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug-sigterm-project-'))
     writeFileSync(join(bugProjectDir, 'README.md'), '# test project\n')
 
-    await stubProjectFolder(electronApp, bugProjectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(bugProjectDir)
     await page.getByTestId('mode-claude-code').click()
     const bugProjectDirName = bugProjectDir.split('/').pop() as string
     // A prompt that keeps the turn actively streaming for a bit — closing
@@ -606,7 +640,7 @@ test.describe('02-session-lifecycle', () => {
       )
       .toBe(1)
 
-    await historyRow.getByTestId('resume-button').click()
+    await reconnectClosedSessionFromHistory(page, sessionId)
 
     const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
     await expect(activeRow).toBeVisible({ timeout: 10_000 })
@@ -640,7 +674,7 @@ test.describe('02-session-lifecycle', () => {
     await activeRow.getByTestId('menu-close').click()
     await expect(historyRow).toBeVisible({ timeout: 10_000 })
     await page.waitForTimeout(1000)
-    await historyRow.getByTestId('resume-button').click()
+    await reconnectClosedSessionFromHistory(page, sessionId)
     await expect(page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)).toBeVisible({
       timeout: 10_000
     })
@@ -662,9 +696,8 @@ test.describe('02-session-lifecycle', () => {
     const bugProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug-stale-tool-running-'))
     writeFileSync(join(bugProjectDir, 'README.md'), '# test project\n')
 
-    await stubProjectFolder(electronApp, bugProjectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(bugProjectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
     await page.getByTestId('start-session-button').click()
@@ -703,7 +736,7 @@ test.describe('02-session-lifecycle', () => {
       }
     )
 
-    await historyRow.getByTestId('resume-button').click()
+    await reconnectClosedSessionFromHistory(page, sessionId)
     const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
     await expect(activeRow).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('connecting-pill')).toHaveCount(0, { timeout: 15_000 })
@@ -736,9 +769,8 @@ test.describe('02-session-lifecycle', () => {
     const doomedProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug-genuine-fail-'))
     writeFileSync(join(doomedProjectDir, 'README.md'), '# test project\n')
 
-    await stubProjectFolder(electronApp, doomedProjectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(doomedProjectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: ACK')
     await page.getByTestId('start-session-button').click()
@@ -764,7 +796,7 @@ test.describe('02-session-lifecycle', () => {
     // try to reconnect with no longer exists.
     rmSync(doomedProjectDir, { recursive: true, force: true })
 
-    await historyRow.getByTestId('resume-button').click()
+    await reconnectClosedSessionFromHistory(page, sessionId)
 
     const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
     await expect(activeRow).toBeVisible({ timeout: 10_000 })
@@ -811,9 +843,8 @@ test.describe('02-session-lifecycle', () => {
     const bugProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug-lost-conversation-'))
     writeFileSync(join(bugProjectDir, 'README.md'), '# test project\n')
 
-    await stubProjectFolder(electronApp, bugProjectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(bugProjectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: ACK')
     await page.getByTestId('start-session-button').click()
@@ -916,7 +947,7 @@ test.describe('02-session-lifecycle', () => {
       }
     }
 
-    await historyRow.getByTestId('resume-button').click()
+    await reconnectClosedSessionFromHistory(page, sessionId)
 
     const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
     await expect(activeRow).toBeVisible({ timeout: 10_000 })
@@ -1099,7 +1130,7 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     await openNewSessionModal(page)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId(`host-option-${devpodHost.id}`).click()
-    await page.getByTestId('remote-project-path').fill(remoteGitDir)
+    await page.getByTestId('project-path').fill(remoteGitDir)
 
     const checkbox = page.getByTestId('use-worktree-checkbox')
     await checkbox.check()
@@ -1139,6 +1170,12 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     const sessionRow = page.locator('[data-testid="session-row"]').first()
     await sessionRow.click()
 
+    const worktreePath = rows[0]!.worktree_path!
+    const contextBar = page.getByTestId('composer-context-bar')
+    await expect(contextBar).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('composer-worktree-indicator')).toBeVisible()
+    await expect(contextBar).not.toContainText(worktreePath.split('/').pop()!)
+
     const composer = page.getByTestId('composer-input')
     await composer.fill('Print your current working directory path. Reply with only the path, nothing else.')
     await page.getByTestId('send-button').click()
@@ -1171,7 +1208,7 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     await openNewSessionModal(page)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId(`host-option-${devpodHost.id}`).click()
-    await page.getByTestId('remote-project-path').fill(remoteNoGitDir)
+    await page.getByTestId('project-path').fill(remoteNoGitDir)
     await page.getByTestId('use-worktree-checkbox').check()
     await page.getByTestId('start-session-button').click()
 

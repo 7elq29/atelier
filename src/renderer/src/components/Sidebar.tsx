@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MessageRecord, SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
+import type { AppNoteRecord } from '../../../shared/app-note-types'
 import { parseStructuredContent } from '../../../shared/chat-content'
 import SpendStatusChip from './SpendStatusChip'
 
@@ -10,7 +11,6 @@ interface SidebarProps {
   historySessions: SessionRecord[]
   activeSessionId: string | null
   onSelectSession: (session: SessionRecord) => void
-  onOpenPalette: () => void
   onOpenSettings: () => void
   onNewSession: () => void
   onRename: (sessionId: string, name: string) => void
@@ -36,25 +36,24 @@ interface SidebarProps {
   onDeleteGroup: (groupId: string) => void
   onReorderGroups: (orderedIds: string[]) => void
   worktreeProgressBySession: Record<string, number>
+
+  onOpenLocalTerminal: () => void
+  terminalShellHostBySessionId: Record<string, string | null>
+  appNotes: AppNoteRecord[]
+  activeAppNoteId: string | null
+  onSelectAppNote: (noteId: string) => void
+  onCreateAppNote: () => void
+  onRenameAppNote: (noteId: string, title: string) => void
+  onDeleteAppNote: (noteId: string) => void
 }
 
 const SESSION_COLORS = ['--sc-blue', '--sc-green', '--sc-purple', '--sc-amber', '--sc-rose', '--sc-cyan', '--sc-indigo', '--sc-teal']
 
-/** Quick filter chip ids, matching mocks/index.html's filter-row exactly ("All" / "Waiting" / "Needs attention"). */
-type QuickFilter = 'all' | 'waiting' | 'attention'
-
-function colorVar(session: SessionRecord): string {
-  if (session.color && SESSION_COLORS.includes(session.color)) return `var(${session.color})`
-  // Deterministic fallback so the same session always gets the same dot
-  // color across renders/relaunches, without persisting one up front.
-  const idx = Math.abs(hashCode(session.id)) % SESSION_COLORS.length
-  return `var(${SESSION_COLORS[idx]})`
-}
-
-function hashCode(s: string): number {
-  let h = 0
-  for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i)
-  return h
+/** User-picked session color on the dot — only when explicitly set in Tags/Notes/Color. */
+function explicitSessionColorStyle(session: SessionRecord, dotStatus: string): { background: string } | undefined {
+  if (dotStatus !== 'idle') return undefined
+  if (!session.color || !SESSION_COLORS.includes(session.color)) return undefined
+  return { background: `var(${session.color})` }
 }
 
 /**
@@ -62,11 +61,21 @@ function hashCode(s: string): number {
  * folds SessionManager's live 'working'/'waiting'/'idle' (see
  * shared/session-types.ts's SessionStatus doc comment) together with two
  * things the manager doesn't track: terminal-mode sessions (no harness at
- * all) and closed sessions both display as 'disconnected'.
+ * all) and closed claude-code sessions (same disconnected gate as startup-idle).
  */
 function displayStatus(session: SessionRecord, closed: boolean, statuses: Record<string, SessionStatus>): SessionStatus {
+  if (closed && session.mode === 'claude-code') return 'startup-idle'
   if (closed || session.mode === 'terminal') return 'disconnected'
   return statuses[session.id] ?? 'idle'
+}
+
+function sessionMetaLabel(session: SessionRecord, shellRemoteHost: string | null | undefined, dotStatus: string): string {
+  if (session.mode === 'terminal') {
+    if (session.hostname) return session.hostname
+    return shellRemoteHost ?? 'Local'
+  }
+  if (dotStatus === 'waiting-blocked') return 'Needs approval'
+  return session.hostname ?? session.projectPath.split('/').filter(Boolean).pop() ?? ''
 }
 
 /** Derives the CSS class suffix for the session indicator dot.
@@ -97,41 +106,6 @@ function dotStatusClass(status: SessionStatus, messages: MessageRecord[] | undef
  * surfaced as a `system` "Error: ..." message, or a tool call that ended
  * with status 'error') — documented in Features/06-session-organization/progress.md.
  */
-function isErrorMessage(m: MessageRecord): boolean {
-  if (m.role === 'system' && m.content.startsWith('Error:')) return true
-  if (m.role === 'assistant') {
-    try {
-      const parsed = JSON.parse(m.content) as { kind?: string; status?: string }
-      if (parsed && parsed.kind === 'tool_call' && parsed.status === 'error') return true
-    } catch {
-      /* not JSON content — ordinary assistant text, not an error */
-    }
-  }
-  return false
-}
-
-function needsAttention(status: SessionStatus, messages: MessageRecord[] | undefined): boolean {
-  if (status === 'waiting') return true
-  const last = messages && messages.length > 0 ? messages[messages.length - 1] : undefined
-  return !!last && isErrorMessage(last)
-}
-
-/** Subsequence fuzzy match (case-insensitive) — matches if every character of `query` appears in `text`, in order. */
-function fuzzyMatch(query: string, text: string): boolean {
-  if (!query) return true
-  const q = query.toLowerCase()
-  const t = text.toLowerCase()
-  let qi = 0
-  for (let i = 0; i < t.length && qi < q.length; i++) {
-    if (t[i] === q[qi]) qi++
-  }
-  return qi === q.length
-}
-
-function searchableText(session: SessionRecord): string {
-  return [session.name, ...session.tags, session.notes ?? ''].join(' ')
-}
-
 function groupSessions(
   sessions: SessionRecord[],
   groups: SessionGroupRecord[]
@@ -248,6 +222,139 @@ function SessionDetailPopover({
   )
 }
 
+function AppNoteRow({
+  note,
+  active,
+  onSelect,
+  onRename,
+  onDelete
+}: {
+  note: AppNoteRecord
+  active: boolean
+  onSelect: () => void
+  onRename: (title: string) => void
+  onDelete: () => void
+}): JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const [draftTitle, setDraftTitle] = useState(note.title)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const displayTitle = note.title.trim() || 'Untitled note'
+
+  useEffect(() => {
+    setDraftTitle(note.title)
+  }, [note.title])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function handleOutsidePointer(e: MouseEvent): void {
+      if (menuRef.current?.contains(e.target as Node)) return
+      setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleOutsidePointer)
+    return () => document.removeEventListener('mousedown', handleOutsidePointer)
+  }, [menuOpen])
+
+  function commitRename(): void {
+    setEditing(false)
+    const trimmed = draftTitle.trim()
+    if (trimmed !== note.title) onRename(trimmed)
+    else setDraftTitle(note.title)
+  }
+
+  return (
+    <div
+      className={`session-row app-note-row${active ? ' active' : ''}`}
+      data-testid="app-note-row"
+      data-note-id={note.id}
+      data-active={active ? 'true' : 'false'}
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setMenuOpen(true)
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect()
+        }
+      }}
+    >
+      <span className="session-indicator" aria-hidden="true">
+        <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-tertiary)' }}>
+          <path d="M6 2h8l4 4v16H6z" />
+          <path d="M14 2v4h4" />
+        </svg>
+      </span>
+      <div className="session-main hide-on-collapse">
+        {editing ? (
+          <input
+            className="session-name-input"
+            autoFocus
+            value={draftTitle}
+            data-testid="app-note-rename-input"
+            onChange={(e) => setDraftTitle(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename()
+              if (e.key === 'Escape') {
+                setDraftTitle(note.title)
+                setEditing(false)
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <div className="session-name" data-testid="app-note-title">
+            {displayTitle}
+          </div>
+        )}
+      </div>
+      <button
+        className="row-menu-btn hide-on-collapse"
+        data-testid="app-note-menu-button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setMenuOpen((v) => !v)
+        }}
+      >
+        ⋯
+      </button>
+      {menuOpen && (
+        <div ref={menuRef} className="session-menu-popup" data-testid="app-note-menu" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="smi"
+            data-testid="app-note-menu-rename"
+            onClick={(e) => {
+              e.stopPropagation()
+              setMenuOpen(false)
+              setEditing(true)
+            }}
+          >
+            Rename
+          </div>
+          <div className="sm-sep" />
+          <div
+            className="smi danger"
+            data-testid="app-note-menu-delete"
+            onMouseDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setMenuOpen(false)
+              onDelete()
+            }}
+          >
+            Delete
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SessionRow({
   session,
   active,
@@ -269,7 +376,8 @@ function SessionRow({
   onDragStart,
   onDragOver,
   onDrop,
-  worktreeProgress
+  worktreeProgress,
+  shellRemoteHost
 }: {
   session: SessionRecord
   active: boolean
@@ -292,6 +400,7 @@ function SessionRow({
   onDragOver: (e: React.DragEvent) => void
   onDrop: (e: React.DragEvent) => void
   worktreeProgress?: number
+  shellRemoteHost?: string | null
 }): JSX.Element {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
@@ -318,11 +427,15 @@ function SessionRow({
     else setDraftName(session.name)
   }
 
+  const isTerminal = session.mode === 'terminal'
+
   return (
     <div
-      className={'session-row' + (active ? ' active' : '') + (closed ? ' closed' : '')}
+      className={'session-row' + (active ? ' active' : '')}
       data-testid="session-row"
+      data-hint-session-row=""
       data-session-id={session.id}
+      data-mode={session.mode}
       data-active={active}
       data-pinned={session.pinned}
       data-status={status}
@@ -341,7 +454,11 @@ function SessionRow({
       onDrop={onDrop}
     >
       <span className="session-indicator" title={`Status: ${status}`}>
-        <span className={'color-core status-' + dotStatus} data-testid="session-dot" />
+        <span
+          className={'color-core status-' + dotStatus}
+          data-testid="session-dot"
+          style={explicitSessionColorStyle(session, dotStatus)}
+        />
       </span>
       <div className="session-main hide-on-collapse">
         {editing ? (
@@ -368,11 +485,12 @@ function SessionRow({
         )}
         <div className="session-meta">
           {dotStatus === 'waiting-blocked' ? (
-            <span style={{ color: 'var(--warning)' }}>Needs approval</span>
+            <span data-testid="session-meta-host" style={{ color: 'var(--warning)' }}>
+              {sessionMetaLabel(session, shellRemoteHost, dotStatus)}
+            </span>
           ) : (
-            <span>{session.hostname ?? session.projectPath.split('/').filter(Boolean).pop()}</span>
+            <span data-testid="session-meta-host">{sessionMetaLabel(session, shellRemoteHost, dotStatus)}</span>
           )}
-          {closed && <span className="row-tag">closed</span>}
           {session.tags.map((tag) => (
             <span className="row-tag" key={tag} data-testid="tag-pill">
               {tag}
@@ -385,18 +503,6 @@ function SessionRow({
           </div>
         )}
       </div>
-      {closed && (
-        <button
-          className="resume-btn hide-on-collapse"
-          data-testid="resume-button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onSelect()
-          }}
-        >
-          Resume
-        </button>
-      )}
       {!closed && session.pinned && <span className="pin-icon hide-on-collapse">📌</span>}
       <button
         className="row-menu-btn hide-on-collapse"
@@ -421,7 +527,7 @@ function SessionRow({
           >
             Rename
           </div>
-          {!closed && (
+          {!closed && !isTerminal && (
             <div
               className="smi"
               data-testid="menu-pin"
@@ -433,36 +539,42 @@ function SessionRow({
               {session.pinned ? 'Unpin' : 'Pin'}
             </div>
           )}
-          <div
-            className="smi"
-            data-testid="menu-details"
-            onClick={() => {
-              setMenuOpen(false)
-              setDetailOpen(true)
-            }}
-          >
-            Tags / Notes / Color…
-          </div>
-          <div
-            className="smi"
-            data-testid="menu-fork"
-            onClick={() => {
-              setMenuOpen(false)
-              onFork()
-            }}
-          >
-            Fork / Duplicate
-          </div>
-          <div
-            className="smi"
-            data-testid="menu-restart"
-            onClick={() => {
-              setMenuOpen(false)
-              onRestart()
-            }}
-          >
-            Restart
-          </div>
+          {!isTerminal && (
+            <div
+              className="smi"
+              data-testid="menu-details"
+              onClick={() => {
+                setMenuOpen(false)
+                setDetailOpen(true)
+              }}
+            >
+              Tags / Notes / Color…
+            </div>
+          )}
+          {!isTerminal && (
+            <div
+              className="smi"
+              data-testid="menu-fork"
+              onClick={() => {
+                setMenuOpen(false)
+                onFork()
+              }}
+            >
+              Fork / Duplicate
+            </div>
+          )}
+          {!isTerminal && (
+            <div
+              className="smi"
+              data-testid="menu-restart"
+              onClick={() => {
+                setMenuOpen(false)
+                onRestart()
+              }}
+            >
+              Restart
+            </div>
+          )}
           <div className="sm-sep" />
           {!closed && (
             <div
@@ -488,7 +600,7 @@ function SessionRow({
           </div>
         </div>
       )}
-      {detailOpen && (
+      {detailOpen && !isTerminal && (
         <SessionDetailPopover
           session={session}
           onAddTag={onAddTag}
@@ -515,7 +627,6 @@ export default function Sidebar({
   historySessions,
   activeSessionId,
   onSelectSession,
-  onOpenPalette,
   onOpenSettings,
   onNewSession,
   onRename,
@@ -538,10 +649,16 @@ export default function Sidebar({
   onSetGroupCollapsed,
   onDeleteGroup,
   onReorderGroups,
-  worktreeProgressBySession
+  worktreeProgressBySession,
+  onOpenLocalTerminal,
+  terminalShellHostBySessionId,
+  appNotes,
+  activeAppNoteId,
+  onSelectAppNote,
+  onCreateAppNote,
+  onRenameAppNote,
+  onDeleteAppNote
 }: SidebarProps): JSX.Element {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all')
   const [newGroupOpen, setNewGroupOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
@@ -558,16 +675,12 @@ export default function Sidebar({
     return () => document.removeEventListener('click', handleOutsideClick)
   }, [groupMenuOpenId])
 
-  const bySearch = activeSessions.filter((s) => fuzzyMatch(searchQuery, searchableText(s)))
-  const byFilter = bySearch.filter((s) => {
-    if (quickFilter === 'all') return true
-    const status = displayStatus(s, false, statuses)
-    if (quickFilter === 'waiting') return status === 'waiting'
-    return needsAttention(status, messagesBySession[s.id])
-  })
-  const filteredHistory = historySessions.filter((s) => fuzzyMatch(searchQuery, searchableText(s)))
+  const agentActive = activeSessions.filter((s) => s.mode !== 'terminal')
+  const terminalActive = activeSessions.filter((s) => s.mode === 'terminal')
+  const agentHistory = historySessions.filter((s) => s.mode !== 'terminal')
+  const terminalHistory = historySessions.filter((s) => s.mode === 'terminal')
 
-  const { pinned, byGroup, ungrouped } = groupSessions(byFilter, groups)
+  const { pinned, byGroup, ungrouped } = groupSessions(agentActive, groups)
 
   function makeDragHandlers(sectionGroupId: string | null | undefined, sectionIds: string[], sessionId: string): {
     onDragStart: (e: React.DragEvent) => void
@@ -625,7 +738,7 @@ export default function Sidebar({
       <SessionRow
         key={session.id}
         session={session}
-        active={session.id === activeSessionId}
+        active={session.id === activeSessionId && activeAppNoteId == null}
         closed={closed}
         status={displayStatus(session, closed, statuses)}
         dotStatus={staleSessionIds.has(session.id) ? 'stale' : dotStatusClass(displayStatus(session, closed, statuses), messagesBySession[session.id])}
@@ -642,6 +755,7 @@ export default function Sidebar({
         onSetNotes={(notes) => onSetNotes(session.id, notes)}
         onSetColor={(color) => onSetColor(session.id, color)}
         worktreeProgress={worktreeProgressBySession[session.id]}
+        shellRemoteHost={terminalShellHostBySessionId[session.id]}
         {...dragHandlers}
       />
     )
@@ -652,54 +766,7 @@ export default function Sidebar({
   return (
     <div className={'sidebar' + (collapsed ? ' collapsed' : '')} data-testid="sidebar">
       <div className="sidebar-top">
-        <div className="app-mark" />
-        <div className="app-name hide-on-collapse">Atelier</div>
-      </div>
-      <div className="sidebar-search-row hide-on-collapse">
-        <input
-          className="sidebar-search"
-          data-testid="sidebar-search-input"
-          placeholder="Search sessions…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </div>
-      <div className="filter-row hide-on-collapse" data-testid="filter-row">
-        <button
-          className={'filter-chip' + (quickFilter === 'all' ? ' active' : '')}
-          data-testid="filter-all"
-          onClick={() => setQuickFilter('all')}
-        >
-          All
-        </button>
-        <button
-          className={'filter-chip' + (quickFilter === 'waiting' ? ' active' : '')}
-          data-testid="filter-waiting"
-          onClick={() => setQuickFilter('waiting')}
-        >
-          Waiting
-        </button>
-        <button
-          className={'filter-chip' + (quickFilter === 'attention' ? ' active' : '')}
-          data-testid="filter-attention"
-          onClick={() => setQuickFilter('attention')}
-        >
-          Needs attention
-        </button>
-      </div>
-      <button className="sidebar-search hide-on-collapse" data-testid="open-palette-button" onClick={onOpenPalette} style={{ margin: '0 16px 10px', width: 'calc(100% - 32px)' }}>
-        <span>Command palette…</span>
-        <kbd>⌘K</kbd>
-      </button>
-      <div className="new-session-btn hide-on-collapse">
-        <button
-          className="btn btn-primary"
-          style={{ width: '100%', justifyContent: 'center' }}
-          data-testid="new-session-button"
-          onClick={onNewSession}
-        >
-          + New Session
-        </button>
+        <div className="app-mark" data-testid="app-mark" aria-hidden />
       </div>
       <div className="new-group-row hide-on-collapse">
         {newGroupOpen ? (
@@ -736,8 +803,25 @@ export default function Sidebar({
         )}
       </div>
 
-      <div className="session-list" data-testid="session-list">
-        {activeSessions.length === 0 && historySessions.length === 0 && (
+      <div className="sidebar-lists-stack hide-on-collapse">
+        <div className="sidebar-list-pane sidebar-list-pane--sessions">
+          <div className="sidebar-section-head">
+            <div className="sidebar-pane-label">Sessions</div>
+            <button
+              type="button"
+              className="sidebar-action-icon primary"
+              title="New Session"
+              data-testid="new-session-button"
+              onClick={onNewSession}
+            >
+              <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </div>
+          <div className="session-list session-list--natural" data-testid="session-list">
+        {agentActive.length === 0 && agentHistory.length === 0 && (
           <div className="history-empty-hint hide-on-collapse">No sessions yet — create one to get started.</div>
         )}
 
@@ -875,16 +959,93 @@ export default function Sidebar({
           <span className="chev">▾</span>
           <span className="hide-on-collapse">History (closed)</span>
           <span className="count hide-on-collapse" data-testid="history-count">
-            {filteredHistory.length}
+            {agentHistory.length}
           </span>
         </div>
         <div className="group-body" data-group="history">
-          {filteredHistory.length === 0 && (
+          {agentHistory.length === 0 && (
             <div className="history-empty-hint hide-on-collapse">
-              Closed sessions land here — click Resume to reopen with full context restored.
+              Closed sessions land here — select one and click Reconnect to restore chat and tools.
             </div>
           )}
-          {filteredHistory.map((s) => row(s, true, undefined, []))}
+          {agentHistory.map((s) => row(s, true, undefined, []))}
+        </div>
+          </div>
+        </div>
+
+        <div className="sidebar-section-hsep" aria-hidden="true" />
+
+        <div className="sidebar-list-pane sidebar-list-pane--terminals">
+          <div className="sidebar-section-head">
+            <div className="sidebar-pane-label">Terminals</div>
+            <button
+              type="button"
+              className="sidebar-action-icon"
+              title="Open local terminal"
+              data-testid="open-local-terminal-button"
+              onClick={onOpenLocalTerminal}
+            >
+              <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+            </button>
+          </div>
+          <div className="session-list session-list--natural" data-testid="terminal-list">
+            {terminalActive.length === 0 && terminalHistory.length === 0 && (
+              <div className="history-empty-hint">Open a local terminal with the icon above.</div>
+            )}
+            <div className="group-body" data-group="terminals">
+              {terminalActive.map((s) => row(s, false, null, terminalActive.map((x) => x.id)))}
+            </div>
+            {terminalHistory.length > 0 && (
+              <>
+                <div className="group-header" style={{ marginTop: 8 }}>
+                  <span className="chev">▾</span>
+                  <span>History (closed)</span>
+                  <span className="count">{terminalHistory.length}</span>
+                </div>
+                <div className="group-body" data-group="terminal-history">
+                  {terminalHistory.map((s) => row(s, true, undefined, []))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="sidebar-section-hsep" aria-hidden="true" />
+
+        <div className="sidebar-list-pane sidebar-list-pane--notes">
+          <div className="sidebar-section-head">
+            <div className="sidebar-pane-label">Notes</div>
+            <button
+              type="button"
+              className="sidebar-action-icon primary"
+              title="New note"
+              data-testid="new-app-note-button"
+              onClick={onCreateAppNote}
+            >
+              <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </div>
+          <div className="session-list session-list--natural" data-testid="app-notes-list">
+            {appNotes.length === 0 && (
+              <div className="history-empty-hint">Create a note with the icon above.</div>
+            )}
+            {appNotes.map((note) => (
+              <AppNoteRow
+                key={note.id}
+                note={note}
+                active={activeAppNoteId === note.id}
+                onSelect={() => onSelectAppNote(note.id)}
+                onRename={(title) => onRenameAppNote(note.id, title)}
+                onDelete={() => onDeleteAppNote(note.id)}
+              />
+            ))}
+          </div>
         </div>
       </div>
 

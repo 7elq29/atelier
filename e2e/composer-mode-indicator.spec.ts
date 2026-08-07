@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding, reconnectClosedSessionFromHistory } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,15 +16,6 @@ const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
 
 mkdirSync(artifactsDir, { recursive: true })
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -31,11 +23,6 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 async function openNewSessionModal(page: Page): Promise<void> {
   await page.getByTestId('new-session-button').click()
@@ -64,9 +51,8 @@ test.describe('11-composer-mode-indicator', () => {
 
   // ── 1. Always visible, defaults to Default ────────────────────────────
   test('mode pill is visible under the composer on a fresh session, defaults to Default', async () => {
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -168,7 +154,7 @@ test.describe('11-composer-mode-indicator', () => {
     await row.getByTestId('menu-close').click()
     const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
     await expect(historyRow).toBeVisible({ timeout: 10_000 })
-    await historyRow.getByTestId('resume-button').click()
+    await reconnectClosedSessionFromHistory(page, sessionId)
 
     const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
     await expect(activeRow).toBeVisible({ timeout: 10_000 })
@@ -178,9 +164,8 @@ test.describe('11-composer-mode-indicator', () => {
 
   // ── 5. "Start in plan mode" checkbox starts the pill in Plan mode ──────
   test('a session created with "Start in plan mode" checked starts showing Plan mode, not Default', async () => {
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('plan-mode-checkbox').check()
     await page.getByTestId('start-session-button').click()
