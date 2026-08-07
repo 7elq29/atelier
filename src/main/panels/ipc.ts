@@ -27,6 +27,9 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
   ipcMain.handle('panel:git:commitDiff', (_e, projectPath: string, commit: string, hostname?: string | null) =>
     git.getCommitDiff(projectPath, commit, hostname)
   )
+  ipcMain.handle('panel:git:commitOpen', (_e, projectPath: string, commit: string, hostname?: string | null) =>
+    git.getCommitPanelOpen(projectPath, commit, hostname)
+  )
   ipcMain.handle(
     'panel:git:commitFileDiff',
     (_e, projectPath: string, commit: string, filePath: string, hostname?: string | null) =>

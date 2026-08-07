@@ -182,16 +182,71 @@
 .session-row.active {
   background: var(--bg-active);
 }
+.session-waiting-input-alert {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+  box-shadow: 0 0 0 1px var(--bg-sidebar);
+  pointer-events: none;
+  z-index: 1;
+}
 .session-indicator {
   position: relative;
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.session-indicator .color-core {
-  position: absolute;
-  inset: 0;
+
+/* Set 1 · Monoline session status (session-status-icons mock) */
+.session-status {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 5px;
+  box-sizing: border-box;
+}
+.session-status svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+.session-status-empty {
+  background: transparent;
+  border: none;
+}
+.session-status-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+}
+.session-status-icon.tone-working,
+.session-status-icon.tone-blocked,
+.session-status-icon.tone-faint,
+.session-status-icon.tone-neutral {
+  color: var(--text-primary);
+}
+.session-status.anim-blink {
+  animation: session-status-blink 1.15s ease-in-out infinite;
+}
+.session-status.anim-spin {
+  animation: session-status-spin 1.35s linear infinite;
+}
+@keyframes session-status-blink {
+  0%, 100% { opacity: 1; }
+  45% { opacity: 0.3; }
+}
+@keyframes session-status-spin {
+  to { transform: rotate(360deg); }
 }
 .session-main {
   flex: 1;
@@ -1373,6 +1428,127 @@ input[type='range'] {
 .todo-completed-toggle { background: none; border: none; padding: 0; font-size: 13px; color: var(--text-tertiary); cursor: pointer; text-align: left; }
 .todo-completed-toggle:hover { color: var(--text-secondary); }
 .subagent-item { display: flex; align-items: center; gap: 9px; font-size: 15px; }
+.subagent-item.background-rail-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  row-gap: 2px;
+}
+.background-rail-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.background-rail-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+  text-transform: lowercase;
+  margin-left: auto;
+}
+.background-rail-sub {
+  flex: 1 1 100%;
+  padding-left: 22px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  line-height: 1.35;
+}
+.background-rail-failed .background-rail-title { color: var(--danger); }
+.background-rail-done .background-rail-title { color: var(--text-tertiary); }
+.background-rail-done .spinner { display: none; }
+
+.background-tasks-conversation-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-tint);
+  max-width: 100%;
+  margin: 10px 0;
+  padding: 10px 12px 12px;
+  border-left: 3px solid var(--info);
+}
+.background-tasks-conversation-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.background-tasks-conversation-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.background-tasks-conversation-count {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+}
+.background-tasks-conversation-section + .background-tasks-conversation-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+.background-tasks-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-disabled);
+  margin-bottom: 6px;
+}
+.background-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.background-item + .background-item {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+.background-type {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-tertiary);
+}
+.background-type.shell { color: var(--warning); }
+.background-type.subagent { color: var(--accent); }
+.background-type.monitor { color: var(--info); }
+.background-type.workflow { color: var(--sc-purple, var(--accent)); }
+.background-type.job { color: var(--text-secondary); }
+.background-body { flex: 1; min-width: 0; }
+.background-desc {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.background-sub {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.background-item.done .spinner { display: none; }
+.background-item.done .background-desc { color: var(--text-tertiary); }
+.background-item.failed .background-desc { color: var(--danger); }
 /* Composer core (04-composer-core) — quoted verbatim from mocks/index.html's
    `.composer-wrap`/`.composer-box`/`.composer-footer`/`.stop-btn`/
    `.send-btn` rules; this is the most recently hand-tuned area of the mock,
@@ -1484,13 +1660,35 @@ input[type='range'] {
   white-space: nowrap;
   font-family: var(--font-ui);
 }
-.composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; }
-.composer-box textarea { width: 100%; border: none; border-top-left-radius: var(--r-xl); border-top-right-radius: var(--r-xl); background: transparent; color: var(--text-primary); padding: 11px 13px 4px; font-family: var(--font-ui); font-size: var(--text-base); resize: none; outline: none; min-height: 22px; max-height: 160px; line-height: 1.5; overflow-y: auto; caret-color: transparent; }
+.composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; overflow: hidden; }
+.composer-box textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  border: none;
+  border-top-left-radius: var(--r-xl);
+  border-top-right-radius: var(--r-xl);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 14px 18px 8px;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  resize: none;
+  outline: none;
+  min-height: 52px;
+  max-height: 160px;
+  line-height: 1.5;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-y: auto;
+  caret-color: transparent;
+}
 .composer-box textarea.composer-input-has-suggestion::placeholder { color: var(--text-tertiary); opacity: 0.88; }
 .composer-suggestion-hint { font-size: 10px; color: var(--text-disabled); margin-left: auto; flex-shrink: 0; letter-spacing: 0.02em; }
 /* Context bar — fused inside the top of the composer box, variant C */
-.context-bar { display: flex; align-items: center; gap: 6px; padding: 7px 14px 4px; border-radius: var(--r-xl) var(--r-xl) 0 0; overflow-x: auto; scrollbar-width: thin; }
-.context-bar-item { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; flex-shrink: 0; max-width: min(100%, 280px); }
+.context-bar { display: flex; align-items: center; gap: 6px; padding: 7px 14px 4px; border-radius: var(--r-xl) var(--r-xl) 0 0; flex-wrap: wrap; row-gap: 2px; overflow-x: auto; scrollbar-width: thin; }
+.context-bar-item { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; flex-shrink: 0; max-width: min(100%, 280px); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .context-bar-label { font-size: 10px; font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-quaternary, var(--text-tertiary)); opacity: 0.85; flex-shrink: 0; }
 .context-bar-value { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
 .context-bar-item--icon-only { flex-shrink: 0; min-width: auto; overflow: visible; padding: 2px 4px; border-radius: 4px; cursor: default; }
@@ -1693,40 +1891,7 @@ input[type='range'] {
   display: none;
 }
 
-/* Sidebar-row session indicator: color-core encodes live status (46217f7).
-   startup-idle / disconnected / stale = grey; working / waiting = semantic colors.
-   User-chosen --sc-* appears on the dot only for status-idle when set in the detail popover. */
-.session-indicator .color-core.status-working {
-  background: var(--accent);
-  animation: pulse 1.6s infinite;
-}
-.session-indicator .color-core.status-connecting {
-  background: var(--text-tertiary);
-  animation: pulse 1.6s infinite;
-}
-.session-indicator .color-core.status-waiting-input {
-  background: var(--sc-purple);
-}
-.session-indicator .color-core.status-waiting-blocked {
-  background: var(--warning);
-  animation: pulse 1.6s infinite;
-}
-.session-indicator .color-core.status-idle {
-  background: var(--text-tertiary);
-}
-.session-indicator .color-core.status-startup-idle {
-  background: var(--text-tertiary);
-}
-.session-indicator .color-core.status-disconnected {
-  background: var(--text-disabled);
-}
-.session-indicator .color-core.status-creating-worktree {
-  background: var(--text-tertiary);
-  animation: pulse 1.6s infinite;
-}
-.session-indicator .color-core.status-stale {
-  background: var(--text-disabled);
-}
+/* Legacy dot rules removed — see Set 1 .session-status above. */
 /* Dim the whole row and block interaction while the worktree is being set up. */
 .session-row[data-status="creating-worktree"] {
   opacity: 0.5;
@@ -2143,7 +2308,7 @@ input[type='range'] {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 10px 16px 14px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-panel);
 }
@@ -2183,6 +2348,35 @@ input[type='range'] {
   height: 100%;
   min-height: 0;
   background: var(--bg-code);
+}
+/* Gap below date toolbar — host padding is reliable; .cm-content padding alone often doesn’t show. */
+.daily-note-editor-panel .daily-note-atomic-host {
+  box-sizing: border-box;
+  padding: 20px 24px 0;
+}
+.daily-note-editor-panel .atomic-cm-editor .cm-scroller {
+  padding-bottom: 40vh;
+}
+.daily-note-editor-panel .atomic-cm-editor .cm-content {
+  max-width: var(--atomic-editor-measure, 70ch);
+  margin-inline: auto;
+  padding-inline: 0;
+}
+/* Daily note prose: more room after markdown headings (mock .dn-h2 rhythm). */
+.daily-note-editor-panel .cm-line.cm-atomic-h1 {
+  padding-top: 0.35em;
+  padding-bottom: 0.75em;
+}
+.daily-note-editor-panel .cm-line.cm-atomic-h2 {
+  padding-top: 0.3em;
+  padding-bottom: 0.65em;
+}
+.daily-note-editor-panel .cm-line.cm-atomic-h3,
+.daily-note-editor-panel .cm-line.cm-atomic-h4,
+.daily-note-editor-panel .cm-line.cm-atomic-h5,
+.daily-note-editor-panel .cm-line.cm-atomic-h6 {
+  padding-top: 0.25em;
+  padding-bottom: 0.5em;
 }
 .daily-note-editor-panel .atomic-cm-editor {
   --atomic-editor-bg: var(--bg-code);

@@ -50,9 +50,5 @@ export interface SessionHookLogEvent {
   line: string
 }
 
-export function backgroundTaskRailGroup(taskType: string): 'monitors' | 'subagents' | 'shell' {
-  const t = taskType.toLowerCase()
-  if (t === 'monitor') return 'monitors'
-  if (t === 'shell') return 'shell'
-  return 'subagents'
-}
+export { backgroundTaskRailGroup } from './background-tasks-ui'
+export type { BackgroundTaskRailFamily } from './background-tasks-ui'

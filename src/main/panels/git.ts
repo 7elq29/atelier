@@ -4,6 +4,7 @@ export {
   getCommitDiff,
   getCommitFileDiff,
   getCommitFilePair,
+  getCommitPanelOpen,
   getDiffSummary,
   getFileDiff,
   getGitBranch,

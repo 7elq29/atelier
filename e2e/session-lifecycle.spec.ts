@@ -123,16 +123,7 @@ test.describe('02-session-lifecycle', () => {
 
     const startupIdleDot = historyRow.getByTestId('session-dot')
     await expect(startupIdleDot).toHaveClass(/status-startup-idle/)
-    const startupIdleDotBg = await startupIdleDot.evaluate((el) => getComputedStyle(el).backgroundColor)
-    const textTertiaryBg = await page.evaluate(() => {
-      const probe = document.createElement('div')
-      document.body.appendChild(probe)
-      probe.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary').trim()
-      const rgb = getComputedStyle(probe).backgroundColor
-      probe.remove()
-      return rgb
-    })
-    expect(startupIdleDotBg).toBe(textTertiaryBg)
+    await expect(startupIdleDot.locator('svg')).toBeVisible()
 
     const log = appendMainLog(userDataDir)
     expect(log).toContain('"event":"session.closed"')
@@ -521,30 +512,13 @@ test.describe('02-session-lifecycle', () => {
   })
 
   // ── UI-match: sidebar tokens ──────────────────────────────────────────
-  test('UI-match: session dot resolves a --sc-* token, hover resolves --bg-hover', async () => {
+  test('UI-match: session status slot uses Set 1 monoline, hover resolves --bg-hover', async () => {
     const dot = page.locator('[data-testid="session-dot"]').first()
     await expect(dot).toBeVisible()
+    await expect(dot).toHaveClass(/session-status/)
 
-    const dotColor = await dot.evaluate((el) => getComputedStyle(el).backgroundColor)
-    const scTokenColors = await page.evaluate(() => {
-      const style = getComputedStyle(document.documentElement)
-      return ['--sc-blue', '--sc-green', '--sc-purple', '--sc-amber', '--sc-rose', '--sc-cyan', '--sc-indigo', '--sc-teal'].map(
-        (name) => style.getPropertyValue(name).trim()
-      )
-    })
-    // Resolve each token name to its computed rgb() the same way the browser
-    // would, then compare against the dot's actual computed background.
-    const resolvedRgbs = await page.evaluate((tokens) => {
-      const probe = document.createElement('div')
-      document.body.appendChild(probe)
-      const rgbs = tokens.map((t) => {
-        probe.style.backgroundColor = t
-        return getComputedStyle(probe).backgroundColor
-      })
-      probe.remove()
-      return rgbs
-    }, scTokenColors)
-    expect(resolvedRgbs).toContain(dotColor)
+    const dotBg = await dot.evaluate((el) => getComputedStyle(el).backgroundColor)
+    expect(dotBg).toBe('rgba(0, 0, 0, 0)')
 
     const row = page.locator('[data-testid="session-row"]').first()
     await row.hover()

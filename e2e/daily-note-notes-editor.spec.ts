@@ -26,7 +26,7 @@ type: daily
 
 > [!invisible] Trackers
 
-## Notes
+## 📝 Notes
 
 ${notesBody}
 `
@@ -83,7 +83,8 @@ test.describe('Daily note Notes slice editor (sidebar main panel)', () => {
       .poll(() => readFileSync(notePath, 'utf-8'), { timeout: 15_000 })
       .toContain(UNIQUE_LINE)
 
-    await expect(readFileSync(notePath, 'utf-8')).toMatch(/## Notes[\s\S]*Seed body before edit/)
+    await expect(readFileSync(notePath, 'utf-8')).toMatch(/## 📝 Notes[\s\S]*Seed body before edit/)
+    await expect(readFileSync(notePath, 'utf-8')).not.toMatch(/^## Notes$/m)
     await expect(page.getByTestId('daily-note-sync-chip')).toContainText(/Synced|Saving/, { timeout: 10_000 })
 
     await page.screenshot({ path: join(artifactsDir, 'daily-note-notes-editor-slice.png') })
@@ -106,5 +107,41 @@ test.describe('Daily note Notes slice editor (sidebar main panel)', () => {
     await expect(page.getByTestId('daily-note-sync-chip')).toHaveText('Updated from vault', { timeout: 10_000 })
 
     await page.screenshot({ path: join(artifactsDir, 'daily-note-notes-editor-external-sync.png') })
+  })
+
+  test('local typing is not interrupted by self-write vault sync', async () => {
+    writeFileSync(notePath, fixtureWithNotesBody('Seed body before edit.'), 'utf-8')
+
+    await page.getByTestId('daily-note-row').click()
+    const editor = page.getByTestId('daily-note-editor')
+    await expect(editor).toBeVisible({ timeout: 10_000 })
+    await editor.click()
+
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.type('a')
+      await page.waitForTimeout(80)
+    }
+
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () => document.activeElement?.closest('[data-testid="daily-note-editor"]') != null
+          ),
+        { timeout: 5_000 }
+      )
+      .toBe(true)
+
+    await page.waitForTimeout(900)
+    await expect(page.getByTestId('daily-note-sync-chip')).not.toHaveText('Updated from vault')
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () => document.activeElement?.closest('[data-testid="daily-note-editor"]') != null
+          ),
+        { timeout: 2_000 }
+      )
+      .toBe(true)
   })
 })

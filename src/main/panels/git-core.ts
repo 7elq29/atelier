@@ -35,6 +35,70 @@ export function normalizeDiffPath(raw: string): string {
   return p
 }
 
+/** `-c` flags that must appear before the git subcommand. */
+export const GIT_PATCH_CONFIG_ARGS = ['-c', 'diff.external=', '-c', 'core.quotepath=false'] as const
+
+/** After `git diff` / `git show` — disables `.gitattributes` diff drivers and textconv. */
+export const GIT_NO_EXTERNAL_DIFF = ['--no-ext-diff', '--no-textconv'] as const
+
+const repoRootCache = new Map<string, string>()
+
+function repoRootCacheKey(projectPath: string, sshHost?: string | null): string {
+  return `${sshHost ?? 'local'}\0${projectPath}`
+}
+
+/** Git toplevel for `projectPath` (may be a nested directory inside a monorepo). */
+export async function resolveGitRepoRoot(
+  projectPath: string,
+  sshHost?: string | null
+): Promise<string> {
+  const key = repoRootCacheKey(projectPath, sshHost)
+  const hit = repoRootCache.get(key)
+  if (hit) return hit
+  const res = await runGit(projectPath, ['rev-parse', '--show-toplevel'], sshHost)
+  const root = res.code === 0 && res.stdout.trim() ? res.stdout.trim() : projectPath
+  repoRootCache.set(key, root)
+  return root
+}
+
+export function clearGitRepoRootCache(projectPath: string, sshHost?: string | null): void {
+  repoRootCache.delete(repoRootCacheKey(projectPath, sshHost))
+}
+
+/** Run git with `-C <toplevel>` so repo-root-relative pathspecs match numstat paths. */
+export async function runGitAtRepoRoot(
+  projectPath: string,
+  args: string[],
+  sshHost?: string | null
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  const root = await resolveGitRepoRoot(projectPath, sshHost)
+  return runGit(projectPath, ['-C', root, ...args], sshHost)
+}
+
+export async function runGitDiffPatch(
+  projectPath: string,
+  args: string[],
+  sshHost?: string | null
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  return runGitAtRepoRoot(
+    projectPath,
+    [...GIT_PATCH_CONFIG_ARGS, 'diff', ...GIT_NO_EXTERNAL_DIFF, ...args],
+    sshHost
+  )
+}
+
+export async function runGitShowPatch(
+  projectPath: string,
+  args: string[],
+  sshHost?: string | null
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  return runGitAtRepoRoot(
+    projectPath,
+    [...GIT_PATCH_CONFIG_ARGS, 'show', ...GIT_NO_EXTERNAL_DIFF, ...args],
+    sshHost
+  )
+}
+
 /** `git diff` exits 1 when patches differ (0 = identical). Treat 0/1 as success if stdout looks like a patch. */
 export function gitPatchOutputUsable(code: number, stdout: string): boolean {
   if (code === 2 || code > 2) return false
@@ -42,10 +106,44 @@ export function gitPatchOutputUsable(code: number, stdout: string): boolean {
   return t.length > 0 && (t.includes('diff --git') || t.includes('@@'))
 }
 
+/** Match a parsed diff file to the numstat path; fall back when git uses a slightly different path string. */
+export function pickParsedDiffFile(
+  parsed: DiffFileChange[],
+  filePath: string,
+  gitPath: string
+): DiffFileChange | undefined {
+  const matchesPath = (f: DiffFileChange): boolean =>
+    f.path === filePath ||
+    f.path === gitPath ||
+    f.oldPath === filePath ||
+    f.oldPath === gitPath ||
+    (gitPath.length > 0 && (f.path.endsWith(`/${gitPath}`) || gitPath.endsWith(`/${f.path}`)))
+
+  const direct = parsed.find(matchesPath)
+  if (direct?.hunks.length) return direct
+
+  const withHunks = parsed.filter((f) => f.hunks.length > 0)
+  if (withHunks.length === 1) {
+    const sole = withHunks[0]
+    return { ...sole, path: filePath || gitPath || sole.path }
+  }
+
+  const hunksMatch = withHunks.find(matchesPath)
+  if (hunksMatch) return { ...hunksMatch, path: filePath || gitPath || hunksMatch.path }
+
+  return direct
+}
+
 /** Numstat path field — use the destination path when git reports `old => new`. */
 export function numstatPathForGit(path: string): string {
   const arrow = path.indexOf(' => ')
   return arrow === -1 ? path : path.slice(arrow + 4).trim()
+}
+
+/** Prefer a text diff over binary (-/- numstat) when opening a commit. */
+export function pickDefaultCommitFile(files: DiffFileChange[]): string | null {
+  const withStats = files.find((f) => f.additions > 0 || f.deletions > 0)
+  return withStats?.path ?? files[0]?.path ?? null
 }
 
 export function parseNumstatLines(lines: string[]): DiffFileChange[] {

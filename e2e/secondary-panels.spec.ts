@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, symlinkSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -92,16 +92,22 @@ function buildFixtureRepo(): string {
   git(dir, ['config', 'user.email', 'e2e@example.com'])
   git(dir, ['config', 'user.name', 'E2E Test'])
   writeFileSync(join(dir, 'README.md'), '# fixture repo\n')
+  mkdirSync(join(dir, 'config'), { recursive: true })
+  writeFileSync(join(dir, 'config', 'example.star'), 'version = 1\n')
+  mkdirSync(join(dir, 'nested', 'session'), { recursive: true })
+  writeFileSync(join(dir, 'nested', 'session', '.gitkeep'), '')
   mkdirSync(join(dir, 'src'), { recursive: true })
   writeFileSync(join(dir, 'src', 'index.js'), "// entrypoint\nfunction hello() {\n  return 'hi'\n}\n")
   git(dir, ['add', '.'])
   git(dir, ['commit', '-q', '-m', 'Initial commit'])
 
   writeFileSync(join(dir, 'src', 'index.js'), "// entrypoint\nfunction hello() {\n  return 'hello world'\n}\n")
+  writeFileSync(join(dir, 'config', 'example.star'), 'version = 1\nversion = 2\n')
   git(dir, ['add', '.'])
   git(dir, ['commit', '-q', '-m', 'Change greeting (see https://example.com/atelier-e2e-external-link-check)'])
 
   writeFileSync(join(dir, 'src', 'index.js'), "// entrypoint\nfunction hello() {\n  return 'hello world!'\n}\n\nmodule.exports = { hello }\n")
+  writeFileSync(join(dir, 'repo-wide-change.js'), "// changed outside nested session cwd\n")
 
   writeFileSync(join(dir, 'a.txt'), 'a\n')
   git(dir, ['add', 'a.txt'])
@@ -114,6 +120,11 @@ function buildFixtureRepo(): string {
   )
   writeFileSync(join(dir, 'logo.png'), onePxPng)
   writeFileSync(join(dir, 'page.html'), '<html><body><h1>Fixture page</h1><a href="https://example.com">a link</a></body></html>')
+
+  const sessionDir = join(dir, 'nested', 'session')
+  symlinkSync(join(dir, 'src'), join(sessionDir, 'src'), 'dir')
+  symlinkSync(join(dir, 'logo.png'), join(sessionDir, 'logo.png'))
+  symlinkSync(join(dir, 'page.html'), join(sessionDir, 'page.html'))
 
   return dir
 }
@@ -144,13 +155,16 @@ test.describe('07-secondary-panels', () => {
   let page: Page
   let userDataDir: string
   let repoDir: string
+  /** Nested inside the fixture repo — matches monorepo sessions whose cwd ≠ git toplevel. */
+  let sessionProjectPath: string
   let sessionId: string
 
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-panels-'))
     seedSkipOnboarding(userDataDir)
     repoDir = buildFixtureRepo()
-    log(`fixture repo created at ${repoDir}`)
+    sessionProjectPath = join(repoDir, 'nested', 'session')
+    log(`fixture repo created at ${repoDir} (session cwd ${sessionProjectPath})`)
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 
@@ -162,7 +176,7 @@ test.describe('07-secondary-panels', () => {
   test('setup: create a claude-code session on the fixture repo', async () => {
         await page.getByTestId('new-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toBeVisible()
-    await page.getByTestId('project-path').fill(repoDir)
+    await page.getByTestId('project-path').fill(sessionProjectPath)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
     await page.getByTestId('start-session-button').click()
@@ -331,6 +345,7 @@ test.describe('07-secondary-panels', () => {
     await diff.getByTestId('diff-sub-changes').click()
     const indexRow = diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })
     await expect(indexRow).toBeVisible()
+    await expect(diff.getByTestId('diff-file-row').filter({ hasText: 'repo-wide-change.js' })).toBeVisible()
     await indexRow.click()
     await expect(diff.locator('.diff-line.add').first()).toContainText('hello world!')
 
@@ -352,9 +367,18 @@ test.describe('07-secondary-panels', () => {
 
     await diff.getByTestId('commit-row').filter({ hasText: 'Change greeting' }).click()
     await expect(diff.getByTestId('diff-commit-detail')).toBeVisible({ timeout: 10_000 })
-    await expect(diff.getByTestId('diff-file-row').first()).toContainText('index.js')
+    const greetingIndexRow = diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })
+    await expect(greetingIndexRow).toBeVisible({ timeout: 10_000 })
+    await greetingIndexRow.click()
     await expect(diff.locator('.diff-line.add').filter({ hasText: 'hello world' }).first()).toBeVisible({ timeout: 10_000 })
     await expect(diff.locator('.diff-line.add').filter({ hasText: 'hello world!' })).toHaveCount(0)
+
+    const starRow = diff.getByTestId('diff-file-row').filter({ hasText: 'example.star' })
+    await expect(starRow).toBeVisible({ timeout: 10_000 })
+    await starRow.click()
+    await expect(diff.locator('.diff-line.add').filter({ hasText: 'version = 2' }).first()).toBeVisible({
+      timeout: 10_000
+    })
 
     await diff.getByTestId('diff-commit-back').click()
     await diff.getByTestId('commit-row').filter({ hasText: 'Initial commit' }).click()
@@ -490,6 +514,7 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('file-quick-open')).toHaveCount(0)
     await expect(page.getByTestId('tab-files')).toHaveClass(/active/)
     await expect(page.getByTestId('monaco-editor')).toBeVisible()
+    await expect(page.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 15_000 })
     await page.screenshot({ path: join(artifactsDir, '07-file-quick-open.png') })
     log('file quick open: split dir/search OK')
   })

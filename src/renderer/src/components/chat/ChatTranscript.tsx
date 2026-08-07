@@ -11,7 +11,8 @@ import PlanProposedCard from './PlanProposedCard'
 import MarkdownMessage from './MarkdownMessage'
 import MessageActions from './MessageActions'
 import ConversationStatusCard from './ConversationStatusCard'
-import type { SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
+import BackgroundTasksConversationCard from './BackgroundTasksConversationCard'
+import type { BackgroundTaskRow, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
@@ -119,7 +120,8 @@ export default function ChatTranscript({
   searchQuery,
   activeMatchIndex = -1,
   onMatchCount,
-  sdkChrome
+  sdkChrome,
+  backgroundTasks = [],
 }: {
   messages: MessageRecord[]
   /** Resolves a permission/AskUserQuestion/plan card by requestId (05-interactive-prompts). */
@@ -138,6 +140,8 @@ export default function ChatTranscript({
   onMatchCount?: (count: number) => void
   /** Live SDK status chrome (compacting / requesting / compact failed). */
   sdkChrome?: SessionSdkChromeEvent | null
+  /** SDK background monitors / jobs / shell (merged task_* state). */
+  backgroundTasks?: BackgroundTaskRow[]
 }): JSX.Element {
   const childrenByParent = new Map<string, TopRow[]>()
   const topRows: TopRow[] = []
@@ -513,6 +517,7 @@ export default function ChatTranscript({
   return (
     <div className="transcript" data-testid="transcript" ref={containerRef}>
       {rows}
+      <BackgroundTasksConversationCard tasks={backgroundTasks} />
       {sdkChrome && (sdkChrome.status === 'compacting' || sdkChrome.compactFailed) && (
         <ConversationStatusCard chrome={sdkChrome} />
       )}

@@ -68,8 +68,10 @@ export interface ReadDailyNoteResult {
 /** Renderer-facing result for the Notes-section-only editor (## Notes → EOF). */
 export interface DailyNoteNotesSliceResult {
   exists: boolean
-  /** Markdown body under the `## Notes` heading (heading line itself excluded). */
+  /** Markdown body under the Notes heading (heading line itself excluded). */
   notesBody: string
+  /** Exact `## … Notes` heading line from the vault file (emoji preserved). */
+  notesSectionHeading: string
   /** Vault-relative path to the daily note file. */
   vaultRelativePath: string
   /** True when this call created the note from the vault template. */
