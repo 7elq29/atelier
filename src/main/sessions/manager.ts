@@ -593,7 +593,16 @@ export class SessionManager {
       logger.info('reconnectHarness: session never had a real connection, starting fresh (not resume())', {
         sessionId: session.id
       })
-      return this.harness.startWithId(session.id, '', startOpts)
+      // Same bounded lock-race retry as the conversation-lost fallback below
+      // (see startFreshWithRetry's doc comment) — a session that never
+      // completed its first-ever connection has no other path back, so a
+      // single unlucky "Session ID ... already in use" race here otherwise
+      // fails permanently with no self-healing, unlike the everConnected
+      // branch's resume() which already gets this protection.
+      return {
+        sessionId: session.id,
+        events: this.startFreshWithRetry(session, startOpts)
+      }
     }
     const harnessSession = await this.harness.resume(session.id, startOpts)
     return {

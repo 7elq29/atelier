@@ -655,9 +655,6 @@ export default function Sidebar({
         <div className="app-mark" />
         <div className="app-name hide-on-collapse">Atelier</div>
       </div>
-      <div className="hide-on-collapse">
-        <SpendStatusChip />
-      </div>
       <div className="sidebar-search-row hide-on-collapse">
         <input
           className="sidebar-search"
@@ -891,6 +888,9 @@ export default function Sidebar({
         </div>
       </div>
 
+      <div className="hide-on-collapse">
+        <SpendStatusChip />
+      </div>
       <div className="sidebar-bottom">
         <div className="user-avatar" />
         <button
