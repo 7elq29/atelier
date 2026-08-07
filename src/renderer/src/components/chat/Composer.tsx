@@ -880,7 +880,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
 
   const workspacePath = worktreePath ?? projectPath ?? null
   const claudePath = harnessCwd ?? workspacePath
-  const displayWorkspace = truncateContextPath(workspacePath)
   const displayClaudePath = truncateContextPath(claudePath)
 
   return (
@@ -903,34 +902,20 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         {workspacePath && (
           <>
             <div className="context-bar" data-testid="composer-context-bar">
-              {displayWorkspace && (
+              {displayClaudePath && (
                 <span
                   className="context-bar-item"
-                  data-testid="composer-context-workspace"
-                  title={workspacePath ? `Workspace: ${workspacePath}` : undefined}
+                  data-testid="composer-context-claude-path"
+                  title={claudePath ? `Path: ${claudePath}` : undefined}
                 >
                   {CONTEXT_FOLDER_ICON}
-                  <span className="context-bar-label">Workspace</span>
-                  <span className="context-bar-value">{displayWorkspace}</span>
+                  <span className="context-bar-label">Path</span>
+                  <span className="context-bar-value">{displayClaudePath}</span>
                 </span>
-              )}
-              {displayClaudePath && (
-                <>
-                  {displayWorkspace && <span className="context-bar-sep">›</span>}
-                  <span
-                    className="context-bar-item"
-                    data-testid="composer-context-claude-path"
-                    title={claudePath ? `Path: ${claudePath}` : undefined}
-                  >
-                    {CONTEXT_FOLDER_ICON}
-                    <span className="context-bar-label">Path</span>
-                    <span className="context-bar-value">{displayClaudePath}</span>
-                  </span>
-                </>
               )}
               {branch && (
                 <>
-                  {(displayWorkspace || displayClaudePath) && <span className="context-bar-sep">›</span>}
+                  {displayClaudePath && <span className="context-bar-sep">›</span>}
                   <span className="context-bar-item" data-testid="composer-context-branch" title={`Branch at ${claudePath ?? workspacePath}`}>
                     {CONTEXT_BRANCH_ICON}
                     {branch}
