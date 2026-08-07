@@ -346,12 +346,15 @@ export class SessionManager {
    * Classifies 1h+ inactive claude-code sessions before the renderer can
    * select them (session-startup-idle). Must run synchronously at launch,
    * not inside the delayed startupReconnect() window.
+   *
+   * idle-session-auto-history: eligible sessions are auto-closed into History
+   * instead of staying in the active sidebar as startup-idle.
    */
   markStartupIdleSessions(): void {
     for (const session of this.store.listActiveSessions()) {
       if (session.mode !== 'claude-code') continue
       if (!this.sessionIsStartupIdleEligible(session)) continue
-      this.startupIdle.add(session.id)
+      this.closeSession(session.id)
     }
   }
 
@@ -392,7 +395,30 @@ export class SessionManager {
     return this.sessionIsStartupIdleEligible(session)
   }
 
+  /**
+   * idle-session-auto-history: long-inactive disconnected claude-code sessions
+   * (`startup-idle`) are closed into History automatically. Plain `idle`
+   * (e.g. right after a failed reconnect) is left in the active list so errors
+   * stay visible until the user closes manually.
+   */
+  private maybeAutoCloseIdleSessionToHistory(sessionId: string): boolean {
+    const session = this.store.getSession(sessionId)
+    if (!session || session.closedAt || session.mode !== 'claude-code') return false
+    if (
+      this.live.has(sessionId) ||
+      this.connecting.has(sessionId) ||
+      this.creatingWorktree.has(sessionId) ||
+      this.startupAutoReconnect.has(sessionId)
+    ) {
+      return false
+    }
+    if (this.getStatus(sessionId) !== 'startup-idle') return false
+    this.closeSession(sessionId)
+    return true
+  }
+
   private sendStatus(sessionId: string): void {
+    if (this.maybeAutoCloseIdleSessionToHistory(sessionId)) return
     this.getWindow()?.webContents.send('session:status', { sessionId, status: this.getStatus(sessionId) })
   }
 
@@ -1843,8 +1869,9 @@ export class SessionManager {
 
       // claude-code: attempt startup reconnect for recently-active sessions only.
       if (this.sessionIsStartupIdleEligible(session)) {
-        this.startupIdle.add(session.id)
-        this.sendStatus(session.id)
+        if (!session.closedAt) {
+          this.closeSession(session.id)
+        }
         logger.info('startupReconnect: skipping auto reconnect (session startup-idle)', {
           sessionId: session.id,
           lastActiveAt: session.lastActiveAt

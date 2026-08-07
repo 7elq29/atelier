@@ -665,6 +665,36 @@ export default function Sidebar({
   const [groupMenuOpenId, setGroupMenuOpenId] = useState<string | null>(null)
   const [dragSessionId, setDragSessionId] = useState<string | null>(null)
   const [dragGroupId, setDragGroupId] = useState<string | null>(null)
+  const [agentClosedCollapsed, setAgentClosedCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('atelier.sidebar.agentClosedCollapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+  const [terminalClosedCollapsed, setTerminalClosedCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('atelier.sidebar.terminalClosedCollapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('atelier.sidebar.agentClosedCollapsed', agentClosedCollapsed ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [agentClosedCollapsed])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('atelier.sidebar.terminalClosedCollapsed', terminalClosedCollapsed ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [terminalClosedCollapsed])
 
   useEffect(() => {
     if (!groupMenuOpenId) return
@@ -955,21 +985,28 @@ export default function Sidebar({
           </>
         )}
 
-        <div className="group-header" data-testid="group-header-history" style={{ marginTop: 8 }}>
+        <div
+          className={'group-header' + (agentClosedCollapsed ? ' collapsed' : '')}
+          data-testid="group-header-history"
+          style={{ marginTop: 8 }}
+          onClick={() => setAgentClosedCollapsed((v) => !v)}
+        >
           <span className="chev">▾</span>
-          <span className="hide-on-collapse">History (closed)</span>
+          <span className="sidebar-pane-label hide-on-collapse">Closed</span>
           <span className="count hide-on-collapse" data-testid="history-count">
             {agentHistory.length}
           </span>
         </div>
-        <div className="group-body" data-group="history">
-          {agentHistory.length === 0 && (
-            <div className="history-empty-hint hide-on-collapse">
-              Closed sessions land here — select one and click Reconnect to restore chat and tools.
-            </div>
-          )}
-          {agentHistory.map((s) => row(s, true, undefined, []))}
-        </div>
+        {!agentClosedCollapsed && (
+          <div className="group-body" data-group="history">
+            {agentHistory.length === 0 && (
+              <div className="history-empty-hint hide-on-collapse">
+                Closed sessions land here — select one and click Reconnect to restore chat and tools.
+              </div>
+            )}
+            {agentHistory.map((s) => row(s, true, undefined, []))}
+          </div>
+        )}
           </div>
         </div>
 
@@ -1000,14 +1037,21 @@ export default function Sidebar({
             </div>
             {terminalHistory.length > 0 && (
               <>
-                <div className="group-header" style={{ marginTop: 8 }}>
+                <div
+                  className={'group-header' + (terminalClosedCollapsed ? ' collapsed' : '')}
+                  data-testid="group-header-terminal-closed"
+                  style={{ marginTop: 8 }}
+                  onClick={() => setTerminalClosedCollapsed((v) => !v)}
+                >
                   <span className="chev">▾</span>
-                  <span>History (closed)</span>
+                  <span className="sidebar-pane-label">Closed</span>
                   <span className="count">{terminalHistory.length}</span>
                 </div>
-                <div className="group-body" data-group="terminal-history">
-                  {terminalHistory.map((s) => row(s, true, undefined, []))}
-                </div>
+                {!terminalClosedCollapsed && (
+                  <div className="group-body" data-group="terminal-history">
+                    {terminalHistory.map((s) => row(s, true, undefined, []))}
+                  </div>
+                )}
               </>
             )}
           </div>
