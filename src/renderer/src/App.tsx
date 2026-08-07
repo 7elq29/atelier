@@ -113,6 +113,8 @@ export default function App(): JSX.Element {
   const [visitedTabs, setVisitedTabs] = useState<Set<SessionTab>>(new Set(['chat']))
   const [revealChangePath, setRevealChangePath] = useState<string | undefined>()
   const [revealChangeSeq, setRevealChangeSeq] = useState(0)
+  const [revealCommitHash, setRevealCommitHash] = useState<string | undefined>()
+  const [revealCommitSeq, setRevealCommitSeq] = useState(0)
   const [revealFilePath, setRevealFilePath] = useState<string | undefined>()
   const [revealFileSeq, setRevealFileSeq] = useState(0)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -447,6 +449,18 @@ export default function App(): JSX.Element {
       if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
       setRevealChangePath(path)
       setRevealChangeSeq((n) => n + 1)
+      setActiveTab('diff')
+      setVisitedTabs((prev) => (prev.has('diff') ? prev : new Set(prev).add('diff')))
+    },
+    [activeSessionId, allSessions, sessions.statuses]
+  )
+
+  const openCommitInDiff = useCallback(
+    (hash: string) => {
+      const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
+      if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
+      setRevealCommitHash(hash)
+      setRevealCommitSeq((n) => n + 1)
       setActiveTab('diff')
       setVisitedTabs((prev) => (prev.has('diff') ? prev : new Set(prev).add('diff')))
     },
@@ -965,9 +979,10 @@ export default function App(): JSX.Element {
                                 worktreePath={session.worktreePath}
                                 hostname={session.hostname}
                                 gitWorkspacePath={session.worktreePath ?? session.projectPath}
-                                sessionFileEdits={ws?.sessionFileEdits}
+                                sessionChangesCap={ws?.sessionChangesCap}
                                 mentionFilePaths={mentionPaths}
                                 onOpenChangedFile={openChangedFileInDiff}
+                                onOpenCommitInDiff={openCommitInDiff}
                                 onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}
                                 modelSelection={modelSelectionForSession(sessionId, session, modelSelectionBySession, config)}
                                 onModelSelectionChange={(selection) => {
@@ -1019,6 +1034,9 @@ export default function App(): JSX.Element {
                             revealChangePath={panelsVisible ? revealChangePath : undefined}
                             revealChangeSeq={panelsVisible ? revealChangeSeq : 0}
                             onRevealChangeHandled={() => setRevealChangePath(undefined)}
+                            revealCommitHash={panelsVisible ? revealCommitHash : undefined}
+                            revealCommitSeq={panelsVisible ? revealCommitSeq : 0}
+                            onRevealCommitHandled={() => setRevealCommitHash(undefined)}
                             onAddComment={appendToActiveComposer}
                           />
                         </div>

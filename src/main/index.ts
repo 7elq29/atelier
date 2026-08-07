@@ -13,6 +13,7 @@ import { ClaudeAgentSdkHarness } from './harness'
 import { SessionStore } from './sessions/store'
 import { SessionManager } from './sessions/manager'
 import { WorkspaceService } from './sessions/workspace-service'
+import { refreshSessionChangesCap } from './sessions/session-changes-cap'
 import { createStaticHostResolver } from './sessions/hosts'
 import { registerSessionHandlers } from './sessions/ipc'
 import { registerAppNotesHandlers } from './app-notes/ipc'
@@ -137,7 +138,12 @@ app.whenReady().then(() => {
   // re-created per IPC call.
   const harness = new ClaudeAgentSdkHarness()
   sessionManager = new SessionManager(sessionStore, harness, createStaticHostResolver(), () => mainWindow)
-  workspaceService = new WorkspaceService(() => mainWindow, (sessionId) => sessionStore.listSessionFileEdits(sessionId))
+  workspaceService = new WorkspaceService(() => mainWindow, async (sessionId, opts) => {
+    const session = sessionStore.getSession(sessionId)
+    if (!session) return { items: [] }
+    const workspacePath = session.worktreePath ?? session.projectPath
+    return refreshSessionChangesCap(sessionStore, sessionId, workspacePath, session.hostname, opts)
+  })
   sessionManager.setWorkspaceService(workspaceService)
   const manager = sessionManager
   manager.markStartupIdleSessions()

@@ -260,6 +260,9 @@ export default function DiffPanel({
   revealChangePath,
   revealChangeSeq = 0,
   onRevealChangeHandled,
+  revealCommitHash,
+  revealCommitSeq = 0,
+  onRevealCommitHandled,
   workspaceDiff,
   onRefreshWorkspace
 }: {
@@ -278,6 +281,10 @@ export default function DiffPanel({
   revealChangePath?: string
   revealChangeSeq?: number
   onRevealChangeHandled?: () => void
+  /** Full commit hash to open on Commits (from chat changes cap). */
+  revealCommitHash?: string
+  revealCommitSeq?: number
+  onRevealCommitHandled?: () => void
   /** Preloaded / pushed diff summary from main workspace service. */
   workspaceDiff?: DiffSummary | null
   /** Request immediate git refresh in main (Diff › Changes). */
@@ -483,6 +490,29 @@ export default function DiffPanel({
     void loadFileHunks(revealChangePath, true)
     onRevealChangeHandled?.()
   }, [revealChangeSeq, revealChangePath, loadFileHunks, onRevealChangeHandled])
+
+  useEffect(() => {
+    if (!revealCommitHash || !revealCommitSeq) return
+    setSub('commits')
+    void (async () => {
+      let list = commits
+      if (!list?.length) {
+        setCommitsLoading(true)
+        try {
+          list = await window.atelier.gitCommits(workspacePath, hostname, true)
+          setCommits(list)
+        } finally {
+          setCommitsLoading(false)
+        }
+      }
+      const hash = revealCommitHash
+      const match =
+        list?.find((c) => c.hash === hash) ??
+        list?.find((c) => c.hash.startsWith(hash) || hash.startsWith(c.hash))
+      if (match) await openCommit(match)
+      onRevealCommitHandled?.()
+    })()
+  }, [revealCommitSeq, revealCommitHash, commits, workspacePath, hostname, openCommit, onRevealCommitHandled])
 
   useEffect(() => {
     if (selectedCommit && commitSelectedFile) void loadCommitFileHunks(selectedCommit.hash, commitSelectedFile)

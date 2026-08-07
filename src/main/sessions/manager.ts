@@ -39,7 +39,7 @@ import { worktreeRootFromConfig } from '../../shared/worktree-path'
 import { homeDirForWorktreeHost } from './worktree-home'
 import { createWorktree, removeWorktree } from './worktree'
 import { warmRemoteGitHost } from '../panels/git'
-import { recordFileEditFromToolCall } from './session-file-edits'
+import { handleFileEditToolCompleted } from './session-changes-cap'
 import { WorkspaceService } from './workspace-service'
 import { completeLinkedDailyTask, linkDailyTaskToSession } from '../daily-note-session-link'
 
@@ -1514,14 +1514,18 @@ export class SessionManager {
           const session = this.getSession(sessionId)
           if (session) {
             const workspaceRoot = session.worktreePath ?? session.projectPath
-            const edits = recordFileEditFromToolCall(
+            const workspacePath = workspaceRoot
+            void handleFileEditToolCompleted(
               this.store,
               sessionId,
               workspaceRoot,
+              workspacePath,
+              session.hostname,
               pending.content.name,
               pending.content.input
-            )
-            this.workspace?.patchSessionFileEdits(sessionId, edits)
+            ).then((cap) => {
+              this.workspace?.patchSessionChangesCap(sessionId, cap)
+            })
           }
         }
         return

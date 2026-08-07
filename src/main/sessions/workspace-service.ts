@@ -8,7 +8,8 @@ import type { BrowserWindow } from 'electron'
 import type { SessionRecord } from '../../shared/session-types'
 import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
 import type { DiffSummary } from '../../shared/panel-types'
-import type { SessionFileEdit } from '../../shared/session-file-edits'
+import type { SessionChangesCap } from '../../shared/session-changes-cap'
+import { sessionChangesCapSignature } from '../../shared/session-changes-cap'
 import { getDiffSummary } from '../panels/git'
 import { walkFileTree, listWorkspaceFiles } from '../panels/files'
 import type { PtyManager } from '../panels/pty'
@@ -28,10 +29,6 @@ function diffListSignature(diff: DiffSummary): string {
   return diff.files.map((f) => `${f.path}:${f.additions}:${f.deletions}:${f.status}`).join('|')
 }
 
-function sessionFileEditsSignature(edits: SessionFileEdit[]): string {
-  return edits.map((f) => `${f.path}:${f.additions}:${f.deletions}`).join('|')
-}
-
 export class WorkspaceService {
   private readonly cache = new Map<string, SessionWorkspacePayload>()
   private readonly monitors = new Map<string, { stop: () => void }>()
@@ -39,7 +36,10 @@ export class WorkspaceService {
 
   constructor(
     private readonly getWindow: () => BrowserWindow | null,
-    private readonly getSessionFileEdits: (sessionId: string) => SessionFileEdit[]
+    private readonly buildSessionChangesCap: (
+      sessionId: string,
+      opts?: { processHead?: boolean }
+    ) => Promise<SessionChangesCap>
   ) {}
 
   setPtyManager(pty: PtyManager): void {
@@ -59,6 +59,7 @@ export class WorkspaceService {
     logger.info('session:openReady', {
       sessionId: payload.sessionId,
       diffFiles: payload.diff.files?.length ?? 0,
+      capItems: payload.sessionChangesCap.items.length,
       treeEntries: payload.filesTree.length
     })
   }
@@ -93,10 +94,11 @@ export class WorkspaceService {
       }
     }
 
-    const [diff, filesTree, filesList] = await Promise.all([
+    const [diff, filesTree, filesList, sessionChangesCap] = await Promise.all([
       getDiffSummary(workspacePath, hostname, false),
       Promise.resolve(walkFileTree(workspacePath, hostname)).then((r) => (Array.isArray(r) ? r : [])),
-      Promise.resolve(listWorkspaceFiles(workspacePath, hostname)).then((r) => (Array.isArray(r) ? r : []))
+      Promise.resolve(listWorkspaceFiles(workspacePath, hostname)).then((r) => (Array.isArray(r) ? r : [])),
+      this.buildSessionChangesCap(session.id, { processHead: true })
     ])
 
     const payload: SessionWorkspacePayload = {
@@ -104,7 +106,7 @@ export class WorkspaceService {
       workspacePath,
       hostname,
       diff,
-      sessionFileEdits: this.getSessionFileEdits(session.id),
+      sessionChangesCap,
       filesTree,
       filesList,
       tabTerminalPtyId,
@@ -123,28 +125,34 @@ export class WorkspaceService {
   async refreshWorkspace(session: SessionRecord, force: boolean): Promise<SessionWorkspacePayload> {
     const workspacePath = workspacePathFor(session)
     const prev = this.cache.get(session.id)
-    const diff = await getDiffSummary(workspacePath, session.hostname, force)
-    const filesTree = await Promise.resolve(walkFileTree(workspacePath, session.hostname)).then((r) =>
-      Array.isArray(r) ? r : []
-    )
-    const filesList = await Promise.resolve(listWorkspaceFiles(workspacePath, session.hostname)).then((r) =>
-      Array.isArray(r) ? r : []
-    )
+    const [diff, filesTree, filesList, sessionChangesCap] = await Promise.all([
+      getDiffSummary(workspacePath, session.hostname, force),
+      Promise.resolve(walkFileTree(workspacePath, session.hostname)).then((r) =>
+        Array.isArray(r) ? r : []
+      ),
+      Promise.resolve(listWorkspaceFiles(workspacePath, session.hostname)).then((r) =>
+        Array.isArray(r) ? r : []
+      ),
+      this.buildSessionChangesCap(session.id, { processHead: true })
+    ])
     const payload: SessionWorkspacePayload = {
       sessionId: session.id,
       workspacePath,
       hostname: session.hostname,
       diff,
-      sessionFileEdits: this.getSessionFileEdits(session.id),
+      sessionChangesCap,
       filesTree,
       filesList,
       tabTerminalPtyId: prev?.tabTerminalPtyId ?? `${session.id}:tab-terminal`,
       loadedAt: Date.now()
     }
-    const prevSig = prev ? diffListSignature(prev.diff) : ''
-    const nextSig = diffListSignature(diff)
+    const prevDiffSig = prev ? diffListSignature(prev.diff) : ''
+    const nextDiffSig = diffListSignature(diff)
     const treeChanged = JSON.stringify(prev?.filesTree) !== JSON.stringify(filesTree)
-    if (prevSig !== nextSig || treeChanged || force) {
+    const capChanged =
+      sessionChangesCapSignature(prev?.sessionChangesCap ?? { items: [] }) !==
+      sessionChangesCapSignature(sessionChangesCap)
+    if (prevDiffSig !== nextDiffSig || treeChanged || capChanged || force) {
       this.sendUpdated(payload)
     } else {
       this.cache.set(session.id, payload)
@@ -152,19 +160,18 @@ export class WorkspaceService {
     return payload
   }
 
-  /** Push session file-edit rollup to renderer without a full git refresh. */
-  patchSessionFileEdits(sessionId: string, edits: SessionFileEdit[]): void {
+  patchSessionChangesCap(sessionId: string, cap: SessionChangesCap): void {
     const prev = this.cache.get(sessionId)
     if (!prev) return
-    const nextSig = sessionFileEditsSignature(edits)
-    const prevSig = sessionFileEditsSignature(prev.sessionFileEdits)
+    const nextSig = sessionChangesCapSignature(cap)
+    const prevSig = sessionChangesCapSignature(prev.sessionChangesCap)
     if (nextSig === prevSig) {
-      this.cache.set(sessionId, { ...prev, sessionFileEdits: edits })
+      this.cache.set(sessionId, { ...prev, sessionChangesCap: cap })
       return
     }
     const payload: SessionWorkspacePayload = {
       ...prev,
-      sessionFileEdits: edits,
+      sessionChangesCap: cap,
       loadedAt: Date.now()
     }
     this.sendUpdated(payload)

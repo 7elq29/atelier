@@ -9,7 +9,7 @@ import {
 } from './migrations/gardenia-to-atelier'
 import { runHistoricalCostBackfill } from './sessions/historical-cost-recompute'
 import { SessionStore } from './sessions/store'
-import { rebuildSessionFileEditsFromMessages } from './sessions/session-file-edits'
+import { rebuildSessionTouchedPathsFromMessages } from './sessions/session-changes-cap'
 
 let db: Database.Database | undefined
 
@@ -248,19 +248,53 @@ const MIGRATIONS: Array<{ name: string; sql?: string; run?: (database: Database.
   },
   {
     // chat changes cap: persisted rollups of Edit/Write/MultiEdit/NotebookEdit
-    // tool calls per session (survives reconnect/relaunch); not git diff.
+    // tool calls per session (survives reconnect/relaunch); superseded by 0014.
     name: '0013_session_file_edits',
+    sql: `
+      CREATE TABLE IF NOT EXISTS session_file_edits (
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        additions INTEGER NOT NULL DEFAULT 0,
+        deletions INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (session_id, path)
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_file_edits_session ON session_file_edits(session_id);
+    `
+  },
+  {
+    name: '0014_session_changes_cap_v2',
     run(database) {
       database.exec(`
-        CREATE TABLE IF NOT EXISTS session_file_edits (
+        CREATE TABLE IF NOT EXISTS session_touched_paths (
           session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
           path TEXT NOT NULL,
-          additions INTEGER NOT NULL DEFAULT 0,
-          deletions INTEGER NOT NULL DEFAULT 0,
-          updated_at TEXT NOT NULL,
+          first_touched_at TEXT NOT NULL,
+          last_pending_at TEXT,
           PRIMARY KEY (session_id, path)
         );
-        CREATE INDEX IF NOT EXISTS idx_session_file_edits_session ON session_file_edits(session_id);
+        CREATE INDEX IF NOT EXISTS idx_session_touched_paths_session ON session_touched_paths(session_id);
+
+        CREATE TABLE IF NOT EXISTS session_cap_commits (
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          hash TEXT NOT NULL,
+          subject TEXT NOT NULL,
+          committed_at TEXT NOT NULL,
+          sort_order REAL NOT NULL,
+          PRIMARY KEY (session_id, hash)
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_cap_commits_session ON session_cap_commits(session_id);
+
+        CREATE TABLE IF NOT EXISTS session_git_cursor (
+          session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+          last_head TEXT,
+          baseline_head TEXT
+        );
+
+        INSERT OR IGNORE INTO session_touched_paths (session_id, path, first_touched_at, last_pending_at)
+          SELECT session_id, path, updated_at, updated_at FROM session_file_edits;
+
+        DROP TABLE IF EXISTS session_file_edits;
       `)
       const store = new SessionStore(database)
       const sessions = database
@@ -268,7 +302,7 @@ const MIGRATIONS: Array<{ name: string; sql?: string; run?: (database: Database.
         .all() as Array<{ id: string; project_path: string; worktree_path: string | null }>
       for (const session of sessions) {
         const workspace = session.worktree_path ?? session.project_path
-        rebuildSessionFileEditsFromMessages(store, session.id, workspace)
+        rebuildSessionTouchedPathsFromMessages(store, session.id, workspace)
       }
     }
   }

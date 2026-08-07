@@ -524,10 +524,26 @@ export class SessionStore {
 
       this.db
         .prepare(
-          `INSERT INTO session_file_edits (session_id, path, additions, deletions, updated_at)
-           SELECT ?, path, additions, deletions, updated_at FROM session_file_edits WHERE session_id = ?`
+          `INSERT INTO session_touched_paths (session_id, path, first_touched_at, last_pending_at)
+           SELECT ?, path, first_touched_at, last_pending_at FROM session_touched_paths WHERE session_id = ?`
         )
         .run(newId, sourceId)
+      this.db
+        .prepare(
+          `INSERT INTO session_cap_commits (session_id, hash, subject, committed_at, sort_order)
+           SELECT ?, hash, subject, committed_at, sort_order FROM session_cap_commits WHERE session_id = ?`
+        )
+        .run(newId, sourceId)
+      const srcCursor = this.db
+        .prepare('SELECT last_head, baseline_head FROM session_git_cursor WHERE session_id = ?')
+        .get(sourceId) as { last_head: string | null; baseline_head: string | null } | undefined
+      if (srcCursor) {
+        this.db
+          .prepare(
+            `INSERT INTO session_git_cursor (session_id, last_head, baseline_head) VALUES (?, ?, ?)`
+          )
+          .run(newId, srcCursor.last_head, srcCursor.baseline_head)
+      }
     })
     fork()
     return this.getSession(newId)
@@ -709,38 +725,99 @@ export class SessionStore {
     return rows.map((r) => r.path)
   }
 
-  // ── Session file edits (chat changes cap) ─────────────────────────────
+  // ── Session changes cap (touched paths, commits, git cursor) ───────────
 
-  listSessionFileEdits(sessionId: string): SessionFileEdit[] {
+  registerSessionTouchedPath(sessionId: string, path: string, touchedAt: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO session_touched_paths (session_id, path, first_touched_at, last_pending_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (session_id, path) DO NOTHING`
+      )
+      .run(sessionId, path, touchedAt, touchedAt)
+  }
+
+  listSessionTouchedPaths(
+    sessionId: string
+  ): Array<{ path: string; firstTouchedAt: string; lastPendingAt: string | null }> {
     const rows = this.db
       .prepare(
-        `SELECT path, additions, deletions FROM session_file_edits
+        `SELECT path, first_touched_at, last_pending_at FROM session_touched_paths
          WHERE session_id = ? ORDER BY path ASC`
       )
-      .all(sessionId) as { path: string; additions: number; deletions: number }[]
-    return rows.map((r) => ({ path: r.path, additions: r.additions, deletions: r.deletions }))
+      .all(sessionId) as { path: string; first_touched_at: string; last_pending_at: string | null }[]
+    return rows.map((r) => ({
+      path: r.path,
+      firstTouchedAt: r.first_touched_at,
+      lastPendingAt: r.last_pending_at
+    }))
   }
 
-  clearSessionFileEdits(sessionId: string): void {
-    this.db.prepare('DELETE FROM session_file_edits WHERE session_id = ?').run(sessionId)
+  updateSessionTouchedPathPendingAt(sessionId: string, path: string, pendingAt: string): void {
+    this.db
+      .prepare(`UPDATE session_touched_paths SET last_pending_at = ? WHERE session_id = ? AND path = ?`)
+      .run(pendingAt, sessionId, path)
   }
 
-  accumulateSessionFileEdit(
+  getSessionGitCursor(
+    sessionId: string
+  ): { lastHead: string | null; baselineHead: string | null } | null {
+    const row = this.db
+      .prepare('SELECT last_head, baseline_head FROM session_git_cursor WHERE session_id = ?')
+      .get(sessionId) as { last_head: string | null; baseline_head: string | null } | undefined
+    if (!row) return null
+    return { lastHead: row.last_head, baselineHead: row.baseline_head }
+  }
+
+  upsertSessionGitCursor(sessionId: string, lastHead: string, baselineHead: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO session_git_cursor (session_id, last_head, baseline_head) VALUES (?, ?, ?)
+         ON CONFLICT (session_id) DO UPDATE SET last_head = excluded.last_head,
+           baseline_head = COALESCE(session_git_cursor.baseline_head, excluded.baseline_head)`
+      )
+      .run(sessionId, lastHead, baselineHead)
+  }
+
+  insertSessionCapCommit(
     sessionId: string,
-    path: string,
-    additions: number,
-    deletions: number,
-    updatedAt: string
+    hash: string,
+    subject: string,
+    committedAt: string,
+    sortOrder: number
   ): void {
     this.db
       .prepare(
-        `INSERT INTO session_file_edits (session_id, path, additions, deletions, updated_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (session_id, path) DO UPDATE SET
-           additions = additions + excluded.additions,
-           deletions = deletions + excluded.deletions,
-           updated_at = excluded.updated_at`
+        `INSERT OR IGNORE INTO session_cap_commits (session_id, hash, subject, committed_at, sort_order)
+         VALUES (?, ?, ?, ?, ?)`
       )
-      .run(sessionId, path, additions, deletions, updatedAt)
+      .run(sessionId, hash, subject, committedAt, sortOrder)
+  }
+
+  listSessionCapCommits(
+    sessionId: string
+  ): Array<{ hash: string; subject: string; committedAt: string; sortOrder: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT hash, subject, committed_at, sort_order FROM session_cap_commits
+         WHERE session_id = ? ORDER BY sort_order DESC`
+      )
+      .all(sessionId) as {
+      hash: string
+      subject: string
+      committed_at: string
+      sort_order: number
+    }[]
+    return rows.map((r) => ({
+      hash: r.hash,
+      subject: r.subject,
+      committedAt: r.committed_at,
+      sortOrder: r.sort_order
+    }))
+  }
+
+  /** @deprecated v1 cap — use listSessionTouchedPaths + buildSessionChangesCap */
+  listSessionFileEdits(sessionId: string): SessionFileEdit[] {
+    return []
   }
 }

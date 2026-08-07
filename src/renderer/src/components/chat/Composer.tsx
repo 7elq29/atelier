@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import ChatUncommittedChanges from './ChatUncommittedChanges'
-import type { SessionFileEdit } from '../../../../shared/session-file-edits'
+import type { SessionChangesCap } from '../../../../shared/session-changes-cap'
 import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
@@ -252,8 +252,9 @@ interface ComposerProps {
   hostname?: string | null
   /** Git cwd (`worktreePath ?? projectPath`) — session workspace root for the changes cap. */
   gitWorkspacePath?: string
-  /** Files edited in this session (from Claude file-edit tools, persisted in SQLite). */
-  sessionFileEdits?: SessionFileEdit[] | null
+  /** Pending files + session commits for the chat changes cap. */
+  sessionChangesCap?: SessionChangesCap | null
+  onOpenCommitInDiff?: (hash: string) => void
   /** Preloaded workspace file paths for @-mentions (relative paths). */
   mentionFilePaths?: string[]
   /** Chat changes cap: open Diff › Changes for this repo-relative path. */
@@ -459,7 +460,8 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   worktreePath,
   hostname,
   gitWorkspacePath,
-  sessionFileEdits,
+  sessionChangesCap,
+  onOpenCommitInDiff,
   mentionFilePaths,
   onOpenChangedFile,
   onFork,
@@ -873,8 +875,9 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       <div className="composer-stack">
         {gitWorkspacePath && onOpenChangedFile && (
           <ChatUncommittedChanges
-            sessionFileEdits={sessionFileEdits}
+            items={sessionChangesCap?.items}
             onOpenFile={onOpenChangedFile}
+            onOpenCommit={(hash) => onOpenCommitInDiff?.(hash)}
           />
         )}
       <div
