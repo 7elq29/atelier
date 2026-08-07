@@ -304,6 +304,23 @@ export default function DiffPanel({
   const [commitViewMode, setCommitViewMode] = useState<DiffFileViewMode>('hunks')
   const loadedHunksRef = useRef<Set<string>>(new Set())
   const commitLoadedHunksRef = useRef<Set<string>>(new Set())
+  type CommitDetailSnapshot = {
+    files: DiffFileChange[]
+    selectedFile: string | null
+    loadedHunks: string[]
+  }
+  const commitDetailCacheRef = useRef<Map<string, CommitDetailSnapshot>>(new Map())
+
+  const persistCommitDetailCache = useCallback(
+    (commitHash: string, files: DiffFileChange[], selectedFile: string | null) => {
+      commitDetailCacheRef.current.set(commitHash, {
+        files,
+        selectedFile,
+        loadedHunks: [...commitLoadedHunksRef.current]
+      })
+    },
+    []
+  )
 
   const loadCommitFileHunks = useCallback(
     async (commitHash: string, filePath: string, force = false): Promise<void> => {
@@ -315,7 +332,16 @@ export default function DiffPanel({
           commitLoadedHunksRef.current.add(filePath)
           setCommitFiles((prev) => {
             if (!prev) return [file]
-            return prev.map((f) => (f.path === filePath ? file : f))
+            const next = prev.map((f) => (f.path === filePath ? file : f))
+            const snap = commitDetailCacheRef.current.get(commitHash)
+            if (snap) {
+              commitDetailCacheRef.current.set(commitHash, {
+                ...snap,
+                files: next,
+                loadedHunks: [...commitLoadedHunksRef.current]
+              })
+            }
+            return next
           })
         }
       } finally {
@@ -327,30 +353,37 @@ export default function DiffPanel({
 
   const openCommit = useCallback(
     async (commit: CommitInfo): Promise<void> => {
+      setCommentingLine(null)
+      const cached = commitDetailCacheRef.current.get(commit.hash)
+      if (cached) {
+        setSelectedCommit(commit)
+        setCommitFiles(cached.files)
+        setCommitSelectedFile(cached.selectedFile)
+        commitLoadedHunksRef.current = new Set(cached.loadedHunks)
+        setCommitDiffLoading(false)
+        return
+      }
+
       setSelectedCommit(commit)
       setCommitFiles(null)
       setCommitSelectedFile(null)
       commitLoadedHunksRef.current.clear()
-      setCommentingLine(null)
       setCommitDiffLoading(true)
       try {
-        const diff = await window.atelier.gitCommitDiff(workspacePath, commit.hash, hostname)
+        const diff = await window.atelier.gitCommitOpen(workspacePath, commit.hash, hostname)
         const first = defaultCommitFilePath(diff.files)
-        let files = diff.files
-        if (first) {
-          const file = await window.atelier.gitCommitFileDiff(workspacePath, commit.hash, first, hostname)
-          if (file) {
-            commitLoadedHunksRef.current.add(first)
-            files = diff.files.map((f) => (f.path === first ? file : f))
-          }
+        commitLoadedHunksRef.current.clear()
+        for (const f of diff.files) {
+          if (f.hunks.length > 0) commitLoadedHunksRef.current.add(f.path)
         }
-        setCommitFiles(files)
+        setCommitFiles(diff.files)
         setCommitSelectedFile(first)
+        persistCommitDetailCache(commit.hash, diff.files, first)
       } finally {
         setCommitDiffLoading(false)
       }
     },
-    [workspacePath, hostname]
+    [workspacePath, hostname, persistCommitDetailCache]
   )
 
   const mergeFileIntoSummary = useCallback((file: DiffFileChange) => {
@@ -436,6 +469,7 @@ export default function DiffPanel({
     setCommitFiles(null)
     setCommitSelectedFile(null)
     commitLoadedHunksRef.current.clear()
+    commitDetailCacheRef.current.clear()
     if (workspaceDiff != null) {
       applySummary(workspaceDiff)
     } else if (active) {
@@ -448,7 +482,7 @@ export default function DiffPanel({
     if (sub === 'commits' && commits === null && !commitsLoading) {
       setCommitsLoading(true)
       void window.atelier
-        .gitCommits(workspacePath, hostname, true)
+        .gitCommits(workspacePath, hostname, false)
         .then(setCommits)
         .finally(() => setCommitsLoading(false))
     }
@@ -458,7 +492,7 @@ export default function DiffPanel({
     if (sub === 'worktrees' && worktrees === null && !worktreesLoading) {
       setWorktreesLoading(true)
       void window.atelier
-        .gitWorktrees(repoRoot, hostname, true)
+        .gitWorktrees(repoRoot, hostname, false)
         .then(setWorktrees)
         .finally(() => setWorktreesLoading(false))
     }
@@ -488,6 +522,11 @@ export default function DiffPanel({
     if (selectedCommit && commitSelectedFile) void loadCommitFileHunks(selectedCommit.hash, commitSelectedFile)
   }, [selectedCommit, commitSelectedFile, loadCommitFileHunks])
 
+  useEffect(() => {
+    if (!selectedCommit || commitFiles == null) return
+    persistCommitDetailCache(selectedCommit.hash, commitFiles, commitSelectedFile)
+  }, [selectedCommit, commitFiles, commitSelectedFile, persistCommitDetailCache])
+
   const activeFile: DiffFileChange | undefined = summary?.files.find((f) => f.path === selectedFile)
   const commitActiveFile: DiffFileChange | undefined = commitFiles?.find((f) => f.path === commitSelectedFile)
 
@@ -495,7 +534,6 @@ export default function DiffPanel({
     setSelectedCommit(null)
     setCommitFiles(null)
     setCommitSelectedFile(null)
-    commitLoadedHunksRef.current.clear()
     setCommentingLine(null)
   }
 
@@ -509,8 +547,10 @@ export default function DiffPanel({
 
   async function refreshAfterGitMutation(): Promise<void> {
     loadedHunksRef.current.clear()
+    commitDetailCacheRef.current.clear()
     setCommits(null)
     setWorktrees(null)
+    showCommitList()
     await refreshChanges(true)
     if (sub === 'commits') {
       setCommitsLoading(true)

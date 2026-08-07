@@ -258,6 +258,8 @@ const api = {
     ipcRenderer.invoke('panel:git:fileDiff', projectPath, filePath, hostname),
   gitCommitDiff: (projectPath: string, commit: string, hostname?: string | null): Promise<DiffSummary> =>
     ipcRenderer.invoke('panel:git:commitDiff', projectPath, commit, hostname),
+  gitCommitOpen: (projectPath: string, commit: string, hostname?: string | null): Promise<DiffSummary> =>
+    ipcRenderer.invoke('panel:git:commitOpen', projectPath, commit, hostname),
   gitCommitFileDiff: (
     projectPath: string,
     commit: string,
