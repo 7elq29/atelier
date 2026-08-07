@@ -1417,11 +1417,33 @@ input[type='range'] {
 }
 .chat-changes-add { color: #8fd18f; }
 .chat-changes-del { color: #e06c75; }
-.composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; }
+.composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; overflow: hidden; }
 .composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
-.composer-box textarea { width: 100%; border: none; border-top-left-radius: var(--r-xl); border-top-right-radius: var(--r-xl); background: transparent; color: var(--text-primary); padding: 11px 13px 4px; font-family: var(--font-ui); font-size: var(--text-base); resize: none; outline: none; min-height: 22px; max-height: 160px; line-height: 1.5; overflow-y: auto; caret-color: transparent; }
+.composer-box textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  border: none;
+  border-top-left-radius: var(--r-xl);
+  border-top-right-radius: var(--r-xl);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 14px 18px 8px;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  resize: none;
+  outline: none;
+  min-height: 52px;
+  max-height: 160px;
+  line-height: 1.5;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-y: auto;
+  caret-color: transparent;
+}
 /* Context bar — fused inside the top of the composer box, variant C */
-.context-bar { display: flex; align-items: center; gap: 6px; padding: 7px 14px 4px; border-radius: var(--r-xl) var(--r-xl) 0 0; }
+.context-bar { display: flex; align-items: center; gap: 6px; padding: 7px 14px 4px; border-radius: var(--r-xl) var(--r-xl) 0 0; flex-wrap: wrap; row-gap: 2px; }
 .context-bar-item { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .context-bar-item--icon-only { flex-shrink: 0; min-width: auto; overflow: visible; padding: 2px 4px; border-radius: 4px; cursor: default; }
 .context-bar-item--icon-only:hover { background: var(--bg-hover); color: var(--text-secondary); }

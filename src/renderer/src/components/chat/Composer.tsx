@@ -609,8 +609,13 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const ta = textareaRef.current
     if (!ta) return
     ta.style.height = 'auto'
+    const cs = window.getComputedStyle(ta)
+    const lineHeight = parseFloat(cs.lineHeight) || 22
+    const verticalPad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+    const minContentHeight = lineHeight + verticalPad
     const capped = ta.scrollHeight > MAX_TEXTAREA_HEIGHT
-    ta.style.height = `${Math.min(ta.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
+    const next = Math.min(Math.max(ta.scrollHeight, minContentHeight), MAX_TEXTAREA_HEIGHT)
+    ta.style.height = `${next}px`
     ta.style.overflowY = capped ? 'auto' : 'hidden'
   }, [value])
 
@@ -861,6 +866,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const parts = projectPath.replace(/^\/Users\/[^/]+/, '~').split('/').filter(Boolean)
     return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : `/${parts.join('/')}`
   })()
+  const contextPathTitle = projectPath ? projectPath.replace(/^\/Users\/[^/]+/, '~') : undefined
   const worktreeTitle =
     worktreePath && branch
       ? `Worktree: ${worktreePath}\nBranch: ${branch}`
@@ -888,7 +894,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           <>
             <div className="context-bar" data-testid="composer-context-bar">
               {displayPath && (
-                <span className="context-bar-item">
+                <span className="context-bar-item" title={contextPathTitle}>
                   <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
                   {displayPath}
                 </span>
@@ -896,7 +902,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
               {branch && (
                 <>
                   {displayPath && <span className="context-bar-sep">›</span>}
-                  <span className="context-bar-item">
+                  <span className="context-bar-item" title={branch}>
                     <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 7.2V16.8M6 9.5a6 6 0 0 0 6 6h4"/></svg>
                     {branch}
                   </span>
