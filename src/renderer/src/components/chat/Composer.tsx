@@ -245,6 +245,10 @@ interface ComposerProps {
   busy: boolean
   /** Active session's project root — `@file` mentions are resolved (real, live `fs` walk via the existing Files-panel IPC) against this. Undefined/empty just disables the mention popover. */
   projectPath?: string
+  /** Worktree path if the session runs inside a git worktree, else null. Used by the context bar to show the effective cwd and worktree name. */
+  worktreePath?: string | null
+  /** Hostname for remote sessions — forwarded to the branch IPC call. */
+  hostname?: string | null
   /** `/fork` slash command's real action: forks the active session (same as the sidebar's fork action). */
   onFork: () => void
   /** Current model/effort override (10f-enrichment-model-effort-picker); `null` until the user picks something, in which case no override is sent at all (harness default). */
@@ -450,6 +454,8 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   onInterrupt,
   busy,
   projectPath,
+  worktreePath,
+  hostname,
   onFork,
   modelSelection,
   onModelSelectionChange,
@@ -466,6 +472,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [popover, setPopover] = useState<PopoverState>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [branch, setBranch] = useState<string | null>(null)
   const [fileList, setFileList] = useState<string[]>([])
   const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
@@ -514,6 +521,15 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     setValue,
     getValue: () => value,
   }), [value])
+
+  // Fetch the current git branch for the context bar whenever the effective cwd changes.
+  useEffect(() => {
+    const cwd = worktreePath || projectPath
+    if (!cwd) { setBranch(null); return }
+    let cancelled = false
+    window.atelier.gitBranch(cwd, hostname ?? null).then((b) => { if (!cancelled) setBranch(b) }).catch(() => { if (!cancelled) setBranch(null) })
+    return () => { cancelled = true }
+  }, [projectPath, worktreePath, hostname])
 
   // Real file list for @-mentions: same IPC the Files panel (07) already
   // uses to walk the session's real project_path on disk — no fixture/fake
@@ -830,6 +846,14 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     }
   }
 
+  const displayPath = (() => {
+    const p = worktreePath || projectPath
+    if (!p) return null
+    const parts = p.replace(/^\/Users\/[^/]+/, '~').split('/').filter(Boolean)
+    return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : `/${parts.join('/')}`
+  })()
+  const worktreeName = worktreePath ? worktreePath.split('/').pop() ?? null : null
+
   return (
     <div className="composer-wrap">
       <div
@@ -838,6 +862,37 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {(displayPath || branch || worktreeName) && (
+          <>
+            <div className="context-bar" data-testid="composer-context-bar">
+              {displayPath && (
+                <span className="context-bar-item">
+                  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+                  {displayPath}
+                </span>
+              )}
+              {branch && (
+                <>
+                  {displayPath && <span className="context-bar-sep">›</span>}
+                  <span className="context-bar-item">
+                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 7.2V16.8M6 9.5a6 6 0 0 0 6 6h4"/></svg>
+                    {branch}
+                  </span>
+                </>
+              )}
+              {worktreeName && (
+                <>
+                  <span className="context-bar-sep">›</span>
+                  <span className="context-bar-item">
+                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M20 4C10 4 4 10 4 18v2h2c8 0 14-6 14-16z"/><path d="M9 19c3-5 6-8 11-11"/></svg>
+                    {worktreeName}
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="context-bar-divider" />
+          </>
+        )}
         {popover?.kind === 'mention' && mentionMatches.length > 0 && (
           <div className="mention-popup" data-testid="mention-popover">
             {mentionMatches.map((path, idx) => {

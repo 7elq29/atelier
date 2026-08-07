@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { loadConfig, saveConfig } from './config'
 import { closeDatabase, openDatabase } from './db'
 import { getLogFilePath, logger, rendererLogger } from './logger'
+import { migrateLegacyUserDataFromGardeniaProfiles } from './migrations/gardenia-to-atelier'
 import type { AtelierConfig } from '../shared/config'
 import { registerDailyNoteHandlers } from './daily-notes-handlers'
 import { ClaudeAgentSdkHarness } from './harness'
@@ -108,6 +109,10 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
 }
 
 app.whenReady().then(() => {
+  // Gardenia → Atelier rename: pull SQLite/config from the old Application Support
+  // folder before openDatabase() (npm run dev changed userData when package name changed).
+  migrateLegacyUserDataFromGardeniaProfiles()
+
   // Initialize logging + DB helper before anything else so "app ready" is
   // always the first line every later feature's e2e proof can grep for.
   const db = openDatabase()

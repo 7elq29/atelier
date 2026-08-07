@@ -21,7 +21,8 @@ function mergeConfig(base: AtelierConfig, partial: Partial<AtelierConfig>): Atel
     ...base,
     ...partial,
     fontSizes: { ...base.fontSizes, ...(partial.fontSizes ?? {}) },
-    gitIdentity: { ...base.gitIdentity, ...(partial.gitIdentity ?? {}) }
+    gitIdentity: { ...base.gitIdentity, ...(partial.gitIdentity ?? {}) },
+    vault: { ...base.vault, ...(partial.vault ?? {}) }
   }
 }
 

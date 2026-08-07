@@ -1,5 +1,5 @@
 import { useState, type MouseEvent } from 'react'
-import type { AtelierConfig } from '../../../shared/config'
+import type { AtelierConfig, VaultConfig } from '../../../shared/config'
 
 interface SettingsPanelProps {
   isOpen: boolean
@@ -9,7 +9,7 @@ interface SettingsPanelProps {
   onReplayOnboarding: () => void
 }
 
-type Pane = 'theme' | 'fonts' | 'notifications'
+type Pane = 'theme' | 'fonts' | 'notifications' | 'vault'
 
 /**
  * Settings modal: theme (system/light/dark, really flips `data-theme` on
@@ -26,6 +26,8 @@ export default function SettingsPanel({
 }: SettingsPanelProps): JSX.Element | null {
   const [pane, setPane] = useState<Pane>('theme')
   const [notifyStatus, setNotifyStatus] = useState<string | null>(null)
+  const [vaultEdit, setVaultEdit] = useState<VaultConfig>(() => config.vault)
+  const [vaultSaved, setVaultSaved] = useState(false)
 
   if (!isOpen) return null
 
@@ -39,6 +41,17 @@ export default function SettingsPanel({
       'This is a test notification triggered from Settings.'
     )
     setNotifyStatus(ok ? 'Notification sent.' : 'Notifications are not supported on this platform.')
+  }
+
+  async function browseVaultRoot(): Promise<void> {
+    const picked = await window.atelier.pickVaultRoot()
+    if (picked) setVaultEdit((prev) => ({ ...prev, root: picked }))
+  }
+
+  function saveVault(): void {
+    onUpdate({ vault: vaultEdit })
+    setVaultSaved(true)
+    setTimeout(() => setVaultSaved(false), 2000)
   }
 
   return (
@@ -60,6 +73,9 @@ export default function SettingsPanel({
             </button>
             <button className={pane === 'notifications' ? 'active' : ''} onClick={() => setPane('notifications')}>
               Notifications
+            </button>
+            <button className={pane === 'vault' ? 'active' : ''} onClick={() => setPane('vault')}>
+              Vault
             </button>
             <button
               onClick={onReplayOnboarding}
@@ -169,6 +185,80 @@ export default function SettingsPanel({
                   {notifyStatus}
                 </div>
               )}
+            </div>
+          )}
+
+          {pane === 'vault' && (
+            <div className="settings-pane active" data-testid="settings-pane-vault">
+              <div>
+                <div className="field-label">Vault root</div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    className="input"
+                    type="text"
+                    data-testid="vault-root-input"
+                    value={vaultEdit.root}
+                    placeholder="Not configured"
+                    onChange={(e) => setVaultEdit((prev) => ({ ...prev, root: e.target.value }))}
+                    style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: '13.5px' }}
+                  />
+                  <button className="btn btn-sm" data-testid="vault-browse-btn" onClick={browseVaultRoot}>
+                    Browse…
+                  </button>
+                </div>
+                <div className="field-hint">Absolute path to your Obsidian vault.</div>
+              </div>
+              <div>
+                <div className="field-label">Daily notes folder</div>
+                <input
+                  className="input"
+                  type="text"
+                  data-testid="vault-daily-folder-input"
+                  value={vaultEdit.dailyNotesFolder}
+                  onChange={(e) => setVaultEdit((prev) => ({ ...prev, dailyNotesFolder: e.target.value }))}
+                  style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13.5px' }}
+                />
+                <div className="field-hint">Folder inside the vault root where daily notes live.</div>
+              </div>
+              <div>
+                <div className="field-label">Note path pattern</div>
+                <input
+                  className="input"
+                  type="text"
+                  data-testid="vault-note-pattern-input"
+                  value={vaultEdit.notePathPattern}
+                  onChange={(e) => setVaultEdit((prev) => ({ ...prev, notePathPattern: e.target.value }))}
+                  style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13.5px' }}
+                />
+                <div className="field-hint">
+                  Relative to the daily notes folder. Tokens: {'{yyyy}'} year, {'{MMM}'} month abbrev,{' '}
+                  {'{ww}'} ISO week, {'{date}'} full date.
+                </div>
+              </div>
+              <div>
+                <div className="field-label">Template path</div>
+                <input
+                  className="input"
+                  type="text"
+                  data-testid="vault-template-input"
+                  value={vaultEdit.templatePath}
+                  onChange={(e) => setVaultEdit((prev) => ({ ...prev, templatePath: e.target.value }))}
+                  style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13.5px' }}
+                />
+                <div className="field-hint">
+                  Vault-relative path to the daily note template. Leave blank to use the built-in skeleton.
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button className="btn btn-sm btn-primary" data-testid="vault-save-btn" onClick={saveVault}>
+                  Save
+                </button>
+                {vaultSaved && (
+                  <span className="field-hint" data-testid="vault-save-status">
+                    Saved.
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </div>

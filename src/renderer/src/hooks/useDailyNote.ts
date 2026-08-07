@@ -43,7 +43,7 @@ export interface UseDailyNoteResult {
  * before the next write reconciles it — not required for correctness of the
  * delete-doesn't-resurrect guarantee itself.
  */
-export function useDailyNote(date: string): UseDailyNoteResult {
+export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNoteResult {
   const [note, setNote] = useState<DailyNote | null>(null)
   const [loading, setLoading] = useState(true)
   const [exists, setExists] = useState(false)
@@ -55,9 +55,13 @@ export function useDailyNote(date: string): UseDailyNoteResult {
     let cancelled = false
     setLoading(true)
 
-    window.atelier.getVaultRoot().then((root) => {
-      if (!cancelled) setVaultConfigured(root !== null)
-    })
+    if (configVaultRoot) {
+      if (!cancelled) setVaultConfigured(true)
+    } else {
+      window.atelier.getVaultRoot().then((root) => {
+        if (!cancelled) setVaultConfigured(root !== null)
+      })
+    }
 
     window.atelier
       .readDailyNote(date)
@@ -113,7 +117,7 @@ export function useDailyNote(date: string): UseDailyNoteResult {
       window.removeEventListener('focus', onFocus)
       if (writeTimerRef.current) clearTimeout(writeTimerRef.current)
     }
-  }, [date])
+  }, [date, configVaultRoot])
 
   const createNote = useCallback(() => {
     window.atelier.createDailyNote(date).then((result) => {

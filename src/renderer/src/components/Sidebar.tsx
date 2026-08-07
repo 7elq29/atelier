@@ -329,6 +329,13 @@ function SessionRow({
       draggable={draggable && status !== 'creating-worktree'}
       tabIndex={-1}
       onClick={status === 'creating-worktree' ? undefined : onSelect}
+      onContextMenu={(e) => {
+        if (status === 'creating-worktree') return
+        e.preventDefault()
+        e.stopPropagation()
+        setMenuOpen(true)
+        setDetailOpen(false)
+      }}
       onDragStart={status === 'creating-worktree' ? undefined : onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}

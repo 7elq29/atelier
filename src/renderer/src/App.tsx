@@ -610,6 +610,8 @@ export default function App(): JSX.Element {
                           onInterrupt={() => void handleInterrupt()}
                           busy={sessions.busyBySession[activeSession.id] ?? false}
                           projectPath={activeSession.projectPath}
+                          worktreePath={activeSession.worktreePath}
+                          hostname={activeSession.hostname}
                           onFork={() => void sessions.forkSession(activeSession.id).then((forked) => setActiveSessionId(forked.id))}
                           modelSelection={modelSelection}
                           onModelSelectionChange={(selection) => {
@@ -698,7 +700,7 @@ export default function App(): JSX.Element {
           </div>
         </div>
 
-        {date && <DailyNotesSidebar date={date} onClose={() => setDate(null)} />}
+        {date && <DailyNotesSidebar date={date} onClose={() => setDate(null)} vaultRoot={config.vault.root || undefined} />}
       </div>
 
       <CommandPalette

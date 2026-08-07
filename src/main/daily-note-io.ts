@@ -407,12 +407,22 @@ export function getISOWeekYear(d: Date): number {
   return date.getUTCFullYear()
 }
 
-export function resolveNotePath(date: string, vaultRoot: string): string {
+export function resolveNotePath(
+  date: string,
+  vaultRoot: string,
+  dailyNotesFolder = '01.dailynotes',
+  notePathPattern = '{yyyy}/{MMM}/{ww}/{date}.md'
+): string {
   const d = new Date(`${date}T00:00:00`)
   const yyyy = d.getFullYear().toString()
   const mmm = MONTH_ABBREVS[d.getMonth()]!
   const ww = String(getISOWeek(d)).padStart(2, '0')
-  return `${vaultRoot}/01.dailynotes/${yyyy}/${mmm}/${ww}/${date}.md`
+  const resolved = notePathPattern
+    .replace('{yyyy}', yyyy)
+    .replace('{MMM}', mmm)
+    .replace('{ww}', ww)
+    .replace('{date}', date)
+  return `${vaultRoot}/${dailyNotesFolder}/${resolved}`
 }
 
 export function getDayOfWeek(date: string): string {

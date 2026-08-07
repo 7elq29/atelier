@@ -8,6 +8,7 @@ import { computeMoveDateOptions } from './move-date-options'
 export interface DailyNotesSidebarProps {
   date: string
   onClose: () => void
+  vaultRoot?: string
 }
 
 interface AddTaskInputProps {
@@ -79,7 +80,7 @@ function AddTaskInput({ testId, buttonLabel = '+ New task', onAdd }: AddTaskInpu
  * sizing (`.dn-head`, `.dn-section`, `.dn-section-head`, `.dn-resize-handle`,
  * `.dn-section-body`).
  */
-export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarProps): JSX.Element {
+export default function DailyNotesSidebar({ date, onClose, vaultRoot }: DailyNotesSidebarProps): JSX.Element {
   const {
     note,
     loading,
@@ -93,7 +94,7 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
     moveTaskToDate,
     moveError,
     updateTask
-  } = useDailyNote(date)
+  } = useDailyNote(date, vaultRoot)
   const containerRef = useRef<HTMLDivElement>(null)
   const sectionsRef = useRef<HTMLDivElement>(null)
   const { weights, startResize } = useSectionResize(sectionsRef)
@@ -114,7 +115,7 @@ export default function DailyNotesSidebar({ date, onClose }: DailyNotesSidebarPr
           </button>
         </div>
         <div className="dn-empty-state" data-testid="vault-not-configured">
-          No vault configured. Set ATELIER_VAULT_ROOT (or ATELIER_TEST_VAULT_ROOT for tests).
+          No vault configured. Set a vault root in Settings → Vault (or ATELIER_VAULT_ROOT for dev/tests).
         </div>
       </div>
     )

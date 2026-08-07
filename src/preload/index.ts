@@ -58,6 +58,7 @@ const api = {
 
   // ── Daily notes (Obsidian integration) ──────────────────────────
   getVaultRoot: (): Promise<string | null> => ipcRenderer.invoke('daily-note:getVaultRoot'),
+  pickVaultRoot: (): Promise<string | null> => ipcRenderer.invoke('daily-note:pickVaultRoot'),
   getDefaultDate: (): Promise<string> => ipcRenderer.invoke('daily-note:getDefaultDate'),
   readDailyNote: (date: string): Promise<ReadDailyNoteResult> => ipcRenderer.invoke('daily-note:read', date),
   createDailyNote: (date: string): Promise<ReadDailyNoteResult> => ipcRenderer.invoke('daily-note:create', date),
@@ -219,6 +220,8 @@ const api = {
   gitWorktrees: (projectPath: string, hostname?: string | null, force?: boolean): Promise<WorktreeInfo[]> =>
     ipcRenderer.invoke('panel:git:worktrees', projectPath, hostname, force),
   gitWarmRemote: (hostname: string): Promise<void> => ipcRenderer.invoke('panel:git:warmRemote', hostname),
+  gitBranch: (projectPath: string, hostname?: string | null): Promise<string | null> =>
+    ipcRenderer.invoke('panel:git:branch', projectPath, hostname),
   gitWorktreeAdd: (projectPath: string, worktreePath: string, branch: string, hostname?: string | null): Promise<void> =>
     ipcRenderer.invoke('panel:git:worktreeAdd', projectPath, worktreePath, branch, hostname),
   gitWorktreeRemove: (projectPath: string, worktreePath: string, hostname?: string | null): Promise<void> =>

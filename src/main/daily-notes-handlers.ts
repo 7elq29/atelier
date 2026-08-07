@@ -13,13 +13,14 @@
  * before writing, and drop any task id that used to be known-good but is no
  * longer present on disk — regardless of what the incoming write still has.
  */
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, dialog, type BrowserWindow } from 'electron'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, watch, type FSWatcher } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, basename } from 'node:path'
 import type { DailyNote, DailyTask, RawSections } from '../shared/daily-note-types'
 import { parseDailyNote, serializeDailyNote, resolveNotePath, generateNewNote, getTaskIds } from './daily-note-io'
 import { logger } from './logger'
+import { loadConfig } from './config'
 
 const WATCH_DEBOUNCE_MS = 300
 
@@ -46,10 +47,10 @@ function subtractDays(date: string, n: number): string {
  * days, for the most recent daily note file that actually exists on disk.
  * Returns its date string, or null if none was found within the window.
  */
-function findMostRecentNoteDate(date: string, vaultRoot: string): string | null {
+function findMostRecentNoteDate(date: string, settings: VaultSettings): string | null {
   for (let n = 1; n <= CARRY_OVER_LOOKBACK_DAYS; n++) {
     const candidateDate = subtractDays(date, n)
-    const candidatePath = resolveNotePath(candidateDate, vaultRoot)
+    const candidatePath = resolveNotePath(candidateDate, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
     if (existsSync(candidatePath)) return candidateDate
   }
   return null
@@ -180,15 +181,44 @@ let pendingTestWriteDelayMs: number | null = null
 const TEMPLATE_RELATIVE_PATH = '92.templates/Daily Note Template.md'
 
 /** Real vault template for scaffolding a new note, or null if the vault doesn't have one (falls back to a built-in skeleton). */
-function loadNoteTemplate(vaultRoot: string): string | null {
-  const templatePath = `${vaultRoot}/${TEMPLATE_RELATIVE_PATH}`
-  if (!existsSync(templatePath)) return null
-  return readFileSync(templatePath, 'utf-8')
+function loadNoteTemplate(vaultRoot: string, templatePath: string = TEMPLATE_RELATIVE_PATH): string | null {
+  const fullPath = `${vaultRoot}/${templatePath}`
+  if (!existsSync(fullPath)) return null
+  return readFileSync(fullPath, 'utf-8')
 }
 
-function resolveVaultRoot(): string | null {
-  return process.env.ATELIER_TEST_VAULT_ROOT ?? process.env.ATELIER_VAULT_ROOT ?? null
+type VaultSettings = {
+  root: string
+  dailyNotesFolder: string
+  notePathPattern: string
+  templatePath: string
 }
+
+/** Resolves the effective vault root: env var (test/dev override) → persisted config → null. */
+function resolveVaultRoot(): string | null {
+  const envRoot = process.env.ATELIER_TEST_VAULT_ROOT ?? process.env.ATELIER_VAULT_ROOT ?? null
+  if (envRoot) return envRoot
+  const root = loadConfig().vault.root
+  return root || null
+}
+
+/**
+ * Resolves the full vault settings for use in IPC handlers. Vault root follows
+ * the same env-var → config priority as resolveVaultRoot; layout fields always
+ * come from persisted config (with defaults matching the previous hardcoded values).
+ */
+function resolveVaultSettings(): VaultSettings | null {
+  const root = resolveVaultRoot()
+  if (!root) return null
+  const cfg = loadConfig().vault
+  return {
+    root,
+    dailyNotesFolder: cfg.dailyNotesFolder,
+    notePathPattern: cfg.notePathPattern,
+    templatePath: cfg.templatePath
+  }
+}
+
 
 /** Today's date as YYYY-MM-DD (local time), overridable for deterministic e2e runs. */
 function resolveDefaultDate(): string {
@@ -226,11 +256,11 @@ function sleep(ms: number): Promise<void> {
  */
 async function ensureNoteExists(
   date: string,
-  vaultRoot: string,
+  settings: VaultSettings,
   options?: { carryOver?: boolean }
 ): Promise<{ note: DailyNote; raw: RawSections; path: string; created: boolean }> {
   const carryOver = options?.carryOver ?? true
-  const path = resolveNotePath(date, vaultRoot)
+  const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
   if (existsSync(path)) {
     const content = await readFile(path, 'utf-8')
     const { note, raw, mintedIds } = parseDailyNote(content, date)
@@ -241,9 +271,9 @@ async function ensureNoteExists(
 
   let carriedTasks: DailyTask[] = []
   if (carryOver) {
-    const priorDate = findMostRecentNoteDate(date, vaultRoot)
+    const priorDate = findMostRecentNoteDate(date, settings)
     if (priorDate) {
-      const priorPath = resolveNotePath(priorDate, vaultRoot)
+      const priorPath = resolveNotePath(priorDate, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
       const priorContent = await readFile(priorPath, 'utf-8')
       const { note: priorNote, raw: priorRaw, mintedIds: priorMintedIds } = parseDailyNote(priorContent, priorDate)
       persistMintedGids(priorPath, priorNote, priorRaw, priorMintedIds)
@@ -257,7 +287,7 @@ async function ensureNoteExists(
     }
   }
 
-  const content = generateNewNote(date, carriedTasks, loadNoteTemplate(vaultRoot))
+  const content = generateNewNote(date, carriedTasks, loadNoteTemplate(settings.root, settings.templatePath))
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, content, 'utf-8')
   recordWrittenContent(path, content)
@@ -274,12 +304,19 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
   ipcMain.handle('daily-note:getVaultRoot', () => resolveVaultRoot())
   ipcMain.handle('daily-note:getDefaultDate', () => resolveDefaultDate())
 
+  ipcMain.handle('daily-note:pickVaultRoot', async () => {
+    const win = getMainWindow()
+    const options = { properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] }
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
 
   ipcMain.handle('daily-note:read', async (_event, date: string) => {
-    const vaultRoot = resolveVaultRoot()
-    if (!vaultRoot) return { note: null, raw: null, exists: false }
+    const settings = resolveVaultSettings()
+    if (!settings) return { note: null, raw: null, exists: false }
 
-    const path = resolveNotePath(date, vaultRoot)
+    const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
     if (!existsSync(path)) return { note: null, raw: null, exists: false }
 
     const content = await readFile(path, 'utf-8')
@@ -291,9 +328,9 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
   })
 
   ipcMain.handle('daily-note:create', async (_event, date: string) => {
-    const vaultRoot = resolveVaultRoot()
-    if (!vaultRoot) throw new Error('no vault root configured (ATELIER_VAULT_ROOT / ATELIER_TEST_VAULT_ROOT)')
-    const { note, raw } = await ensureNoteExists(date, vaultRoot)
+    const settings = resolveVaultSettings()
+    if (!settings) throw new Error('no vault root configured (ATELIER_VAULT_ROOT / ATELIER_TEST_VAULT_ROOT / Settings → Vault)')
+    const { note, raw } = await ensureNoteExists(date, settings)
     return { note, raw, exists: true }
   })
 
@@ -306,11 +343,11 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
   ipcMain.handle(
     'daily-note:move-task',
     async (_event, sourceDate: string, taskId: string, targetDate: string) => {
-      const vaultRoot = resolveVaultRoot()
-      if (!vaultRoot) throw new Error('no vault root configured')
+      const settings = resolveVaultSettings()
+      if (!settings) throw new Error('no vault root configured')
 
-      const sourcePath = resolveNotePath(sourceDate, vaultRoot)
-      const targetPath = resolveNotePath(targetDate, vaultRoot)
+      const sourcePath = resolveNotePath(sourceDate, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
+      const targetPath = resolveNotePath(targetDate, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
 
       if (!existsSync(sourcePath)) throw new Error(`source note not found: ${sourcePath}`)
       const sourceContent = await readFile(sourcePath, 'utf-8')
@@ -382,7 +419,7 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
       // one task the user explicitly chose to move should land in it. If the
       // target note doesn't exist yet, it's scaffolded purely from the vault
       // template with empty sections, and the moved task is appended below.
-      const { note: targetNoteBefore, raw: targetRaw } = await ensureNoteExists(targetDate, vaultRoot, {
+      const { note: targetNoteBefore, raw: targetRaw } = await ensureNoteExists(targetDate, settings, {
         carryOver: false
       })
 
@@ -416,10 +453,10 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
   )
 
   ipcMain.handle('daily-note:write', async (_event, date: string, incoming: DailyNote) => {
-    const vaultRoot = resolveVaultRoot()
-    if (!vaultRoot) throw new Error('no vault root configured')
+    const settings = resolveVaultSettings()
+    if (!settings) throw new Error('no vault root configured')
 
-    const path = resolveNotePath(date, vaultRoot)
+    const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
     const incomingIds = getTaskIds(incoming)
 
     // Test-only hook: simulate a write that's already "in flight" (its
@@ -488,8 +525,8 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
   })
 
   ipcMain.handle('daily-note:watch', (_event, date: string) => {
-    const vaultRoot = resolveVaultRoot()
-    if (!vaultRoot) return
+    const settings = resolveVaultSettings()
+    if (!settings) return
 
     if (activeWatcher) {
       activeWatcher.close()
@@ -500,7 +537,7 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
       debounceTimer = null
     }
 
-    const path = resolveNotePath(date, vaultRoot)
+    const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
     watchedPath = path
     if (!existsSync(path)) return
 

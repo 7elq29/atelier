@@ -3,6 +3,7 @@ export {
   addWorktree,
   getDiffSummary,
   getFileDiff,
+  getGitBranch,
   invalidateGitRepository,
   listCommits,
   listWorktrees,

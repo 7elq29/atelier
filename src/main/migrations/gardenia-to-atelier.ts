@@ -6,12 +6,16 @@
  */
 
 import type Database from 'better-sqlite3'
+import { app } from 'electron'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, renameSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { logger } from '../logger'
 
 export const GARDENIA_TO_ATELIER_WORKTREE_MIGRATION = '0010_gardenia_to_atelier_worktrees'
+
+/** Below this size, `atelier.sqlite` is treated as an empty scaffold, not real session history. */
+const MIN_LEGACY_DB_BYTES = 512_000
 
 const LEGACY_WORKTREE_SEGMENT = '/.gardenia/worktrees/'
 const NEW_WORKTREE_SEGMENT = '/.atelier/worktrees/'
@@ -28,6 +32,82 @@ const SSH_GIT_OPTS = [
   '-o',
   'StrictHostKeyChecking=accept-new'
 ]
+
+/**
+ * Dev installs renamed `package.json` from `gardenia` → `atelier`, so Electron's
+ * default userData dir changed (`~/Library/Application Support/Gardenia/` vs
+ * `…/atelier/`) while the old SQLite file stayed behind. Import it once when
+ * the new profile still has no real session DB.
+ */
+export function migrateLegacyUserDataFromGardeniaProfiles(): void {
+  if (app.commandLine.hasSwitch('user-data-dir')) {
+    return
+  }
+
+  const currentRoot = app.getPath('userData')
+  const currentData = join(currentRoot, 'data')
+  const atelierDb = join(currentData, 'atelier.sqlite')
+
+  const atelierLooksEmpty = (): boolean => {
+    if (!existsSync(atelierDb)) return true
+    return statSync(atelierDb).size < MIN_LEGACY_DB_BYTES
+  }
+
+  if (!atelierLooksEmpty()) {
+    return
+  }
+
+  const appData = app.getPath('appData')
+  let currentReal: string | undefined
+  try {
+    currentReal = realpathSync(currentRoot)
+  } catch {
+    currentReal = currentRoot
+  }
+
+  let best: { root: string; dbPath: string; size: number } | null = null
+  for (const name of ['Gardenia', 'gardenia', 'Electron']) {
+    const root = join(appData, name)
+    let rootReal: string
+    try {
+      rootReal = realpathSync(root)
+    } catch {
+      continue
+    }
+    if (rootReal === currentReal) continue
+
+    const dbPath = join(root, 'data', 'gardenia.sqlite')
+    if (!existsSync(dbPath)) continue
+    const size = statSync(dbPath).size
+    if (size < MIN_LEGACY_DB_BYTES) continue
+    if (!best || size > best.size) {
+      best = { root, dbPath, size }
+    }
+  }
+
+  if (!best) return
+
+  mkdirSync(currentData, { recursive: true })
+
+  for (const name of ['atelier.sqlite', 'atelier.sqlite-wal', 'atelier.sqlite-shm']) {
+    const p = join(currentData, name)
+    if (existsSync(p)) rmSync(p)
+  }
+
+  copyFileSync(best.dbPath, join(currentData, 'gardenia.sqlite'))
+
+  const legacyConfig = join(best.root, 'data', 'config.json')
+  const currentConfig = join(currentData, 'config.json')
+  if (existsSync(legacyConfig)) {
+    copyFileSync(legacyConfig, currentConfig)
+  }
+
+  logger.info('imported legacy Gardenia user-data into Atelier profile', {
+    fromUserData: best.root,
+    toUserData: currentRoot,
+    legacyDbBytes: best.size
+  })
+}
 
 export function migrateLegacyGardeniaDatabaseFile(dataDir: string): void {
   const legacyPath = join(dataDir, 'gardenia.sqlite')

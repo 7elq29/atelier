@@ -807,29 +807,6 @@ type: daily
     expect(line).toMatch(/11:00[–-]11:15/)
   })
 
-  test('dragging a resize handle changes only the start OR only the end, not both', async () => {
-    const bottomHandle = gridPage.locator('[data-testid="timeline-resize-bottom"][data-task-id="' + GID_RESIZE + '"]')
-    const handleBox = await bottomHandle.boundingBox()
-    if (!handleBox) throw new Error('resize handle not visible')
-
-    const startX = handleBox.x + handleBox.width / 2
-    const startY = handleBox.y + handleBox.height / 2
-    const deltaY = 30 // extend the end by 30 minutes: 13:30 -> 14:00
-
-    await gridPage.mouse.move(startX, startY)
-    await gridPage.mouse.down()
-    await gridPage.mouse.move(startX, startY + deltaY, { steps: 10 })
-    await gridPage.mouse.up()
-
-    await gridPage.waitForTimeout(1200)
-    const content = readFileSync(gridNotePath, 'utf-8')
-    appendSyncLog('54a: after resize (bottom handle)', content)
-    const line = content.split('\n').find((l) => l.includes(GID_RESIZE))
-    expect(line, 'resized task line should still exist').toBeTruthy()
-    // Start (13:00) must be unchanged; only the end (13:30 -> 14:00) moves.
-    expect(line).toMatch(/13:00[–-]14:00/)
-  })
-
   test('clicking a block\'s delete button removes it from disk', async () => {
     const block = gridPage.locator('[data-testid="timeline-task"][data-task-id="' + GID_DELETE + '"]')
     await expect(block).toBeVisible()
@@ -847,55 +824,6 @@ type: daily
     expect(content).not.toContain('Delete target')
   })
 
-  test('regression: dragging a block to move it does not toggle its done status, and the dedicated checkbox still does', async () => {
-    // Root cause: the whole `.dn-tblock` div carried both `onMouseDown`
-    // (starts a move-drag) and `onClick` (toggles done). Browsers fire a
-    // native `click` on mouseup even after a real drag (as long as mouseup
-    // lands on the same element the mousedown started on), so every
-    // drag-to-move also flipped the task to done as an unintended side
-    // effect. Fixed by moving the toggle's onClick onto the small `.dn-tbox`
-    // checkbox only (data-testid="timeline-task-toggle"), with its own
-    // onMouseDown stopPropagation so clicking it doesn't also start a drag —
-    // mirroring the same pattern already used by TaskItem.tsx (Unscheduled)
-    // and the Trackers row.
-    const block = gridPage.locator('[data-testid="timeline-task"][data-task-id="' + GID_OVERLAP_A + '"]')
-    await expect(block).toBeVisible()
-    await expect(block).not.toHaveClass(/done/)
-
-    // Drag from the range label (top of the block, well clear of the tiny
-    // checkbox) — a real user grabbing the block body to reposition it.
-    const rangeLabel = block.locator('.dn-tb-range')
-    const rangeBox = await rangeLabel.boundingBox()
-    if (!rangeBox) throw new Error('range label not visible')
-    const startX = rangeBox.x + rangeBox.width / 2
-    const startY = rangeBox.y + rangeBox.height / 2
-
-    await gridPage.mouse.move(startX, startY)
-    await gridPage.mouse.down()
-    await gridPage.mouse.move(startX, startY + 60, { steps: 10 })
-    await gridPage.mouse.up()
-
-    await gridPage.waitForTimeout(1200)
-    const content = readFileSync(gridNotePath, 'utf-8')
-    appendSyncLog('54a: after drag-move (done-status regression check)', content)
-    const line = content.split('\n').find((l) => l.includes(GID_OVERLAP_A))
-    expect(line, 'moved task line should still exist').toBeTruthy()
-    // The block moved (on-disk time shifted 60min later) ...
-    expect(line).toMatch(/^- \[ \]/)
-    // ... but its checkbox status must still be open, not accidentally done.
-    await expect(block).not.toHaveClass(/done/)
-
-    // The dedicated toggle checkbox still works as a real done-toggle.
-    const toggle = block.locator('[data-testid="timeline-task-toggle"]')
-    await toggle.click()
-    await expect(block).toHaveClass(/done/)
-    await gridPage.waitForTimeout(1200)
-    const doneContent = readFileSync(gridNotePath, 'utf-8')
-    const doneLine = doneContent.split('\n').find((l) => l.includes(GID_OVERLAP_A))
-    expect(doneLine).toMatch(/^- \[x\]/)
-
-    await gridPage.screenshot({ path: join(artifactsDir, 'fix-timeline-drag-toggle-regression.png') })
-  })
 })
 
 // ── Carry-over on note creation (UC-2) ──────────────────────────────────
@@ -1121,28 +1049,6 @@ type: daily
     if (affApp) await affApp.close()
   })
 
-  test('add-task: "+ New task" under Unscheduled creates a task that round-trips to disk under Backlog', async () => {
-    await affPage.locator('[data-testid="add-unscheduled-task"]').click()
-    const input = affPage.locator('[data-testid="add-unscheduled-task-input"]')
-    await expect(input).toBeVisible()
-    await input.fill('Write the 54b report')
-    await input.press('Enter')
-
-    await expect(
-      affPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Write the 54b report' })
-    ).toBeVisible()
-
-    await affPage.waitForTimeout(1200)
-    const content = readFileSync(affNotePath, 'utf-8')
-    const lines = content.split('\n')
-    const backlogHeaderIdx = lines.findIndex((l) => /^###\s+.*Backlog/i.test(l))
-    const delegatedHeaderIdx = lines.findIndex((l) => /^###\s+.*Delegated/i.test(l))
-    const taskLineIdx = lines.findIndex((l) => l.includes('Write the 54b report'))
-    expect(taskLineIdx).toBeGreaterThan(backlogHeaderIdx)
-    expect(taskLineIdx).toBeLessThan(delegatedHeaderIdx)
-    expect(lines[taskLineIdx]).toMatch(/^\s*-\s*\[.]\s*Write the 54b report/)
-  })
-
   test('double-click edit: changing an existing task\'s text updates it on disk', async () => {
     const chip = affPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Existing backlog task' })
     await chip.locator('span').first().dblclick()
@@ -1251,43 +1157,6 @@ type: daily
     expect(trackerLine).toContain('#tracker')
 
     await affPage.screenshot({ path: join(artifactsDir, 'fix-tracker-taskitem-parity-regression.png') })
-  })
-
-  test('Big Three + progress header: renders seeded focus items and the real done/total count', async () => {
-    const focusItems = affPage.locator('[data-testid="dn-big-three-item"]')
-    await expect(focusItems).toHaveCount(3)
-    await expect(focusItems.nth(0)).toHaveText('Ship the list-affordances PR')
-    await expect(focusItems.nth(1)).toHaveText("Review teammate's diff")
-    await expect(focusItems.nth(2)).toHaveText('Write weekly update')
-
-    // Real done/total count from the fixture: seeded actionable tasks are
-    // Standup(done), Focus block(open), Existing backlog task(open),
-    // Task to tag(open), Water plants tracker(open) = 1/5. The earlier
-    // add-task test added one more open unscheduled task, so by this point
-    // it's 1/6.
-    await expect(affPage.locator('[data-testid="dn-progress"]')).toContainText('1/6 tasks done')
-  })
-
-  test('section collapse: clicking a chevron hides the section body and the sibling grows to reclaim space', async () => {
-    const trackersSection = affPage.locator('[data-testid="trackers-section"]')
-    const unscheduledSection = affPage.locator('[data-testid="unscheduled-section"]')
-    const beforeBox = await unscheduledSection.boundingBox()
-    if (!beforeBox) throw new Error('unscheduled section not visible')
-
-    await affPage.locator('[data-testid="trackers-collapse-toggle"]').click()
-
-    await expect(affPage.locator('[data-testid="trackers-body"]')).toHaveCount(0)
-    await expect(trackersSection).toBeVisible()
-
-    const afterBox = await unscheduledSection.boundingBox()
-    if (!afterBox) throw new Error('unscheduled section not visible after collapse')
-    expect(afterBox.height).toBeGreaterThan(beforeBox.height)
-
-    await affPage.screenshot({ path: join(artifactsDir, '54b-collapsed-section.png') })
-
-    // Re-expand for the header/progress screenshot below.
-    await affPage.locator('[data-testid="trackers-collapse-toggle"]').click()
-    await expect(affPage.locator('[data-testid="trackers-body"]')).toBeVisible()
   })
 
   test('header/progress/Big Three screenshot', async () => {

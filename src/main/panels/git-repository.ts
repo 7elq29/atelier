@@ -59,7 +59,7 @@ function parseStatusOutput(raw: string): { isRepo: boolean; branch: string | nul
     if (line.startsWith('ATELIER_BRANCH=')) {
       const name = line.slice('ATELIER_BRANCH='.length).trim()
       branch = name === 'HEAD' ? null : name
-    }     else if (line.startsWith('ATELIER_HAS_HEAD=1')) hasHead = true
+    } else if (line.startsWith('ATELIER_HAS_HEAD=1')) hasHead = true
     else if (line.startsWith('ATELIER_HAS_HEAD=0')) hasHead = false
     else if (line.trim() && !line.startsWith('ATELIER_')) numstatLines.push(line)
   }
@@ -256,4 +256,14 @@ export function invalidateGitRepository(projectPath: string, sshHost?: string | 
 
 export async function warmRemoteGitHost(sshHost: string): Promise<void> {
   await gitRepositories.warmRemote(sshHost)
+}
+
+/** Current branch for composer context bar (null if not a repo or detached). */
+export async function getGitBranch(projectPath: string, sshHost?: string | null): Promise<string | null> {
+  const inside = await runGit(projectPath, ['rev-parse', '--is-inside-work-tree'], sshHost)
+  if (inside.code !== 0 || inside.stdout.trim() !== 'true') return null
+  const res = await runGit(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'], sshHost)
+  if (res.code !== 0) return null
+  const name = res.stdout.trim()
+  return name === 'HEAD' ? null : name
 }

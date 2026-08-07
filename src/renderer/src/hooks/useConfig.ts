@@ -31,7 +31,8 @@ export function useConfig(): {
       ...prev,
       ...partial,
       fontSizes: { ...prev.fontSizes, ...(partial.fontSizes ?? {}) },
-      gitIdentity: { ...prev.gitIdentity, ...(partial.gitIdentity ?? {}) }
+      gitIdentity: { ...prev.gitIdentity, ...(partial.gitIdentity ?? {}) },
+      vault: { ...prev.vault, ...(partial.vault ?? {}) }
     }))
     window.atelier.setConfig(partial).then(setConfig)
   }, [])

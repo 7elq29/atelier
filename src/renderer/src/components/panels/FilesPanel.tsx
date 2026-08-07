@@ -71,6 +71,29 @@ function detectLanguage(ext: string): string {
   return EXT_TO_LANG[ext.toLowerCase()] ?? 'plaintext'
 }
 
+function dirnamePath(p: string): string {
+  const i = p.lastIndexOf('/')
+  return i <= 0 ? '/' : p.slice(0, i)
+}
+
+// ── Icons (paths from the mock's SVG symbol definitions) ─────────────────────
+function IconFolder(): JSX.Element {
+  return (
+    <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+    </svg>
+  )
+}
+
+function IconFile(): JSX.Element {
+  return (
+    <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 2h8l4 4v16H6z"/>
+      <path d="M14 2v4h4"/>
+    </svg>
+  )
+}
+
 // ── FileTree component ────────────────────────────────────────────────────────
 function FileTree({
   nodes,
@@ -111,8 +134,8 @@ function FileTree({
               {n.type === 'dir'
                 ? isLoading
                   ? <div className="spinner" style={{ width: 13, height: 13, flexShrink: 0 }} />
-                  : <svg className="icon" width="14" height="14"><use href="#icon-folder" /></svg>
-                : <svg className="icon" width="14" height="14"><use href="#icon-file" /></svg>
+                  : <IconFolder />
+                : <IconFile />
               }
               {n.name}
               {n.type === 'file' && dirtyPath === n.path && (
@@ -156,6 +179,12 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set())
   const [dirChildren, setDirChildren] = useState<Map<string, FileTreeNode[]>>(new Map())
+  const [locationInput, setLocationInput] = useState('')
+  const [locationEditing, setLocationEditing] = useState(false)
+  const [completions, setCompletions] = useState<FileTreeNode[]>([])
+  const [completionIdx, setCompletionIdx] = useState(0)
+  const dirChildrenRef = useRef<Map<string, FileTreeNode[]>>(new Map())
+  const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const modelRef = useRef<monaco.editor.ITextModel | null>(null)
@@ -165,6 +194,9 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
 
   // Keep ref in sync so the save keybinding closure can read it
   useEffect(() => { selectedPathRef.current = selectedPath }, [selectedPath])
+  useEffect(() => { dirChildrenRef.current = dirChildren }, [dirChildren])
+  // Sync location bar when file selection changes (tree click)
+  useEffect(() => { if (!locationEditing) setLocationInput(selectedPath ?? projectPath) }, [selectedPath, projectPath, locationEditing])
 
   // ── Load file tree ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -175,6 +207,8 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     setExpanded(new Set())
     setLoadingDirs(new Set())
     setDirChildren(new Map())
+    dirChildrenRef.current = new Map()
+    setLocationInput(projectPath)
     void window.atelier.filesTree(projectPath, hostname).then(setTree)
   }, [projectPath, hostname])
 
@@ -269,6 +303,97 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     }
   }, [fileResult])
 
+  // ── Completion fetch (debounced 120ms) ────────────────────────────────────
+  function fetchCompletions(input: string): void {
+    if (completionTimerRef.current) clearTimeout(completionTimerRef.current)
+    completionTimerRef.current = setTimeout(async () => {
+      if (!input) { setCompletions([]); return }
+      const endsWithSlash = input.endsWith('/')
+      const lastSlash = input.lastIndexOf('/')
+      const dir = endsWithSlash ? input.slice(0, -1) : (lastSlash >= 0 ? input.slice(0, lastSlash) : projectPath)
+      const prefix = endsWithSlash ? '' : (lastSlash >= 0 ? input.slice(lastSlash + 1) : input)
+      try {
+        const children = await window.atelier.filesDir(projectPath, dir || projectPath, hostname)
+        const lower = prefix.toLowerCase()
+        const matches = children.filter((n) => n.name.toLowerCase().startsWith(lower))
+        setCompletions(matches.slice(0, 12))
+        setCompletionIdx(0)
+      } catch {
+        setCompletions([])
+      }
+    }, 120)
+  }
+
+  function acceptCompletion(node: FileTreeNode): void {
+    const newPath = node.type === 'dir' ? node.path + '/' : node.path
+    setLocationInput(newPath)
+    setCompletions([])
+    if (node.type === 'dir') {
+      fetchCompletions(newPath)
+    } else {
+      void handleLocationCommit(node.path)
+    }
+  }
+
+  // ── Reveal a file path in the tree (expand all ancestor dirs) ────────────
+  async function revealInTree(filePath: string): Promise<void> {
+    const ancestors: string[] = []
+    let cur = dirnamePath(filePath)
+    while (cur.startsWith(projectPath) && cur !== projectPath) {
+      ancestors.unshift(cur)
+      cur = dirnamePath(cur)
+    }
+    const fetched = new Map<string, FileTreeNode[]>()
+    await Promise.all(ancestors.map(async (dir) => {
+      if (!dirChildrenRef.current.has(dir)) {
+        const children = await window.atelier.filesDir(projectPath, dir, hostname)
+        fetched.set(dir, children)
+      }
+    }))
+    if (fetched.size > 0) {
+      setDirChildren((prev) => {
+        const next = new Map(prev)
+        for (const [k, v] of fetched) next.set(k, v)
+        return next
+      })
+    }
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      for (const dir of ancestors) next.add(dir)
+      return next
+    })
+  }
+
+  // ── Location bar commit ────────────────────────────────────────────────────
+  async function handleLocationCommit(inputPath: string): Promise<void> {
+    const path = inputPath.trim()
+    if (!path) return
+    setLocationEditing(false)
+    setCompletions([])
+    try {
+      // Try as a file first
+      const result = await window.atelier.filesRead(path, hostname)
+      setSelectedPath(path)
+      setFileResult(result)
+      setLocationInput(path)
+      setIsDirty(false)
+      setSaveError(null)
+      await revealInTree(path)
+    } catch {
+      // Try as a directory — expand it and reveal its ancestors
+      try {
+        const children = await window.atelier.filesDir(projectPath, path, hostname)
+        setDirChildren((prev) => new Map(prev).set(path, children))
+        setExpanded((prev) => new Set(prev).add(path))
+        setLocationInput(path)
+        await revealInTree(path)
+      } catch {
+        // Invalid path — reset to last known good value
+        setLocationInput(selectedPath ?? projectPath)
+      }
+    }
+  }
+
   // ── Directory expansion ────────────────────────────────────────────────────
   async function handleToggleDir(node: FileTreeNode): Promise<void> {
     if (expanded.has(node.path)) {
@@ -310,6 +435,51 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
           <div>Project files will appear here</div>
         </div>
       ) : (
+        <>
+        <div className={`files-location-bar${locationEditing ? ' editing' : ''}`}>
+          <IconFolder />
+          <input
+            data-testid="files-location-input"
+            value={locationInput}
+            placeholder={projectPath}
+            onFocus={() => setLocationEditing(true)}
+            onBlur={() => {
+              // Delay so click on a completion item fires first
+              setTimeout(() => {
+                setLocationEditing(false)
+                setCompletions([])
+                setLocationInput(selectedPath ?? projectPath)
+              }, 150)
+            }}
+            onChange={(e) => { setLocationInput(e.target.value); fetchCompletions(e.target.value) }}
+            onKeyDown={(e) => {
+              if (completions.length > 0) {
+                if (e.key === 'ArrowDown') { e.preventDefault(); setCompletionIdx((i) => Math.min(i + 1, completions.length - 1)); return }
+                if (e.key === 'ArrowUp') { e.preventDefault(); setCompletionIdx((i) => Math.max(i - 1, 0)); return }
+                if (e.key === 'Tab' || (e.key === 'Enter' && completions.length > 0 && completionIdx < completions.length)) {
+                  e.preventDefault(); acceptCompletion(completions[completionIdx]); return
+                }
+              }
+              if (e.key === 'Enter') { setCompletions([]); void handleLocationCommit(locationInput) }
+              if (e.key === 'Escape') { setLocationEditing(false); setCompletions([]); setLocationInput(selectedPath ?? projectPath); (e.target as HTMLInputElement).blur() }
+            }}
+          />
+          {completions.length > 0 && (
+            <div className="files-location-popup">
+              {completions.map((n, i) => (
+                <div
+                  key={n.path}
+                  className={`mention-item${i === completionIdx ? ' selected' : ''}`}
+                  onMouseDown={(e) => { e.preventDefault(); acceptCompletion(n) }}
+                  onMouseEnter={() => setCompletionIdx(i)}
+                >
+                  {n.type === 'dir' ? <IconFolder /> : <IconFile />}
+                  <span>{n.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="files-body">
           <div className="files-tree" data-testid="files-tree">
             <FileTree
@@ -381,6 +551,7 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
             )}
           </div>
         </div>
+        </>
       )}
     </div>
   )

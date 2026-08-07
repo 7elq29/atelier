@@ -30,6 +30,9 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
     git.listWorktrees(projectPath, hostname, force)
   )
   ipcMain.handle('panel:git:warmRemote', (_e, hostname: string) => git.warmRemoteGitHost(hostname))
+  ipcMain.handle('panel:git:branch', (_e, projectPath: string, hostname?: string | null) =>
+    git.getGitBranch(projectPath, hostname)
+  )
   ipcMain.handle('panel:git:worktreeAdd', (_e, projectPath: string, worktreePath: string, branch: string, hostname?: string | null) =>
     git.addWorktree(projectPath, worktreePath, branch, hostname)
   )

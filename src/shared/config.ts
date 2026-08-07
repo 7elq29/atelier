@@ -20,6 +20,20 @@ export interface GitIdentity {
   email: string
 }
 
+export interface VaultConfig {
+  /** Absolute path to the Obsidian vault root. Empty string = not configured. */
+  root: string
+  /** Folder inside the vault root where daily notes live, e.g. "01.dailynotes". */
+  dailyNotesFolder: string
+  /**
+   * Path pattern relative to dailyNotesFolder. Tokens: {yyyy} {MMM} {ww} {date}.
+   * e.g. "{yyyy}/{MMM}/{ww}/{date}.md"
+   */
+  notePathPattern: string
+  /** Vault-relative path to the daily note template. Empty = use built-in skeleton. */
+  templatePath: string
+}
+
 export interface AtelierConfig {
   /** First-run wizard has been completed — never show it again once true. */
   onboardingCompleted: boolean
@@ -32,6 +46,7 @@ export interface AtelierConfig {
    */
   fontSizes: FontSizes
   gitIdentity: GitIdentity
+  vault: VaultConfig
 }
 
 export const DEFAULT_CONFIG: AtelierConfig = {
@@ -46,5 +61,11 @@ export const DEFAULT_CONFIG: AtelierConfig = {
   gitIdentity: {
     name: '',
     email: ''
+  },
+  vault: {
+    root: '',
+    dailyNotesFolder: '01.dailynotes',
+    notePathPattern: '{yyyy}/{MMM}/{ww}/{date}.md',
+    templatePath: '92.templates/Daily Note Template.md'
   }
 }
