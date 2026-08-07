@@ -13,6 +13,7 @@ import {
   numstatPathForGit,
   parseNumstatLines,
   parseUnifiedDiff,
+  pickDefaultCommitFile,
   pickParsedDiffFile,
   resolveGitRepoRoot,
   runGit,
@@ -22,6 +23,9 @@ import {
 } from './git-core'
 
 const EMPTY_TREE = '4b825dc642cb6eb6a060e54bf8d69288fbee4904'
+
+/** Commits with at most this many files use one full `git show -U3` on open (typical agent commits). */
+const COMMIT_OPEN_FULL_PATCH_MAX_FILES = 40
 
 function repoKey(projectPath: string, sshHost?: string | null): string {
   return `${sshHost ?? 'local'}\0${projectPath}`
@@ -71,17 +75,127 @@ interface RepoCache {
   fetchedAt: number
 }
 
+type CommitDiffCacheKey = string
+
 class GitRepositoryManager {
   private readonly cache = new Map<string, RepoCache>()
   private readonly inFlight = new Map<string, Promise<DiffSummary>>()
+  private readonly commitDiffCache = new Map<CommitDiffCacheKey, DiffSummary>()
+  private readonly commitFileDiffCache = new Map<CommitDiffCacheKey, DiffFileChange>()
+
+  private commitCachePrefix(projectPath: string, sshHost?: string | null): string {
+    return `${repoKey(projectPath, sshHost)}\0`
+  }
+
+  private dropCommitCachesForRepo(projectPath: string, sshHost?: string | null): void {
+    const prefix = this.commitCachePrefix(projectPath, sshHost)
+    for (const k of this.commitDiffCache.keys()) {
+      if (k.startsWith(prefix)) this.commitDiffCache.delete(k)
+    }
+    for (const k of this.commitFileDiffCache.keys()) {
+      if (k.startsWith(prefix)) this.commitFileDiffCache.delete(k)
+    }
+  }
 
   invalidate(projectPath: string, sshHost?: string | null): void {
     clearGitRepoRootCache(projectPath, sshHost)
     this.cache.delete(repoKey(projectPath, sshHost))
+    this.dropCommitCachesForRepo(projectPath, sshHost)
   }
 
   async warmRemote(sshHost: string): Promise<void> {
     await warmSshMux(sshHost)
+  }
+
+  /** Cached repo membership — avoids running the full working-tree status script for commit history. */
+  private async ensureIsRepo(projectPath: string, sshHost?: string | null): Promise<boolean> {
+    const key = repoKey(projectPath, sshHost)
+    const entry = this.cache.get(key)
+    if (entry) return entry.summary.isRepo
+    const inside = await runGit(projectPath, ['rev-parse', '--is-inside-work-tree'], sshHost)
+    return inside.code === 0 && inside.stdout.trim() === 'true'
+  }
+
+  private seedCommitOpenCaches(
+    projectPath: string,
+    commit: string,
+    sshHost: string | null | undefined,
+    parsed: DiffFileChange[],
+    firstPath: string | null
+  ): DiffSummary {
+    const listFiles = parsed.map((f) => (f.path === firstPath ? f : { ...f, hunks: [] }))
+    const listSummary: DiffSummary = { isRepo: true, branch: null, files: listFiles.map((f) => ({ ...f, hunks: [] })) }
+    const cacheKey = `${this.commitCachePrefix(projectPath, sshHost)}${commit}`
+    this.commitDiffCache.set(cacheKey, listSummary)
+    const prefix = this.commitCachePrefix(projectPath, sshHost)
+    for (const f of parsed) {
+      this.commitFileDiffCache.set(`${prefix}${commit}\0${f.path}`, f)
+    }
+    return { isRepo: true, branch: null, files: listFiles }
+  }
+
+  /**
+   * Open a commit in Diff › Commits: file list + first file hunks when cheap.
+   * Skips working-tree refresh; small commits use a single `git show -U3`.
+   */
+  async loadCommitPanelOpen(projectPath: string, commit: string, sshHost?: string | null): Promise<DiffSummary> {
+    const cacheKey = `${this.commitCachePrefix(projectPath, sshHost)}${commit}`
+    const cachedList = this.commitDiffCache.get(cacheKey)
+    if (cachedList) {
+      const firstPath = pickDefaultCommitFile(cachedList.files)
+      if (!firstPath) return cachedList
+      const file = await this.loadCommitFileDiff(projectPath, commit, firstPath, sshHost)
+      if (!file) return cachedList
+      return {
+        ...cachedList,
+        files: cachedList.files.map((f) => (f.path === firstPath ? file : f))
+      }
+    }
+
+    if (!(await this.ensureIsRepo(projectPath, sshHost))) {
+      return { isRepo: false, branch: null, files: [] }
+    }
+
+    const res = await runGitAtRepoRoot(
+      projectPath,
+      ['show', '-m', '--first-parent', '--no-color', '--numstat', '--format=', commit],
+      sshHost
+    )
+    if (res.code !== 0) return { isRepo: true, branch: null, files: [] }
+    const files = parseNumstatLines(res.stdout.split('\n')).map((f) => ({ ...f, hunks: [] }))
+    if (files.length === 0) {
+      const empty: DiffSummary = { isRepo: true, branch: null, files: [] }
+      this.commitDiffCache.set(cacheKey, empty)
+      return empty
+    }
+
+    if (files.length <= COMMIT_OPEN_FULL_PATCH_MAX_FILES) {
+      const full = await runGitShowPatch(
+        projectPath,
+        ['-m', '--first-parent', '--no-color', '-U3', '--format=', commit],
+        sshHost
+      )
+      if (gitPatchOutputUsable(full.code, full.stdout)) {
+        const parsed = parseUnifiedDiff(full.stdout)
+        if (parsed.length > 0) {
+          const firstPath = pickDefaultCommitFile(parsed)
+          return this.seedCommitOpenCaches(projectPath, commit, sshHost, parsed, firstPath)
+        }
+      }
+    }
+
+    const listSummary: DiffSummary = { isRepo: true, branch: null, files }
+    this.commitDiffCache.set(cacheKey, listSummary)
+
+    const firstPath = pickDefaultCommitFile(files)
+    if (!firstPath) return listSummary
+
+    const file = await this.loadCommitFileDiff(projectPath, commit, firstPath, sshHost)
+    if (!file) return listSummary
+    return {
+      ...listSummary,
+      files: files.map((f) => (f.path === firstPath ? file : f))
+    }
   }
 
   async refreshChanges(projectPath: string, sshHost?: string | null, force = false): Promise<DiffSummary> {
@@ -125,8 +239,13 @@ class GitRepositoryManager {
 
   /** File list for a single commit (numstat; empty hunks until loadCommitFileDiff). */
   async loadCommitDiff(projectPath: string, commit: string, sshHost?: string | null): Promise<DiffSummary> {
-    const summary = await this.refreshChanges(projectPath, sshHost)
-    if (!summary.isRepo) return { isRepo: false, branch: null, files: [] }
+    const cacheKey = `${this.commitCachePrefix(projectPath, sshHost)}${commit}`
+    const cached = this.commitDiffCache.get(cacheKey)
+    if (cached) return cached
+
+    if (!(await this.ensureIsRepo(projectPath, sshHost))) {
+      return { isRepo: false, branch: null, files: [] }
+    }
 
     // -m --first-parent: merge commits and root commits get a real patch (plain `git show` is often empty).
     const res = await runGitAtRepoRoot(
@@ -136,7 +255,9 @@ class GitRepositoryManager {
     )
     if (res.code !== 0) return { isRepo: true, branch: null, files: [] }
     const files = parseNumstatLines(res.stdout.split('\n')).map((f) => ({ ...f, hunks: [] }))
-    return { isRepo: true, branch: null, files }
+    const result = { isRepo: true, branch: null, files }
+    this.commitDiffCache.set(cacheKey, result)
+    return result
   }
 
   private mergeCommitFileStub(stub: DiffFileChange, parsed: DiffFileChange): DiffFileChange {
@@ -166,6 +287,10 @@ class GitRepositoryManager {
     filePath: string,
     sshHost?: string | null
   ): Promise<DiffFileChange | null> {
+    const cacheKey = `${this.commitCachePrefix(projectPath, sshHost)}${commit}\0${filePath}`
+    const cached = this.commitFileDiffCache.get(cacheKey)
+    if (cached) return cached
+
     const list = await this.loadCommitDiff(projectPath, commit, sshHost)
     const stub = list.files.find((f) => f.path === filePath)
     const gitPath = numstatPathForGit(filePath)
@@ -223,10 +348,14 @@ class GitRepositoryManager {
       }
     }
 
+    let result: DiffFileChange | null
     if (parsed?.hunks.length) {
-      return stub ? this.mergeCommitFileStub(stub, parsed) : parsed
+      result = stub ? this.mergeCommitFileStub(stub, parsed) : parsed
+    } else {
+      result = stub ? { ...stub, hunks: [] } : null
     }
-    return stub ? { ...stub, hunks: [] } : null
+    if (result) this.commitFileDiffCache.set(cacheKey, result)
+    return result
   }
 
   async loadFileDiff(projectPath: string, filePath: string, sshHost?: string | null): Promise<DiffFileChange | null> {
@@ -391,6 +520,14 @@ export async function getFileDiff(projectPath: string, filePath: string, sshHost
 
 export async function getCommitDiff(projectPath: string, commit: string, sshHost?: string | null): Promise<DiffSummary> {
   return gitRepositories.loadCommitDiff(projectPath, commit, sshHost)
+}
+
+export async function getCommitPanelOpen(
+  projectPath: string,
+  commit: string,
+  sshHost?: string | null
+): Promise<DiffSummary> {
+  return gitRepositories.loadCommitPanelOpen(projectPath, commit, sshHost)
 }
 
 export async function getCommitFileDiff(

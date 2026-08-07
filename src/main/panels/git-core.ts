@@ -140,6 +140,12 @@ export function numstatPathForGit(path: string): string {
   return arrow === -1 ? path : path.slice(arrow + 4).trim()
 }
 
+/** Prefer a text diff over binary (-/- numstat) when opening a commit. */
+export function pickDefaultCommitFile(files: DiffFileChange[]): string | null {
+  const withStats = files.find((f) => f.additions > 0 || f.deletions > 0)
+  return withStats?.path ?? files[0]?.path ?? null
+}
+
 export function parseNumstatLines(lines: string[]): DiffFileChange[] {
   const files: DiffFileChange[] = []
   for (const line of lines) {
