@@ -145,25 +145,62 @@ class GitRepositoryManager {
     return { isRepo: true, branch: null, files }
   }
 
+  private pickParsedCommitFile(parsed: DiffFileChange[], filePath: string): DiffFileChange | undefined {
+    return parsed.find((f) => f.path === filePath || f.oldPath === filePath)
+  }
+
+  private mergeCommitFileStub(stub: DiffFileChange, parsed: DiffFileChange): DiffFileChange {
+    return {
+      ...stub,
+      ...parsed,
+      path: stub.path,
+      status: stub.status,
+      additions: stub.additions || parsed.additions,
+      deletions: stub.deletions || parsed.deletions,
+      hunks: parsed.hunks
+    }
+  }
+
   async loadCommitFileDiff(
     projectPath: string,
     commit: string,
     filePath: string,
     sshHost?: string | null
   ): Promise<DiffFileChange | null> {
-    const diff = await runGit(
+    const list = await this.loadCommitDiff(projectPath, commit, sshHost)
+    const stub = list.files.find((f) => f.path === filePath)
+
+    const parseForFile = (stdout: string): DiffFileChange | undefined => {
+      const parsed = parseUnifiedDiff(stdout)
+      return this.pickParsedCommitFile(parsed, filePath)
+    }
+
+    const show = await runGit(
       projectPath,
       ['show', '-m', '--first-parent', '--no-color', '-U3', '--format=', commit, '--', filePath],
       sshHost
     )
-    const parsed = parseUnifiedDiff(diff.stdout)
-    const file = parsed[0]
-    if (!file) {
-      const list = await this.loadCommitDiff(projectPath, commit, sshHost)
-      const stub = list.files.find((f) => f.path === filePath)
-      return stub ? { ...stub, hunks: [] } : null
+    let parsed = show.code === 0 ? parseForFile(show.stdout) : undefined
+
+    // Fallback when `git show -m` returns no parseable hunks (root commits, some merge layouts, etc.).
+    if (!parsed?.hunks.length) {
+      const parentRev = await runGit(projectPath, ['rev-parse', `${commit}^`], sshHost)
+      const base =
+        parentRev.code === 0 && parentRev.stdout.trim() ? `${commit}^` : EMPTY_TREE
+      const diffRes = await runGit(
+        projectPath,
+        ['diff', '--no-color', '-U3', base, commit, '--', filePath],
+        sshHost
+      )
+      if (diffRes.code === 0) {
+        parsed = parseForFile(diffRes.stdout) ?? parsed
+      }
     }
-    return file
+
+    if (parsed?.hunks.length) {
+      return stub ? this.mergeCommitFileStub(stub, parsed) : parsed
+    }
+    return stub ? { ...stub, hunks: [] } : null
   }
 
   async loadFileDiff(projectPath: string, filePath: string, sshHost?: string | null): Promise<DiffFileChange | null> {

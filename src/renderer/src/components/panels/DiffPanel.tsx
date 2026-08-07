@@ -311,7 +311,7 @@ export default function DiffPanel({
       setCommitFileDiffLoading(true)
       try {
         const file = await window.atelier.gitCommitFileDiff(workspacePath, commitHash, filePath, hostname)
-        if (file) {
+        if (file?.hunks.length) {
           commitLoadedHunksRef.current.add(filePath)
           setCommitFiles((prev) => {
             if (!prev) return [file]
@@ -339,7 +339,7 @@ export default function DiffPanel({
         let files = diff.files
         if (first) {
           const file = await window.atelier.gitCommitFileDiff(workspacePath, commit.hash, first, hostname)
-          if (file) {
+          if (file?.hunks.length) {
             commitLoadedHunksRef.current.add(first)
             files = diff.files.map((f) => (f.path === first ? file : f))
           }
