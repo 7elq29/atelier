@@ -26,6 +26,15 @@ export function runGit(
   })
 }
 
+/** Strips `a/`/`b/` prefixes and optional `\t<timestamp>` suffixes from `---`/`+++` paths. */
+export function normalizeDiffPath(raw: string): string {
+  let p = raw.trim()
+  if (p.startsWith('a/') || p.startsWith('b/')) p = p.slice(2)
+  const tab = p.indexOf('\t')
+  if (tab !== -1) p = p.slice(0, tab)
+  return p
+}
+
 export function parseNumstatLines(lines: string[]): DiffFileChange[] {
   const files: DiffFileChange[] = []
   for (const line of lines) {
@@ -61,8 +70,8 @@ export function parseUnifiedDiff(patch: string): DiffFileChange[] {
     let status: DiffFileStatus = 'modified'
     while (i < lines.length && !lines[i].startsWith('@@') && !lines[i].startsWith('diff --git')) {
       const line = lines[i]
-      if (line.startsWith('--- ')) oldPath = line.slice(4).replace(/^a\//, '')
-      else if (line.startsWith('+++ ')) newPath = line.slice(4).replace(/^b\//, '')
+      if (line.startsWith('--- ')) oldPath = normalizeDiffPath(line.slice(4))
+      else if (line.startsWith('+++ ')) newPath = normalizeDiffPath(line.slice(4))
       else if (line.startsWith('new file mode')) status = 'added'
       else if (line.startsWith('deleted file mode')) status = 'deleted'
       else if (line.startsWith('rename to ')) {
@@ -92,6 +101,10 @@ export function parseUnifiedDiff(patch: string): DiffFileChange[] {
       while (i < lines.length && !lines[i].startsWith('@@') && !lines[i].startsWith('diff --git')) {
         const raw = lines[i]
         if (raw.startsWith('\\ No newline')) {
+          i++
+          continue
+        }
+        if (raw === '') {
           i++
           continue
         }
