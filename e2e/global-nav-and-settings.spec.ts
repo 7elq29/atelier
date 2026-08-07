@@ -496,10 +496,11 @@ test.describe('onboarding — first-run wizard shows once', () => {
   })
 })
 
-// Feature: org-wide AI harness-pool spend chip (ported from Morpheus's
-// CostSpendIndicator.tsx), rendered at the top of the sidebar above the
-// search box. This depends on a live internal endpoint + the local `usso`
-// CLI, so these tests exercise the real IPC round-trip and the app's
+// Feature: org-wide AI harness-pool spend indicator (ported from Morpheus's
+// CostSpendIndicator.tsx), rendered at the bottom of the sidebar directly
+// above the user-profile row, per Features/UI-Design/mocks/index.html's
+// .spend-indicator. This depends on a live internal endpoint + the local
+// `usso` CLI, so these tests exercise the real IPC round-trip and the app's
 // behavior when that dependency is disabled — not a specific dollar figure.
 test.describe('sidebar spend-status chip', () => {
   test('does not render, and the app does not error, when spend status is disabled', async () => {
@@ -533,7 +534,7 @@ test.describe('sidebar spend-status chip', () => {
       .catch(() => false)
 
     if (appeared) {
-      await expect(chip).toHaveText(/^\$[\d,]+\/(\$[\d,]+|\?)$/)
+      await expect(chip).toHaveText(/^\$[\d,]+\/(\$[\d,]+|\?) spent · view usage$/)
     }
 
     await app.close()

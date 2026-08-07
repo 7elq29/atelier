@@ -54,15 +54,29 @@ export default function SpendStatusChip(): JSX.Element | null {
   if (!data) return null
 
   return (
-    <button
-      type="button"
-      className="spend-status-chip"
-      data-testid="spend-status-chip"
-      onClick={() => void window.gardenia.openExternal(COST_INSIGHTS_URL)}
-      title={formatTooltip(data)}
-      aria-label={`AI spend ${formatLabel(data)}`}
-    >
-      {formatLabel(data)}
-    </button>
+    <div className="spend-indicator" data-testid="spend-status-chip" title={formatTooltip(data)}>
+      <svg
+        className="spend-indicator-icon"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        aria-hidden="true"
+      >
+        <rect x="2" y="5" width="20" height="14" rx="2" />
+        <line x1="2" y1="10" x2="22" y2="10" />
+      </svg>
+      <b>{formatLabel(data)}</b> spent ·{' '}
+      <button
+        type="button"
+        className="spend-indicator-link"
+        onClick={() => void window.gardenia.openExternal(COST_INSIGHTS_URL)}
+        aria-label={`AI spend ${formatLabel(data)}, view usage`}
+      >
+        view usage
+      </button>
+    </div>
   )
 }
