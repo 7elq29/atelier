@@ -25,6 +25,7 @@ import { useConfig } from './hooks/useConfig'
 import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig, type AtelierConfig } from '../../shared/config'
 import { useSessions } from './hooks/useSessions'
 import { useSessionWorkspace } from './hooks/useSessionWorkspace'
+import { truncateContextPath } from './utils/truncateContextPath'
 import { useAppNotes } from './hooks/useAppNotes'
 import type { DailyTask } from '../../shared/daily-note-types'
 import type {
@@ -438,6 +439,9 @@ export default function App(): JSX.Element {
   const activeAppNote = activeAppNoteId
     ? appNotes.notes.find((n) => n.id === activeAppNoteId) ?? null
     : null
+  const activeWorkspacePath =
+    activeSession && !activeAppNote ? (activeSession.worktreePath ?? activeSession.projectPath) : null
+  const activeWorkspaceLabel = truncateContextPath(activeWorkspacePath)
   activeSessionRef.current = activeSession
   activeAppNoteIdRef.current = activeAppNoteId
 
@@ -817,30 +821,41 @@ export default function App(): JSX.Element {
 
         <div className="main-area">
           <div className="topbar">
-            <span className="title" data-testid="main-title">
-              {activeAppNote ? (
-                <input
-                  className="input app-note-title-input"
-                  data-testid="app-note-title-input"
-                  value={activeAppNote.title}
-                  placeholder="Untitled note"
-                  onChange={(e) => void appNotes.updateNote(activeAppNote.id, { title: e.target.value })}
-                  style={{
-                    fontSize: 'inherit',
-                    fontWeight: 'inherit',
-                    border: 'none',
-                    background: 'transparent',
-                    padding: '2px 4px',
-                    minWidth: 120,
-                    maxWidth: 'min(480px, 50vw)'
-                  }}
-                />
-              ) : activeSession ? (
-                activeSession.name
-              ) : (
-                'Atelier'
+            <div className="topbar-title-group">
+              <span className="title" data-testid="main-title">
+                {activeAppNote ? (
+                  <input
+                    className="input app-note-title-input"
+                    data-testid="app-note-title-input"
+                    value={activeAppNote.title}
+                    placeholder="Untitled note"
+                    onChange={(e) => void appNotes.updateNote(activeAppNote.id, { title: e.target.value })}
+                    style={{
+                      fontSize: 'inherit',
+                      fontWeight: 'inherit',
+                      border: 'none',
+                      background: 'transparent',
+                      padding: '2px 4px',
+                      minWidth: 120,
+                      maxWidth: 'min(480px, 50vw)'
+                    }}
+                  />
+                ) : activeSession ? (
+                  activeSession.name
+                ) : (
+                  'Atelier'
+                )}
+              </span>
+              {activeWorkspaceLabel && (
+                <span
+                  className="topbar-workspace"
+                  data-testid="topbar-workspace"
+                  title={activeWorkspacePath ?? undefined}
+                >
+                  {activeWorkspaceLabel}
+                </span>
               )}
-            </span>
+            </div>
             {activeSession && !activeAppNote && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
               <>
                 <TabBar activeTab={activeTab} onSelect={selectTab} showPorts={Boolean(activeSession.hostname)} />

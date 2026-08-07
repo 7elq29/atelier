@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import ChatUncommittedChanges from './ChatUncommittedChanges'
 import type { DiffSummary } from '../../../../shared/panel-types'
 import type { SessionFileEdit } from '../../../../shared/session-file-edits'
+import { truncateContextPath } from '../../utils/truncateContextPath'
 import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
@@ -29,22 +30,6 @@ function tokenBar(pct: number): string {
 
 /** Cap on how many `@file` matches are rendered at once — the underlying file walk is already capped (files.ts's MAX_ENTRIES), this just keeps the popover itself short and scannable. */
 const MAX_MENTION_MATCHES = 20
-
-/** Shorten an absolute path for the composer context bar (`~` + last two segments). */
-function truncateContextPath(absPath: string | null | undefined): string | null {
-  if (!absPath) return null
-  const shortened = absPath.replace(/^\/Users\/[^/]+(?=\/|$)/, '~')
-  const parts = shortened.split('/').filter(Boolean)
-  if (parts.length === 0) return shortened
-  if (parts.length <= 2) {
-    if (parts[0] === '~') {
-      return parts.length === 1 ? '~' : `~/${parts.slice(1).join('/')}`
-    }
-    return shortened.startsWith('/') ? shortened : `/${parts.join('/')}`
-  }
-  const tail = parts.slice(-2).join('/')
-  return `…/${tail}`
-}
 
 const CONTEXT_FOLDER_ICON = (
   <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>

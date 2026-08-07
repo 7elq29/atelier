@@ -257,8 +257,28 @@
 .topbar .title {
   font-size: var(--font-interface-size);
   font-weight: 600;
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topbar-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   flex: 1 1 auto;
   min-width: 0;
+}
+.topbar-workspace {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: min(240px, 28vw);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

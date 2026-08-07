@@ -92,6 +92,7 @@ test.describe('04-composer-core', () => {
     await expect(activeComposer(page).getByTestId('composer-working-pill')).toHaveCount(0, { timeout: 90_000 })
     await expect(activeComposer(page).getByTestId('send-button')).toBeVisible()
     await expect(activeComposer(page).getByTestId('composer-context-workspace')).toBeVisible()
+    await expect(page.getByTestId('topbar-workspace')).toBeVisible()
     await expect(activeComposer(page).getByTestId('composer-context-workspace')).toContainText('Workspace')
     await expect(activeComposer(page).getByTestId('composer-context-workspace')).not.toContainText('/~/')
     await expect(activeComposer(page).getByTestId('composer-context-claude-path')).toBeVisible()
