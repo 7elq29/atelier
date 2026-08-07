@@ -69,14 +69,12 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
 
   ipcMain.handle('session:resume', (_event, sessionId: string) => {
     const snapshot = manager.resumeSnapshot(sessionId)
-    // Live reconnect happens AFTER this handler returns, so the renderer
-    // always has the full stored transcript rendered first — except
-    // session-startup-idle, where the user must click Reconnect explicitly.
-    if (!manager.isSessionStartupIdle(sessionId)) {
-      void manager.reconnect(sessionId).catch((err) =>
-        logger.error('session reconnect failed', { sessionId, error: err instanceof Error ? err.message : String(err) })
-      )
-    }
+    // Live reconnect after reopen — idle-session-auto-history moves stale sessions
+    // into History (closed_at), so resume must reconnect even when last_active_at
+    // is older than the startup-idle threshold.
+    void manager.reconnect(sessionId).catch((err) =>
+      logger.error('session reconnect failed', { sessionId, error: err instanceof Error ? err.message : String(err) })
+    )
     return snapshot
   })
 

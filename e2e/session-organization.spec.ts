@@ -409,6 +409,13 @@ test.describe('06-session-organization', () => {
     expect(chevTransform).not.toBe('none')
     await header.click() // expand back
 
+    const closedHeader = page.getByTestId('group-header-history')
+    await expect(closedHeader.getByText('Closed')).toBeVisible()
+    await closedHeader.click()
+    const closedChevTransform = await closedHeader.locator('.chev').evaluate((el) => getComputedStyle(el).transform)
+    expect(closedChevTransform).not.toBe('none')
+    await closedHeader.click()
+
     await page.screenshot({ path: join(artifactsDir, '06-ui-match.png') })
   })
 

@@ -116,11 +116,12 @@ test.describe('02-session-lifecycle', () => {
     await electronApp.close()
     ;({ app: electronApp, page } = await launchApp(userDataDir))
 
-    const row = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
-    await expect(row).toBeVisible({ timeout: 15_000 })
-    await expect(row).toHaveAttribute('data-status', 'startup-idle', { timeout: 10_000 })
+    const historyRow = page.locator(`[data-group="history"] [data-session-id="${localSessionId}"]`)
+    await expect(historyRow).toHaveCount(1, { timeout: 15_000 })
+    await expect(page.locator(`[data-group="ungrouped"] [data-session-id="${localSessionId}"]`)).toHaveCount(0)
+    await expect(historyRow).toHaveAttribute('data-status', 'startup-idle', { timeout: 10_000 })
 
-    const startupIdleDot = row.getByTestId('session-dot')
+    const startupIdleDot = historyRow.getByTestId('session-dot')
     await expect(startupIdleDot).toHaveClass(/status-startup-idle/)
     const startupIdleDotBg = await startupIdleDot.evaluate((el) => getComputedStyle(el).backgroundColor)
     const textTertiaryBg = await page.evaluate(() => {
@@ -134,16 +135,18 @@ test.describe('02-session-lifecycle', () => {
     expect(startupIdleDotBg).toBe(textTertiaryBg)
 
     const log = appendMainLog(userDataDir)
-    expect(log).toContain('startupReconnect: skipping auto reconnect (session startup-idle)')
+    expect(log).toContain('"event":"session.closed"')
+    expect(log).toContain(localSessionId)
 
-    await row.click()
+    await historyRow.click()
     await expect(page.getByTestId('session-disconnected-panel')).toBeVisible()
     await expect(page.getByTestId('tab-strip')).toHaveCount(0)
     await expect(page.getByTestId('composer-input')).toHaveCount(0)
 
     await page.getByTestId('session-reconnect-button').click()
     await expect(page.getByTestId('connecting-pill')).toBeVisible({ timeout: 15_000 })
-    await expect(row).not.toHaveAttribute('data-status', 'startup-idle', { timeout: 90_000 })
+    const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
+    await expect(activeRow).not.toHaveAttribute('data-status', 'startup-idle', { timeout: 90_000 })
     await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 90_000 })
     await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 90_000 })
 
