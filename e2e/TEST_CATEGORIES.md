@@ -50,7 +50,7 @@ iterating.
 | | |
 |---|---|
 | **Spec files** | `session-organization.spec.ts` |
-| **Source paths** | `src/renderer/src/components/Sidebar.tsx`, session store/manager (`src/main/sessions/store.ts`, `manager.ts`) |
+| **Source paths** | `src/renderer/src/components/Sidebar.tsx`, `src/renderer/src/components/panels/AppNotesPanel.tsx`, session store/manager (`src/main/sessions/store.ts`, `manager.ts`), `src/main/app-notes/*` |
 | **Catches** | Sidebar search, status filters (all/attention/waiting), session groups (create/rename/drag), session detail popover (notes, tags, color swatch), command palette entry point from the sidebar. |
 
 ### 4. Chat Transcript & Composer Core

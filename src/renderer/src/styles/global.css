@@ -1966,6 +1966,40 @@ input[type='range'] {
 .file-view .find-row { display: flex; gap: 8px; padding: 6px 0 12px; }
 .file-view img.file-preview-image { max-width: 100%; border-radius: var(--r-md); border: 1px solid var(--border-default); }
 .file-view iframe.file-preview-html { width: 100%; height: 100%; min-height: 320px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: #fff; }
+
+/* App notes — Atomic Editor live preview (Atelier tokens, not package purple defaults) */
+.app-notes-panel .app-notes-editor-surface {
+  background: var(--bg-code);
+  padding: 0;
+}
+.app-notes-panel .app-notes-atomic-host,
+.app-notes-panel .atomic-cm-editor {
+  height: 100%;
+  min-height: 0;
+}
+.app-notes-panel .atomic-cm-editor {
+  --atomic-editor-bg: var(--bg-code);
+  --atomic-editor-fg: var(--text-primary);
+  --atomic-editor-fg-muted: var(--text-secondary);
+  --atomic-editor-fg-faint: var(--text-tertiary);
+  --atomic-editor-bg-panel: var(--bg-panel);
+  --atomic-editor-bg-surface: var(--bg-panel-raised);
+  --atomic-editor-border: var(--border-default);
+  --atomic-editor-accent: var(--accent);
+  --atomic-editor-accent-bright: var(--accent-strong);
+  --atomic-editor-accent-soft: color-mix(in srgb, var(--accent) 55%, var(--bg-code) 45%);
+  --atomic-editor-link: var(--info);
+  --atomic-editor-link-hover: color-mix(in srgb, var(--info) 85%, var(--text-primary) 15%);
+  --atomic-editor-code-bg: var(--bg-panel-raised);
+  --atomic-editor-code-rail: var(--border-strong);
+  --atomic-editor-font: var(--font-ui);
+  --atomic-editor-font-mono: var(--font-mono);
+  --atomic-editor-body-size: var(--text-base);
+  --atomic-editor-selection-bg: color-mix(in srgb, var(--accent) 22%, transparent 78%);
+  --atomic-editor-search-bg: color-mix(in srgb, var(--warning) 35%, transparent 65%);
+  --atomic-editor-search-bg-active: color-mix(in srgb, var(--warning) 55%, transparent 45%);
+}
+
 .tok-key { color: var(--sc-teal); }
 .tok-str { color: var(--success); }
 .tok-com { color: var(--text-disabled); font-style: italic; }
