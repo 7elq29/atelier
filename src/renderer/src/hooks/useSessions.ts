@@ -24,6 +24,8 @@ export interface UseSessionsResult {
   busyBySession: Record<string, boolean>
   /** Live slash-command registry per session (bug #56) — see SessionCommandsEvent's doc comment. Empty until the harness's first push lands. */
   commandsBySession: Record<string, SlashCommandInfo[]>
+  /** Claude Code cwd per session (composer context bar) — from SDK init + inferred Bash `cd`. */
+  harnessCwdBySession: Record<string, string>
   /** Context-window token usage per session (token-usage-indicator) — updated after each completed turn. Empty until the session's first turn completes. */
   tokenUsageBySession: Record<string, { inputTokens: number; contextWindow: number }>
   /** Worktree creation progress per session (use-worktree) — integer 0–100 while creating-worktree, deleted when done. */
@@ -84,6 +86,7 @@ export function useSessions(): UseSessionsResult {
   const [allTags, setAllTags] = useState<string[]>([])
   const [busyBySession, setBusyBySession] = useState<Record<string, boolean>>({})
   const [commandsBySession, setCommandsBySession] = useState<Record<string, SlashCommandInfo[]>>({})
+  const [harnessCwdBySession, setHarnessCwdBySession] = useState<Record<string, string>>({})
   const [tokenUsageBySession, setTokenUsageBySession] = useState<Record<string, { inputTokens: number; contextWindow: number }>>({})
   const [worktreeProgressBySession, setWorktreeProgressBySession] = useState<Record<string, number>>({})
   const [staleSessionIds, setStaleSessionIds] = useState<Set<string>>(new Set())
@@ -139,7 +142,15 @@ export function useSessions(): UseSessionsResult {
         return { ...prev, [sessionId]: next }
       })
     })
-    const offLifecycle = window.atelier.onSessionLifecycle(() => {
+    const offLifecycle = window.atelier.onSessionLifecycle((event) => {
+      if (event.type === 'session.deleted') {
+        setHarnessCwdBySession((prev) => {
+          if (!(event.sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[event.sessionId]
+          return next
+        })
+      }
       // Any lifecycle change (created/renamed/closed/resumed/forked/deleted/
       // updated) can move a session between active/pinned/history — simplest
       // correct thing is to just refetch both lists.
@@ -165,6 +176,9 @@ export function useSessions(): UseSessionsResult {
     const offCommands = window.atelier.onSessionCommands(({ sessionId, commands }) => {
       setCommandsBySession((prev) => ({ ...prev, [sessionId]: commands }))
     })
+    const offHarnessCwd = window.atelier.onSessionHarnessCwd(({ sessionId, cwd }) => {
+      setHarnessCwdBySession((prev) => ({ ...prev, [sessionId]: cwd }))
+    })
     // token-usage-indicator: update per-session token counts after each turn.
     const offTokenUsage = window.atelier.onSessionTokenUsage(({ sessionId, inputTokens, contextWindow }) => {
       setTokenUsageBySession((prev) => ({ ...prev, [sessionId]: { inputTokens, contextWindow } }))
@@ -185,6 +199,7 @@ export function useSessions(): UseSessionsResult {
       offGroup()
       offTurnState()
       offCommands()
+      offHarnessCwd()
       offTokenUsage()
       offWorktreeProgress()
       offStale()
@@ -382,6 +397,7 @@ export function useSessions(): UseSessionsResult {
     allTags,
     busyBySession,
     commandsBySession,
+    harnessCwdBySession,
     tokenUsageBySession,
     worktreeProgressBySession,
     staleSessionIds,

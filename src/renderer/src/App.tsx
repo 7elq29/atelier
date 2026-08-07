@@ -963,6 +963,7 @@ export default function App(): JSX.Element {
                                 busy={sessions.busyBySession[sessionId] ?? false}
                                 projectPath={session.projectPath}
                                 worktreePath={session.worktreePath}
+                                harnessCwd={sessions.harnessCwdBySession[sessionId] ?? null}
                                 hostname={session.hostname}
                                 gitWorkspacePath={session.worktreePath ?? session.projectPath}
                                 sessionFileEdits={ws?.sessionFileEdits}

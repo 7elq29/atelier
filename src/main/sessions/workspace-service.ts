@@ -25,7 +25,9 @@ function workspacePathFor(session: SessionRecord): string {
 
 function diffListSignature(diff: DiffSummary): string {
   if (!diff.isRepo) return 'not-repo'
-  return diff.files.map((f) => `${f.path}:${f.additions}:${f.deletions}:${f.status}`).join('|')
+  const branch = diff.branch ?? ''
+  const files = diff.files.map((f) => `${f.path}:${f.additions}:${f.deletions}:${f.status}`).join('|')
+  return `${branch}|${files}`
 }
 
 function sessionFileEditsSignature(edits: SessionFileEdit[]): string {
