@@ -2515,8 +2515,10 @@ input[type='range'] {
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-md);
   background: var(--bg-tint);
-  max-width: 100%;
-  margin: 10px 0;
+  align-self: flex-start;
+  max-width: min(520px, 84%);
+  width: 100%;
+  margin: 4px 0;
 }
 .conversation-status-card .conversation-status-head {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -2559,6 +2561,16 @@ input[type='range'] {
 }
 .composer-status-chip.warn { border-color: var(--warning); color: var(--warning); }
 .composer-status-chip.danger { border-color: var(--danger); color: var(--danger); }
+
+.composer-turn-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-tertiary);
+  padding: 8px 14px 0;
+}
 
 .tool-card.tool-denied { border-left-color: var(--danger); opacity: 0.95; }
 .tool-status.denied { color: var(--danger); }

@@ -4,7 +4,7 @@ import type { DiffSummary } from '../../../../shared/panel-types'
 import type { SessionChangesCap } from '../../../../shared/session-changes-cap'
 import { truncateContextPath } from '../../utils/truncateContextPath'
 import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
-import type { SessionRateLimitEvent } from '../../../../shared/harness-ui-types'
+import type { SessionRateLimitEvent, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
 const MAX_TEXTAREA_HEIGHT = 160
@@ -310,6 +310,8 @@ interface ComposerProps {
   promptSuggestion?: string
   /** SDK rate-limit chrome — composer chips + send block when rejected. */
   rateLimit?: SessionRateLimitEvent | null
+  /** SDK status chrome — turn-in-flight hint above the input (requesting / api retry). */
+  sdkChrome?: SessionSdkChromeEvent | null
   /** Appends a renderer-only system message to the active session's transcript, no SDK round-trip — used to surface an unknown `/model <id>` inline in the chat panel. */
   onAddLocalMessage: (content: string) => void
   /** Validates a `/model <id>` against the SDK's own live acceptance logic (calls `Query.setModel()` on the connected session), fetched on demand at the moment `/model <id>` is submitted — not a static list, since the backend silently substitutes the default model for an unrecognized id instead of erroring on it (the only reason `setModel()`'s real accept/reject signal is trustworthy here). */
@@ -496,6 +498,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   tokenUsage,
   promptSuggestion,
   rateLimit,
+  sdkChrome,
   onAddLocalMessage,
   onValidateModel,
   harnessDisconnected = false
@@ -999,6 +1002,12 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
                 <span className="cmddesc">{command.desc}</span>
               </div>
             ))}
+          </div>
+        )}
+        {busy && !harnessDisconnected && (
+          <div className="composer-turn-status" data-testid="composer-turn-status">
+            <span className="spinner" data-testid="composer-working-spinner" aria-hidden="true" />
+            <span>{sdkChrome?.apiRetryText ?? 'Waiting for model…'}</span>
           </div>
         )}
         {attachedImage && (

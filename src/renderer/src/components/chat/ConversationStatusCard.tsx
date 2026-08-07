@@ -29,6 +29,10 @@ export default function ConversationStatusCard({ chrome }: { chrome: SessionSdkC
 
   if (!chrome.status) return null
 
+  if (chrome.status === 'requesting') {
+    return null
+  }
+
   if (chrome.status === 'compacting') {
     return (
       <div
@@ -56,30 +60,5 @@ export default function ConversationStatusCard({ chrome }: { chrome: SessionSdkC
     )
   }
 
-  return (
-    <div
-      className="conversation-status-card conversation-status-card--requesting"
-      data-testid="conversation-status-card"
-      data-status-kind="requesting"
-    >
-      <div className="conversation-status-head">
-        <span className="tool-badge other">REQUEST</span>
-        <span className="conversation-status-title">Waiting for model…</span>
-        <span className="spinner" />
-      </div>
-      <div className="conversation-status-detail">
-        Assistant turn is in flight. Stop still ends the turn; queued messages stay queued.
-      </div>
-      {chrome.permissionMode && (
-        <div className="conversation-status-meta" data-testid="conversation-status-meta">
-          permissionMode: {chrome.permissionMode}
-        </div>
-      )}
-      {chrome.apiRetryText && (
-        <div className="conversation-status-adjunct-text" data-testid="conversation-status-api-retry">
-          {chrome.apiRetryText}
-        </div>
-      )}
-    </div>
-  )
+  return null
 }

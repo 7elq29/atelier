@@ -89,7 +89,7 @@ test.describe('04-composer-core', () => {
 
     // Wait for the initial turn to fully finish (composer back to idle)
     // before the rest of the suite starts driving it.
-    await expect(activeComposer(page).getByTestId('composer-working-pill')).toHaveCount(0, { timeout: 90_000 })
+    await expect(activeComposer(page).getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 90_000 })
     await expect(activeComposer(page).getByTestId('send-button')).toBeVisible()
     await expect(page.getByTestId('topbar-workspace')).toBeVisible()
     await expect(activeComposer(page).getByTestId('composer-context-claude-path')).toBeVisible()
@@ -359,7 +359,7 @@ test.describe('04-composer-core', () => {
     await page.getByTestId('initial-prompt').fill('Reply with exactly: OTHER.')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
-    await expect(active.getByTestId('composer-working-pill')).toHaveCount(0, { timeout: 90_000 })
+    await expect(active.getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 90_000 })
 
     await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
     await expect(page.locator('.composer-cache-entry.active').getByTestId('composer-input')).toHaveValue(draftA)

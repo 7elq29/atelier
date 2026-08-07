@@ -462,6 +462,7 @@ export class SessionManager {
    */
   private sendTurnState(sessionId: string, busy: boolean): void {
     this.getWindow()?.webContents.send('session:turnState', { sessionId, busy })
+    if (!busy) this.clearInFlightSdkChrome(sessionId)
   }
 
   /**
@@ -503,6 +504,11 @@ export class SessionManager {
       apiRetryText: chrome?.apiRetryText ?? null,
     }
     this.getWindow()?.webContents.send('session:sdkChrome', payload)
+  }
+
+  private clearInFlightSdkChrome(sessionId: string): void {
+    this.harnessUi.clearInFlightStatus(sessionId)
+    this.sendSdkChrome(sessionId)
   }
 
   private sendRateLimitChrome(sessionId: string): void {

@@ -518,7 +518,7 @@ export default function ChatTranscript({
     <div className="transcript" data-testid="transcript" ref={containerRef}>
       {rows}
       <BackgroundTasksConversationCard tasks={backgroundTasks} />
-      {sdkChrome && (sdkChrome.status || sdkChrome.compactFailed) && (
+      {sdkChrome && (sdkChrome.status === 'compacting' || sdkChrome.compactFailed) && (
         <ConversationStatusCard chrome={sdkChrome} />
       )}
     </div>

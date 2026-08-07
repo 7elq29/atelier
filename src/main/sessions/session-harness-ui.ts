@@ -95,6 +95,26 @@ export class SessionHarnessUiState {
     return this.auth
   }
 
+  /** Clear ephemeral requesting/compacting chrome when the SDK omits `status: null`. */
+  clearInFlightStatus(sessionId: string): void {
+    const cur = this.sdkChrome.get(sessionId)
+    if (!cur) return
+    if (cur.compactFailed) {
+      if (cur.apiRetryText) {
+        this.sdkChrome.set(sessionId, { ...cur, apiRetryText: null })
+      }
+      return
+    }
+    if (cur.status == null && !cur.apiRetryText) return
+    this.sdkChrome.set(sessionId, {
+      status: null,
+      permissionMode: undefined,
+      compactFailed: false,
+      compactError: undefined,
+      apiRetryText: null,
+    })
+  }
+
   apply(event: HarnessEvent): {
     toast?: { key: string; text: string; priority: 'low' | 'medium' | 'high' | 'immediate' }
     logHook?: string

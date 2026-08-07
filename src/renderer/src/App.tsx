@@ -1052,6 +1052,7 @@ export default function App(): JSX.Element {
                                 tokenUsage={sessions.tokenUsageBySession[sessionId]}
                                 promptSuggestion={sessions.promptSuggestionBySession[sessionId]}
                                 rateLimit={sessions.rateLimitBySession[sessionId] ?? null}
+                                sdkChrome={sessions.sdkChromeBySession[sessionId] ?? null}
                                 onAddLocalMessage={(content) => sessions.addLocalMessage(sessionId, content)}
                                 onValidateModel={(model) => sessions.validateModel(sessionId, model)}
                               />

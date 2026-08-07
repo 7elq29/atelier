@@ -57,9 +57,9 @@ iterating.
 
 | | |
 |---|---|
-| **Spec files** | `chat-surface-core.spec.ts`, `composer-core.spec.ts` |
-| **Source paths** | `src/main/harness/*`, `src/main/sessions/manager.ts`, `src/renderer/src/components/chat/*`, `Features/harness-sdk-events/spec.md` |
-| **Catches** | Sending a real message end-to-end, live todo-tracker updates from a real `TodoWrite` SDK call, transcript message rendering, composer send/stop-button behavior mid-stream, Markdown rendering of assistant text (bold/inline-code/fenced-code-blocks/lists/links via `MarkdownMessage.tsx`, with user messages and search-highlighting explicitly excluded from Markdown rendering), tool-call sequence collapsing into one expandable aggregate summary row (mid-turn aggregate+current-card, post-turn single-aggregate, expand/click behavior, single-tool-call no-aggregation, edit-vs-other collapsed-row content, subagent-nested sequence aggregation). SDK harness event UI per `Features/harness-sdk-events/spec.md` when that work lands (partial stream, prompt suggestion, tool progress, thinking, status cards, background rail). |
+| **Spec files** | `chat-surface-core.spec.ts`, `composer-core.spec.ts`, `harness-sdk-events.spec.ts` |
+| **Source paths** | `src/main/harness/*`, `src/main/sessions/manager.ts`, `src/main/sessions/session-harness-ui.ts`, `src/renderer/src/components/chat/*`, `src/shared/harness-ui-types.ts`, `Features/harness-sdk-events/spec.md` |
+| **Catches** | Sending a real message end-to-end, live todo-tracker updates from a real `TodoWrite` SDK call, transcript message rendering, composer send/stop-button behavior mid-stream, Markdown rendering of assistant text (bold/inline-code/fenced-code-blocks/lists/links via `MarkdownMessage.tsx`, with user messages and search-highlighting explicitly excluded from Markdown rendering), tool-call sequence collapsing into one expandable aggregate summary row (mid-turn aggregate+current-card, post-turn single-aggregate, expand/click behavior, single-tool-call no-aggregation, edit-vs-other collapsed-row content, subagent-nested sequence aggregation). SDK harness event UI (`harness-sdk-events.spec.ts` + `e2e/HARNESS_SDK_EVENTS_BUG_BASH.md`): composer turn hint, no REQUEST transcript card, tool elapsed, background/toast negatives. |
 
 ### 5. Composer Mentions, Slash Commands & Model Picker
 
