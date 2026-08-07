@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { SessionStatusIndicator } from './SessionStatusIndicator'
 import type { MessageRecord, SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
 import type { AppNoteRecord } from '../../../shared/app-note-types'
 import { parseStructuredContent } from '../../../shared/chat-content'
@@ -51,12 +52,6 @@ interface SidebarProps {
 
 const SESSION_COLORS = ['--sc-blue', '--sc-green', '--sc-purple', '--sc-amber', '--sc-rose', '--sc-cyan', '--sc-indigo', '--sc-teal']
 
-/** User-picked session color on the dot — only when explicitly set in Tags/Notes/Color. */
-function explicitSessionColorStyle(session: SessionRecord, dotStatus: string): { background: string } | undefined {
-  if (dotStatus !== 'idle') return undefined
-  if (!session.color || !SESSION_COLORS.includes(session.color)) return undefined
-  return { background: `var(${session.color})` }
-}
 
 /**
  * 06-session-organization concurrent status: a session's DISPLAY status
@@ -456,11 +451,7 @@ function SessionRow({
       onDrop={onDrop}
     >
       <span className="session-indicator" title={`Status: ${status}`}>
-        <span
-          className={'color-core status-' + dotStatus}
-          data-testid="session-dot"
-          style={explicitSessionColorStyle(session, dotStatus)}
-        />
+        <SessionStatusIndicator dotStatus={dotStatus} />
       </span>
       <div className="session-main hide-on-collapse">
         {editing ? (
