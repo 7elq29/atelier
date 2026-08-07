@@ -965,7 +965,7 @@ export default function App(): JSX.Element {
                                 worktreePath={session.worktreePath}
                                 hostname={session.hostname}
                                 gitWorkspacePath={session.worktreePath ?? session.projectPath}
-                                diffSummary={ws?.diff}
+                                sessionFileEdits={ws?.sessionFileEdits}
                                 mentionFilePaths={mentionPaths}
                                 onOpenChangedFile={openChangedFileInDiff}
                                 onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}

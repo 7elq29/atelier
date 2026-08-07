@@ -8,6 +8,7 @@ import type { BrowserWindow } from 'electron'
 import type { SessionRecord } from '../../shared/session-types'
 import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
 import type { DiffSummary } from '../../shared/panel-types'
+import type { SessionFileEdit } from '../../shared/session-file-edits'
 import { getDiffSummary } from '../panels/git'
 import { walkFileTree, listWorkspaceFiles } from '../panels/files'
 import type { PtyManager } from '../panels/pty'
@@ -27,12 +28,19 @@ function diffListSignature(diff: DiffSummary): string {
   return diff.files.map((f) => `${f.path}:${f.additions}:${f.deletions}:${f.status}`).join('|')
 }
 
+function sessionFileEditsSignature(edits: SessionFileEdit[]): string {
+  return edits.map((f) => `${f.path}:${f.additions}:${f.deletions}`).join('|')
+}
+
 export class WorkspaceService {
   private readonly cache = new Map<string, SessionWorkspacePayload>()
   private readonly monitors = new Map<string, { stop: () => void }>()
   private ptyManager: PtyManager | null = null
 
-  constructor(private readonly getWindow: () => BrowserWindow | null) {}
+  constructor(
+    private readonly getWindow: () => BrowserWindow | null,
+    private readonly getSessionFileEdits: (sessionId: string) => SessionFileEdit[]
+  ) {}
 
   setPtyManager(pty: PtyManager): void {
     this.ptyManager = pty
@@ -96,6 +104,7 @@ export class WorkspaceService {
       workspacePath,
       hostname,
       diff,
+      sessionFileEdits: this.getSessionFileEdits(session.id),
       filesTree,
       filesList,
       tabTerminalPtyId,
@@ -126,6 +135,7 @@ export class WorkspaceService {
       workspacePath,
       hostname: session.hostname,
       diff,
+      sessionFileEdits: this.getSessionFileEdits(session.id),
       filesTree,
       filesList,
       tabTerminalPtyId: prev?.tabTerminalPtyId ?? `${session.id}:tab-terminal`,
@@ -140,6 +150,24 @@ export class WorkspaceService {
       this.cache.set(session.id, payload)
     }
     return payload
+  }
+
+  /** Push session file-edit rollup to renderer without a full git refresh. */
+  patchSessionFileEdits(sessionId: string, edits: SessionFileEdit[]): void {
+    const prev = this.cache.get(sessionId)
+    if (!prev) return
+    const nextSig = sessionFileEditsSignature(edits)
+    const prevSig = sessionFileEditsSignature(prev.sessionFileEdits)
+    if (nextSig === prevSig) {
+      this.cache.set(sessionId, { ...prev, sessionFileEdits: edits })
+      return
+    }
+    const payload: SessionWorkspacePayload = {
+      ...prev,
+      sessionFileEdits: edits,
+      loadedAt: Date.now()
+    }
+    this.sendUpdated(payload)
   }
 
   stopMonitor(sessionId: string): void {

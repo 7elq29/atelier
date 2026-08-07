@@ -137,7 +137,7 @@ app.whenReady().then(() => {
   // re-created per IPC call.
   const harness = new ClaudeAgentSdkHarness()
   sessionManager = new SessionManager(sessionStore, harness, createStaticHostResolver(), () => mainWindow)
-  workspaceService = new WorkspaceService(() => mainWindow)
+  workspaceService = new WorkspaceService(() => mainWindow, (sessionId) => sessionStore.listSessionFileEdits(sessionId))
   sessionManager.setWorkspaceService(workspaceService)
   const manager = sessionManager
   manager.markStartupIdleSessions()

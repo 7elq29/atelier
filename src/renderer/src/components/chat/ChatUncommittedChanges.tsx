@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { DiffFileChange, DiffSummary } from '../../../../shared/panel-types'
+import type { SessionFileEdit } from '../../../../shared/session-file-edits'
 
 function basenamePath(p: string): string {
   const i = p.lastIndexOf('/')
@@ -15,15 +15,15 @@ function ChevronDown(): JSX.Element {
 }
 
 export default function ChatUncommittedChanges({
-  diffSummary,
+  sessionFileEdits,
   onOpenFile
 }: {
-  diffSummary: DiffSummary | null | undefined
+  sessionFileEdits: SessionFileEdit[] | null | undefined
   onOpenFile: (path: string) => void
 }): JSX.Element | null {
   const [collapsed, setCollapsed] = useState(true)
 
-  const files = diffSummary?.isRepo ? diffSummary.files : []
+  const files = sessionFileEdits ?? []
   if (files.length === 0) return null
 
   const title = `${files.length} File${files.length === 1 ? '' : 's'}`
@@ -48,7 +48,7 @@ export default function ChatUncommittedChanges({
       </div>
       {!collapsed && (
         <div className="chat-changes-body">
-          {files.map((f: DiffFileChange) => (
+          {files.map((f: SessionFileEdit) => (
             <div
               key={f.path}
               className="chat-changes-file"

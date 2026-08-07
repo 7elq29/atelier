@@ -39,6 +39,7 @@ import { worktreeRootFromConfig } from '../../shared/worktree-path'
 import { homeDirForWorktreeHost } from './worktree-home'
 import { createWorktree, removeWorktree } from './worktree'
 import { warmRemoteGitHost } from '../panels/git'
+import { recordFileEditFromToolCall } from './session-file-edits'
 import { WorkspaceService } from './workspace-service'
 import { completeLinkedDailyTask, linkDailyTaskToSession } from '../daily-note-session-link'
 
@@ -258,6 +259,10 @@ export class SessionManager {
 
   listMessages(sessionId: string): MessageRecord[] {
     return this.store.listMessages(sessionId)
+  }
+
+  listSessionFileEdits(sessionId: string) {
+    return this.store.listSessionFileEdits(sessionId)
   }
 
   /** Looks up a single session record by id (10c-enrichment-export-conversation), undefined if it doesn't exist. */
@@ -1505,6 +1510,20 @@ export class SessionManager {
         const updated = this.store.updateMessage(pending.messageId, { content: JSON.stringify(content), rawEvent: event })
         if (updated) this.sendMessage(sessionId, updated)
         live.pendingTools.delete(event.toolUseId)
+        if (!event.isError) {
+          const session = this.getSession(sessionId)
+          if (session) {
+            const workspaceRoot = session.worktreePath ?? session.projectPath
+            const edits = recordFileEditFromToolCall(
+              this.store,
+              sessionId,
+              workspaceRoot,
+              pending.content.name,
+              pending.content.input
+            )
+            this.workspace?.patchSessionFileEdits(sessionId, edits)
+          }
+        }
         return
       }
 

@@ -17,6 +17,29 @@ function log(line: string): void {
   writeFileSync(panelsLogPath, `${line}\n`, { flag: 'a' })
 }
 
+async function approveAllPendingPermissions(page: Page): Promise<void> {
+  const cards = page.getByTestId('permission-card')
+  const count = await cards.count().catch(() => 0)
+  for (let i = 0; i < count; i++) {
+    await cards
+      .nth(i)
+      .getByTestId('perm-allow')
+      .click({ timeout: 500 })
+      .catch(() => undefined)
+  }
+}
+
+/** Turn is idle when the Stop control is gone (Send stays visible but shows Queue while busy). */
+async function waitForTurnIdle(page: Page, timeoutMs = 90_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (!(await page.getByTestId('stop-button').isVisible().catch(() => false))) return
+    await approveAllPendingPermissions(page)
+    await page.waitForTimeout(300)
+  }
+  await expect(page.getByTestId('stop-button')).toHaveCount(0, { timeout: 1_000 })
+}
+
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -45,8 +68,11 @@ function buildFixtureRepo(): string {
   git(dir, ['add', '.'])
   git(dir, ['commit', '-q', '-m', 'Change greeting (see https://example.com/atelier-e2e-external-link-check)'])
 
-  // Real uncommitted change so the Diff tab has something live to show.
   writeFileSync(join(dir, 'src', 'index.js'), "// entrypoint\nfunction hello() {\n  return 'hello world!'\n}\n\nmodule.exports = { hello }\n")
+
+  writeFileSync(join(dir, 'a.txt'), 'a\n')
+  git(dir, ['add', 'a.txt'])
+  git(dir, ['commit', '-q', '-m', 'Add a.txt for session cap e2e'])
 
   // A real image (tiny 1x1 PNG) and a real HTML file for the Files-panel preview tests.
   const onePxPng = Buffer.from(
@@ -117,19 +143,49 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('tab-strip')).toBeVisible()
   })
 
-  test('chat: uncommitted changes cap opens diff on file click', async () => {
+  test('chat: session file edits cap opens diff on file click', async () => {
+    test.setTimeout(120_000)
     await page.getByTestId('tab-chat').click()
+    await waitForTurnIdle(page, 60_000)
     const cap = page.getByTestId('chat-uncommitted-changes')
-    await expect(cap).toBeVisible({ timeout: 20_000 })
+    await expect(cap).toHaveCount(0)
+
+    await page.getByTestId('composer-input').click()
+    await page.evaluate(async (id) => {
+      await window.atelier.cycleSessionMode(id)
+      await window.atelier.cycleSessionMode(id)
+    }, sessionId)
+    const modePill = page.getByTestId('composer-mode-pill')
+    await expect(modePill).toHaveAttribute('data-mode', 'acceptEdits', { timeout: 10_000 })
+
+    const editTarget = join(repoDir, 'a.txt')
+    await page.getByTestId('composer-input').fill(
+      `First use the Read tool once on ${JSON.stringify(editTarget)}. ` +
+        `Then use the Edit tool exactly once on the same file with old_string exactly "a\\n" ` +
+        `and new_string exactly "hello from e2e\\n". ` +
+        'Then reply with exactly the word DONE. Use exactly those two tool calls in that order and no others.'
+    )
+    await page.getByTestId('send-button').click()
+
+    await waitForTurnIdle(page, 90_000)
+
+    await expect(cap).toBeVisible({ timeout: 30_000 })
     await expect(cap).toHaveClass(/collapsed/)
     await cap.getByRole('button', { name: /\d+ Files?/ }).click()
-    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'index.js' })).toBeVisible()
-    await cap.getByTestId('chat-changes-file').filter({ hasText: 'index.js' }).click()
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toBeVisible()
+    await cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' }).click()
     await expect(page.getByTestId('tab-diff')).toHaveClass(/active/)
     const diff = page.getByTestId('diff-panel-active')
-    await expect(diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })).toHaveClass(/active/)
+    await diff.getByTestId('diff-sub-changes').click()
+    await expect(diff.getByTestId('diff-file-row').filter({ hasText: 'a.txt' })).toHaveClass(/active/, {
+      timeout: 15_000
+    })
+
+    const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
+    expect(snap?.sessionFileEdits?.some((f) => f.path === 'a.txt')).toBe(true)
+
     await page.screenshot({ path: join(artifactsDir, '07-chat-uncommitted-changes.png') })
-    log('chat uncommitted changes cap -> diff OK')
+    log('chat session file edits cap -> diff OK')
     await page.getByTestId('tab-chat').click()
   })
 
@@ -166,7 +222,9 @@ test.describe('07-secondary-panels', () => {
     await page.getByTestId('tab-diff').click()
     const diff = page.getByTestId('diff-panel-active')
     await diff.getByTestId('diff-sub-changes').click()
-    await expect(diff.getByTestId('diff-file-row').first()).toContainText('index.js')
+    const indexRow = diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })
+    await expect(indexRow).toBeVisible()
+    await indexRow.click()
     await expect(diff.locator('.diff-line.add').first()).toContainText('hello world!')
 
     await diff.getByTestId('diff-file-expand-btn').click()
@@ -182,17 +240,17 @@ test.describe('07-secondary-panels', () => {
     await diff.getByTestId('diff-comment-submit').click()
 
     await diff.getByTestId('diff-sub-commits').click()
-    await expect(diff.getByTestId('commit-row').first()).toContainText('Change greeting')
-    await expect(diff.getByTestId('commit-row').nth(1)).toContainText('Initial commit')
+    await expect(diff.getByTestId('commit-row').filter({ hasText: 'Change greeting' })).toBeVisible()
+    await expect(diff.getByTestId('commit-row').filter({ hasText: 'Initial commit' })).toBeVisible()
 
-    await diff.getByTestId('commit-row').first().click()
+    await diff.getByTestId('commit-row').filter({ hasText: 'Change greeting' }).click()
     await expect(diff.getByTestId('diff-commit-detail')).toBeVisible({ timeout: 10_000 })
     await expect(diff.getByTestId('diff-file-row').first()).toContainText('index.js')
     await expect(diff.locator('.diff-line.add').filter({ hasText: 'hello world' }).first()).toBeVisible({ timeout: 10_000 })
     await expect(diff.locator('.diff-line.add').filter({ hasText: 'hello world!' })).toHaveCount(0)
 
     await diff.getByTestId('diff-commit-back').click()
-    await diff.getByTestId('commit-row').nth(1).click()
+    await diff.getByTestId('commit-row').filter({ hasText: 'Initial commit' }).click()
     const initialCommitIndexRow = diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })
     await expect(initialCommitIndexRow).toBeVisible({ timeout: 10_000 })
     await initialCommitIndexRow.click()

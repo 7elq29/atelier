@@ -8,6 +8,8 @@ import {
   runGardeniaToAtelierWorktreeMigration
 } from './migrations/gardenia-to-atelier'
 import { runHistoricalCostBackfill } from './sessions/historical-cost-recompute'
+import { SessionStore } from './sessions/store'
+import { rebuildSessionFileEditsFromMessages } from './sessions/session-file-edits'
 
 let db: Database.Database | undefined
 
@@ -241,6 +243,32 @@ const MIGRATIONS: Array<{ name: string; sql?: string; run?: (database: Database.
       }
       if (!tableHasColumn(database, 'sessions', 'linked_daily_note_date')) {
         database.exec(`ALTER TABLE sessions ADD COLUMN linked_daily_note_date TEXT;`)
+      }
+    }
+  },
+  {
+    // chat changes cap: persisted rollups of Edit/Write/MultiEdit/NotebookEdit
+    // tool calls per session (survives reconnect/relaunch); not git diff.
+    name: '0013_session_file_edits',
+    run(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS session_file_edits (
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          path TEXT NOT NULL,
+          additions INTEGER NOT NULL DEFAULT 0,
+          deletions INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (session_id, path)
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_file_edits_session ON session_file_edits(session_id);
+      `)
+      const store = new SessionStore(database)
+      const sessions = database
+        .prepare('SELECT id, project_path, worktree_path FROM sessions')
+        .all() as Array<{ id: string; project_path: string; worktree_path: string | null }>
+      for (const session of sessions) {
+        const workspace = session.worktree_path ?? session.project_path
+        rebuildSessionFileEditsFromMessages(store, session.id, workspace)
       }
     }
   }

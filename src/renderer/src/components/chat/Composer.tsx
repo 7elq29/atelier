@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import ChatUncommittedChanges from './ChatUncommittedChanges'
-import type { DiffSummary } from '../../../../shared/panel-types'
+import type { SessionFileEdit } from '../../../../shared/session-file-edits'
 import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
@@ -250,10 +250,10 @@ interface ComposerProps {
   worktreePath?: string | null
   /** Hostname for remote sessions — forwarded to the branch IPC call. */
   hostname?: string | null
-  /** Git cwd (`worktreePath ?? projectPath`) — drives the uncommitted-changes cap above the composer. */
+  /** Git cwd (`worktreePath ?? projectPath`) — session workspace root for the changes cap. */
   gitWorkspacePath?: string
-  /** Preloaded diff summary for the changes cap (main workspace service). */
-  diffSummary?: DiffSummary | null
+  /** Files edited in this session (from Claude file-edit tools, persisted in SQLite). */
+  sessionFileEdits?: SessionFileEdit[] | null
   /** Preloaded workspace file paths for @-mentions (relative paths). */
   mentionFilePaths?: string[]
   /** Chat changes cap: open Diff › Changes for this repo-relative path. */
@@ -459,7 +459,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   worktreePath,
   hostname,
   gitWorkspacePath,
-  diffSummary,
+  sessionFileEdits,
   mentionFilePaths,
   onOpenChangedFile,
   onFork,
@@ -873,7 +873,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       <div className="composer-stack">
         {gitWorkspacePath && onOpenChangedFile && (
           <ChatUncommittedChanges
-            diffSummary={diffSummary}
+            sessionFileEdits={sessionFileEdits}
             onOpenFile={onOpenChangedFile}
           />
         )}

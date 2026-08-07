@@ -1,10 +1,15 @@
-# Chat uncommitted changes cap
+# Chat session file changes cap
 
 ## User flow
 
-1. On **Chat**, when the session workspace has a git repo with uncommitted changes, a collapsible cap appears **above** the composer (95% width, centered), matching `Features/UI-Design/mocks/index.html` (`data-testid="chat-uncommitted-changes"`).
-2. Header shows chevron + `N File(s)`; file rows show basename and `+`/`-` counts (no per-file icons, no Review button).
-3. Clicking a file row switches to **Diff › Changes** and selects that file (loads hunks).
+1. On **Chat**, when the session has at least one completed Claude file-edit tool call (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`), a collapsible cap appears **above** the composer (95% width, centered), matching `Features/UI-Design/mocks/index.html` (`data-testid="chat-uncommitted-changes"`).
+2. Header shows chevron + `N File(s)`; file rows show basename and `+`/`-` line stats (same rules as collapsed edit tool summaries in the transcript).
+3. Clicking a file row switches to **Diff › Changes** and selects that file (loads hunks from git working tree).
+
+## Data
+
+- Rollups are persisted in SQLite (`session_file_edits`) and updated on each successful `tool_call_end` for file-edit tools; also backfilled from stored tool-call messages on migration.
+- The cap reads `sessionFileEdits` from session workspace preload (`session:openReady` / `session:workspaceUpdated`), not from `git diff`.
 
 ## UI
 
@@ -12,6 +17,5 @@ Tokens/classes from mock: `.composer-stack`, `.chat-changes-card`, `.chat-change
 
 ## Done criteria
 
-- Changes list comes from **session workspace preload** (`session:openReady` / `session:workspaceUpdated`); no renderer poll interval.
-- E2e in `secondary-panels.spec.ts`: cap visible on fixture repo chat; click file → Diff tab + selected file.
+- E2e in `secondary-panels.spec.ts`: after a real Edit tool call, cap lists the file; click file → Diff tab + selected file; row persisted in `session_file_edits`.
 - `npm run build` clean; targeted `e2e/secondary-panels.spec.ts`.

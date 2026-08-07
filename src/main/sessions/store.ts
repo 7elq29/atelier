@@ -11,6 +11,7 @@ import type {
   SessionRecord
 } from '../../shared/session-types'
 import { extractSearchableText, FTS_SNIPPET_START, FTS_SNIPPET_END } from '../../shared/chat-content'
+import type { SessionFileEdit } from '../../shared/session-file-edits'
 
 /**
  * Turns free-typed search input into a safe FTS5 MATCH expression
@@ -520,6 +521,13 @@ export class SessionStore {
           content: m.content
         })
       }
+
+      this.db
+        .prepare(
+          `INSERT INTO session_file_edits (session_id, path, additions, deletions, updated_at)
+           SELECT ?, path, additions, deletions, updated_at FROM session_file_edits WHERE session_id = ?`
+        )
+        .run(newId, sourceId)
     })
     fork()
     return this.getSession(newId)
@@ -699,5 +707,40 @@ export class SessionStore {
       .prepare('SELECT path FROM project_path_history WHERE host_id = ? ORDER BY used_at DESC LIMIT 10')
       .all(hostId) as { path: string }[]
     return rows.map((r) => r.path)
+  }
+
+  // ── Session file edits (chat changes cap) ─────────────────────────────
+
+  listSessionFileEdits(sessionId: string): SessionFileEdit[] {
+    const rows = this.db
+      .prepare(
+        `SELECT path, additions, deletions FROM session_file_edits
+         WHERE session_id = ? ORDER BY path ASC`
+      )
+      .all(sessionId) as { path: string; additions: number; deletions: number }[]
+    return rows.map((r) => ({ path: r.path, additions: r.additions, deletions: r.deletions }))
+  }
+
+  clearSessionFileEdits(sessionId: string): void {
+    this.db.prepare('DELETE FROM session_file_edits WHERE session_id = ?').run(sessionId)
+  }
+
+  accumulateSessionFileEdit(
+    sessionId: string,
+    path: string,
+    additions: number,
+    deletions: number,
+    updatedAt: string
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO session_file_edits (session_id, path, additions, deletions, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (session_id, path) DO UPDATE SET
+           additions = additions + excluded.additions,
+           deletions = deletions + excluded.deletions,
+           updated_at = excluded.updated_at`
+      )
+      .run(sessionId, path, additions, deletions, updatedAt)
   }
 }
