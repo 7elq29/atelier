@@ -245,18 +245,9 @@ test.describe('06-session-organization', () => {
     await page.locator('body').click({ position: { x: 5, y: 5 } })
 
     const dot = row.getByTestId('session-dot')
-    // Live sessions use status on the dot; user --sc-* only applies when status-idle.
-    await expect(dot).toHaveClass(/status-waiting/)
-    const dotColor = await dot.evaluate((el) => getComputedStyle(el).backgroundColor)
-    const purpleResolved = await page.evaluate(() => {
-      const probe = document.createElement('div')
-      document.body.appendChild(probe)
-      probe.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--sc-purple').trim()
-      const rgb = getComputedStyle(probe).backgroundColor
-      probe.remove()
-      return rgb
-    })
-    expect(dotColor).toBe(purpleResolved)
+    // Set 1: waiting · input has no visible indicator; user color persists in DB only.
+    await expect(dot).toHaveClass(/status-waiting-input/)
+    await expect(dot).toHaveClass(/session-status-empty/)
 
     await row.getByTestId('session-menu-button').click()
     await row.getByTestId('menu-details').click()

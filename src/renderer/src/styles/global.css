@@ -184,14 +184,63 @@
 }
 .session-indicator {
   position: relative;
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-.session-indicator .color-core {
-  position: absolute;
-  inset: 0;
+
+/* Set 1 · Monoline session status (session-status-icons mock) */
+.session-status {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 5px;
+  box-sizing: border-box;
+}
+.session-status svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+.session-status-empty {
+  background: transparent;
+  border: none;
+}
+.session-status-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+}
+.session-status-icon.tone-working {
+  color: color-mix(in srgb, var(--accent) 75%, var(--text-primary));
+}
+.session-status-icon.tone-blocked {
+  color: color-mix(in srgb, var(--warning) 85%, var(--text-primary));
+}
+.session-status-icon.tone-faint {
+  color: var(--text-disabled);
+}
+.session-status-icon.tone-neutral {
+  color: var(--text-tertiary);
+}
+.session-status.anim-blink {
+  animation: session-status-blink 1.15s ease-in-out infinite;
+}
+.session-status.anim-spin {
+  animation: session-status-spin 1.35s linear infinite;
+}
+@keyframes session-status-blink {
+  0%, 100% { opacity: 1; }
+  45% { opacity: 0.3; }
+}
+@keyframes session-status-spin {
+  to { transform: rotate(360deg); }
 }
 .session-main {
   flex: 1;
@@ -1689,40 +1738,7 @@ input[type='range'] {
   display: none;
 }
 
-/* Sidebar-row session indicator: color-core encodes live status (46217f7).
-   startup-idle / disconnected / stale = grey; working / waiting = semantic colors.
-   User-chosen --sc-* appears on the dot only for status-idle when set in the detail popover. */
-.session-indicator .color-core.status-working {
-  background: var(--accent);
-  animation: pulse 1.6s infinite;
-}
-.session-indicator .color-core.status-connecting {
-  background: var(--text-tertiary);
-  animation: pulse 1.6s infinite;
-}
-.session-indicator .color-core.status-waiting-input {
-  background: var(--sc-purple);
-}
-.session-indicator .color-core.status-waiting-blocked {
-  background: var(--warning);
-  animation: pulse 1.6s infinite;
-}
-.session-indicator .color-core.status-idle {
-  background: var(--text-tertiary);
-}
-.session-indicator .color-core.status-startup-idle {
-  background: var(--text-tertiary);
-}
-.session-indicator .color-core.status-disconnected {
-  background: var(--text-disabled);
-}
-.session-indicator .color-core.status-creating-worktree {
-  background: var(--text-tertiary);
-  animation: pulse 1.6s infinite;
-}
-.session-indicator .color-core.status-stale {
-  background: var(--text-disabled);
-}
+/* Legacy dot rules removed — see Set 1 .session-status above. */
 /* Dim the whole row and block interaction while the worktree is being set up. */
 .session-row[data-status="creating-worktree"] {
   opacity: 0.5;
