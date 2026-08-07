@@ -96,6 +96,18 @@ function dotStatusClass(status: SessionStatus, messages: MessageRecord[] | undef
   return 'waiting-input'
 }
 
+function sessionDotStatus(
+  session: SessionRecord,
+  closed: boolean,
+  statuses: Record<string, SessionStatus>,
+  staleSessionIds: Set<string>,
+  messages: MessageRecord[] | undefined
+): string {
+  return staleSessionIds.has(session.id)
+    ? 'stale'
+    : dotStatusClass(displayStatus(session, closed, statuses), messages)
+}
+
 /**
  * "Needs attention" (06-session-organization) = status is 'waiting' (the
  * agent finished a turn and is waiting on the user's next instruction) OR
@@ -358,6 +370,7 @@ function SessionRow({
   closed,
   status,
   dotStatus,
+  showWaitingInputAlert,
   draggable,
   onSelect,
   onRename,
@@ -381,6 +394,7 @@ function SessionRow({
   closed: boolean
   status: SessionStatus
   dotStatus: string
+  showWaitingInputAlert: boolean
   draggable: boolean
   onSelect: () => void
   onRename: (name: string) => void
@@ -450,6 +464,9 @@ function SessionRow({
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
+      {showWaitingInputAlert && (
+        <span className="session-waiting-input-alert" data-testid="session-waiting-input-alert" aria-hidden />
+      )}
       <span className="session-indicator" title={`Status: ${status}`}>
         <SessionStatusIndicator dotStatus={dotStatus} />
       </span>
@@ -674,6 +691,48 @@ export default function Sidebar({
       return false
     }
   })
+  const [waitingInputAlertIds, setWaitingInputAlertIds] = useState<Set<string>>(() => new Set())
+  const prevDotStatusBySessionRef = useRef<Record<string, string>>({})
+
+  useEffect(() => {
+    setWaitingInputAlertIds((prev) => {
+      let next: Set<string> | null = null
+      const touch = (): Set<string> => {
+        if (!next) next = new Set(prev)
+        return next
+      }
+      for (const session of activeSessions) {
+        const dotStatus = sessionDotStatus(
+          session,
+          false,
+          statuses,
+          staleSessionIds,
+          messagesBySession[session.id]
+        )
+        const prevStatus = prevDotStatusBySessionRef.current[session.id]
+        if (
+          dotStatus === 'waiting-input' &&
+          prevStatus !== undefined &&
+          prevStatus !== 'waiting-input' &&
+          session.id !== activeSessionId
+        ) {
+          touch().add(session.id)
+        }
+        prevDotStatusBySessionRef.current[session.id] = dotStatus
+      }
+      return next ?? prev
+    })
+  }, [activeSessions, statuses, messagesBySession, staleSessionIds, activeSessionId])
+
+  useEffect(() => {
+    if (!activeSessionId) return
+    setWaitingInputAlertIds((prev) => {
+      if (!prev.has(activeSessionId)) return prev
+      const next = new Set(prev)
+      next.delete(activeSessionId)
+      return next
+    })
+  }, [activeSessionId])
 
   useEffect(() => {
     try {
@@ -766,9 +825,18 @@ export default function Sidebar({
         active={session.id === activeSessionId && activeAppNoteId == null}
         closed={closed}
         status={displayStatus(session, closed, statuses)}
-        dotStatus={staleSessionIds.has(session.id) ? 'stale' : dotStatusClass(displayStatus(session, closed, statuses), messagesBySession[session.id])}
+        dotStatus={sessionDotStatus(session, closed, statuses, staleSessionIds, messagesBySession[session.id])}
+        showWaitingInputAlert={!closed && waitingInputAlertIds.has(session.id) && session.id !== activeSessionId}
         draggable={!closed}
-        onSelect={() => onSelectSession(session)}
+        onSelect={() => {
+          setWaitingInputAlertIds((prev) => {
+            if (!prev.has(session.id)) return prev
+            const next = new Set(prev)
+            next.delete(session.id)
+            return next
+          })
+          onSelectSession(session)
+        }}
         onRename={(name) => onRename(session.id, name)}
         onTogglePin={() => onTogglePin(session.id, !session.pinned)}
         onClose={() => onClose(session.id)}
