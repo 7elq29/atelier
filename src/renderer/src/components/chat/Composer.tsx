@@ -631,8 +631,13 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const ta = textareaRef.current
     if (!ta) return
     ta.style.height = 'auto'
+    const cs = window.getComputedStyle(ta)
+    const lineHeight = parseFloat(cs.lineHeight) || 22
+    const verticalPad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+    const minContentHeight = lineHeight + verticalPad
     const capped = ta.scrollHeight > MAX_TEXTAREA_HEIGHT
-    ta.style.height = `${Math.min(ta.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
+    const next = Math.min(Math.max(ta.scrollHeight, minContentHeight), MAX_TEXTAREA_HEIGHT)
+    ta.style.height = `${next}px`
     ta.style.overflowY = capped ? 'auto' : 'hidden'
   }, [value])
 
@@ -906,7 +911,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
                 <span
                   className="context-bar-item"
                   data-testid="composer-context-claude-path"
-                  title={claudePath ? `Path: ${claudePath}` : undefined}
+                  title={claudePath ?? undefined}
                 >
                   {CONTEXT_FOLDER_ICON}
                   <span className="context-bar-label">Path</span>
@@ -916,9 +921,9 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
               {branch && (
                 <>
                   {displayClaudePath && <span className="context-bar-sep">›</span>}
-                  <span className="context-bar-item" data-testid="composer-context-branch" title={`Branch at ${claudePath ?? workspacePath}`}>
+                  <span className="context-bar-item" data-testid="composer-context-branch" title={branch}>
                     {CONTEXT_BRANCH_ICON}
-                    {branch}
+                    <span className="context-bar-value">{branch}</span>
                   </span>
                 </>
               )}

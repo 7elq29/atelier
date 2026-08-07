@@ -1460,11 +1460,33 @@ input[type='range'] {
   white-space: nowrap;
   font-family: var(--font-ui);
 }
-.composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; }
-.composer-box textarea { width: 100%; border: none; border-top-left-radius: var(--r-xl); border-top-right-radius: var(--r-xl); background: transparent; color: var(--text-primary); padding: 11px 13px 4px; font-family: var(--font-ui); font-size: var(--text-base); resize: none; outline: none; min-height: 22px; max-height: 160px; line-height: 1.5; overflow-y: auto; caret-color: transparent; }
+.composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; overflow: hidden; }
+.composer-box textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  border: none;
+  border-top-left-radius: var(--r-xl);
+  border-top-right-radius: var(--r-xl);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 14px 18px 8px;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  resize: none;
+  outline: none;
+  min-height: 52px;
+  max-height: 160px;
+  line-height: 1.5;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-y: auto;
+  caret-color: transparent;
+}
 /* Context bar — fused inside the top of the composer box, variant C */
-.context-bar { display: flex; align-items: center; gap: 6px; padding: 7px 14px 4px; border-radius: var(--r-xl) var(--r-xl) 0 0; overflow-x: auto; scrollbar-width: thin; }
-.context-bar-item { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; flex-shrink: 0; max-width: min(100%, 280px); }
+.context-bar { display: flex; align-items: center; gap: 6px; padding: 7px 14px 4px; border-radius: var(--r-xl) var(--r-xl) 0 0; flex-wrap: wrap; row-gap: 2px; overflow-x: auto; scrollbar-width: thin; }
+.context-bar-item { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; flex-shrink: 0; max-width: min(100%, 280px); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .context-bar-label { font-size: 10px; font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-quaternary, var(--text-tertiary)); opacity: 0.85; flex-shrink: 0; }
 .context-bar-value { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
 .context-bar-item--icon-only { flex-shrink: 0; min-width: auto; overflow: visible; padding: 2px 4px; border-radius: 4px; cursor: default; }
@@ -2117,7 +2139,7 @@ input[type='range'] {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 10px 16px 14px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-panel);
 }
@@ -2157,6 +2179,35 @@ input[type='range'] {
   height: 100%;
   min-height: 0;
   background: var(--bg-code);
+}
+/* Gap below date toolbar — host padding is reliable; .cm-content padding alone often doesn’t show. */
+.daily-note-editor-panel .daily-note-atomic-host {
+  box-sizing: border-box;
+  padding: 20px 24px 0;
+}
+.daily-note-editor-panel .atomic-cm-editor .cm-scroller {
+  padding-bottom: 40vh;
+}
+.daily-note-editor-panel .atomic-cm-editor .cm-content {
+  max-width: var(--atomic-editor-measure, 70ch);
+  margin-inline: auto;
+  padding-inline: 0;
+}
+/* Daily note prose: more room after markdown headings (mock .dn-h2 rhythm). */
+.daily-note-editor-panel .cm-line.cm-atomic-h1 {
+  padding-top: 0.35em;
+  padding-bottom: 0.75em;
+}
+.daily-note-editor-panel .cm-line.cm-atomic-h2 {
+  padding-top: 0.3em;
+  padding-bottom: 0.65em;
+}
+.daily-note-editor-panel .cm-line.cm-atomic-h3,
+.daily-note-editor-panel .cm-line.cm-atomic-h4,
+.daily-note-editor-panel .cm-line.cm-atomic-h5,
+.daily-note-editor-panel .cm-line.cm-atomic-h6 {
+  padding-top: 0.25em;
+  padding-bottom: 0.5em;
 }
 .daily-note-editor-panel .atomic-cm-editor {
   --atomic-editor-bg: var(--bg-code);

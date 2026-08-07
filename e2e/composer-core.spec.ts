@@ -153,8 +153,7 @@ test.describe('04-composer-core', () => {
     const textarea = activeComposer(page).getByTestId('composer-input')
     await textarea.click()
 
-    // A short single line: near the CSS min-height (22px content box before
-    // the composer's own padding is added by getBoundingClientRect).
+    // A short single line: near the CSS min-height (~52px per mock-aligned composer textarea).
     await textarea.fill('one line')
     const shortHeight = await textarea.evaluate((el: HTMLTextAreaElement) => el.getBoundingClientRect().height)
 
