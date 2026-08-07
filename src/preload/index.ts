@@ -26,6 +26,7 @@ import type {
 } from '../shared/session-types'
 import type {
   CommitInfo,
+  DiffFileChange,
   DiffSummary,
   FileReadResult,
   FileTreeNode,
@@ -209,12 +210,15 @@ const api = {
     ipcRenderer.invoke('debug:execDb', sql, params),
 
   // ── Secondary panels (07-secondary-panels) ──────────────────────────
-  gitDiff: (projectPath: string, hostname?: string | null): Promise<DiffSummary> =>
-    ipcRenderer.invoke('panel:git:diff', projectPath, hostname),
-  gitCommits: (projectPath: string, hostname?: string | null): Promise<CommitInfo[]> =>
-    ipcRenderer.invoke('panel:git:commits', projectPath, hostname),
-  gitWorktrees: (projectPath: string, hostname?: string | null): Promise<WorktreeInfo[]> =>
-    ipcRenderer.invoke('panel:git:worktrees', projectPath, hostname),
+  gitDiff: (projectPath: string, hostname?: string | null, force?: boolean): Promise<DiffSummary> =>
+    ipcRenderer.invoke('panel:git:diff', projectPath, hostname, force),
+  gitFileDiff: (projectPath: string, filePath: string, hostname?: string | null): Promise<DiffFileChange | null> =>
+    ipcRenderer.invoke('panel:git:fileDiff', projectPath, filePath, hostname),
+  gitCommits: (projectPath: string, hostname?: string | null, force?: boolean): Promise<CommitInfo[]> =>
+    ipcRenderer.invoke('panel:git:commits', projectPath, hostname, force),
+  gitWorktrees: (projectPath: string, hostname?: string | null, force?: boolean): Promise<WorktreeInfo[]> =>
+    ipcRenderer.invoke('panel:git:worktrees', projectPath, hostname, force),
+  gitWarmRemote: (hostname: string): Promise<void> => ipcRenderer.invoke('panel:git:warmRemote', hostname),
   gitWorktreeAdd: (projectPath: string, worktreePath: string, branch: string, hostname?: string | null): Promise<void> =>
     ipcRenderer.invoke('panel:git:worktreeAdd', projectPath, worktreePath, branch, hostname),
   gitWorktreeRemove: (projectPath: string, worktreePath: string, hostname?: string | null): Promise<void> =>

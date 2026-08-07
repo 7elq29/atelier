@@ -17,9 +17,19 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
   const portManager = new PortForwardManager(getWindow)
 
   // ── Git / diff / worktrees ─────────────────────────────────────────
-  ipcMain.handle('panel:git:diff', (_e, projectPath: string, hostname?: string | null) => git.getDiffSummary(projectPath, hostname))
-  ipcMain.handle('panel:git:commits', (_e, projectPath: string, hostname?: string | null) => git.listCommits(projectPath, 50, hostname))
-  ipcMain.handle('panel:git:worktrees', (_e, projectPath: string, hostname?: string | null) => git.listWorktrees(projectPath, hostname))
+  ipcMain.handle('panel:git:diff', (_e, projectPath: string, hostname?: string | null, force?: boolean) =>
+    git.getDiffSummary(projectPath, hostname, force)
+  )
+  ipcMain.handle('panel:git:fileDiff', (_e, projectPath: string, filePath: string, hostname?: string | null) =>
+    git.getFileDiff(projectPath, filePath, hostname)
+  )
+  ipcMain.handle('panel:git:commits', (_e, projectPath: string, hostname?: string | null, force?: boolean) =>
+    git.listCommits(projectPath, 50, hostname, force)
+  )
+  ipcMain.handle('panel:git:worktrees', (_e, projectPath: string, hostname?: string | null, force?: boolean) =>
+    git.listWorktrees(projectPath, hostname, force)
+  )
+  ipcMain.handle('panel:git:warmRemote', (_e, hostname: string) => git.warmRemoteGitHost(hostname))
   ipcMain.handle('panel:git:worktreeAdd', (_e, projectPath: string, worktreePath: string, branch: string, hostname?: string | null) =>
     git.addWorktree(projectPath, worktreePath, branch, hostname)
   )

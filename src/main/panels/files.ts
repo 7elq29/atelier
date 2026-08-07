@@ -11,6 +11,7 @@ import { join, relative, extname, basename } from 'node:path'
 import { execFile, spawn } from 'node:child_process'
 import { shQuote, remoteCdTarget } from '../shell-quote'
 import { logger } from '../logger'
+import { sshExec, SSH_MUX_OPTS } from '../ssh-exec'
 import type { FileKind, FileReadResult, FileTreeNode, FileWriteResult } from '../../shared/panel-types'
 
 const ALWAYS_IGNORED = new Set(['.git', 'node_modules', '.DS_Store'])
@@ -31,25 +32,6 @@ const MIME_BY_EXT: Record<string, string> = {
   ico: 'image/x-icon'
 }
 
-/**
- * SSH multiplexing options — same values as pty.ts so file reads/writes reuse
- * the existing ControlMaster socket the terminal already established, making
- * repeated SSH calls to the same host take ~5ms instead of ~4.5s each.
- */
-const SSH_MUX_OPTS = [
-  '-o', 'ControlMaster=auto',
-  '-o', 'ControlPath=/tmp/atelier-ssh-%C',
-  '-o', 'ControlPersist=300',
-]
-
-function sshExec(sshHost: string, remoteCmd: string): Promise<{ stdout: string; stderr: string; code: number }> {
-  return new Promise((resolve) => {
-    execFile('ssh', [...SSH_MUX_OPTS, sshHost, '--', remoteCmd], { maxBuffer: 1024 * 1024 * 32 }, (err, stdout, stderr) => {
-      const code = (err as NodeJS.ErrnoException & { code?: number })?.code
-      resolve({ stdout, stderr, code: typeof code === 'number' ? code : err ? 1 : 0 })
-    })
-  })
-}
 
 // ── Local helpers ────────────────────────────────────────────────────────────
 

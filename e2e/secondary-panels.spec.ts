@@ -344,10 +344,7 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('tab-diff')).toBeVisible({ timeout: 20_000 })
     await page.getByTestId('tab-diff').click()
 
-    // Wait for the panel to settle out of "Loading diff…" (9 sequential SSH
-    // round-trips: isRepo/branch/hasHead/diff for getDiffSummary, plus
-    // isRepo/hasHead/log for listCommits, plus isRepo/worktree-list for
-    // listWorktrees) before asserting on which state it landed in.
+    // Wait for the panel to settle (one batched remote git status + lazy sub-tabs).
     await expect(page.getByTestId('diff-empty-not-repo').or(page.getByTestId('diff-panel'))).toBeVisible({ timeout: 30_000 })
 
     // The bug: this must NOT show the "not a git repository" empty state for

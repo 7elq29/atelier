@@ -32,6 +32,7 @@ import type {
 import { parseStructuredContent } from '../../shared/chat-content'
 import type { SessionStore } from './store'
 import { createWorktree, removeWorktree } from './worktree'
+import { warmRemoteGitHost } from '../panels/git'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
 const AUTO_NAME_PROMPT = 'Summarize this conversation topic in under 6 words. Reply with ONLY the title, no punctuation, no quotes.'
@@ -384,6 +385,7 @@ export class SessionManager {
         groupId: opts.groupId ?? null
       })
       this.sendLifecycle({ type: 'session.created', session })
+      if (session.hostname) void warmRemoteGitHost(session.hostname)
       return session
     }
 
@@ -415,6 +417,7 @@ export class SessionManager {
         })
       )
       this.sendLifecycle({ type: 'session.created', session })
+      if (session.hostname) void warmRemoteGitHost(session.hostname)
 
       // Mark as 'creating-worktree' so the sidebar row shows the pending
       // state (50% opacity, pulsing grey dot, "Setting up worktree…" label).
@@ -460,6 +463,7 @@ export class SessionManager {
     }
 
     this.sendLifecycle({ type: 'session.created', session })
+    if (session.hostname) void warmRemoteGitHost(session.hostname)
     this.live.set(session.id, newLiveStream())
     // A real turn is about to run only if there's an initial prompt to
     // process — an empty-prompt create just opens the connection.

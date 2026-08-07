@@ -17,6 +17,7 @@ import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { logger } from '../logger'
+import { SSH_REMOTE_OPTS } from '../ssh-exec'
 
 const execFile = promisify(_execFile)
 
@@ -28,19 +29,7 @@ export class WorktreeError extends Error {
   }
 }
 
-/**
- * SSH options shared with pty.ts's SSH_MUX_OPTS: reuse the ControlMaster
- * socket established by the PTY when available, and never block on interactive
- * prompts (BatchMode=yes makes SSH fail fast instead of hanging on host-key
- * or password prompts in a non-interactive context).
- */
-const SSH_GIT_OPTS = [
-  '-o', 'ControlMaster=auto',
-  '-o', 'ControlPath=/tmp/atelier-ssh-%C',
-  '-o', 'ControlPersist=300',
-  '-o', 'BatchMode=yes',
-  '-o', 'StrictHostKeyChecking=accept-new',
-]
+const SSH_GIT_OPTS = SSH_REMOTE_OPTS
 
 /** 5 min timeout for all SSH git calls — worktree add on large repos can take several minutes. */
 const SSH_EXEC_TIMEOUT_MS = 5 * 60_000

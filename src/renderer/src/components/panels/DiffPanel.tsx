@@ -1,16 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CommitInfo, DiffFileChange, DiffSummary, WorktreeInfo } from '../../../../shared/panel-types'
 import Linkify, { openExternalLink } from './Linkify'
 
 type DiffSubTab = 'changes' | 'commits' | 'worktrees'
 
+const POLL_MS = 3000
+
 /**
- * Diff/Review panel (07-secondary-panels §2): real `git diff`/`git log`/
- * `git worktree` state for the session's actual `project_path`, matching the
- * mock's `.diff-sub-tabs` (Changes/Commits/Worktrees) structure. Commenting
- * on a diff line is the simplest real version of "push into the session's
- * prompt": it appends a formatted note to the composer text via
- * `onAddComment`, which the user then sends like any other message.
+ * Diff/Review panel (07-secondary-panels §2): SCM-first changes list with
+ * lazy per-file hunks, lazy commits/worktrees sub-tabs, and background refresh
+ * while mounted (VS Code–style remote git economics via session-scoped cache in main).
  */
 export default function DiffPanel({
   projectPath,
@@ -23,32 +22,138 @@ export default function DiffPanel({
 }): JSX.Element {
   const [sub, setSub] = useState<DiffSubTab>('changes')
   const [summary, setSummary] = useState<DiffSummary | null>(null)
-  const [commits, setCommits] = useState<CommitInfo[]>([])
-  const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
+  const [commits, setCommits] = useState<CommitInfo[] | null>(null)
+  const [worktrees, setWorktrees] = useState<WorktreeInfo[] | null>(null)
+  const [commitsLoading, setCommitsLoading] = useState(false)
+  const [worktreesLoading, setWorktreesLoading] = useState(false)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [fileDiffLoading, setFileDiffLoading] = useState(false)
   const [commentingLine, setCommentingLine] = useState<string | null>(null)
   const [commentText, setCommentText] = useState('')
   const [newWorktreeBranch, setNewWorktreeBranch] = useState('')
   const [worktreeError, setWorktreeError] = useState<string | null>(null)
+  const loadedHunksRef = useRef<Set<string>>(new Set())
 
-  async function refresh(): Promise<void> {
-    const [diff, log, wts] = await Promise.all([
-      window.atelier.gitDiff(projectPath, hostname),
-      window.atelier.gitCommits(projectPath, hostname),
-      window.atelier.gitWorktrees(projectPath, hostname)
-    ])
-    setSummary(diff)
-    setCommits(log)
-    setWorktrees(wts)
-    if (!selectedFile && diff.files.length > 0) setSelectedFile(diff.files[0].path)
-  }
+  const mergeFileIntoSummary = useCallback((file: DiffFileChange) => {
+    setSummary((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        files: prev.files.map((f) => (f.path === file.path ? file : f))
+      }
+    })
+  }, [])
+
+  const loadFileHunks = useCallback(
+    async (filePath: string, force = false): Promise<void> => {
+      if (!force && loadedHunksRef.current.has(filePath)) return
+      setFileDiffLoading(true)
+      try {
+        const file = await window.atelier.gitFileDiff(projectPath, filePath, hostname)
+        if (file) {
+          loadedHunksRef.current.add(filePath)
+          mergeFileIntoSummary(file)
+        }
+      } finally {
+        setFileDiffLoading(false)
+      }
+    },
+    [projectPath, hostname, mergeFileIntoSummary]
+  )
+
+  const refreshChanges = useCallback(
+    async (force = false): Promise<void> => {
+      const diff = await window.atelier.gitDiff(projectPath, hostname, force)
+      setSummary((prev) => {
+        if (!prev?.isRepo) return diff
+        return {
+          ...diff,
+          files: diff.files.map((f) => {
+            const old = prev.files.find((o) => o.path === f.path)
+            if (old && old.hunks.length > 0 && loadedHunksRef.current.has(f.path)) {
+              return { ...f, hunks: old.hunks }
+            }
+            return f
+          })
+        }
+      })
+      if (diff.files.length === 0) {
+        setSelectedFile(null)
+        loadedHunksRef.current.clear()
+        return
+      }
+      setSelectedFile((prev) => {
+        const next = prev && diff.files.some((f) => f.path === prev) ? prev : diff.files[0].path
+        if (next && !loadedHunksRef.current.has(next)) {
+          void loadFileHunks(next)
+        }
+        return next
+      })
+    },
+    [projectPath, hostname, loadFileHunks]
+  )
 
   useEffect(() => {
-    void refresh()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectPath, hostname])
+    loadedHunksRef.current.clear()
+    setSummary(null)
+    setCommits(null)
+    setWorktrees(null)
+    void refreshChanges(true)
+  }, [projectPath, hostname, refreshChanges])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void refreshChanges(false)
+    }, POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [refreshChanges])
+
+  useEffect(() => {
+    if (sub === 'commits' && commits === null && !commitsLoading) {
+      setCommitsLoading(true)
+      void window.atelier
+        .gitCommits(projectPath, hostname, true)
+        .then(setCommits)
+        .finally(() => setCommitsLoading(false))
+    }
+  }, [sub, commits, commitsLoading, projectPath, hostname])
+
+  useEffect(() => {
+    if (sub === 'worktrees' && worktrees === null && !worktreesLoading) {
+      setWorktreesLoading(true)
+      void window.atelier
+        .gitWorktrees(projectPath, hostname, true)
+        .then(setWorktrees)
+        .finally(() => setWorktreesLoading(false))
+    }
+  }, [sub, worktrees, worktreesLoading, projectPath, hostname])
+
+  useEffect(() => {
+    if (selectedFile) void loadFileHunks(selectedFile)
+  }, [selectedFile, loadFileHunks])
 
   const activeFile: DiffFileChange | undefined = summary?.files.find((f) => f.path === selectedFile)
+
+  async function refreshAfterGitMutation(): Promise<void> {
+    loadedHunksRef.current.clear()
+    setCommits(null)
+    setWorktrees(null)
+    await refreshChanges(true)
+    if (sub === 'commits') {
+      setCommitsLoading(true)
+      void window.atelier
+        .gitCommits(projectPath, hostname, true)
+        .then(setCommits)
+        .finally(() => setCommitsLoading(false))
+    }
+    if (sub === 'worktrees') {
+      setWorktreesLoading(true)
+      void window.atelier
+        .gitWorktrees(projectPath, hostname, true)
+        .then(setWorktrees)
+        .finally(() => setWorktreesLoading(false))
+    }
+  }
 
   async function handleAddWorktree(): Promise<void> {
     setWorktreeError(null)
@@ -58,7 +163,7 @@ export default function DiffPanel({
     try {
       await window.atelier.gitWorktreeAdd(projectPath, path, branch, hostname)
       setNewWorktreeBranch('')
-      await refresh()
+      await refreshAfterGitMutation()
     } catch (err) {
       setWorktreeError(err instanceof Error ? err.message : String(err))
     }
@@ -68,7 +173,7 @@ export default function DiffPanel({
     setWorktreeError(null)
     try {
       await window.atelier.gitWorktreeMerge(projectPath, branch, hostname)
-      await refresh()
+      await refreshAfterGitMutation()
     } catch (err) {
       setWorktreeError(err instanceof Error ? err.message : String(err))
     }
@@ -78,7 +183,7 @@ export default function DiffPanel({
     setWorktreeError(null)
     try {
       await window.atelier.gitWorktreeRemove(projectPath, path, hostname)
-      await refresh()
+      await refreshAfterGitMutation()
     } catch (err) {
       setWorktreeError(err instanceof Error ? err.message : String(err))
     }
@@ -158,6 +263,9 @@ export default function DiffPanel({
                   <div className="diff-file-card" data-testid="diff-file-card">
                     <div className="diff-file-header">
                       {activeFile.path} <span className="badge-mod">{activeFile.status}</span>
+                      {fileDiffLoading && activeFile.hunks.length === 0 && (
+                        <span style={{ marginLeft: 8, opacity: 0.7 }}>Loading…</span>
+                      )}
                     </div>
                     <div className="diff-lines">
                       {activeFile.hunks.map((hunk, hi) =>
@@ -216,7 +324,12 @@ export default function DiffPanel({
 
       {sub === 'commits' && (
         <div className="diff-sub-content" data-testid="diff-commits">
-          {commits.length === 0 ? (
+          {commitsLoading || commits === null ? (
+            <div className="empty-main" style={{ height: '100%' }}>
+              <div className="empty-icon icon-standalone">🕒</div>
+              <div>Loading commits…</div>
+            </div>
+          ) : commits.length === 0 ? (
             <div className="empty-main" style={{ height: '100%' }}>
               <div className="empty-icon icon-standalone">🕒</div>
               <div>No commits yet</div>
@@ -244,21 +357,25 @@ export default function DiffPanel({
                 {worktreeError}
               </div>
             )}
-            {worktrees
-              .filter((w) => !w.isMain)
-              .map((w) => (
-                <div className="worktree-row" key={w.path} data-testid="worktree-row">
-                  <div className="wpath">
-                    {w.path} <span className="wbranch">{w.branch}</span>
+            {worktreesLoading || worktrees === null ? (
+              <div style={{ padding: 12, opacity: 0.8 }}>Loading worktrees…</div>
+            ) : (
+              worktrees
+                .filter((w) => !w.isMain)
+                .map((w) => (
+                  <div className="worktree-row" key={w.path} data-testid="worktree-row">
+                    <div className="wpath">
+                      {w.path} <span className="wbranch">{w.branch}</span>
+                    </div>
+                    <button className="btn btn-sm" data-testid="worktree-merge" onClick={() => void handleMergeWorktree(w.branch)}>
+                      Merge
+                    </button>
+                    <button className="btn btn-sm btn-danger" data-testid="worktree-remove" onClick={() => void handleRemoveWorktree(w.path)}>
+                      Remove
+                    </button>
                   </div>
-                  <button className="btn btn-sm" data-testid="worktree-merge" onClick={() => void handleMergeWorktree(w.branch)}>
-                    Merge
-                  </button>
-                  <button className="btn btn-sm btn-danger" data-testid="worktree-remove" onClick={() => void handleRemoveWorktree(w.path)}>
-                    Remove
-                  </button>
-                </div>
-              ))}
+                ))
+            )}
             <div style={{ display: 'flex', gap: 8, alignSelf: 'flex-start' }}>
               <input
                 className="input"
@@ -285,6 +402,4 @@ export default function DiffPanel({
   )
 }
 
-// re-export so callers that only need the external-link opener don't have to
-// reach into Linkify.tsx directly.
 export { openExternalLink }

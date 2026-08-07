@@ -24,23 +24,10 @@ import { execFileSync, execFile } from 'child_process'
 import { promisify } from 'util'
 import type { BrowserWindow } from 'electron'
 import { logger } from '../logger'
+import { SSH_MUX_OPTS } from '../ssh-exec'
 import { ShellPoolManager } from './shell-pool'
 
 const execFileAsync = promisify(execFile)
-
-/**
- * Shared SSH multiplexing options for ControlMaster connection reuse.
- * The first call to a host establishes a master socket; all subsequent calls
- * reuse it (~5ms each) instead of doing a full crypto handshake (~4.5s each).
- * ControlPath uses %C (SHA1 hash of connection params) to guarantee a unique
- * socket per host without manual path management, and avoids Unix socket path
- * length overflow on long hostnames.
- */
-const SSH_MUX_OPTS = [
-  '-o', 'ControlMaster=auto',
-  '-o', 'ControlPath=/tmp/atelier-ssh-%C',
-  '-o', 'ControlPersist=300',
-]
 
 // Detect tmux once at startup — avoids per-spawn overhead and lets us log a
 // single clear warning when it's missing rather than one per spawn.
