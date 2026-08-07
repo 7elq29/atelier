@@ -193,6 +193,9 @@ export default function FilesPanel({
   const modelRef = useRef<monaco.editor.ITextModel | null>(null)
   const htmlPreviewRef = useRef<HTMLIFrameElement | null>(null)
   const selectedPathRef = useRef<string | null>(null)
+  const fileResultRef = useRef<FileReadResult | null>(null)
+  const openSeqRef = useRef(0)
+  const [editorEpoch, setEditorEpoch] = useState(0)
   const saveCurrentFileRef = useRef<(() => Promise<void>) | null>(null)
   const lastRevealSeqRef = useRef(0)
   const handleLocationCommitRef = useRef<(path: string) => Promise<void>>(async () => {})
@@ -206,6 +209,7 @@ export default function FilesPanel({
 
   // Keep ref in sync so the save keybinding closure can read it
   useEffect(() => { selectedPathRef.current = selectedPath }, [selectedPath])
+  useEffect(() => { fileResultRef.current = fileResult }, [fileResult])
   useEffect(() => { dirChildrenRef.current = dirChildren }, [dirChildren])
   // Sync location bar when file selection changes (tree click)
   useEffect(() => { if (!locationEditing) setLocationInput(selectedPath ?? projectPath) }, [selectedPath, projectPath, locationEditing])
@@ -244,6 +248,43 @@ export default function FilesPanel({
     monaco.editor.setTheme(monacoThemeId(effectiveTheme))
   }, [effectiveTheme])
 
+  const applyTextFileToEditor = useCallback((): monaco.editor.ITextModel | null => {
+    const editor = editorRef.current
+    const result = fileResultRef.current
+    const path = selectedPathRef.current
+    if (!editor || result?.kind !== 'text') return null
+
+    const lang = detectLanguage(result.extension)
+    const uri = modelUriForPath(path ?? 'untitled')
+
+    let model = monaco.editor.getModel(uri)
+    const modelExisted = Boolean(model)
+    if (model) {
+      if (model.getValue() !== result.content) {
+        model.setValue(result.content)
+      }
+      monaco.editor.setModelLanguage(model, lang)
+    } else {
+      model = monaco.editor.createModel(result.content, lang, uri)
+    }
+
+    const prev = modelRef.current
+    if (prev && prev !== model) {
+      const stillUsed = openTabsRef.current.some(
+        (t) => t.path != null && modelUriForPath(t.path).toString() === prev.uri.toString()
+      )
+      if (!stillUsed) prev.dispose()
+    }
+    modelRef.current = model
+
+    editor.setModel(model)
+    if (!modelExisted) {
+      editor.setScrollPosition({ scrollTop: 0, scrollLeft: 0 })
+    }
+    editor.layout()
+    return model
+  }, [])
+
   // ── Bootstrap Monaco via callback ref ────────────────────────────────────
   // useEffect([]) fires at initial mount when tree===null (async load), so the
   // container div isn't in the DOM yet and editorRef.current is null. A callback
@@ -276,7 +317,9 @@ export default function FilesPanel({
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       void saveCurrentFileRef.current?.()
     })
-  }, [])
+    setEditorEpoch((n) => n + 1)
+    queueMicrotask(() => applyTextFileToEditor())
+  }, [applyTextFileToEditor, effectiveTheme])
 
   const showEditor = fileResult?.kind === 'text'
 
@@ -365,39 +408,8 @@ export default function FilesPanel({
 
   // ── Mount/update Monaco model when a text file is selected ────────────────
   useEffect(() => {
-    const editor = editorRef.current
-    if (!editor || fileResult?.kind !== 'text') return
-
-    const lang = detectLanguage(fileResult.extension)
-    const uri = modelUriForPath(selectedPath ?? 'untitled')
-
-    // Reuse existing model for the same URI, create otherwise
-    let model = monaco.editor.getModel(uri)
-    const modelExisted = Boolean(model)
-    if (model) {
-      // Only reset value if content actually changed (e.g. external reload)
-      if (model.getValue() !== fileResult.content) {
-        model.setValue(fileResult.content)
-      }
-      monaco.editor.setModelLanguage(model, lang)
-    } else {
-      model = monaco.editor.createModel(fileResult.content, lang, uri)
-    }
-
-    const prev = modelRef.current
-    if (prev && prev !== model) {
-      const stillUsed = openTabsRef.current.some(
-        (t) => t.path != null && modelUriForPath(t.path).toString() === prev.uri.toString()
-      )
-      if (!stillUsed) prev.dispose()
-    }
-    modelRef.current = model
-
-    editor.setModel(model)
-    if (!modelExisted) {
-      editor.setScrollPosition({ scrollTop: 0, scrollLeft: 0 })
-    }
-    editor.layout() // force re-measure after container transitions from display:none
+    const model = applyTextFileToEditor()
+    if (!model) return
 
     const sub = model.onDidChangeContent(() => {
       const path = selectedPathRef.current
@@ -405,14 +417,14 @@ export default function FilesPanel({
       setOpenTabs((prev) => prev.map((t) => (t.path === path ? { ...t, isDirty: true } : t)))
     })
     return () => sub.dispose()
-  }, [fileResult, selectedPath])
+  }, [fileResult, selectedPath, editorEpoch, applyTextFileToEditor])
 
   // ── HTML preview srcdoc must be set imperatively after mount ───────────────
   useEffect(() => {
     if (fileResult?.kind === 'html' && htmlPreviewRef.current) {
       htmlPreviewRef.current.srcdoc = fileResult.content
     }
-  }, [fileResult])
+  }, [fileResult, editorEpoch])
 
   // ── Completion fetch (debounced 120ms) ────────────────────────────────────
   function fetchCompletions(input: string): void {
@@ -476,17 +488,23 @@ export default function FilesPanel({
   }
 
   // ── Open / switch / close editor tabs ─────────────────────────────────────
-  async function openInCurrentTab(path: string, cachedResult?: FileReadResult): Promise<void> {
+  async function openInCurrentTab(
+    path: string,
+    cachedResult?: FileReadResult,
+    seq?: number
+  ): Promise<void> {
+    const mySeq = seq ?? ++openSeqRef.current
     const activeId = activeTabIdRef.current
     const active = openTabsRef.current.find((t) => t.id === activeId)
-    if (active?.path === path) {
+    if (active?.path === path && cachedResult === undefined) {
       setLocationInput(path)
       setSaveError(null)
       await revealInTree(path)
       return
     }
 
-    const result = cachedResult ?? await window.atelier.filesRead(path, hostname)
+    const result = cachedResult ?? (await window.atelier.filesRead(path, hostname))
+    if (mySeq !== openSeqRef.current) return
 
     if (!active) {
       const id = newEditorTabId()
@@ -572,15 +590,19 @@ export default function FilesPanel({
   async function handleLocationCommit(inputPath: string): Promise<void> {
     const path = inputPath.trim()
     if (!path) return
+    const mySeq = ++openSeqRef.current
     setLocationEditing(false)
     setCompletions([])
     try {
       const result = await window.atelier.filesRead(path, hostname)
-      await openInCurrentTab(path, result)
+      if (mySeq !== openSeqRef.current) return
+      await openInCurrentTab(path, result, mySeq)
     } catch {
+      if (mySeq !== openSeqRef.current) return
       // Try as a directory — expand it and reveal its ancestors
       try {
         const children = await window.atelier.filesDir(projectPath, path, hostname)
+        if (mySeq !== openSeqRef.current) return
         setDirChildren((prev) => new Map(prev).set(path, children))
         setExpanded((prev) => new Set(prev).add(path))
         setLocationInput(path)
