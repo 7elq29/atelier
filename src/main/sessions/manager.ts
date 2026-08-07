@@ -30,6 +30,7 @@ import type {
   PermissionRequestContent,
   PlanProposedContent,
   ToolCallContent,
+  ThinkingBlockContent,
   TodoUpdateContent
 } from '../../shared/chat-content'
 import { parseStructuredContent } from '../../shared/chat-content'
@@ -42,6 +43,15 @@ import { warmRemoteGitHost } from '../panels/git'
 import { handleFileEditToolCompleted } from './session-changes-cap'
 import { WorkspaceService } from './workspace-service'
 import { applyBashCdCommands } from './harness-cwd'
+import { SessionHarnessUiState } from './session-harness-ui'
+import type {
+  SessionAuthStatusEvent,
+  SessionBackgroundTasksEvent,
+  SessionRateLimitEvent,
+  SessionSdkChromeEvent,
+  SessionToastEvent,
+} from '../../shared/harness-ui-types'
+import type { LocalCommandOutputContent, TranscriptNoticeContent } from '../../shared/chat-content'
 import { completeLinkedDailyTask, linkDailyTaskToSession } from '../daily-note-session-link'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
@@ -111,6 +121,11 @@ interface LiveStream {
   pendingPrompts: Map<string, PendingPrompt>
   /** Latest Claude Code cwd for this connection (SDK init + inferred Bash `cd`). */
   harnessCwd: string | null
+  /** Open extended-thinking card for the current assistant segment (partial stream). */
+  thinkingMessageId: number | null
+  thinkingText: string
+  thinkingParentToolUseId: string | null
+  thinkingEstimatedTokens?: number
 }
 
 
@@ -154,7 +169,10 @@ function newLiveStream(turnCount = 0): LiveStream {
     pendingTools: new Map(),
     busy: false,
     pendingPrompts: new Map(),
-    harnessCwd: null
+    harnessCwd: null,
+    thinkingMessageId: null,
+    thinkingText: '',
+    thinkingParentToolUseId: null,
   }
 }
 
@@ -218,6 +236,8 @@ export class SessionManager {
    * caller that predates this task).
    */
   private readonly modelSelections = new Map<string, ModelSelection>()
+
+  private readonly harnessUi = new SessionHarnessUiState()
 
   private workspace: WorkspaceService | null = null
 
@@ -460,6 +480,93 @@ export class SessionManager {
     this.getWindow()?.webContents.send('session:tokenUsage', { sessionId, inputTokens, contextWindow })
   }
 
+  private sendPromptSuggestion(sessionId: string, suggestion: string | null): void {
+    this.getWindow()?.webContents.send('session:promptSuggestion', { sessionId, suggestion })
+  }
+
+  private sendBackgroundTasks(sessionId: string): void {
+    const payload: SessionBackgroundTasksEvent = {
+      sessionId,
+      tasks: this.harnessUi.getTasks(sessionId),
+    }
+    this.getWindow()?.webContents.send('session:backgroundTasks', payload)
+  }
+
+  private sendSdkChrome(sessionId: string): void {
+    const chrome = this.harnessUi.getSdkChrome(sessionId)
+    const payload: SessionSdkChromeEvent = {
+      sessionId,
+      status: chrome?.compactFailed ? null : (chrome?.status ?? null),
+      permissionMode: chrome?.permissionMode,
+      compactFailed: chrome?.compactFailed,
+      compactError: chrome?.compactError,
+      apiRetryText: chrome?.apiRetryText ?? null,
+    }
+    this.getWindow()?.webContents.send('session:sdkChrome', payload)
+  }
+
+  private sendRateLimitChrome(sessionId: string): void {
+    const rl = this.harnessUi.getRateLimit(sessionId)
+    const payload: SessionRateLimitEvent = {
+      sessionId,
+      warnLabel: rl?.warnLabel ?? null,
+      sendBlocked: rl?.sendBlocked ?? false,
+    }
+    this.getWindow()?.webContents.send('session:rateLimit', payload)
+  }
+
+  private sendSdkToast(sessionId: string, toast: SessionToastEvent): void {
+    this.getWindow()?.webContents.send('session:sdkToast', toast)
+  }
+
+  private sendAuthStatus(): void {
+    const auth = this.harnessUi.getAuth()
+    const payload: SessionAuthStatusEvent = {
+      message: auth.message,
+      isAuthenticating: auth.isAuthenticating,
+    }
+    this.getWindow()?.webContents.send('session:authStatus', payload)
+  }
+
+  private resetHarnessUiForSession(sessionId: string): void {
+    this.harnessUi.resetSession(sessionId)
+    this.sendBackgroundTasks(sessionId)
+    this.sendSdkChrome(sessionId)
+    this.sendRateLimitChrome(sessionId)
+  }
+
+  private applyHarnessUiSideEffects(sessionId: string, event: HarnessEvent): void {
+    const uiTypes = new Set([
+      'background_tasks_changed',
+      'task_started',
+      'task_updated',
+      'task_progress',
+      'task_notification',
+      'sdk_notification',
+      'sdk_status',
+      'api_retry',
+      'rate_limit_event',
+      'auth_status',
+      'hook_started',
+      'hook_progress',
+      'hook_response',
+      'worker_shutting_down',
+    ])
+    if (!uiTypes.has(event.type)) return
+    const side = this.harnessUi.apply(event)
+    this.sendBackgroundTasks(sessionId)
+    this.sendSdkChrome(sessionId)
+    this.sendRateLimitChrome(sessionId)
+    if (event.type === 'auth_status') this.sendAuthStatus()
+    if (side.toast) {
+      this.sendSdkToast(sessionId, { sessionId, ...side.toast })
+    }
+    if (side.logHook) {
+      logger.info('harness hook', { sessionId, line: side.logHook })
+      this.getWindow()?.webContents.send('session:hookLog', { sessionId, line: side.logHook })
+    }
+  }
+
   private sendCommands(sessionId: string, commands: SlashCommandInfo[]): void {
     this.getWindow()?.webContents.send('session:commands', { sessionId, commands })
   }
@@ -621,6 +728,7 @@ export class SessionManager {
     if (session.hostname) void warmRemoteGitHost(session.hostname)
     this.seedDefaultModelSelection(session.id)
     this.live.set(session.id, newLiveStream())
+    this.resetHarnessUiForSession(session.id)
     this.pendingPanelPreload.add(session.id)
     // A real turn is about to run only if there's an initial prompt to
     // process — an empty-prompt create just opens the connection.
@@ -691,6 +799,7 @@ export class SessionManager {
       // Remove creating-worktree state and transition to live.
       this.creatingWorktree.delete(sessionId)
       this.live.set(sessionId, newLiveStream())
+      this.resetHarnessUiForSession(sessionId)
       this.pendingPanelPreload.add(sessionId)
       if (opts.prompt) {
         this.live.get(sessionId)!.busy = true
@@ -932,6 +1041,7 @@ export class SessionManager {
       // spawned/handshaken yet. `connecting` is cleared in applyEvent() the
       // moment the first real harness event arrives (see its comment).
       this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
+      this.resetHarnessUiForSession(sessionId)
       this.sendStatus(sessionId)
       void this.consume(sessionId, harnessSession.events)
     } catch (err) {
@@ -990,6 +1100,7 @@ export class SessionManager {
       : text
     const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
     this.touchLastActive(sessionId)
+    this.sendPromptSuggestion(sessionId, null)
     this.sendMessage(sessionId, userMessage)
 
     if (session.mode !== 'claude-code') return
@@ -1081,6 +1192,7 @@ export class SessionManager {
       const previousLive = this.live.get(sessionId)
       this.finalizeStaleRunningToolCalls(sessionId, previousLive)
       this.live.set(sessionId, newLiveStream(previousTurnCount))
+      this.resetHarnessUiForSession(sessionId)
       this.live.get(sessionId)!.busy = true
       this.sendStatus(sessionId)
       void this.consume(sessionId, harnessSession.events)
@@ -1494,7 +1606,86 @@ export class SessionManager {
     }
 
     switch (event.type) {
+      case 'thinking_block_start': {
+        this.finishThinkingBlock(sessionId, live, 'completed')
+        const content: ThinkingBlockContent = {
+          kind: 'thinking_block',
+          status: 'running',
+          text: '',
+          parentToolUseId: event.parentToolUseId,
+        }
+        const message = this.store.addMessage({
+          sessionId,
+          role: 'assistant',
+          content: JSON.stringify(content),
+          rawEvent: event,
+        })
+        live.thinkingMessageId = message.id
+        live.thinkingText = ''
+        live.thinkingParentToolUseId = event.parentToolUseId
+        this.sendMessage(sessionId, message)
+        return
+      }
+
+      case 'thinking_delta': {
+        if (live.thinkingMessageId == null) return
+        live.thinkingText += event.text
+        const content: ThinkingBlockContent = {
+          kind: 'thinking_block',
+          status: 'running',
+          text: live.thinkingText,
+          parentToolUseId: event.parentToolUseId,
+          ...(live.thinkingEstimatedTokens != null ? { estimatedTokens: live.thinkingEstimatedTokens } : {}),
+        }
+        const updated = this.store.updateMessage(live.thinkingMessageId, {
+          content: JSON.stringify(content),
+          rawEvent: event,
+        })
+        if (updated) this.sendMessage(sessionId, updated)
+        return
+      }
+
+      case 'thinking_block_end': {
+        this.finishThinkingBlock(sessionId, live, 'completed')
+        return
+      }
+
+      case 'thinking_tokens': {
+        if (live.thinkingMessageId == null) return
+        const content: ThinkingBlockContent = {
+          kind: 'thinking_block',
+          status: 'running',
+          text: live.thinkingText,
+          estimatedTokens: event.estimatedTokens,
+          parentToolUseId: live.thinkingParentToolUseId,
+        }
+        live.thinkingEstimatedTokens = event.estimatedTokens
+        const updated = this.store.updateMessage(live.thinkingMessageId, {
+          content: JSON.stringify(content),
+          rawEvent: event,
+        })
+        if (updated) this.sendMessage(sessionId, updated)
+        return
+      }
+
+      case 'tool_input_delta': {
+        const pending = live.pendingTools.get(event.toolUseId)
+        if (!pending) return
+        const content: ToolCallContent = {
+          ...pending.content,
+          inputStreamJson: event.partialJson,
+        }
+        pending.content = content
+        const updated = this.store.updateMessage(pending.messageId, {
+          content: JSON.stringify(content),
+          rawEvent: event,
+        })
+        if (updated) this.sendMessage(sessionId, updated)
+        return
+      }
+
       case 'text_delta': {
+        this.finishThinkingBlock(sessionId, live, 'completed')
         // First delta of a segment: persist an (initially empty) placeholder
         // row immediately so the renderer has a stable message id to attach
         // progressive `session:streamDelta` pushes to — token-level
@@ -1514,6 +1705,37 @@ export class SessionManager {
 
       case 'tool_call_start': {
         this.flushBuffer(sessionId, live)
+        this.finishThinkingBlock(sessionId, live, 'completed')
+        const existing = live.pendingTools.get(event.toolUseId)
+        if (existing) {
+          const content: ToolCallContent = {
+            ...existing.content,
+            name: event.name,
+            input: event.input,
+            inputStreamJson: undefined,
+            parentToolUseId: event.parentToolUseId,
+          }
+          existing.content = content
+          const updated = this.store.updateMessage(existing.messageId, {
+            content: JSON.stringify(content),
+            rawEvent: event,
+          })
+          if (updated) this.sendMessage(sessionId, updated)
+          if (event.name === 'Bash') {
+            const command = (event.input as { command?: string } | undefined)?.command
+            const row = this.store.getSession(sessionId)
+            const base =
+              live.harnessCwd ?? (row ? (row.worktreePath ?? row.projectPath) : null)
+            if (command && base) {
+              const next = applyBashCdCommands(base, command)
+              if (next !== base) {
+                live.harnessCwd = next
+                this.sendHarnessCwd(sessionId, next)
+              }
+            }
+          }
+          return
+        }
         if (event.name === 'Bash') {
           const command = (event.input as { command?: string } | undefined)?.command
           const row = this.store.getSession(sessionId)
@@ -1578,6 +1800,19 @@ export class SessionManager {
         return
       }
 
+      case 'tool_progress': {
+        const pending = live.pendingTools.get(event.toolUseId)
+        if (!pending) return
+        const content: ToolCallContent = {
+          ...pending.content,
+          elapsedTimeSeconds: event.elapsedTimeSeconds,
+        }
+        pending.content = content
+        const updated = this.store.updateMessage(pending.messageId, { content: JSON.stringify(content), rawEvent: event })
+        if (updated) this.sendMessage(sessionId, updated)
+        return
+      }
+
       case 'todo_update': {
         // Not its own transcript row visually (rendered in the tracker rail
         // instead) but still persisted as an ordinary message so resume
@@ -1626,6 +1861,11 @@ export class SessionManager {
         // client array).
         logger.info('harness event: commands_updated', { sessionId, commandNames: event.commands.map((c) => c.name) })
         this.sendCommands(sessionId, event.commands)
+        return
+
+      case 'prompt_suggestion':
+        logger.info('harness event: prompt_suggestion', { sessionId, length: event.suggestion.length })
+        this.sendPromptSuggestion(sessionId, event.suggestion)
         return
 
       case 'permission_request': {
@@ -1706,6 +1946,7 @@ export class SessionManager {
         this.flushBuffer(sessionId, live)
         live.turnCount += 1
         live.busy = false
+        this.sendPromptSuggestion(sessionId, null)
         this.sendStatus(sessionId)
         logger.info('harness event: result (turn complete)', { sessionId, turnCount: live.turnCount, isError: event.isError })
         // `event.totalCostUsd` is cumulative for the whole live connection
@@ -1757,7 +1998,78 @@ export class SessionManager {
         }
         return
       }
+
+      case 'permission_denied': {
+        const pending = live.pendingTools.get(event.toolUseId)
+        if (pending) {
+          const content: ToolCallContent = {
+            ...pending.content,
+            status: 'denied',
+            output: event.message,
+          }
+          const updated = this.store.updateMessage(pending.messageId, {
+            content: JSON.stringify(content),
+            rawEvent: event,
+          })
+          if (updated) this.sendMessage(sessionId, updated)
+          live.pendingTools.delete(event.toolUseId)
+        }
+        return
+      }
+
+      case 'model_refusal_fallback': {
+        this.flushBuffer(sessionId, live)
+        const content: TranscriptNoticeContent = {
+          kind: 'transcript_notice',
+          level: 'warning',
+          label: 'Model',
+          text: event.content || `Request refused; retrying on ${event.fallbackModel}.`,
+        }
+        const message = this.store.addMessage({
+          sessionId,
+          role: 'system',
+          content: JSON.stringify(content),
+          rawEvent: event,
+        })
+        this.sendMessage(sessionId, message)
+        return
+      }
+
+      case 'model_refusal_no_fallback': {
+        this.flushBuffer(sessionId, live)
+        const content: TranscriptNoticeContent = {
+          kind: 'transcript_notice',
+          level: 'danger',
+          label: 'Refused',
+          text: event.content || 'Model declined this request. Edit your message and try again.',
+        }
+        const message = this.store.addMessage({
+          sessionId,
+          role: 'system',
+          content: JSON.stringify(content),
+          rawEvent: event,
+        })
+        this.sendMessage(sessionId, message)
+        return
+      }
+
+      case 'local_command_output': {
+        const content: LocalCommandOutputContent = {
+          kind: 'local_command_output',
+          text: event.content,
+        }
+        const message = this.store.addMessage({
+          sessionId,
+          role: 'assistant',
+          content: JSON.stringify(content),
+          rawEvent: event,
+        })
+        this.sendMessage(sessionId, message)
+        return
+      }
     }
+
+    this.applyHarnessUiSideEffects(sessionId, event)
   }
 
   /**
@@ -1801,6 +2113,23 @@ export class SessionManager {
       if (updated) this.sendMessage(sessionId, updated)
     }
     live?.pendingTools.clear()
+  }
+
+  private finishThinkingBlock(sessionId: string, live: LiveStream, status: ThinkingBlockContent['status']): void {
+    if (live.thinkingMessageId == null) return
+    const content: ThinkingBlockContent = {
+      kind: 'thinking_block',
+      status,
+      text: live.thinkingText,
+      parentToolUseId: live.thinkingParentToolUseId,
+      ...(live.thinkingEstimatedTokens != null ? { estimatedTokens: live.thinkingEstimatedTokens } : {}),
+    }
+    const updated = this.store.updateMessage(live.thinkingMessageId, { content: JSON.stringify(content) })
+    if (updated) this.sendMessage(sessionId, updated)
+    live.thinkingMessageId = null
+    live.thinkingText = ''
+    live.thinkingParentToolUseId = null
+    live.thinkingEstimatedTokens = undefined
   }
 
   private flushBuffer(sessionId: string, live: LiveStream): void {
@@ -1946,6 +2275,7 @@ export class SessionManager {
       }).then((harnessSession) => {
         this.finalizeStaleRunningToolCalls(sessionId)
         this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
+      this.resetHarnessUiForSession(sessionId)
         this.sendStatus(sessionId)
         void this.consume(sessionId, harnessSession.events)
       }).catch(() => {

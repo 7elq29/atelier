@@ -7,7 +7,7 @@
  * the transcript/tracker-rail components) share one definition.
  */
 
-export type ToolCallStatus = 'running' | 'completed' | 'error' | 'interrupted'
+export type ToolCallStatus = 'running' | 'completed' | 'error' | 'interrupted' | 'denied'
 
 export interface ToolCallContent {
   kind: 'tool_call'
@@ -17,6 +17,21 @@ export interface ToolCallContent {
   status: ToolCallStatus
   output?: unknown
   /** Id of the enclosing Task tool_use when this call was made by a spawned subagent; null for top-level calls. */
+  parentToolUseId: string | null
+  /** From SDK `tool_progress` heartbeats while status is `running`. */
+  elapsedTimeSeconds?: number
+  /** Accumulated `input_json_delta` partial JSON while the tool block is still streaming. */
+  inputStreamJson?: string
+}
+
+export type ThinkingBlockStatus = 'running' | 'completed'
+
+export interface ThinkingBlockContent {
+  kind: 'thinking_block'
+  status: ThinkingBlockStatus
+  /** Visible thinking text when the API streams it; often empty under redacted thinking. */
+  text?: string
+  estimatedTokens?: number
   parentToolUseId: string | null
 }
 
@@ -36,6 +51,20 @@ export interface CompactionContent {
   trigger: 'manual' | 'auto'
   preTokens: number
   postTokens?: number
+}
+
+export interface LocalCommandOutputContent {
+  kind: 'local_command_output'
+  text: string
+}
+
+export type TranscriptNoticeLevel = 'warning' | 'danger'
+
+export interface TranscriptNoticeContent {
+  kind: 'transcript_notice'
+  level: TranscriptNoticeLevel
+  label: string
+  text: string
 }
 
 /**
@@ -126,15 +155,21 @@ export type StructuredContent =
   | AskUserQuestionContent
   | PlanProposedContent
   | ImageAttachmentContent
+  | ThinkingBlockContent
+  | LocalCommandOutputContent
+  | TranscriptNoticeContent
 
 const STRUCTURED_KINDS = new Set<string>([
   'tool_call',
+  'thinking_block',
   'todo_update',
   'compaction',
   'permission_request',
   'ask_user_question',
   'plan_proposed',
   'image_attachment',
+  'local_command_output',
+  'transcript_notice',
 ])
 
 /** Best-effort parse: returns null for plain-text message content (the common case). */

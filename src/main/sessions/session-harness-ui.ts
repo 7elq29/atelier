@@ -1,0 +1,228 @@
+import type { HarnessEvent } from '../harness/types'
+import type { BackgroundTaskRow } from '../../shared/harness-ui-types'
+
+export interface SdkChromeState {
+  status: 'compacting' | 'requesting' | null
+  permissionMode?: string
+  compactFailed?: boolean
+  compactError?: string
+  apiRetryText?: string | null
+}
+
+export interface RateLimitChromeState {
+  warnLabel: string | null
+  sendBlocked: boolean
+}
+
+export interface AuthChromeState {
+  message: string | null
+  isAuthenticating: boolean
+}
+
+function formatRateLimitLabel(
+  status: string,
+  resetsAt?: number,
+  utilization?: number
+): RateLimitChromeState {
+  const sendBlocked = status === 'rejected'
+  if (status === 'allowed' && utilization == null) {
+    return { warnLabel: null, sendBlocked: false }
+  }
+  const parts: string[] = []
+  if (status === 'allowed_warning' || status === 'rejected') {
+    parts.push('Rate limit')
+  }
+  if (utilization != null) {
+    parts.push(`${Math.round(utilization * 100)}%`)
+  }
+  if (resetsAt != null) {
+    parts.push(
+      `resets ${new Date(resetsAt * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+    )
+  }
+  return { warnLabel: parts.length ? parts.join(' · ') : null, sendBlocked }
+}
+
+function taskSubtitleFromProgress(event: Extract<HarnessEvent, { type: 'task_progress' }>): string {
+  const parts: string[] = []
+  if (event.lastToolName) parts.push(`last: ${event.lastToolName}`)
+  if (event.usage) {
+    parts.push(`${event.usage.tool_uses} tool uses`)
+    const sec = Math.round(event.usage.duration_ms / 1000)
+    if (sec >= 60) parts.push(`${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, '0')}s`)
+    else if (sec > 0) parts.push(`${sec}s`)
+  } else if (event.summary) {
+    parts.push(event.summary)
+  }
+  return parts.join(' · ')
+}
+
+export class SessionHarnessUiState {
+  private readonly taskRows = new Map<string, Map<string, BackgroundTaskRow>>()
+  private readonly sdkChrome = new Map<string, SdkChromeState>()
+  private readonly rateLimit = new Map<string, RateLimitChromeState>()
+  private auth: AuthChromeState = { message: null, isAuthenticating: false }
+
+  resetSession(sessionId: string): void {
+    this.taskRows.set(sessionId, new Map())
+    this.sdkChrome.delete(sessionId)
+    this.rateLimit.delete(sessionId)
+  }
+
+  getTasks(sessionId: string): BackgroundTaskRow[] {
+    return [...(this.taskRows.get(sessionId)?.values() ?? [])]
+  }
+
+  getSdkChrome(sessionId: string): SdkChromeState | null {
+    return this.sdkChrome.get(sessionId) ?? null
+  }
+
+  getRateLimit(sessionId: string): RateLimitChromeState | null {
+    return this.rateLimit.get(sessionId) ?? null
+  }
+
+  getAuth(): AuthChromeState {
+    return this.auth
+  }
+
+  apply(event: HarnessEvent): {
+    toast?: { key: string; text: string; priority: 'low' | 'medium' | 'high' | 'immediate' }
+    logHook?: string
+  } {
+    const sid = event.sessionId
+    const side: {
+      toast?: { key: string; text: string; priority: 'low' | 'medium' | 'high' | 'immediate' }
+      logHook?: string
+    } = {}
+
+    switch (event.type) {
+      case 'background_tasks_changed': {
+        const prev = this.taskRows.get(sid) ?? new Map()
+        const next = new Map<string, BackgroundTaskRow>()
+        for (const t of event.tasks) {
+          const old = prev.get(t.taskId)
+          next.set(t.taskId, {
+            taskId: t.taskId,
+            taskType: t.taskType,
+            description: t.description,
+            status: old?.status ?? 'running',
+            subtitle: old?.subtitle,
+            error: old?.error,
+            done: old?.done,
+          })
+        }
+        this.taskRows.set(sid, next)
+        break
+      }
+      case 'task_started': {
+        const map = this.taskRows.get(sid) ?? new Map()
+        const subParts: string[] = ['started']
+        if (event.subagentType) subParts.push(event.subagentType)
+        if (event.workflowName) subParts.push(event.workflowName)
+        map.set(event.taskId, {
+          taskId: event.taskId,
+          taskType: event.taskType ?? 'subagent',
+          description: event.description,
+          status: 'running',
+          subtitle: subParts.join(' · '),
+        })
+        this.taskRows.set(sid, map)
+        break
+      }
+      case 'task_updated': {
+        const map = this.taskRows.get(sid)
+        if (!map) break
+        const row = map.get(event.taskId)
+        if (!row) break
+        if (event.patch.status) row.status = event.patch.status
+        if (event.patch.description) row.description = event.patch.description
+        if (event.patch.error) {
+          row.error = event.patch.error
+          row.subtitle = `failed · ${event.patch.error}`
+        }
+        if (event.patch.status === 'completed' || event.patch.status === 'failed' || event.patch.status === 'killed') {
+          row.done = true
+        }
+        break
+      }
+      case 'task_progress': {
+        const map = this.taskRows.get(sid)
+        const row = map?.get(event.taskId)
+        if (row) row.subtitle = taskSubtitleFromProgress(event)
+        break
+      }
+      case 'task_notification': {
+        const map = this.taskRows.get(sid)
+        const row = map?.get(event.taskId)
+        if (row) {
+          row.done = true
+          row.status = event.status === 'completed' ? 'completed' : 'failed'
+          if (event.summary) row.description = event.summary
+        }
+        break
+      }
+      case 'sdk_notification':
+        if (event.priority === 'immediate' || event.priority === 'high') {
+          side.toast = { key: event.key, text: event.text, priority: event.priority }
+        }
+        break
+      case 'sdk_status': {
+        if (event.status == null) {
+          this.sdkChrome.set(sid, {
+            status: null,
+            apiRetryText: this.sdkChrome.get(sid)?.apiRetryText ?? null,
+          })
+        } else if (event.compactResult === 'failed') {
+          this.sdkChrome.set(sid, {
+            status: null,
+            compactFailed: true,
+            compactError: event.compactError,
+            permissionMode: event.permissionMode,
+            apiRetryText: null,
+          })
+        } else {
+          this.sdkChrome.set(sid, {
+            status: event.status,
+            permissionMode: event.permissionMode,
+            compactFailed: false,
+            compactError: undefined,
+            apiRetryText: this.sdkChrome.get(sid)?.apiRetryText ?? null,
+          })
+        }
+        break
+      }
+      case 'api_retry': {
+        const prev: SdkChromeState = this.sdkChrome.get(sid) ?? { status: null, apiRetryText: null }
+        prev.apiRetryText = 'Retrying API…'
+        this.sdkChrome.set(sid, prev)
+        break
+      }
+      case 'rate_limit_event':
+        this.rateLimit.set(sid, formatRateLimitLabel(event.status, event.resetsAt, event.utilization))
+        break
+      case 'auth_status': {
+        const msg = event.error ?? event.output.join(' ').trim()
+        this.auth = {
+          isAuthenticating: event.isAuthenticating,
+          message: msg || (event.isAuthenticating ? 'Signing in…' : null),
+        }
+        break
+      }
+      case 'hook_started':
+        side.logHook = `hook ${event.hookEvent} · ${event.hookName}`
+        break
+      case 'hook_progress':
+        side.logHook = `hook ${event.hookEvent} · ${event.line}`
+        break
+      case 'hook_response':
+        side.logHook = `hook ${event.hookEvent} · ${event.outcome}${event.exitCode != null ? ` · ${event.exitCode}` : ''}`
+        break
+      case 'worker_shutting_down':
+        side.logHook = `worker subagent worker shutting down (${event.agentId ?? 'unknown'})`
+        break
+      default:
+        break
+    }
+    return side
+  }
+}

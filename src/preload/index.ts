@@ -21,6 +21,7 @@ import type {
   SessionStreamDeltaEvent,
   SessionStreamEvent,
   SessionTokenUsageEvent,
+  SessionPromptSuggestionEvent,
   SessionTurnStateEvent,
   SessionWorktreeProgressEvent,
   ModelValidationResult
@@ -46,6 +47,14 @@ import type {
   SessionWorkspacePayload,
   SessionWorkspaceUpdatedEvent
 } from '../shared/session-workspace-types'
+import type {
+  SessionAuthStatusEvent,
+  SessionBackgroundTasksEvent,
+  SessionHookLogEvent,
+  SessionRateLimitEvent,
+  SessionSdkChromeEvent,
+  SessionToastEvent
+} from '../shared/harness-ui-types'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -228,6 +237,42 @@ const api = {
     const listener = (_event: unknown, payload: SessionTokenUsageEvent): void => callback(payload)
     ipcRenderer.on('session:tokenUsage', listener)
     return () => ipcRenderer.removeListener('session:tokenUsage', listener)
+  },
+  /** Ghost composer text from SDK `prompt_suggestion` — Tab accepts into the input. */
+  onSessionPromptSuggestion: (callback: (event: SessionPromptSuggestionEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionPromptSuggestionEvent): void => callback(payload)
+    ipcRenderer.on('session:promptSuggestion', listener)
+    return () => ipcRenderer.removeListener('session:promptSuggestion', listener)
+  },
+  onSessionBackgroundTasks: (callback: (event: SessionBackgroundTasksEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionBackgroundTasksEvent): void => callback(payload)
+    ipcRenderer.on('session:backgroundTasks', listener)
+    return () => ipcRenderer.removeListener('session:backgroundTasks', listener)
+  },
+  onSessionSdkChrome: (callback: (event: SessionSdkChromeEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionSdkChromeEvent): void => callback(payload)
+    ipcRenderer.on('session:sdkChrome', listener)
+    return () => ipcRenderer.removeListener('session:sdkChrome', listener)
+  },
+  onSessionRateLimit: (callback: (event: SessionRateLimitEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionRateLimitEvent): void => callback(payload)
+    ipcRenderer.on('session:rateLimit', listener)
+    return () => ipcRenderer.removeListener('session:rateLimit', listener)
+  },
+  onSessionSdkToast: (callback: (event: SessionToastEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionToastEvent): void => callback(payload)
+    ipcRenderer.on('session:sdkToast', listener)
+    return () => ipcRenderer.removeListener('session:sdkToast', listener)
+  },
+  onSessionAuthStatus: (callback: (event: SessionAuthStatusEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionAuthStatusEvent): void => callback(payload)
+    ipcRenderer.on('session:authStatus', listener)
+    return () => ipcRenderer.removeListener('session:authStatus', listener)
+  },
+  onSessionHookLog: (callback: (event: SessionHookLogEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionHookLogEvent): void => callback(payload)
+    ipcRenderer.on('session:hookLog', listener)
+    return () => ipcRenderer.removeListener('session:hookLog', listener)
   },
   /** Worktree creation progress push (use-worktree) — fired during `git worktree add` with the current percentage. */
   onSessionWorktreeProgress: (callback: (event: SessionWorktreeProgressEvent) => void): (() => void) => {

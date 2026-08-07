@@ -1,3 +1,5 @@
 [turn1] user: Use the Bash tool to run exactly: sleep 2 && echo done. Wait for it to finish, then reply with three full sentences describing what the command did.
-[turn1] assistant: {"kind":"tool_call","toolUseId":"toolu_vrtx_01HDc4hhfwp92HMonn4nEuX5","name":"Bash","input":{"command":"sleep 2 && echo done","description":"Sleep for 2 seconds then print done"},"status":"completed",
-[turn1] assistant: The command paused execution for two seconds before proceeding. After the pause elapsed, it printed the word "done" to standard output. The whole sequence completed successfully with no errors.
+[turn1] assistant: {"kind":"thinking_block","status":"completed","text":"The user wants me to:\n1. Run a bash command: `sleep 2 && echo done`\n2. Wait for it to finish\n3. Reply with three full sentences describing what
+[turn1] assistant: {"kind":"tool_call","toolUseId":"toolu_vrtx_014VRHgPM9pAcqLmPAnrc7Yt","name":"Bash","input":{"command":"sleep 2 && echo done","description":"Sleep for 2 seconds then print done"},"status":"completed",
+[turn1] assistant: {"kind":"thinking_block","status":"completed","text":"The user asked me to run `sleep 2 && echo done` and wait for it to finish, then reply with three full sentences describing what the command did.\n
+[turn1] assistant: The command executed a shell pipeline that first paused execution for 2 seconds using `sleep 2`, then proceeded to the second command because the sleep succeeded. The `&&` operator ensured that `echo 

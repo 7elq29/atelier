@@ -398,6 +398,13 @@ export interface SessionTokenUsageEvent {
   contextWindow: number
 }
 
+/** Composer ghost prompt from SDK `prompt_suggestion` (not persisted). */
+export interface SessionPromptSuggestionEvent {
+  sessionId: string
+  /** Null clears the placeholder (new turn started, user sent a message). */
+  suggestion: string | null
+}
+
 /** Worktree creation progress push (use-worktree), fired during `git worktree add` for large repos. */
 export interface SessionWorktreeProgressEvent {
   sessionId: string

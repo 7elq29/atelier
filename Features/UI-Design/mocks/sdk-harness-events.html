@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<title>Atelier — SDK harness events (UI mocks)</title>
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+<div class="sdk-mock-page">
+  <p class="sdk-mock-nav"><a href="index.html">← Interactive mock</a> · <a href="sdk-harness-events-review.html">Design review (approved)</a> · <a href="#toc">Jump to list</a></p>
+  <h1 class="sdk-mock-title">SDK message → UI mapping</h1>
+  <p class="sdk-mock-intro">
+    <span class="sdk-draft-label">Draft catalog</span>
+    In-review SDK → UI mappings only. Approved threads live on
+    <a href="sdk-harness-events-review.html">sdk-harness-events-review.html</a>.
+    Implementation plan: <code>Features/harness-sdk-events/spec.md</code>.
+  </p>
+
+  <nav id="toc" class="sdk-event-demo" style="font-size:13px;line-height:1.6;color:var(--text-secondary)">
+    <strong style="color:var(--text-primary)">Contents</strong> —
+    <a href="#api-retry">api_retry</a> ·
+    <a href="#mirror-error">mirror_error</a>
+  </nav>
+
+  <section class="sdk-event-block sdk-event-block--draft" id="api-retry">
+    <span class="sdk-draft-label">Draft</span>
+    <p class="sdk-event-id">SDKAPIRetryMessage · system / api_retry</p>
+    <p class="sdk-event-surface"><strong>When sent:</strong> Transient API failure while a turn is still active; CLI is retrying the request.</p>
+    <p class="sdk-event-surface"><strong>Surface:</strong> Plain tertiary text on the active <strong>requesting</strong> conversation status card (see approved Request mock) — not a chip, not its own row. Example: “Retrying API…”</p>
+  </section>
+
+  <section class="sdk-event-block sdk-event-block--draft" id="mirror-error">
+    <span class="sdk-draft-label">Draft</span>
+    <p class="sdk-event-id">SDKMirrorErrorMessage · system / mirror_error</p>
+    <p class="sdk-event-surface"><strong>Surface:</strong> <code>.transcript-notice.danger</code> in conversation + optional subtle toast; log for support.</p>
+    <div class="sdk-event-demo" style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+      <div class="transcript-notice danger">
+        <span class="transcript-notice-label">Sync</span>
+        <span>Transcript mirror failed — some messages may be missing. Check logs.</span>
+      </div>
+      <div class="sdk-toast sdk-toast--subtle immediate" style="max-width:320px">Logged mirror_error — see main.log</div>
+    </div>
+  </section>
+
+  <p class="sdk-mock-nav" style="margin-top:24px"><a href="index.html">← Back to interactive mock</a></p>
+</div>
+</body>
+</html>

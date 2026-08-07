@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<title>Atelier — SDK UI design review</title>
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+<div class="sdk-review-page">
+  <p class="sdk-mock-nav">
+    <a href="index.html">← Interactive mock</a> ·
+    <a href="sdk-harness-events.html">SDK event catalog (drafts)</a>
+  </p>
+
+  <h1 class="sdk-mock-title">SDK UI — design review</h1>
+
+  <div class="sdk-review-banner">
+    <strong>Workflow:</strong> Draft threads live in
+    <a href="sdk-harness-events.html">sdk-harness-events.html</a>. When you approve a thread, move its spec + mocks here and mark
+    <span class="sdk-review-badge approved">Approved</span> — approved content is <em>not</em> duplicated in the draft catalog.
+  </div>
+
+  <section>
+    <h2 class="sdk-review-section-title">Approved</h2>
+
+    <article class="sdk-review-thread">
+      <div class="sdk-review-thread-head">
+        <h2><code>SDKPartialAssistantMessage</code></h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        Partial stream → existing transcript cards (<code>text_delta</code>, thinking <code>.tool-card.thinking-block</code>,
+        tool <code>input_json_delta</code> on <code>.tool-card</code>). Body detail: 12.5px tertiary, 18px left padding.
+        Each partial delta updates an existing card — no separate “partial message” row.
+        <strong>No card v1:</strong> <code>citations_delta</code>, lifecycle-only stream frames.
+      </p>
+
+      <h3 class="mock-section-label" id="partial-text-delta">text_delta → .msg-assistant</h3>
+      <p class="sdk-event-surface"><code>session:streamDelta</code> on one assistant row; finalized via flush — same visuals.</p>
+      <div class="sdk-event-demo">
+        <div class="msg-wrap"><div class="msg-assistant">I'll trace the refresh timer and compare remote vs local session bootstrap.</div></div>
+      </div>
+
+      <h3 class="mock-section-label" id="partial-thinking">thinking → .tool-card.thinking-block</h3>
+      <div class="sdk-event-demo" style="display:flex;flex-direction:column;gap:12px">
+        <div class="tool-card thinking-block thinking-block-running">
+          <div class="tool-head">
+            <span class="tool-badge other">THINKING</span>
+            <span class="tool-headline">Extended reasoning…</span>
+            <span class="tool-elapsed">~12.4k tokens</span>
+            <span class="spinner"></span>
+            <span class="tool-chev">▸</span>
+          </div>
+        </div>
+        <div class="tool-card thinking-block thinking-block-running open">
+          <div class="tool-head">
+            <span class="tool-badge other">THINKING</span>
+            <span class="tool-headline">Extended reasoning…</span>
+            <span class="tool-elapsed">~3.2k tokens</span>
+            <span class="spinner"></span>
+            <span class="tool-chev">▸</span>
+          </div>
+          <div class="tool-body"><pre class="thinking-block-detail">Need to compare scheduleRefresh call sites…</pre></div>
+        </div>
+      </div>
+
+      <h3 class="mock-section-label" id="partial-tool-input">input_json_delta → .tool-card</h3>
+      <div class="sdk-event-demo" style="display:flex;flex-direction:column;gap:12px">
+        <div class="tool-card open">
+          <div class="tool-head">
+            <span class="tool-badge bash">BASH</span>
+            <span class="tool-headline">grep -rn "refresh" src/auth/token-manager.ts</span>
+            <span class="tool-stream-hint">Composing…</span>
+            <span class="spinner"></span>
+            <span class="tool-chev">▸</span>
+          </div>
+          <div class="tool-body"><pre class="tool-card-detail">{"command": "grep -rn \"refresh\" src/a</pre></div>
+        </div>
+        <div class="tool-card open">
+          <div class="tool-head">
+            <span class="tool-badge bash">BASH</span>
+            <span class="tool-headline">grep -rn "refresh" src/auth/token-manager.ts</span>
+            <span class="tool-status ok">completed</span>
+            <span class="tool-chev">▸</span>
+          </div>
+          <div class="tool-body"><pre class="tool-card-detail">{
+  "command": "grep -rn \"refresh\" src/auth/token-manager.ts"
+}
+
+3 matches…</pre></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="bg-changed">
+      <div class="sdk-review-thread-head">
+        <h2>Background jobs rail</h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        <code>background_tasks_changed</code> → REPLACE membership; one <code>.tracker-card</code> per family (Monitors, Subagents, Shell).
+        Row detail (status, MCP subtitle, errors, progress) merges from <code>task_started</code>, <code>task_updated</code>,
+        <code>task_progress</code>, <code>task_notification</code> by <code>task_id</code> — not from the changed payload alone.
+        Honor <code>skip_transcript</code> on started events.
+      </p>
+
+      <h3 class="mock-section-label">SDKBackgroundTasksChangedMessage</h3>
+      <p class="sdk-event-id">system / background_tasks_changed</p>
+      <div class="sdk-event-demo">
+        <div class="tracker-rail" style="width:100%;max-width:320px;padding:12px;gap:12px">
+          <div class="tracker-card">
+            <div class="tracker-head">Monitors <span class="count">1 running</span></div>
+            <div class="tracker-body">
+              <div class="subagent-item">
+                <span class="spinner"></span>
+                <span>Watch CI until green</span>
+              </div>
+              <div class="subagent-item" style="font-size:13px;color:var(--text-tertiary);padding-left:22px">MCP · build-status · task_8f2…</div>
+            </div>
+          </div>
+          <div class="tracker-card">
+            <div class="tracker-head">Subagents <span class="count">1 running</span></div>
+            <div class="tracker-body">
+              <div class="subagent-item">
+                <span class="spinner"></span>
+                <span>Explore token refresh call sites</span>
+              </div>
+              <div class="subagent-item" style="font-size:13px;color:var(--text-tertiary);padding-left:22px">Read → Grep · 42s</div>
+            </div>
+          </div>
+          <div class="tracker-card">
+            <div class="tracker-head">Shell <span class="count">1 running</span></div>
+            <div class="tracker-body">
+              <div class="subagent-item">
+                <span class="spinner"></span>
+                <span style="font-family:var(--font-mono);font-size:14px">npm run test:watch</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="mock-section-label" id="task-started">SDKTaskStartedMessage</h3>
+      <p class="sdk-event-surface">Enrich rail row label — <code>description</code>, <code>subagent_type</code>, <code>workflow_name</code>.</p>
+      <div class="sdk-event-demo">
+        <div class="background-item">
+          <span class="spinner"></span>
+          <span class="background-type workflow">workflow</span>
+          <div class="background-body">
+            <div class="background-desc">spec — generate implementation plan</div>
+            <div class="background-sub">started · general-purpose</div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="mock-section-label" id="task-updated">SDKTaskUpdatedMessage</h3>
+      <p class="sdk-event-surface">Merge patch — spinner, <code>is_backgrounded</code>, error subtitle.</p>
+      <div class="sdk-event-demo">
+        <div class="background-item failed">
+          <span class="background-type shell">shell</span>
+          <div class="background-body">
+            <div class="background-desc">flaky integration suite</div>
+            <div class="background-sub">failed · exit 1</div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="mock-section-label" id="task-progress">SDKTaskProgressMessage</h3>
+      <p class="sdk-event-surface">Row subtitle — <code>last_tool_name</code>, duration, <code>usage</code>.</p>
+      <div class="sdk-event-demo">
+        <div class="background-item">
+          <span class="spinner"></span>
+          <span class="background-type subagent">subagent</span>
+          <div class="background-body">
+            <div class="background-desc">Refactor auth module</div>
+            <div class="background-sub">last: Edit · 18 tool uses · 2m04s</div>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="mock-section-label" id="task-notification">SDKTaskNotificationMessage</h3>
+      <p class="sdk-event-surface">Row → done; optional high toast with <code>summary</code> (monitor example below).</p>
+      <div class="sdk-event-demo">
+        <div class="background-item done">
+          <span class="background-type monitor">monitor</span>
+          <div class="background-body">
+            <div class="background-desc">PR #412 merged</div>
+          </div>
+        </div>
+        <div class="sdk-toast-stack" style="margin-top:14px">
+          <div class="sdk-toast high">Background task finished — PR #412 merged</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="notification">
+      <div class="sdk-review-thread-head">
+        <h2>Monitor wake toasts</h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        <code>SDKNotificationMessage</code> — when a monitor fires, show an <strong>immediate</strong>-priority toast; dedupe by <code>key</code>.
+        Rail row stays on background-task state; this is the user-visible wake signal.
+      </p>
+      <p class="sdk-event-id">system / notification</p>
+      <div class="sdk-event-demo">
+        <div class="sdk-toast-stack">
+          <div class="sdk-toast immediate">Monitor triggered: CI failed on main<span class="sdk-toast-key">monitor:ci</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="model-refusal-fallback">
+      <div class="sdk-review-thread-head">
+        <h2><code>SDKModelRefusalFallbackMessage</code></h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface"><code>system / model_refusal_fallback</code> → muted <code>.transcript-notice.warning</code> in the conversation panel.</p>
+      <div class="sdk-event-demo">
+        <div class="transcript-notice warning">
+          <span class="transcript-notice-label">Model</span>
+          <span>Request refused; retrying on <strong>claude-sonnet-4-20250514</strong>.</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="model-refusal-no-fallback">
+      <div class="sdk-review-thread-head">
+        <h2><code>SDKModelRefusalNoFallbackMessage</code></h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">Same notice treatment + composer hint to edit and resend.</p>
+      <div class="sdk-event-demo">
+        <div class="transcript-notice danger">
+          <span class="transcript-notice-label">Refused</span>
+          <span>Model declined this request. Edit your message and try again.</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="rate-limit">
+      <div class="sdk-review-thread-head">
+        <h2><code>SDKRateLimitEvent</code></h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">Not its own card — <code>.composer-status-chip</code> pair in <code>.composer-footer</code> (utilization / reset + send blocked), beside mode pill and token meter.</p>
+      <div class="sdk-event-demo">
+        <div class="composer-box" style="border:1px solid var(--elevation-border);border-radius:var(--r-xl);background:var(--bg-panel);padding-bottom:0">
+          <div style="padding:0 13px 4px;color:var(--text-disabled);font-size:var(--text-base)">Message Atelier…</div>
+          <div class="composer-footer" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px 12px">
+            <span class="mode-pill"><span>Default</span></span>
+            <span class="composer-status-chip warn">Rate limit · resets 3:42pm</span>
+            <span class="composer-status-chip danger">Send blocked</span>
+            <span style="margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-disabled)">142k [██░░] 39%/367k</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="status-compacting">
+      <div class="sdk-review-thread-head">
+        <h2>SDK status — Compact</h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        <code>SDKStatusMessage</code> with <code>status: 'compacting'</code> → ephemeral <code>.conversation-status-card</code> in the transcript.
+        Indeterminate progress bar; optional <code>permissionMode</code> meta. Hide on <code>status: null</code>.
+        Durable compact pill still from <code>compact_boundary</code>.
+      </p>
+      <div class="sdk-event-demo">
+        <div class="sdk-transcript-status-demo">
+          <div class="conversation-status-card conversation-status-card--compacting">
+            <div class="conversation-status-head">
+              <span class="tool-badge other">COMPACT</span>
+              <span class="conversation-status-title">Compacting conversation…</span>
+              <span class="spinner"></span>
+            </div>
+            <div class="conversation-status-progress" aria-hidden="true"><span></span></div>
+            <div class="conversation-status-detail">Summarizing older messages so the session fits the context window.</div>
+            <div class="conversation-status-meta">permissionMode: default</div>
+          </div>
+        </div>
+      </div>
+      <h3 class="mock-section-label" style="margin-top:16px">compact_result = failed</h3>
+      <p class="sdk-event-surface">Terminal beat — failed chrome, <code>compact_error</code> meta, no spinner.</p>
+      <div class="sdk-event-demo">
+        <div class="conversation-status-card conversation-status-card--compacting-failed">
+          <div class="conversation-status-head">
+            <span class="tool-badge other">COMPACT</span>
+            <span class="conversation-status-title">Compaction failed</span>
+          </div>
+          <div class="conversation-status-detail">Context could not be reduced automatically. Try /compact manually or start a fork.</div>
+          <div class="conversation-status-meta">compact_error: rate_limit_exceeded</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="status-requesting">
+      <div class="sdk-review-thread-head">
+        <h2>SDK status — Request</h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        <code>status: 'requesting'</code> → same transcript card slot. Title, turn-in-flight detail, optional <code>permissionMode</code> meta.
+        <code>SDKAPIRetryMessage</code>: plain tertiary text on this card (e.g. “Retrying API…”) — not a chip.
+      </p>
+      <div class="sdk-event-demo">
+        <div class="sdk-transcript-status-demo">
+          <div class="conversation-status-card conversation-status-card--requesting">
+            <div class="conversation-status-head">
+              <span class="tool-badge other">REQUEST</span>
+              <span class="conversation-status-title">Waiting for model…</span>
+              <span class="spinner"></span>
+            </div>
+            <div class="conversation-status-detail">Assistant turn is in flight. Stop still ends the turn; queued messages stay queued.</div>
+            <div class="conversation-status-meta">permissionMode: acceptEdits</div>
+            <div class="conversation-status-adjunct-text">Retrying API…</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="tool-progress">
+      <div class="sdk-review-thread-head">
+        <h2><code>SDKToolProgressMessage</code></h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface"><code>type: tool_progress</code> → active <code>.tool-card</code> with <code>.tool-elapsed</code> from <code>elapsed_time_seconds</code> (SDK heartbeat).</p>
+      <div class="sdk-event-demo">
+        <div class="tool-card">
+          <div class="tool-head">
+            <span class="tool-badge read">READ</span>
+            <span class="tool-headline">src/main/harness/claude-agent-sdk-harness.ts</span>
+            <span class="tool-elapsed">1:24</span>
+            <span class="spinner"></span>
+            <span class="tool-chev">▸</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="thinking-tokens">
+      <div class="sdk-review-thread-head">
+        <h2><code>SDKThinkingTokensMessage</code></h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        <code>system / thinking_tokens</code> → transcript <code>.tool-card</code> (prefer <code>.thinking-block</code> when streaming partials).
+        Token estimate in <code>.tool-elapsed</code> — not a composer chip.
+      </p>
+      <div class="sdk-event-demo">
+        <div class="tool-card thinking-block thinking-block-running">
+          <div class="tool-head">
+            <span class="tool-badge other">THINKING</span>
+            <span class="tool-headline">Extended reasoning</span>
+            <span class="tool-elapsed">~12.4k tokens</span>
+            <span class="spinner"></span>
+            <span class="tool-chev">▸</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="hooks">
+      <div class="sdk-review-thread-head">
+        <h2>Hook stream (debug v1)</h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        <code>hook_started</code>, <code>hook_progress</code>, <code>hook_response</code> → <code>.sdk-debug-log</code> only in v1 (not transcript).
+      </p>
+      <div class="sdk-event-demo">
+        <div class="sdk-debug-log">
+          <span class="line"><em>hook</em> PreToolUse · session hook · Bash</span>
+          <span class="line"><em>hook</em> PostToolUse · lint running…</span>
+          <span class="line"><em>hook</em> Stop · exit 0 · 120ms</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="local-command">
+      <div class="sdk-review-thread-head">
+        <h2><code>SDKLocalCommandOutputMessage</code></h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        <code>system / local_command_output</code> — after local slash commands (<code>/cost</code>, <code>/usage</code>, …).
+        Transcript monospace block (<code>.local-cmd-output</code>), assistant-style lane — not a tool card.
+      </p>
+      <div class="sdk-event-demo">
+        <div class="local-cmd-output">/cost
+Session: $0.42 · 3 turns · 128k tokens</div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="prompt-suggestion">
+      <div class="sdk-review-thread-head">
+        <h2><code>SDKPromptSuggestionMessage</code></h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        <code>type: prompt_suggestion</code> — empty composer shows suggestion as textarea <code>placeholder</code> (tertiary).
+        <kbd>Tab</kbd> fills the input only (no submit). Cleared on send.
+      </p>
+      <div class="sdk-event-demo">
+        <div class="composer-box" style="border:1px solid var(--elevation-border);border-radius:var(--r-xl);background:var(--bg-panel);padding-bottom:0">
+          <textarea rows="2" readonly style="width:100%;border:none;background:transparent;padding:11px 13px 4px;font-family:var(--font-ui);font-size:var(--text-base);color:var(--text-primary);resize:none;outline:none" placeholder="Run npm run build and fix any TypeScript errors."></textarea>
+          <div class="composer-footer composer-footer--mock">
+            <span class="mode-pill"><span>Default</span></span>
+            <span class="composer-suggestion-hint">Tab to fill</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="auth-status">
+      <div class="sdk-review-thread-head">
+        <h2><code>SDKAuthStatusMessage</code></h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        <code>type: auth_status</code> → settings surface only: muted <code>.settings-auth-notice</code> (12.5px tertiary), not <code>.session-banner</code>.
+      </p>
+      <div class="sdk-event-demo">
+        <div class="settings-auth-notice">
+          <span class="settings-auth-notice-label">Auth</span>
+          <span>API key expired — open Settings to sign in again.</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="permission-denied">
+      <div class="sdk-review-thread-head">
+        <h2><code>SDKPermissionDeniedMessage</code></h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        <code>system / permission_denied</code> → existing tool card with <code>.tool-denied</code> / <code>.tool-status.denied</code>.
+        No interactive permission card in v1.
+      </p>
+      <div class="sdk-event-demo">
+        <div class="tool-card tool-denied">
+          <div class="tool-head">
+            <span class="tool-badge bash">Bash</span>
+            <span class="tool-headline">rm -rf node_modules</span>
+            <span class="tool-status denied">Denied</span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="sdk-review-thread" id="worker-shutting-down">
+      <div class="sdk-review-thread-head">
+        <h2><code>SDKWorkerShuttingDownMessage</code></h2>
+        <span class="sdk-review-badge approved">Approved</span>
+      </div>
+      <p class="sdk-event-surface">
+        <code>system / worker_shutting_down</code> → debug log only v1 (<code>.sdk-debug-log</code>).
+        Optional future: correlated subagent rail subtitle — not transcript, not toast.
+      </p>
+      <div class="sdk-event-demo">
+        <div class="sdk-debug-log"><span class="line"><em>worker</em> subagent worker shutting down (agent_7c…)</span></div>
+      </div>
+    </article>
+  </section>
+
+  <section>
+    <h2 class="sdk-review-section-title">Draft</h2>
+    <p class="sdk-review-empty">No open review threads — edit drafts in <a href="sdk-harness-events.html">sdk-harness-events.html</a>.</p>
+  </section>
+</div>
+</body>
+</html>

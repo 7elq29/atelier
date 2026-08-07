@@ -183,6 +183,41 @@ export type HarnessEvent =
       sessionId: string
       timestamp: string
       text: string
+      parentToolUseId?: string | null
+    }
+  | {
+      type: 'thinking_block_start'
+      sessionId: string
+      timestamp: string
+      parentToolUseId: string | null
+    }
+  | {
+      type: 'thinking_delta'
+      sessionId: string
+      timestamp: string
+      text: string
+      parentToolUseId: string | null
+    }
+  | {
+      type: 'thinking_block_end'
+      sessionId: string
+      timestamp: string
+      parentToolUseId: string | null
+    }
+  | {
+      type: 'thinking_tokens'
+      sessionId: string
+      timestamp: string
+      estimatedTokens: number
+      estimatedTokensDelta: number
+    }
+  | {
+      type: 'tool_input_delta'
+      sessionId: string
+      timestamp: string
+      toolUseId: string
+      partialJson: string
+      parentToolUseId: string | null
     }
   | {
       type: 'tool_call_start'
@@ -202,6 +237,21 @@ export type HarnessEvent =
        * normalization dropped it.
        */
       parentToolUseId: string | null
+    }
+  | {
+      /**
+       * Live heartbeat for a long-running tool (SDK `SDKToolProgressMessage`).
+       * Updates the matching in-flight tool card's elapsed timer — no new
+       * transcript row.
+       */
+      type: 'tool_progress'
+      sessionId: string
+      timestamp: string
+      toolUseId: string
+      toolName: string
+      parentToolUseId: string | null
+      elapsedTimeSeconds: number
+      taskId?: string
     }
   | {
       type: 'tool_call_end'
@@ -331,6 +381,160 @@ export type HarnessEvent =
       sessionId: string
       timestamp: string
       commands: HarnessSlashCommand[]
+    }
+  | {
+      /**
+       * Predicted next user prompt (`SDKPromptSuggestionMessage`). Arrives
+       * after `result` when `promptSuggestions` is enabled — not a transcript row.
+       */
+      type: 'prompt_suggestion'
+      sessionId: string
+      timestamp: string
+      suggestion: string
+    }
+  | {
+      type: 'background_tasks_changed'
+      sessionId: string
+      timestamp: string
+      tasks: { taskId: string; taskType: string; description: string }[]
+    }
+  | {
+      type: 'task_started'
+      sessionId: string
+      timestamp: string
+      taskId: string
+      description: string
+      taskType?: string
+      subagentType?: string
+      workflowName?: string
+      skipTranscript?: boolean
+    }
+  | {
+      type: 'task_updated'
+      sessionId: string
+      timestamp: string
+      taskId: string
+      patch: {
+        status?: 'pending' | 'running' | 'completed' | 'failed' | 'killed' | 'paused'
+        description?: string
+        error?: string
+        isBackgrounded?: boolean
+      }
+    }
+  | {
+      type: 'task_progress'
+      sessionId: string
+      timestamp: string
+      taskId: string
+      description: string
+      lastToolName?: string
+      summary?: string
+      usage?: { total_tokens: number; tool_uses: number; duration_ms: number }
+    }
+  | {
+      type: 'task_notification'
+      sessionId: string
+      timestamp: string
+      taskId: string
+      status: 'completed' | 'failed' | 'stopped'
+      summary: string
+    }
+  | {
+      type: 'sdk_notification'
+      sessionId: string
+      timestamp: string
+      key: string
+      text: string
+      priority: 'low' | 'medium' | 'high' | 'immediate'
+    }
+  | {
+      type: 'permission_denied'
+      sessionId: string
+      timestamp: string
+      toolUseId: string
+      toolName: string
+      message: string
+    }
+  | {
+      type: 'model_refusal_fallback'
+      sessionId: string
+      timestamp: string
+      fallbackModel: string
+      content: string
+    }
+  | {
+      type: 'model_refusal_no_fallback'
+      sessionId: string
+      timestamp: string
+      content: string
+    }
+  | {
+      type: 'sdk_status'
+      sessionId: string
+      timestamp: string
+      status: 'compacting' | 'requesting' | null
+      permissionMode?: string
+      compactResult?: 'success' | 'failed'
+      compactError?: string
+    }
+  | {
+      type: 'api_retry'
+      sessionId: string
+      timestamp: string
+      attempt: number
+      maxRetries: number
+    }
+  | {
+      type: 'rate_limit_event'
+      sessionId: string
+      timestamp: string
+      status: 'allowed' | 'allowed_warning' | 'rejected'
+      resetsAt?: number
+      utilization?: number
+    }
+  | {
+      type: 'local_command_output'
+      sessionId: string
+      timestamp: string
+      content: string
+    }
+  | {
+      type: 'auth_status'
+      sessionId: string
+      timestamp: string
+      isAuthenticating: boolean
+      error?: string
+      output: string[]
+    }
+  | {
+      type: 'hook_started'
+      sessionId: string
+      timestamp: string
+      hookName: string
+      hookEvent: string
+    }
+  | {
+      type: 'hook_progress'
+      sessionId: string
+      timestamp: string
+      hookName: string
+      hookEvent: string
+      line: string
+    }
+  | {
+      type: 'hook_response'
+      sessionId: string
+      timestamp: string
+      hookName: string
+      hookEvent: string
+      outcome: 'success' | 'error' | 'cancelled'
+      exitCode?: number
+    }
+  | {
+      type: 'worker_shutting_down'
+      sessionId: string
+      timestamp: string
+      agentId?: string
     }
 
 /** A running (or just-started) agent turn: its id plus its event stream. */

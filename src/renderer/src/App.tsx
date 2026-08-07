@@ -12,6 +12,7 @@ import ChatTranscript from './components/chat/ChatTranscript'
 import TranscriptSearchBar from './components/chat/TranscriptSearchBar'
 import Composer, { type ComposerHandle } from './components/chat/Composer'
 import TrackerRail from './components/chat/TrackerRail'
+import SdkToastStack from './components/chat/SdkToastStack'
 import ExportMenu from './components/chat/ExportMenu'
 import TabBar, { type SessionTab } from './components/panels/TabBar'
 import DiffPanel from './components/panels/DiffPanel'
@@ -657,6 +658,7 @@ export default function App(): JSX.Element {
 
   async function handleSend(sessionId: string, text: string, image?: ImageAttachment): Promise<void> {
     if (!text.trim() && !image) return
+    if (sessions.rateLimitBySession[sessionId]?.sendBlocked) return
     lastSubmittedTextBySessionRef.current[sessionId] = text.trim()
     const session = allSessions.find((s) => s.id === sessionId)
     const model = modelSelectionForSession(sessionId, session, modelSelectionBySession, config)
@@ -979,7 +981,8 @@ export default function App(): JSX.Element {
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                   <div className={`tab-content${activeTab === 'chat' ? '' : ' hidden'}`} data-tab="chat">
-                    <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                    <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
+                      <SdkToastStack toasts={sessions.sdkToastsBySession[activeSession.id] ?? []} />
                       <div className="chat-body-row">
                         <div className="chat-main-col">
                           <ChatTranscript
@@ -989,9 +992,13 @@ export default function App(): JSX.Element {
                             activeMatchIndex={activeMatchIndex}
                             onMatchCount={setMatchCount}
                             onOpenPlanFile={openFileInFiles}
+                            sdkChrome={sessions.sdkChromeBySession[activeSession.id] ?? null}
                           />
                         </div>
-                        <TrackerRail messages={activeMessages} />
+                        <TrackerRail
+                          messages={activeMessages}
+                          backgroundTasks={sessions.backgroundTasksBySession[activeSession.id] ?? []}
+                        />
                       </div>
                       <div className="composer-cache">
                         {[...aliveChatComposers].map((sessionId) => {
@@ -1042,6 +1049,8 @@ export default function App(): JSX.Element {
                                   }))
                                 }
                                 tokenUsage={sessions.tokenUsageBySession[sessionId]}
+                                promptSuggestion={sessions.promptSuggestionBySession[sessionId]}
+                                rateLimit={sessions.rateLimitBySession[sessionId] ?? null}
                                 onAddLocalMessage={(content) => sessions.addLocalMessage(sessionId, content)}
                                 onValidateModel={(model) => sessions.validateModel(sessionId, model)}
                               />
@@ -1049,6 +1058,15 @@ export default function App(): JSX.Element {
                           )
                         })}
                       </div>
+                      {import.meta.env.DEV && (sessions.hookLogBySession[activeSession.id]?.length ?? 0) > 0 && (
+                        <div className="sdk-debug-log" data-testid="sdk-debug-log">
+                          {(sessions.hookLogBySession[activeSession.id] ?? []).map((line, i) => (
+                            <span key={i} className="line">
+                              {line}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1240,6 +1258,7 @@ export default function App(): JSX.Element {
         onClose={() => setSettingsOpen(false)}
         config={config}
         onUpdate={updateConfig}
+        authStatus={sessions.authStatus}
         onReplayOnboarding={() => {
           setSettingsOpen(false)
           updateConfig({ onboardingCompleted: false })
