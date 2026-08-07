@@ -26,6 +26,7 @@ import type { BrowserWindow } from 'electron'
 import { logger } from '../logger'
 import { SSH_MUX_OPTS } from '../ssh-exec'
 import { ShellPoolManager } from './shell-pool'
+import { shQuote } from '../shell-quote'
 import { hostname as osHostname } from 'node:os'
 import { parseSshConnectionClosed, parseSshHostFromShellLine, inferShellHostFromPtyTail, localMachineHostLabels } from '../../shared/terminal-shell-context'
 
@@ -51,6 +52,21 @@ try {
 function tmuxSessionName(id: string): string {
   const sanitized = id.replace(/[^a-zA-Z0-9-]/g, '-')
   return `atelier-${sanitized}`.slice(0, 50)
+}
+
+/** node-pty must spawn a login shell that exec's tmux — direct tmux exec fails on macOS (posix_spawnp). */
+function localShellForTmuxAttach(tmuxBin: string, tmuxName: string): { shell: string; args: string[] } {
+  const shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh')
+  const cmd = `exec ${shQuote(tmuxBin)} attach-session -t ${shQuote(tmuxName)}`
+  return { shell, args: ['-l', '-c', cmd] }
+}
+
+function ptyEnvWithoutTmux(): Record<string, string> {
+  const env = { ...process.env } as Record<string, string>
+  delete env.TMUX
+  delete env.TMUX_PANE
+  delete env.TMUX_WIN
+  return env
 }
 
 interface PtyEntry {
@@ -170,8 +186,9 @@ export class PtyManager {
       // Attach to the (now-guaranteed) existing session. When this client
       // exits (node-pty closes), tmux simply detaches — no SIGHUP to the
       // shell, so the session and its processes survive.
-      shell = tmuxBin!
-      args = ['attach-session', '-t', name]
+      const attach = localShellForTmuxAttach(tmuxBin!, name)
+      shell = attach.shell
+      args = attach.args
       entryTmuxName = name
     } else if (isRemote) {
       const hostname = opts.hostname as string
@@ -221,13 +238,56 @@ export class PtyManager {
     const gen = ++this.genCounter
     logger.info('pty spawn: node-pty.spawn starting', { id, shell, elapsedMs: elapsed() })
 
-    const proc = pty.spawn(shell, args, {
-      name: 'xterm-color',
+    const spawnEnv = useTmux || entryTmuxName ? ptyEnvWithoutTmux() : (process.env as Record<string, string>)
+    const spawnOpts = {
+      name: 'xterm-color' as const,
       cols: opts.cols || 80,
       rows: opts.rows || 24,
       cwd: isRemote ? undefined : opts.cwd,
-      env: process.env as Record<string, string>
-    })
+      env: spawnEnv
+    }
+
+    let proc: pty.IPty
+    try {
+      proc = pty.spawn(shell, args, spawnOpts)
+    } catch (firstErr) {
+      if (!useTmux || !entryTmuxName || !tmuxBin) throw firstErr
+      logger.warn('pty tmux client spawn failed, recreating tmux session', {
+        id,
+        name: entryTmuxName,
+        error: String(firstErr)
+      })
+      try {
+        execFileSync(tmuxBin, ['kill-session', '-t', entryTmuxName], { stdio: 'ignore' })
+      } catch {
+        /* session may already be gone */
+      }
+      await execFileAsync(tmuxBin, [
+        'new-session', '-d', '-s', entryTmuxName,
+        '-x', String(Math.max(opts.cols || 80, 2)),
+        '-y', String(Math.max(opts.rows || 24, 2)),
+        '-c', opts.cwd
+      ])
+      const attach = localShellForTmuxAttach(tmuxBin, entryTmuxName)
+      try {
+        proc = pty.spawn(attach.shell, attach.args, spawnOpts)
+      } catch (secondErr) {
+        logger.error('pty tmux attach failed after recreate, using plain shell', {
+          id,
+          name: entryTmuxName,
+          error: String(secondErr)
+        })
+        entryTmuxName = undefined
+        claimedFromPool = false
+        shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh')
+        args = []
+        proc = pty.spawn(shell, args, {
+          ...spawnOpts,
+          env: process.env as Record<string, string>
+        })
+        proc.write(`cd ${JSON.stringify(opts.cwd)} && clear\r`)
+      }
+    }
 
     const initialShellHost = isRemote ? (opts.hostname as string) : null
     const entry: PtyEntry = {
