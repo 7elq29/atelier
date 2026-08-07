@@ -58,6 +58,13 @@ function countLines(text: string): number {
   return text.length === 0 ? 0 : text.split('\n').length
 }
 
+function formatToolElapsed(seconds: number): string {
+  if (seconds < 60) return `${Math.floor(seconds)}s`
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
 /**
  * One-line "what changed" summary for edit-type tools' collapsed row
  * (14-tool-call-sequence-collapse), computed purely from `input` — no diff
@@ -136,7 +143,7 @@ export default function ToolCallCard({ content }: { content: ToolCallContent }):
 
   return (
     <div
-      className={`tool-card${open ? ' open' : ''}`}
+      className={`tool-card${open ? ' open' : ''}${content.status === 'denied' ? ' tool-denied' : ''}`}
       data-testid="tool-card"
       data-tool-name={content.name}
       data-tool-status={content.status}
@@ -161,11 +168,29 @@ export default function ToolCallCard({ content }: { content: ToolCallContent }):
           </span>
         )}
         {running ? (
-          <span className="spinner" data-testid="tool-running-indicator" />
+          <>
+            {content.inputStreamJson && (
+              <span className="tool-stream-hint" data-testid="tool-input-stream-hint">
+                Composing…
+              </span>
+            )}
+            {content.elapsedTimeSeconds != null && content.elapsedTimeSeconds > 0 && (
+              <span className="tool-elapsed" data-testid="tool-elapsed">
+                {formatToolElapsed(content.elapsedTimeSeconds)}
+              </span>
+            )}
+            <span className="spinner" data-testid="tool-running-indicator" />
+          </>
         ) : (
           <span
             className={`tool-status ${
-              content.status === 'error' ? 'error' : content.status === 'interrupted' ? 'interrupted' : 'ok'
+              content.status === 'error'
+                ? 'error'
+                : content.status === 'interrupted'
+                  ? 'interrupted'
+                  : content.status === 'denied'
+                    ? 'denied'
+                    : 'ok'
             }`}
             data-testid="tool-status-chip"
           >
@@ -173,14 +198,28 @@ export default function ToolCallCard({ content }: { content: ToolCallContent }):
               ? 'error'
               : content.status === 'interrupted'
                 ? 'interrupted'
-                : 'completed'}
+                : content.status === 'denied'
+                  ? 'denied'
+                  : 'completed'}
           </span>
         )}
         <span className="tool-chev">▸</span>
       </div>
       <div className="tool-body">
-        <pre data-testid="tool-input">{JSON.stringify(content.input, null, 2)}</pre>
-        {!running && <pre data-testid="tool-output">{outputText(content.output)}</pre>}
+        {running && content.inputStreamJson ? (
+          <pre className="tool-card-detail" data-testid="tool-input-stream">
+            {content.inputStreamJson}
+          </pre>
+        ) : (
+          <pre className="tool-card-detail" data-testid="tool-input">
+            {JSON.stringify(content.input, null, 2)}
+          </pre>
+        )}
+        {!running && (
+          <pre className="tool-card-detail" data-testid="tool-output">
+            {outputText(content.output)}
+          </pre>
+        )}
       </div>
     </div>
   )

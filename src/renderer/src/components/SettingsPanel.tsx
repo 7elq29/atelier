@@ -9,6 +9,7 @@ import {
 } from '../../../shared/config'
 import { worktreeRootFromConfig } from '../../../shared/worktree-path'
 import type { EffortLevel } from '../../../shared/session-types'
+import type { SessionAuthStatusEvent } from '../../../shared/harness-ui-types'
 
 interface SettingsPanelProps {
   isOpen: boolean
@@ -16,6 +17,7 @@ interface SettingsPanelProps {
   config: AtelierConfig
   onUpdate: (partial: Partial<AtelierConfig>) => void
   onReplayOnboarding: () => void
+  authStatus?: SessionAuthStatusEvent | null
 }
 
 type Pane = 'theme' | 'fonts' | 'notifications' | 'vault' | 'agent' | 'sessions'
@@ -31,7 +33,8 @@ export default function SettingsPanel({
   onClose,
   config,
   onUpdate,
-  onReplayOnboarding
+  onReplayOnboarding,
+  authStatus = null
 }: SettingsPanelProps): JSX.Element | null {
   const [pane, setPane] = useState<Pane>('theme')
   const [notifyStatus, setNotifyStatus] = useState<string | null>(null)
@@ -253,6 +256,12 @@ export default function SettingsPanel({
 
           {pane === 'agent' && (
             <div className="settings-pane active" data-testid="settings-pane-agent">
+              {authStatus?.message && (
+                <div className="settings-auth-notice" data-testid="settings-auth-notice" style={{ marginBottom: 16 }}>
+                  <span className="settings-auth-notice-label">Auth</span>
+                  <span>{authStatus.message}</span>
+                </div>
+              )}
               <div className="setting-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
                 <div>
                   <div className="stitle">Default model</div>

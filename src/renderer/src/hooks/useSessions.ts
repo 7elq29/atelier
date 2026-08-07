@@ -12,6 +12,13 @@ import type {
   SessionStatus,
   SlashCommandInfo
 } from '../../../shared/session-types'
+import type {
+  BackgroundTaskRow,
+  SessionAuthStatusEvent,
+  SessionRateLimitEvent,
+  SessionSdkChromeEvent,
+  SessionToastEvent
+} from '../../../shared/harness-ui-types'
 export interface UseSessionsResult {
   activeSessions: SessionRecord[]
   historySessions: SessionRecord[]
@@ -28,6 +35,13 @@ export interface UseSessionsResult {
   harnessCwdBySession: Record<string, string>
   /** Context-window token usage per session (token-usage-indicator) — updated after each completed turn. Empty until the session's first turn completes. */
   tokenUsageBySession: Record<string, { inputTokens: number; contextWindow: number }>
+  promptSuggestionBySession: Record<string, string | undefined>
+  backgroundTasksBySession: Record<string, BackgroundTaskRow[]>
+  sdkChromeBySession: Record<string, SessionSdkChromeEvent | null>
+  rateLimitBySession: Record<string, SessionRateLimitEvent | null>
+  sdkToastsBySession: Record<string, SessionToastEvent[]>
+  authStatus: SessionAuthStatusEvent | null
+  hookLogBySession: Record<string, string[]>
   /** Worktree creation progress per session (use-worktree) — integer 0–100 while creating-worktree, deleted when done. */
   worktreeProgressBySession: Record<string, number>
   /** Sessions detected as unrecoverable on startup (transcript gone or tmux dead). */
@@ -88,6 +102,13 @@ export function useSessions(): UseSessionsResult {
   const [commandsBySession, setCommandsBySession] = useState<Record<string, SlashCommandInfo[]>>({})
   const [harnessCwdBySession, setHarnessCwdBySession] = useState<Record<string, string>>({})
   const [tokenUsageBySession, setTokenUsageBySession] = useState<Record<string, { inputTokens: number; contextWindow: number }>>({})
+  const [promptSuggestionBySession, setPromptSuggestionBySession] = useState<Record<string, string | undefined>>({})
+  const [backgroundTasksBySession, setBackgroundTasksBySession] = useState<Record<string, BackgroundTaskRow[]>>({})
+  const [sdkChromeBySession, setSdkChromeBySession] = useState<Record<string, SessionSdkChromeEvent | null>>({})
+  const [rateLimitBySession, setRateLimitBySession] = useState<Record<string, SessionRateLimitEvent | null>>({})
+  const [sdkToastsBySession, setSdkToastsBySession] = useState<Record<string, SessionToastEvent[]>>({})
+  const [authStatus, setAuthStatus] = useState<SessionAuthStatusEvent | null>(null)
+  const [hookLogBySession, setHookLogBySession] = useState<Record<string, string[]>>({})
   const [worktreeProgressBySession, setWorktreeProgressBySession] = useState<Record<string, number>>({})
   const [staleSessionIds, setStaleSessionIds] = useState<Set<string>>(new Set())
   const messagesRef = useRef(messagesBySession)
@@ -150,6 +171,36 @@ export function useSessions(): UseSessionsResult {
           delete next[event.sessionId]
           return next
         })
+        setBackgroundTasksBySession((prev) => {
+          if (!(event.sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[event.sessionId]
+          return next
+        })
+        setSdkChromeBySession((prev) => {
+          if (!(event.sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[event.sessionId]
+          return next
+        })
+        setRateLimitBySession((prev) => {
+          if (!(event.sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[event.sessionId]
+          return next
+        })
+        setSdkToastsBySession((prev) => {
+          if (!(event.sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[event.sessionId]
+          return next
+        })
+        setHookLogBySession((prev) => {
+          if (!(event.sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[event.sessionId]
+          return next
+        })
       }
       // Any lifecycle change (created/renamed/closed/resumed/forked/deleted/
       // updated) can move a session between active/pinned/history — simplest
@@ -183,6 +234,42 @@ export function useSessions(): UseSessionsResult {
     const offTokenUsage = window.atelier.onSessionTokenUsage(({ sessionId, inputTokens, contextWindow }) => {
       setTokenUsageBySession((prev) => ({ ...prev, [sessionId]: { inputTokens, contextWindow } }))
     })
+    const offPromptSuggestion = window.atelier.onSessionPromptSuggestion(({ sessionId, suggestion }) => {
+      setPromptSuggestionBySession((prev) => {
+        if (suggestion == null) {
+          if (!(sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[sessionId]
+          return next
+        }
+        return { ...prev, [sessionId]: suggestion }
+      })
+    })
+    const offBackgroundTasks = window.atelier.onSessionBackgroundTasks(({ sessionId, tasks }) => {
+      setBackgroundTasksBySession((prev) => ({ ...prev, [sessionId]: tasks }))
+    })
+    const offSdkChrome = window.atelier.onSessionSdkChrome((payload) => {
+      setSdkChromeBySession((prev) => ({ ...prev, [payload.sessionId]: payload }))
+    })
+    const offRateLimit = window.atelier.onSessionRateLimit((payload) => {
+      setRateLimitBySession((prev) => ({ ...prev, [payload.sessionId]: payload }))
+    })
+    const offSdkToast = window.atelier.onSessionSdkToast((toast) => {
+      setSdkToastsBySession((prev) => {
+        const list = prev[toast.sessionId] ?? []
+        const filtered = list.filter((t) => t.key !== toast.key)
+        return { ...prev, [toast.sessionId]: [toast, ...filtered].slice(0, 8) }
+      })
+    })
+    const offAuthStatus = window.atelier.onSessionAuthStatus((payload) => {
+      setAuthStatus(payload)
+    })
+    const offHookLog = window.atelier.onSessionHookLog(({ sessionId, line }) => {
+      setHookLogBySession((prev) => {
+        const list = prev[sessionId] ?? []
+        return { ...prev, [sessionId]: [...list, line].slice(-40) }
+      })
+    })
     // use-worktree: track git worktree add progress per session.
     const offWorktreeProgress = window.atelier.onSessionWorktreeProgress(({ sessionId, percent }) => {
       setWorktreeProgressBySession((prev) => ({ ...prev, [sessionId]: percent }))
@@ -201,6 +288,13 @@ export function useSessions(): UseSessionsResult {
       offCommands()
       offHarnessCwd()
       offTokenUsage()
+      offPromptSuggestion()
+      offBackgroundTasks()
+      offSdkChrome()
+      offRateLimit()
+      offSdkToast()
+      offAuthStatus()
+      offHookLog()
       offWorktreeProgress()
       offStale()
     }
@@ -399,6 +493,13 @@ export function useSessions(): UseSessionsResult {
     commandsBySession,
     harnessCwdBySession,
     tokenUsageBySession,
+    promptSuggestionBySession,
+    backgroundTasksBySession,
+    sdkChromeBySession,
+    rateLimitBySession,
+    sdkToastsBySession,
+    authStatus,
+    hookLogBySession,
     worktreeProgressBySession,
     staleSessionIds,
     refresh,

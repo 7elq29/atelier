@@ -255,6 +255,10 @@ interface ActiveSession {
   taskItems: Map<string, HarnessTodoItem>
   /** toolUseId -> pending TaskCreate/TaskUpdate call, resolved once its tool_result (which carries the real numeric id for TaskCreate) arrives. */
   pendingTaskCalls: Map<string, { name: string; input: Record<string, unknown> }>
+  /** content block index → metadata while a partial assistant message is streaming. */
+  streamBlocks: Map<number, { blockType: string; toolUseId?: string; toolName?: string }>
+  /** toolUseId → accumulated input_json_delta text for in-flight tool_use blocks. */
+  toolInputAcc: Map<string, string>
 }
 
 function extractOutputText(content: unknown): string {
@@ -265,6 +269,96 @@ function extractOutputText(content: unknown): string {
       .join('\n')
   }
   return ''
+}
+
+/** Narrow partial stream events — SDK wraps these as `SDKPartialAssistantMessage`. */
+type PartialStreamEvent = {
+  type: string
+  index?: number
+  delta?: {
+    type: string
+    text?: string
+    thinking?: string
+    partial_json?: string
+  }
+  content_block?: {
+    type: string
+    id?: string
+    name?: string
+  }
+}
+
+function streamEventsFromPartial(
+  sessionId: string,
+  timestamp: string,
+  parentToolUseId: string | null,
+  rawEvent: unknown,
+  active: ActiveSession,
+): HarnessEvent[] {
+  const event = rawEvent as PartialStreamEvent
+  const out: HarnessEvent[] = []
+
+  if (event.type === 'content_block_start' && event.content_block) {
+    const idx = event.index ?? 0
+    const block = event.content_block
+    active.streamBlocks.set(idx, {
+      blockType: block.type,
+      toolUseId: block.type === 'tool_use' ? block.id : undefined,
+      toolName: block.type === 'tool_use' ? block.name : undefined,
+    })
+    if (block.type === 'thinking') {
+      out.push({ type: 'thinking_block_start', sessionId, timestamp, parentToolUseId })
+    } else if (block.type === 'tool_use' && block.id && block.name) {
+      active.toolInputAcc.set(block.id, '')
+      out.push({
+        type: 'tool_call_start',
+        sessionId,
+        timestamp,
+        toolUseId: block.id,
+        name: block.name,
+        input: {},
+        parentToolUseId,
+      })
+    }
+  }
+
+  if (event.type === 'content_block_delta' && event.delta) {
+    if (event.delta.type === 'text_delta' && event.delta.text) {
+      out.push({ type: 'text_delta', sessionId, timestamp, text: event.delta.text, parentToolUseId })
+    }
+    if (event.delta.type === 'thinking_delta') {
+      const chunk = event.delta.thinking
+      if (typeof chunk === 'string' && chunk.length > 0) {
+        out.push({ type: 'thinking_delta', sessionId, timestamp, text: chunk, parentToolUseId })
+      }
+    }
+    if (event.delta.type === 'input_json_delta' && typeof event.delta.partial_json === 'string') {
+      const meta = event.index != null ? active.streamBlocks.get(event.index) : undefined
+      const toolUseId = meta?.toolUseId
+      if (toolUseId) {
+        const next = (active.toolInputAcc.get(toolUseId) ?? '') + event.delta.partial_json
+        active.toolInputAcc.set(toolUseId, next)
+        out.push({
+          type: 'tool_input_delta',
+          sessionId,
+          timestamp,
+          toolUseId,
+          partialJson: next,
+          parentToolUseId,
+        })
+      }
+    }
+  }
+
+  if (event.type === 'content_block_stop') {
+    const meta = event.index != null ? active.streamBlocks.get(event.index) : undefined
+    if (meta?.blockType === 'thinking') {
+      out.push({ type: 'thinking_block_end', sessionId, timestamp, parentToolUseId })
+    }
+    if (event.index != null) active.streamBlocks.delete(event.index)
+  }
+
+  return out
 }
 
 export class ClaudeAgentSdkHarness implements HarnessDriver {
@@ -458,6 +552,8 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       pendingPrompts: new Map(),
       taskItems: new Map(),
       pendingTaskCalls: new Map(),
+      streamBlocks: new Map(),
+      toolInputAcc: new Map(),
     }
 
     const options: SdkOptions = {
@@ -478,6 +574,7 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       // the real working directory is applied inside the ssh command itself.
       ...(opts.host ? { spawnClaudeCodeProcess: makeRemoteSpawner(opts.host, opts.cwd) } : {}),
       ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
+      promptSuggestions: true,
       // 05-interactive-prompts: every permission prompt, AskUserQuestion,
       // and ExitPlanMode call is gated through this one callback — see the
       // doc comment on ActiveSession.pendingPrompts and makeCanUseTool below.
@@ -818,12 +915,20 @@ function toHarnessEvents(sessionId: string, message: SDKMessage, active: ActiveS
     ]
   }
 
+  if (message.type === 'system' && message.subtype === 'thinking_tokens') {
+    return [
+      {
+        type: 'thinking_tokens',
+        sessionId,
+        timestamp,
+        estimatedTokens: message.estimated_tokens,
+        estimatedTokensDelta: message.estimated_tokens_delta,
+      },
+    ]
+  }
+
   if (message.type === 'stream_event') {
-    const event = message.event
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      return [{ type: 'text_delta', sessionId, timestamp, text: event.delta.text }]
-    }
-    return []
+    return streamEventsFromPartial(sessionId, timestamp, message.parent_tool_use_id, message.event, active)
   }
 
   if (message.type === 'assistant') {
@@ -897,6 +1002,272 @@ function toHarnessEvents(sessionId: string, message: SDKMessage, active: ActiveS
       }
     }
     return events
+  }
+
+  if (message.type === 'tool_progress') {
+    return [
+      {
+        type: 'tool_progress',
+        sessionId,
+        timestamp,
+        toolUseId: message.tool_use_id,
+        toolName: message.tool_name,
+        parentToolUseId: message.parent_tool_use_id,
+        elapsedTimeSeconds: message.elapsed_time_seconds,
+        ...(message.task_id ? { taskId: message.task_id } : {}),
+      },
+    ]
+  }
+
+  if (message.type === 'prompt_suggestion') {
+    return [
+      {
+        type: 'prompt_suggestion',
+        sessionId,
+        timestamp,
+        suggestion: message.suggestion,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
+    return [
+      {
+        type: 'background_tasks_changed',
+        sessionId,
+        timestamp,
+        tasks: message.tasks.map((t) => ({
+          taskId: t.task_id,
+          taskType: t.task_type,
+          description: t.description,
+        })),
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'task_started') {
+    return [
+      {
+        type: 'task_started',
+        sessionId,
+        timestamp,
+        taskId: message.task_id,
+        description: message.description,
+        taskType: message.task_type,
+        subagentType: message.subagent_type,
+        workflowName: message.workflow_name,
+        skipTranscript: message.skip_transcript,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'task_updated') {
+    return [
+      {
+        type: 'task_updated',
+        sessionId,
+        timestamp,
+        taskId: message.task_id,
+        patch: {
+          status: message.patch.status,
+          description: message.patch.description,
+          error: message.patch.error,
+          isBackgrounded: message.patch.is_backgrounded,
+        },
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'task_progress') {
+    return [
+      {
+        type: 'task_progress',
+        sessionId,
+        timestamp,
+        taskId: message.task_id,
+        description: message.description,
+        lastToolName: message.last_tool_name,
+        summary: message.summary,
+        usage: message.usage,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'task_notification') {
+    return [
+      {
+        type: 'task_notification',
+        sessionId,
+        timestamp,
+        taskId: message.task_id,
+        status: message.status,
+        summary: message.summary,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'notification') {
+    return [
+      {
+        type: 'sdk_notification',
+        sessionId,
+        timestamp,
+        key: message.key,
+        text: message.text,
+        priority: message.priority,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'permission_denied') {
+    return [
+      {
+        type: 'permission_denied',
+        sessionId,
+        timestamp,
+        toolUseId: message.tool_use_id,
+        toolName: message.tool_name,
+        message: message.message,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'model_refusal_fallback') {
+    return [
+      {
+        type: 'model_refusal_fallback',
+        sessionId,
+        timestamp,
+        fallbackModel: message.fallback_model,
+        content: message.content,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'model_refusal_no_fallback') {
+    return [
+      {
+        type: 'model_refusal_no_fallback',
+        sessionId,
+        timestamp,
+        content: message.content,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'status') {
+    return [
+      {
+        type: 'sdk_status',
+        sessionId,
+        timestamp,
+        status: message.status,
+        permissionMode: message.permissionMode,
+        compactResult: message.compact_result,
+        compactError: message.compact_error,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'api_retry') {
+    return [
+      {
+        type: 'api_retry',
+        sessionId,
+        timestamp,
+        attempt: message.attempt,
+        maxRetries: message.max_retries,
+      },
+    ]
+  }
+
+  if (message.type === 'rate_limit_event') {
+    const info = message.rate_limit_info
+    return [
+      {
+        type: 'rate_limit_event',
+        sessionId,
+        timestamp,
+        status: info.status,
+        resetsAt: info.resetsAt,
+        utilization: info.utilization,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'local_command_output') {
+    return [
+      {
+        type: 'local_command_output',
+        sessionId,
+        timestamp,
+        content: message.content,
+      },
+    ]
+  }
+
+  if (message.type === 'auth_status') {
+    return [
+      {
+        type: 'auth_status',
+        sessionId,
+        timestamp,
+        isAuthenticating: message.isAuthenticating,
+        error: message.error,
+        output: message.output,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'hook_started') {
+    return [
+      {
+        type: 'hook_started',
+        sessionId,
+        timestamp,
+        hookName: message.hook_name,
+        hookEvent: message.hook_event,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'hook_progress') {
+    const line = message.output || message.stdout || message.stderr
+    return [
+      {
+        type: 'hook_progress',
+        sessionId,
+        timestamp,
+        hookName: message.hook_name,
+        hookEvent: message.hook_event,
+        line,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'hook_response') {
+    return [
+      {
+        type: 'hook_response',
+        sessionId,
+        timestamp,
+        hookName: message.hook_name,
+        hookEvent: message.hook_event,
+        outcome: message.outcome,
+        exitCode: message.exit_code,
+      },
+    ]
+  }
+
+  if (message.type === 'system' && message.subtype === 'worker_shutting_down') {
+    return [
+      {
+        type: 'worker_shutting_down',
+        sessionId,
+        timestamp,
+        agentId: message.reason,
+      },
+    ]
   }
 
   if (message.type === 'result') {

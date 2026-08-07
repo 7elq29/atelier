@@ -1,14 +1,17 @@
 import { Fragment, useEffect, useLayoutEffect, useRef } from 'react'
 import type { MessageRecord } from '../../../../shared/session-types'
 import type { PromptDecision } from '../../../../shared/session-types'
-import { parseStructuredContent, type ToolCallContent } from '../../../../shared/chat-content'
+import { parseStructuredContent, type ToolCallContent, type ThinkingBlockContent, type TranscriptNoticeContent, type LocalCommandOutputContent } from '../../../../shared/chat-content'
 import ToolCallCard, { toolHeadline } from './ToolCallCard'
+import ThinkingBlockCard from './ThinkingBlockCard'
 import ToolCallSequence from './ToolCallSequence'
 import AskUserQuestionCard from './AskUserQuestionCard'
 import PermissionRequestCard from './PermissionRequestCard'
 import PlanProposedCard from './PlanProposedCard'
 import MarkdownMessage from './MarkdownMessage'
 import MessageActions from './MessageActions'
+import ConversationStatusCard from './ConversationStatusCard'
+import type { SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
@@ -72,6 +75,7 @@ function highlightMatches(text: string, query: string, counter: { current: numbe
 interface TopRow {
   message: MessageRecord
   tool?: ToolCallContent
+  thinking?: ThinkingBlockContent
 }
 
 /**
@@ -114,7 +118,8 @@ export default function ChatTranscript({
   onOpenFileInFiles,
   searchQuery,
   activeMatchIndex = -1,
-  onMatchCount
+  onMatchCount,
+  sdkChrome
 }: {
   messages: MessageRecord[]
   /** Resolves a permission/AskUserQuestion/plan card by requestId (05-interactive-prompts). */
@@ -131,6 +136,8 @@ export default function ChatTranscript({
   activeMatchIndex?: number
   /** Fired after every render with the total number of matches found across the transcript. */
   onMatchCount?: (count: number) => void
+  /** Live SDK status chrome (compacting / requesting / compact failed). */
+  sdkChrome?: SessionSdkChromeEvent | null
 }): JSX.Element {
   const childrenByParent = new Map<string, TopRow[]>()
   const topRows: TopRow[] = []
@@ -138,6 +145,10 @@ export default function ChatTranscript({
   for (const m of messages) {
     const parsed = parseStructuredContent(m.content)
     if (parsed?.kind === 'todo_update') continue // rendered only in the tracker rail, not the transcript
+    if (parsed?.kind === 'thinking_block') {
+      topRows.push({ message: m, thinking: parsed })
+      continue
+    }
     if (parsed?.kind === 'tool_call' && parsed.parentToolUseId) {
       const list = childrenByParent.get(parsed.parentToolUseId) ?? []
       list.push({ message: m, tool: parsed })
@@ -301,7 +312,7 @@ export default function ChatTranscript({
       )
     }
 
-    const { message } = unit
+    const { message, thinking } = unit
     const parsed = parseStructuredContent(message.content)
     const nodes: JSX.Element[] = []
 
@@ -346,6 +357,12 @@ export default function ChatTranscript({
           {parsed.postTokens != null ? ` → ${formatTokens(parsed.postTokens)}` : ''} tokens) —
         </div>
       )
+    } else if (thinking) {
+      nodes.push(
+        <div className="msg-wrap" key={message.id} data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
+          <ThinkingBlockCard content={thinking} />
+        </div>
+      )
     } else if (parsed?.kind === 'permission_request') {
       nodes.push(
         <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
@@ -368,6 +385,28 @@ export default function ChatTranscript({
             workspaceRoot={workspaceRoot}
             projectRoot={projectRoot}
           />
+        </div>
+      )
+    } else if (parsed?.kind === 'transcript_notice') {
+      const notice = parsed as TranscriptNoticeContent
+      nodes.push(
+        <div
+          className={`transcript-notice ${notice.level}`}
+          data-testid="transcript-notice"
+          data-notice-level={notice.level}
+          key={message.id}
+        >
+          <span className="transcript-notice-label">{notice.label}</span>
+          <span>{notice.text}</span>
+        </div>
+      )
+    } else if (parsed?.kind === 'local_command_output') {
+      const cmd = parsed as LocalCommandOutputContent
+      nodes.push(
+        <div className="msg-wrap" key={message.id} data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
+          <pre className="local-cmd-output" data-testid="local-cmd-output">
+            {cmd.text}
+          </pre>
         </div>
       )
     } else if (message.role === 'system') {
@@ -474,6 +513,9 @@ export default function ChatTranscript({
   return (
     <div className="transcript" data-testid="transcript" ref={containerRef}>
       {rows}
+      {sdkChrome && (sdkChrome.status || sdkChrome.compactFailed) && (
+        <ConversationStatusCard chrome={sdkChrome} />
+      )}
     </div>
   )
 }

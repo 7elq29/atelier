@@ -4,6 +4,7 @@ import type { DiffSummary } from '../../../../shared/panel-types'
 import type { SessionChangesCap } from '../../../../shared/session-changes-cap'
 import { truncateContextPath } from '../../utils/truncateContextPath'
 import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
+import type { SessionRateLimitEvent } from '../../../../shared/harness-ui-types'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
 const MAX_TEXTAREA_HEIGHT = 160
@@ -305,6 +306,10 @@ interface ComposerProps {
    * is the model's declared context size.
    */
   tokenUsage?: { inputTokens: number; contextWindow: number }
+  /** SDK `prompt_suggestion` — placeholder in the empty composer; Tab accepts. */
+  promptSuggestion?: string
+  /** SDK rate-limit chrome — composer chips + send block when rejected. */
+  rateLimit?: SessionRateLimitEvent | null
   /** Appends a renderer-only system message to the active session's transcript, no SDK round-trip — used to surface an unknown `/model <id>` inline in the chat panel. */
   onAddLocalMessage: (content: string) => void
   /** Validates a `/model <id>` against the SDK's own live acceptance logic (calls `Query.setModel()` on the connected session), fetched on demand at the moment `/model <id>` is submitted — not a static list, since the backend silently substitutes the default model for an unrecognized id instead of erroring on it (the only reason `setModel()`'s real accept/reject signal is trustworthy here). */
@@ -489,6 +494,8 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   queuedMessages = [],
   onCancelQueued,
   tokenUsage,
+  promptSuggestion,
+  rateLimit,
   onAddLocalMessage,
   onValidateModel,
   harnessDisconnected = false
@@ -798,6 +805,24 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       return
     }
 
+    if (
+      e.key === 'Tab' &&
+      !e.shiftKey &&
+      !popover &&
+      value.trim() === '' &&
+      promptSuggestion
+    ) {
+      e.preventDefault()
+      setValue(promptSuggestion)
+      const ta = textareaRef.current
+      if (ta) {
+        ta.focus()
+        const end = promptSuggestion.length
+        ta.setSelectionRange(end, end)
+      }
+      return
+    }
+
     if (popover && activeMatches.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -988,7 +1013,14 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         <textarea
           ref={textareaRef}
           data-testid="composer-input"
-          placeholder={harnessDisconnected ? 'Reconnect to continue chatting…' : 'Message Atelier…'}
+          placeholder={
+            harnessDisconnected
+              ? 'Reconnect to continue chatting…'
+              : value.trim() === '' && promptSuggestion
+                ? promptSuggestion
+                : 'Message Atelier…'
+          }
+          className={value.trim() === '' && promptSuggestion ? 'composer-input-has-suggestion' : undefined}
           rows={1}
           value={value}
           readOnly={harnessDisconnected}
@@ -1038,6 +1070,21 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             <span className="mode-icon">{MODE_ICON[mode]}</span>
             <span>{MODE_LABEL[mode]}</span>
           </span>
+          {value.trim() === '' && promptSuggestion && !harnessDisconnected && (
+            <span className="composer-suggestion-hint" data-testid="composer-suggestion-hint">
+              Tab to fill
+            </span>
+          )}
+          {rateLimit?.warnLabel && (
+            <span className="composer-status-chip warn" data-testid="composer-rate-limit-chip">
+              {rateLimit.warnLabel}
+            </span>
+          )}
+          {rateLimit?.sendBlocked && (
+            <span className="composer-status-chip danger" data-testid="composer-send-blocked-chip">
+              Send blocked
+            </span>
+          )}
           {tokenUsage && tokenUsage.contextWindow > 0 && (() => {
             const pct = Math.min(100, Math.round((tokenUsage.inputTokens / tokenUsage.contextWindow) * 100))
             return (
@@ -1071,7 +1118,11 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           <button
             className="send-btn"
             data-testid="send-button"
-            disabled={harnessDisconnected || (!value.trim() && !attachedImage)}
+            disabled={
+              harnessDisconnected ||
+              rateLimit?.sendBlocked ||
+              (!value.trim() && !attachedImage)
+            }
             title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
             onClick={() => void handleSend()}
           >
