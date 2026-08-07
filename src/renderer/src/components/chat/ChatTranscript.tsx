@@ -513,7 +513,7 @@ export default function ChatTranscript({
   return (
     <div className="transcript" data-testid="transcript" ref={containerRef}>
       {rows}
-      {sdkChrome && (sdkChrome.status || sdkChrome.compactFailed) && (
+      {sdkChrome && (sdkChrome.status === 'compacting' || sdkChrome.compactFailed) && (
         <ConversationStatusCard chrome={sdkChrome} />
       )}
     </div>
