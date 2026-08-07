@@ -966,6 +966,7 @@ export default function App(): JSX.Element {
                                 harnessCwd={sessions.harnessCwdBySession[sessionId] ?? null}
                                 hostname={session.hostname}
                                 gitWorkspacePath={session.worktreePath ?? session.projectPath}
+                                diffSummary={ws?.diff}
                                 sessionFileEdits={ws?.sessionFileEdits}
                                 mentionFilePaths={mentionPaths}
                                 onOpenChangedFile={openChangedFileInDiff}

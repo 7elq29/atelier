@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import ChatUncommittedChanges from './ChatUncommittedChanges'
+import type { DiffSummary } from '../../../../shared/panel-types'
 import type { SessionFileEdit } from '../../../../shared/session-file-edits'
 import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 
@@ -278,6 +279,8 @@ interface ComposerProps {
   hostname?: string | null
   /** Git cwd (`worktreePath ?? projectPath`) — session workspace root for the changes cap. */
   gitWorkspacePath?: string
+  /** Preloaded git summary for branch refresh when Claude cwd matches workspace. */
+  diffSummary?: DiffSummary | null
   /** Files edited in this session (from Claude file-edit tools, persisted in SQLite). */
   sessionFileEdits?: SessionFileEdit[] | null
   /** Preloaded workspace file paths for @-mentions (relative paths). */
@@ -486,6 +489,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   harnessCwd,
   hostname,
   gitWorkspacePath,
+  diffSummary,
   sessionFileEdits,
   mentionFilePaths,
   onOpenChangedFile,
