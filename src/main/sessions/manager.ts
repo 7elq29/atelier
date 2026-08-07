@@ -1015,8 +1015,13 @@ export class SessionManager {
     // Don't race with setupWorktreeAsync — while the worktree is being created
     // the harness will be started by that path once creation completes.
     if (this.creatingWorktree.has(sessionId)) return
-    // Already live (e.g. connected by startupReconnect) — nothing to do.
-    if (this.live.has(sessionId)) return
+    // Already live (e.g. connected by startupReconnect) — resync ephemeral UI.
+    if (this.live.has(sessionId)) {
+      this.sendBackgroundTasks(sessionId)
+      this.sendSdkChrome(sessionId)
+      this.sendRateLimitChrome(sessionId)
+      return
+    }
     this.startupIdle.delete(sessionId)
     this.touchLastActive(sessionId)
     this.pendingPanelPreload.add(sessionId)
@@ -1388,6 +1393,7 @@ export class SessionManager {
     this.pendingPanelPreload.delete(sessionId)
     this.workspace?.evictSession(sessionId)
     this.sendTurnState(sessionId, false)
+    this.resetHarnessUiForSession(sessionId)
     const session = this.store.closeSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
     this.sendLifecycle({ type: 'session.closed', session })

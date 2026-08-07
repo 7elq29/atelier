@@ -59,6 +59,11 @@ function taskSubtitleFromProgress(event: Extract<HarnessEvent, { type: 'task_pro
 
 export class SessionHarnessUiState {
   private readonly taskRows = new Map<string, Map<string, BackgroundTaskRow>>()
+  /**
+   * After reset/reconnect, only task ids present in the latest
+   * `background_tasks_changed` payload may exist in the rail. Replayed
+   * `task_started` events from an old turn must not recreate dead jobs.
+   */
   private readonly sdkChrome = new Map<string, SdkChromeState>()
   private readonly rateLimit = new Map<string, RateLimitChromeState>()
   private auth: AuthChromeState = { message: null, isAuthenticating: false }
@@ -67,6 +72,11 @@ export class SessionHarnessUiState {
     this.taskRows.set(sessionId, new Map())
     this.sdkChrome.delete(sessionId)
     this.rateLimit.delete(sessionId)
+  }
+
+  private taskAllowed(sessionId: string, taskId: string): boolean {
+    const map = this.taskRows.get(sessionId)
+    return Boolean(map?.has(taskId))
   }
 
   getTasks(sessionId: string): BackgroundTaskRow[] {
@@ -105,7 +115,7 @@ export class SessionHarnessUiState {
             taskId: t.taskId,
             taskType: t.taskType,
             description: t.description,
-            status: old?.status ?? 'running',
+            status: old?.status ?? 'pending',
             subtitle: old?.subtitle,
             error: old?.error,
             done: old?.done,
@@ -115,18 +125,17 @@ export class SessionHarnessUiState {
         break
       }
       case 'task_started': {
-        const map = this.taskRows.get(sid) ?? new Map()
-        const subParts: string[] = ['started']
-        if (event.subagentType) subParts.push(event.subagentType)
-        if (event.workflowName) subParts.push(event.workflowName)
-        map.set(event.taskId, {
-          taskId: event.taskId,
-          taskType: event.taskType ?? 'subagent',
-          description: event.description,
-          status: 'running',
-          subtitle: subParts.join(' · '),
-        })
-        this.taskRows.set(sid, map)
+        const map = this.taskRows.get(sid)
+        if (!map) break
+        const row = map.get(event.taskId)
+        if (!row) break
+        const meta: string[] = []
+        if (event.subagentType) meta.push(event.subagentType)
+        if (event.workflowName) meta.push(event.workflowName)
+        row.taskType = event.taskType ?? row.taskType
+        row.description = event.description
+        row.status = 'running'
+        if (meta.length) row.subtitle = meta.join(' · ')
         break
       }
       case 'task_updated': {
@@ -134,7 +143,12 @@ export class SessionHarnessUiState {
         if (!map) break
         const row = map.get(event.taskId)
         if (!row) break
-        if (event.patch.status) row.status = event.patch.status
+        if (event.patch.status) {
+          row.status = event.patch.status
+          if (event.patch.status === 'pending' && !row.subtitle?.includes('last:')) {
+            row.subtitle = undefined
+          }
+        }
         if (event.patch.description) row.description = event.patch.description
         if (event.patch.error) {
           row.error = event.patch.error
@@ -146,12 +160,14 @@ export class SessionHarnessUiState {
         break
       }
       case 'task_progress': {
+        if (!this.taskAllowed(sid, event.taskId)) break
         const map = this.taskRows.get(sid)
         const row = map?.get(event.taskId)
         if (row) row.subtitle = taskSubtitleFromProgress(event)
         break
       }
       case 'task_notification': {
+        if (!this.taskAllowed(sid, event.taskId)) break
         const map = this.taskRows.get(sid)
         const row = map?.get(event.taskId)
         if (row) {

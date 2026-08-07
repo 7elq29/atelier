@@ -310,6 +310,13 @@ export function useSessions(): UseSessionsResult {
   )
 
   const resumeSession = useCallback(async (sessionId: string): Promise<void> => {
+    setBackgroundTasksBySession((prev) => ({ ...prev, [sessionId]: [] }))
+    setSdkChromeBySession((prev) => {
+      if (!(sessionId in prev)) return prev
+      const next = { ...prev }
+      delete next[sessionId]
+      return next
+    })
     const { messages } = await window.atelier.resumeSession(sessionId)
     // Full stored transcript rendered immediately; the live reconnect (main
     // process) streams any NEW events in over session:message afterward.

@@ -993,6 +993,7 @@ export default function App(): JSX.Element {
                             onMatchCount={setMatchCount}
                             onOpenPlanFile={openFileInFiles}
                             sdkChrome={sessions.sdkChromeBySession[activeSession.id] ?? null}
+                            backgroundTasks={sessions.backgroundTasksBySession[activeSession.id] ?? []}
                           />
                         </div>
                         <TrackerRail
