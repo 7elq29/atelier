@@ -35,6 +35,19 @@ export function normalizeDiffPath(raw: string): string {
   return p
 }
 
+/** `git diff` exits 1 when patches differ (0 = identical). Treat 0/1 as success if stdout looks like a patch. */
+export function gitPatchOutputUsable(code: number, stdout: string): boolean {
+  if (code === 2 || code > 2) return false
+  const t = stdout.trim()
+  return t.length > 0 && (t.includes('diff --git') || t.includes('@@'))
+}
+
+/** Numstat path field — use the destination path when git reports `old => new`. */
+export function numstatPathForGit(path: string): string {
+  const arrow = path.indexOf(' => ')
+  return arrow === -1 ? path : path.slice(arrow + 4).trim()
+}
+
 export function parseNumstatLines(lines: string[]): DiffFileChange[] {
   const files: DiffFileChange[] = []
   for (const line of lines) {
@@ -42,7 +55,8 @@ export function parseNumstatLines(lines: string[]): DiffFileChange[] {
     const parts = line.split('\t')
     if (parts.length < 3) continue
     const [addRaw, delRaw, ...pathParts] = parts
-    const path = pathParts.join('\t')
+    const rawPath = pathParts.join('\t')
+    const path = numstatPathForGit(rawPath)
     const additions = addRaw === '-' ? 0 : parseInt(addRaw, 10) || 0
     const deletions = delRaw === '-' ? 0 : parseInt(delRaw, 10) || 0
     let status: DiffFileStatus = 'modified'
