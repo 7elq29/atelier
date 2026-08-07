@@ -1,58 +1,51 @@
-# Harness SDK events — bug bash matrix
+# Harness SDK events — e2e coverage map
 
-Companion to `e2e/harness-sdk-events.spec.ts` and `Features/harness-sdk-events/spec.md`.
-Run automated slice:
+Run:
 
 ```bash
 npx playwright test e2e/harness-sdk-events.spec.ts
 ```
 
-Also run category **Chat Transcript & Composer** (`chat-surface-core.spec.ts`, `composer-core.spec.ts`) after harness changes.
+Also run category **Chat Transcript & Composer** when changing harness UI:
+`chat-surface-core.spec.ts`, `composer-core.spec.ts`.
 
-## Automated in `harness-sdk-events.spec.ts`
+## Automated (`harness-sdk-events.spec.ts`)
 
-| Surface | Assertion |
-|--------|-----------|
-| Turn idle after bootstrap | `composer-turn-status` hidden, Send visible |
-| In-flight turn | `composer-turn-status` + Stop; no `conversation-status-card[data-status-kind=requesting]` |
-| Turn completes | hint clears; still no REQUEST transcript card |
-| `tool_progress` | Best-effort `tool-elapsed` on 5s Bash (SDK-dependent) |
-| Background tasks | No transcript/rail cards when SDK sends no tasks |
-| Monitor toast | No `sdk-toast-stack` without notification events |
+| SDK / surface | Spec test | Assertion |
+|---------------|-----------|-----------|
+| Init + `result` | `bootstrap: create session` | Idle composer, `token-usage` visible |
+| `sdk_status` requesting | `sdk_status requesting → composer turn hint` | `composer-turn-status`; no transcript REQUEST card; clears on idle |
+| Partial stream | `partial stream: assistant reply grows` | Assistant text length non-decreasing mid-turn |
+| `tool_progress` | `tool_progress: tool-elapsed` | Optional `tool-elapsed` (annotated if skipped) |
+| `thinking_tokens` / thinking block | `thinking_tokens: optional thinking-block` | Optional `thinking-block-card` |
+| `prompt_suggestion` | `prompt_suggestion: Tab hint` | Optional `composer-suggestion-hint` |
+| `local_command_output` | `local_command_output: /cost` | `local-cmd-output` visible |
+| `permission_denied` / deny path | `permission_denied UI: deny Bash` | Tool `denied` or `error`; `.tool-denied` when denied |
+| `model_refusal_*` | `model_refusal: optional transcript-notice` | Optional `.transcript-notice`, no `.session-banner` |
+| `sdk_status` compacting | `sdk_status compacting: /compact` | Optional COMPACT card (annotated if skipped) |
+| `rate_limit_event` (negative) | `rate_limit_event: no chips` | No rate-limit / send-blocked chips |
+| `auth_status` (negative) | `auth_status: settings` | No `settings-auth-notice` in normal session |
+| Background + `notification` (negative) | `background_tasks + monitor toast` | No background cards / toast stack |
+| Hooks | `hooks: main log` | Optional `harness hook` log lines |
+| `mirror_error` | `mirror_error: out of scope` | Documented only |
+| `api_retry` | (via turn hint text) | Substring “Retrying API…” when event fires mid-turn |
 
-Artifacts: `e2e-artifacts/08-harness-sdk-*.png`, `08-harness-sdk-events.log` (grep harness IPC lines).
+Artifacts: `e2e-artifacts/08-harness-sdk-*.png`, `08-harness-sdk-events.log`.
 
-## Manual / session-specific (checklist)
+## Manual only (cannot rely on SDK in CI)
 
-Use a long-running local session; watch **transcript**, **composer footer**, **tracker rail**, **Settings → Agent**, and `main.log`.
+| Event | Why manual |
+|-------|------------|
+| `api_retry` under load | Needs transient API failure |
+| `rate_limit_event` rejected | Needs real quota pressure |
+| `auth_status` | Needs sign-in / auth failure |
+| `background_tasks_changed` + `task_*` | Needs background agent/monitor session |
+| `notification` immediate | Monitor wake |
+| `compact_result: failed` | Hard to force |
+| `worker_shutting_down` | Subagent lifecycle |
 
-| SDK / event | What to verify | Pass criteria |
-|-------------|----------------|---------------|
-| `prompt_suggestion` | Empty composer while suggestion active | Placeholder shows suggestion; **Tab to fill** hint (10px); Tab fills, does not send |
-| Partial stream / thinking | Extended thinking model | `thinking-block-card` streams or shows token estimate; not duplicated as REQUEST card |
-| `status: compacting` | Trigger auto-compact or `/compact` | Transcript **COMPACT** card + progress bar; clears when compact finishes |
-| `compact_result: failed` | Force compact failure if reproducible | Failed COMPACT card + `compact_error` meta; not stuck REQUEST |
-| `api_retry` | Network blip / retry | **Retrying API…** in composer hint (not transcript card) |
-| `rate_limit_event` | Heavy usage if hit | Composer `.composer-status-chip` warn + **Send blocked**; send disabled |
-| `permission_denied` | Deny a tool in permission card | Tool row `.tool-denied` / status **denied** |
-| `model_refusal_*` | Refusal-triggering prompt | `.transcript-notice` warning/danger (not session banner) |
-| `local_command_output` | `/cost` or `/usage` | `.local-cmd-output` monospace block in transcript |
-| `auth_status` | Sign-in / auth errors | Settings **Auth** notice only (`.settings-auth-notice`) |
-| `background_tasks_changed` + `task_*` | Background agent/monitor if used | Tracker rail **Monitors / Subagents / Shell**; transcript background card when tasks live |
-| `notification` (immediate) | Monitor wake | `sdk-toast` with priority border; dedupe by key |
-| Hooks | Dev build | `harness hook` lines in `main.log`; optional `.sdk-debug-log` in dev |
-| `mirror_error` | **Out of scope** until draft approved | No UI yet |
-
-## Regressions to watch
-
-1. **REQUEST stuck** — composer hint remains after Send returns (turn ended but `session:sdkChrome` or `busy` stale).
-2. **REQUEST in transcript** — large `.conversation-status-card--requesting` in chat body (should be composer hint only).
-3. **Double busy chrome** — footer Working pill + hint (hint only expected today).
-4. **Compact vs REQUEST** — compacting shows transcript card; normal turns do not.
-5. **Rate limit** — chips without blocking send when only warning; block when rejected.
-
-## Log grep (during manual pass)
+## Log grep
 
 ```bash
-grep -E 'harness event: result|session:turnState|sdk_status|permission_denied|background_tasks|harness hook' "$LOG"
+grep -E 'harness event: result|sdk_status|permission_denied|local_command|harness hook|background_tasks' "$LOG"
 ```
