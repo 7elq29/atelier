@@ -50,7 +50,7 @@ iterating.
 | | |
 |---|---|
 | **Spec files** | `session-organization.spec.ts` |
-| **Source paths** | `src/renderer/src/components/Sidebar.tsx`, `src/renderer/src/components/panels/AppNotesPanel.tsx`, session store/manager (`src/main/sessions/store.ts`, `manager.ts`), `src/main/app-notes/*` |
+| **Source paths** | `src/renderer/src/components/Sidebar.tsx`, `src/renderer/src/components/panels/AppNotesPanel.tsx`, `src/renderer/src/components/panels/DailyNoteEditorPanel.tsx`, `src/renderer/src/hooks/useDailyNoteNotesSlice.ts`, session store/manager (`src/main/sessions/store.ts`, `manager.ts`), `src/main/app-notes/*` |
 | **Catches** | Sidebar search, status filters (all/attention/waiting), session groups (create/rename/drag), session detail popover (notes, tags, color swatch), command palette entry point from the sidebar. |
 
 ### 4. Chat Transcript & Composer Core
@@ -113,8 +113,8 @@ iterating.
 
 | | |
 |---|---|
-| **Spec files** | `obsidian-integration.spec.ts`, `bug-57-obsidian-external-edit-timeline-sync.spec.ts`, `bug-daily-note-template.spec.ts`, `bug-daily-notes-time-editing.spec.ts`, `task-move-to-date.spec.ts`, `todo-session-link.spec.ts` |
-| **Source paths** | `src/renderer/src/components/daily-notes/*` (`Timeline.tsx`, `DailyNotesSidebar.tsx`, `TaskItem.tsx`, `TaskMoveContextMenu.tsx`, `move-date-options.ts`, `CurrentTimeLine.tsx`, `section-resize.ts`, `timeline-scale.ts`, `TaskSessionLinkDialogs.tsx`), `src/main/daily-note-io.ts`, `src/main/daily-notes-handlers.ts`, `src/main/daily-note-session-link.ts`, `src/main/sessions/store.ts`, `src/main/sessions/manager.ts`, `src/main/sessions/ipc.ts`, `src/renderer/src/App.tsx` |
+| **Spec files** | `obsidian-integration.spec.ts`, `bug-57-obsidian-external-edit-timeline-sync.spec.ts`, `bug-daily-note-template.spec.ts`, `bug-daily-notes-time-editing.spec.ts`, `task-move-to-date.spec.ts`, `todo-session-link.spec.ts`, `daily-note-notes-editor.spec.ts` |
+| **Source paths** | `src/renderer/src/components/daily-notes/*` (`Timeline.tsx`, `DailyNotesSidebar.tsx`, `TaskItem.tsx`, `TaskMoveContextMenu.tsx`, `move-date-options.ts`, `CurrentTimeLine.tsx`, `section-resize.ts`, `timeline-scale.ts`, `TaskSessionLinkDialogs.tsx`), `src/renderer/src/components/panels/DailyNoteEditorPanel.tsx`, `src/renderer/src/hooks/useDailyNoteNotesSlice.ts`, `src/main/daily-note-io.ts`, `src/main/daily-notes-handlers.ts`, `src/main/daily-note-session-link.ts`, `src/main/sessions/store.ts`, `src/main/sessions/manager.ts`, `src/main/sessions/ipc.ts`, `src/renderer/src/App.tsx` |
 | **Catches** | Parsing/rendering of real vault markdown fixtures into Timeline/Backlog/Delegated/Unscheduled, external-edit file-watch propagation (bug #57's parser mis-classification of moved tasks), vault-template-based daily note creation, right-click-to-create + edit tasks in the timeline, absolute-grid interactions (54a rewrite), list-management affordances (add-task/edit/tags/Big Three/collapse/close), current-time marker placement, section resize/carry-over on note creation, right-click "Move to..." context menu on Timeline/Unscheduled tasks and the cross-file move to another date's Backlog section — including target-note creation from the template and appending into an already-existing Backlog section (16-task-move-to-date, `task-move-to-date.spec.ts`). |
 
 ### 12. UI Chrome Bug Fixes (small, targeted repros)

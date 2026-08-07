@@ -64,3 +64,14 @@ export interface ReadDailyNoteResult {
   raw: RawSections | null
   exists: boolean
 }
+
+/** Renderer-facing result for the Notes-section-only editor (## Notes → EOF). */
+export interface DailyNoteNotesSliceResult {
+  exists: boolean
+  /** Markdown body under the `## Notes` heading (heading line itself excluded). */
+  notesBody: string
+  /** Vault-relative path to the daily note file. */
+  vaultRelativePath: string
+  /** True when this call created the note from the vault template. */
+  created: boolean
+}

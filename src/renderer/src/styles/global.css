@@ -2030,6 +2030,143 @@ input[type='range'] {
   --atomic-editor-search-bg-active: color-mix(in srgb, var(--warning) 55%, transparent 45%);
 }
 
+/* Sidebar — fixed Daily note row (Obsidian vault slice) */
+.app-note-row--daily .session-name {
+  font-weight: 600;
+}
+.app-note-row--daily.active .row-tag {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-subtle));
+  color: var(--accent);
+}
+
+/* Daily note main editor (## Notes → EOF, Atomic live preview) */
+.daily-note-editor-panel .daily-note-scope-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.daily-note-editor-panel .daily-note-live-badge {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--accent-dim);
+}
+.daily-note-editor-panel .daily-note-created-banner {
+  font-size: 12px;
+  color: var(--success);
+}
+.daily-note-editor-panel .daily-note-vault-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  max-width: min(420px, 40vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.daily-note-editor-panel .daily-sync-chip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 100px;
+  border: 1px solid var(--border-default);
+  color: var(--text-tertiary);
+  background: var(--bg-input);
+  margin-left: auto;
+}
+.daily-note-editor-panel .daily-sync-chip.synced {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.daily-note-editor-panel .daily-sync-chip.external {
+  border-color: var(--warning);
+  color: var(--warning);
+  background: rgba(224, 185, 92, 0.12);
+}
+.daily-note-editor-panel .daily-note-editor-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+}
+.daily-note-editor-panel .daily-note-section-heading {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+.daily-date-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.daily-date-nav button {
+  border: 1px solid var(--border-default);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.daily-date-nav button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.daily-date-nav .daily-date-label {
+  min-width: 148px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+}
+.daily-note-editor-panel .daily-note-atomic-host,
+.daily-note-editor-panel .atomic-cm-editor {
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-code);
+}
+.daily-note-editor-panel .atomic-cm-editor {
+  --atomic-editor-bg: var(--bg-code);
+  --atomic-editor-fg: var(--text-primary);
+  --atomic-editor-fg-muted: var(--text-secondary);
+  --atomic-editor-fg-faint: var(--text-tertiary);
+  --atomic-editor-bg-panel: var(--bg-panel);
+  --atomic-editor-bg-surface: var(--bg-panel-raised);
+  --atomic-editor-border: var(--border-default);
+  --atomic-editor-accent: var(--accent);
+  --atomic-editor-accent-bright: var(--accent-strong);
+  --atomic-editor-accent-soft: color-mix(in srgb, var(--accent) 55%, var(--bg-code) 45%);
+  --atomic-editor-link: var(--info);
+  --atomic-editor-link-hover: color-mix(in srgb, var(--info) 85%, var(--text-primary) 15%);
+  --atomic-editor-code-bg: var(--bg-panel-raised);
+  --atomic-editor-code-rail: var(--border-strong);
+  --atomic-editor-font: var(--font-ui);
+  --atomic-editor-font-mono: var(--font-mono);
+  --atomic-editor-body-size: var(--text-base);
+  --atomic-editor-selection-bg: color-mix(in srgb, var(--accent) 22%, transparent 78%);
+  --atomic-editor-search-bg: color-mix(in srgb, var(--warning) 35%, transparent 65%);
+  --atomic-editor-search-bg-active: color-mix(in srgb, var(--warning) 55%, transparent 45%);
+}
+.daily-note-loading {
+  padding: 24px;
+  color: var(--text-tertiary);
+}
+
 .tok-key { color: var(--sc-teal); }
 .tok-str { color: var(--success); }
 .tok-com { color: var(--text-disabled); font-style: italic; }

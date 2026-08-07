@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AtelierConfig } from '../shared/config'
-import type { DailyNote, ReadDailyNoteResult } from '../shared/daily-note-types'
+import type { DailyNote, ReadDailyNoteResult, DailyNoteNotesSliceResult } from '../shared/daily-note-types'
 import type {
   CreateSessionOptions,
   ImageAttachment,
@@ -76,6 +76,10 @@ const api = {
   pickVaultRoot: (): Promise<string | null> => ipcRenderer.invoke('daily-note:pickVaultRoot'),
   getDefaultDate: (): Promise<string> => ipcRenderer.invoke('daily-note:getDefaultDate'),
   readDailyNote: (date: string): Promise<ReadDailyNoteResult> => ipcRenderer.invoke('daily-note:read', date),
+  readDailyNoteNotesSlice: (date: string, createIfMissing?: boolean): Promise<DailyNoteNotesSliceResult> =>
+    ipcRenderer.invoke('daily-note:read-notes-slice', date, createIfMissing),
+  writeDailyNoteNotesSlice: (date: string, notesBody: string): Promise<{ ok: true }> =>
+    ipcRenderer.invoke('daily-note:write-notes-slice', date, notesBody),
   createDailyNote: (date: string): Promise<ReadDailyNoteResult> => ipcRenderer.invoke('daily-note:create', date),
   writeDailyNote: (date: string, note: DailyNote): Promise<{ note: DailyNote }> =>
     ipcRenderer.invoke('daily-note:write', date, note),
