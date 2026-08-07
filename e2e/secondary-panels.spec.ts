@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -16,15 +17,6 @@ function log(line: string): void {
   writeFileSync(panelsLogPath, `${line}\n`, { flag: 'a' })
 }
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -32,11 +24,6 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf-8' })
@@ -114,10 +101,9 @@ test.describe('07-secondary-panels', () => {
 
   // ── Setup: a real local claude-code session on the fixture repo ────────
   test('setup: create a claude-code session on the fixture repo', async () => {
-    await stubProjectFolder(electronApp, repoDir)
-    await page.getByTestId('new-session-button').click()
+        await page.getByTestId('new-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toBeVisible()
-    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('project-path').fill(repoDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
     await page.getByTestId('start-session-button').click()
@@ -129,6 +115,22 @@ test.describe('07-secondary-panels', () => {
     expect(sessionId).toBeTruthy()
 
     await expect(page.getByTestId('tab-strip')).toBeVisible()
+  })
+
+  test('chat: uncommitted changes cap opens diff on file click', async () => {
+    await page.getByTestId('tab-chat').click()
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect(cap).toBeVisible({ timeout: 20_000 })
+    await expect(cap).toHaveClass(/collapsed/)
+    await cap.getByRole('button', { name: /\d+ Files?/ }).click()
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'index.js' })).toBeVisible()
+    await cap.getByTestId('chat-changes-file').filter({ hasText: 'index.js' }).click()
+    await expect(page.getByTestId('tab-diff')).toHaveClass(/active/)
+    const diff = page.getByTestId('diff-panel-active')
+    await expect(diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })).toHaveClass(/active/)
+    await page.screenshot({ path: join(artifactsDir, '07-chat-uncommitted-changes.png') })
+    log('chat uncommitted changes cap -> diff OK')
+    await page.getByTestId('tab-chat').click()
   })
 
   // ── 1. Tab bar: switching hides/shows via class, doesn't unmount ───────
@@ -162,21 +164,45 @@ test.describe('07-secondary-panels', () => {
   // ── 2. Diff panel: real hunks + commits, inline comment -> composer ────
   test('diff panel: shows real uncommitted diff + commit log, inline comment feeds the composer', async () => {
     await page.getByTestId('tab-diff').click()
-    await page.getByTestId('diff-sub-changes').click()
-    await expect(page.getByTestId('diff-file-row').first()).toContainText('index.js')
-    await expect(page.locator('.diff-line.add').first()).toContainText('hello world!')
+    const diff = page.getByTestId('diff-panel-active')
+    await diff.getByTestId('diff-sub-changes').click()
+    await expect(diff.getByTestId('diff-file-row').first()).toContainText('index.js')
+    await expect(diff.locator('.diff-line.add').first()).toContainText('hello world!')
 
-    await page.getByTestId('diff-add-comment-btn').first().click()
-    await page.getByTestId('diff-comment-input').fill('Please add a test for this.')
-    await page.getByTestId('diff-comment-submit').click()
+    await diff.getByTestId('diff-file-expand-btn').click()
+    await expect(diff.getByTestId('diff-full-file-ready')).toBeVisible({ timeout: 15_000 })
+    await expect(diff.locator('.diff-full-line-add').first()).toBeVisible()
+    await page.screenshot({ path: join(artifactsDir, '07-diff-full-file.png') })
+    await diff.getByTestId('diff-file-expand-btn').click()
+    await expect(diff.getByTestId('diff-file-card')).toBeVisible()
+    await expect(diff.locator('.diff-line.add').first()).toContainText('hello world!')
 
-    await page.getByTestId('diff-sub-commits').click()
-    await expect(page.getByTestId('commit-row').first()).toContainText('Change greeting')
-    await expect(page.getByTestId('commit-row').nth(1)).toContainText('Initial commit')
+    await diff.getByTestId('diff-add-comment-btn').first().click()
+    await diff.getByTestId('diff-comment-input').fill('Please add a test for this.')
+    await diff.getByTestId('diff-comment-submit').click()
+
+    await diff.getByTestId('diff-sub-commits').click()
+    await expect(diff.getByTestId('commit-row').first()).toContainText('Change greeting')
+    await expect(diff.getByTestId('commit-row').nth(1)).toContainText('Initial commit')
+
+    await diff.getByTestId('commit-row').first().click()
+    await expect(diff.getByTestId('diff-commit-detail')).toBeVisible({ timeout: 10_000 })
+    await expect(diff.getByTestId('diff-file-row').first()).toContainText('index.js')
+    await expect(diff.locator('.diff-line.add').filter({ hasText: 'hello world' }).first()).toBeVisible({ timeout: 10_000 })
+    await expect(diff.locator('.diff-line.add').filter({ hasText: 'hello world!' })).toHaveCount(0)
+
+    await diff.getByTestId('diff-commit-back').click()
+    await diff.getByTestId('commit-row').nth(1).click()
+    const initialCommitIndexRow = diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })
+    await expect(initialCommitIndexRow).toBeVisible({ timeout: 10_000 })
+    await initialCommitIndexRow.click()
+    await expect(diff.locator('.diff-line.add').filter({ hasText: "return 'hi'" }).first()).toBeVisible({ timeout: 10_000 })
+
+    await diff.getByTestId('diff-commit-back').click()
+    await expect(diff.getByTestId('commit-row').first()).toBeVisible()
 
     await page.screenshot({ path: join(artifactsDir, '07-diff.png') })
 
-    // The comment must have actually landed in the composer text.
     await page.getByTestId('tab-chat').click()
     await expect(page.getByTestId('composer-input')).toHaveValue(/Please add a test for this\./)
     log('diff panel: inline comment pushed into composer OK')
@@ -185,42 +211,133 @@ test.describe('07-secondary-panels', () => {
   // ── 3. Files panel: real tree, syntax highlighting, image + html preview
   test('files panel: real file tree from disk, text highlighting, image preview', async () => {
     await page.getByTestId('tab-files').click()
-    await expect(page.getByTestId('files-tree')).toContainText('src')
-    await expect(page.getByTestId('files-tree')).toContainText('logo.png')
-    await expect(page.getByTestId('files-tree')).toContainText('page.html')
+    const files = page.getByTestId('files-panel-active')
+    await expect(files.getByTestId('files-tree')).toContainText('src')
+    await expect(files.getByTestId('files-tree')).toContainText('logo.png')
+    await expect(files.getByTestId('files-tree')).toContainText('page.html')
 
-    await page.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
-    await page.locator('[data-testid="file-tree-file"][data-path="src/index.js"]').click()
+    await files.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
+    await files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]').click()
+    await expect(files.getByTestId('files-editor-tab')).toHaveCount(1)
+    await expect(files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')).toHaveClass(/active/)
+
+    await files.locator('[data-testid="file-tree-file"][data-path="logo.png"]').click()
+    await expect(files.getByTestId('files-editor-tab')).toHaveCount(1)
+    await expect(files.locator('[data-testid="files-editor-tab"][data-path="logo.png"]')).toHaveClass(/active/)
+    await expect(files.getByTestId('file-preview-image')).toBeVisible()
+
+    await files.getByTestId('files-editor-tab-add').click()
+    await expect(files.getByTestId('files-editor-tab')).toHaveCount(2)
+    await expect(files.locator('[data-testid="files-editor-tab"][data-path="logo.png"]')).toHaveCount(2)
+
+    await files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]').click()
+    await expect(files.getByTestId('files-editor-tab')).toHaveCount(2)
+    await expect(files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')).toHaveClass(/active/)
+    await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
+
+    const logoTab = files.locator('[data-testid="files-editor-tab"][data-path="logo.png"]').first()
+    await logoTab.locator('[data-testid="files-editor-tab-close"]').click()
+    await expect(files.getByTestId('files-editor-tab')).toHaveCount(1)
+    await expect(files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')).toHaveClass(/active/)
+
     // Monaco editor is visible and renders the file's text content in .view-line elements
-    await expect(page.getByTestId('monaco-editor')).toBeVisible()
-    await expect(page.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
+    await expect(files.getByTestId('monaco-editor')).toBeVisible()
+    await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
 
-    await page.locator('[data-testid="file-tree-file"][data-path="logo.png"]').click()
-    await expect(page.getByTestId('file-preview-image')).toBeVisible()
-    const src = await page.getByTestId('file-preview-image').getAttribute('src')
+    const monacoBg = () =>
+      page.evaluate(() => {
+        const el = document.querySelector('.monaco-editor .monaco-editor-background')
+        return el ? getComputedStyle(el).backgroundColor : ''
+      })
+
+    await page.getByTestId('open-settings-button').click()
+    await page.getByTestId('theme-light-btn').click()
+    await page.getByTestId('settings-close').click()
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
+    await expect.poll(monacoBg).toBe('rgb(236, 231, 219)')
+
+    await page.getByTestId('open-settings-button').click()
+    await page.getByTestId('theme-dark-btn').click()
+    await page.getByTestId('settings-close').click()
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
+    await expect.poll(monacoBg).toBe('rgb(23, 21, 15)')
+
+    await files.locator('.monaco-editor .margin').hover({ position: { x: 12, y: 40 } })
+    await expect(files.getByTestId('files-line-comment-btn')).toBeVisible({ timeout: 5_000 })
+    await files.getByTestId('files-line-comment-btn').click()
+    await files.getByTestId('files-comment-input').fill('Review this line in Files.')
+    await files.getByTestId('files-comment-submit').click()
+    await page.getByTestId('tab-chat').click()
+    await expect(page.getByTestId('composer-input')).toHaveValue(/Review this line in Files\./)
+    await page.getByTestId('tab-files').click()
+    log('files panel: line comment pushed into composer OK')
+
+    await files.locator('[data-testid="file-tree-file"][data-path="logo.png"]').click()
+    await expect(files.getByTestId('file-preview-image')).toBeVisible()
+    const src = await files.getByTestId('file-preview-image').getAttribute('src')
     expect(src).toMatch(/^data:image\/png;base64,/)
 
-    await page.locator('[data-testid="file-tree-file"][data-path="page.html"]').click()
-    await expect(page.getByTestId('file-preview-html')).toBeVisible()
+    await files.locator('[data-testid="file-tree-file"][data-path="page.html"]').click()
+    await expect(files.getByTestId('file-preview-html')).toBeVisible()
 
-    // The iframe uses `sandbox=""` (no allow-same-origin), so its document
-    // has an opaque origin and is genuinely cross-origin from the page's
-    // perspective. Playwright's frameLocator drives it via CDP regardless.
-    const previewFrame = page.frameLocator('[data-testid="file-preview-html"]')
+    const previewFrame = files.frameLocator('[data-testid="file-preview-html"]')
     await expect(previewFrame.locator('h1')).toHaveText('Fixture page')
 
     await page.screenshot({ path: join(artifactsDir, '07-files.png') })
     log('files panel: real tree + text/image/html preview OK')
   })
 
+  test('file quick open: split dir/search, shallow dir browse, recursive search opens file', async () => {
+    await page.getByTestId('tab-chat').click()
+    await page.getByTestId('composer-input').click()
+    await page.keyboard.down('Control')
+    await page.keyboard.press('KeyX')
+    await page.keyboard.press('KeyF')
+    await page.keyboard.up('Control')
+    await expect(page.getByTestId('file-quick-open')).toBeVisible()
+    const searchInput = page.getByTestId('file-quick-open-input')
+    await expect(searchInput).toBeFocused()
+    await expect(page.getByTestId('file-quick-open-dir')).toContainText(repoDir.replace(/^\/Users\/[^/]+/, '~'))
+
+    await searchInput.fill('index')
+    await expect(page.getByTestId('file-quick-open-item').filter({ hasText: 'index.js' })).toHaveCount(1)
+
+    await searchInput.fill('')
+    await expect(searchInput).toHaveValue('')
+    await page.getByTestId('file-quick-open-dir').click()
+    const dirInput = page.locator('[data-testid="file-quick-open-dir"].fqo-dir-input')
+    await expect(dirInput).toBeVisible()
+    await expect(dirInput).toBeFocused()
+    const dirValue = await dirInput.inputValue()
+    expect(dirValue.length).toBeGreaterThan(0)
+    await dirInput.fill(`${dirValue.replace(/\/$/, '')}/sr`)
+    await expect(page.getByTestId('file-quick-open-item').filter({ hasText: 'src/' })).toBeVisible()
+    await page.keyboard.press('Tab')
+    await expect(dirInput).toBeFocused()
+    await expect(dirInput).toHaveValue(/\/src$/)
+    await page.keyboard.press('Tab')
+    await expect(searchInput).toBeFocused()
+    await expect(page.getByTestId('file-quick-open-dir')).toContainText('/src')
+
+    await searchInput.fill('index')
+    await page.keyboard.press('Enter')
+
+    await expect(page.getByTestId('file-quick-open')).toHaveCount(0)
+    await expect(page.getByTestId('tab-files')).toHaveClass(/active/)
+    await expect(page.getByTestId('monaco-editor')).toBeVisible()
+    await page.screenshot({ path: join(artifactsDir, '07-file-quick-open.png') })
+    log('file quick open: split dir/search OK')
+  })
+
   // ── 4. Worktree create/list/remove round trip against real disk state ──
   test('worktree panel: create, list, merge, and remove a real git worktree', async () => {
     await page.getByTestId('tab-diff').click()
-    await page.getByTestId('diff-sub-worktrees').click()
+    const diff = page.getByTestId('diff-panel-active')
+    await diff.getByTestId('diff-sub-worktrees').click()
 
-    await page.getByTestId('worktree-branch-input').fill('feature-x')
-    await page.getByTestId('worktree-add').click()
-    await expect(page.getByTestId('worktree-row')).toContainText('feature-x', { timeout: 10_000 })
+    await diff.getByTestId('worktree-branch-input').fill('feature-x')
+    await diff.getByTestId('worktree-add').click()
+    await expect(diff.getByTestId('worktree-row')).toContainText('feature-x', { timeout: 10_000 })
 
     const worktreeListOutput = git(repoDir, ['worktree', 'list'])
     expect(worktreeListOutput).toContain('feature-x')
@@ -228,12 +345,12 @@ test.describe('07-secondary-panels', () => {
 
     await page.screenshot({ path: join(artifactsDir, '07-worktree.png') })
 
-    await page.getByTestId('worktree-merge').click()
+    await diff.getByTestId('worktree-merge').click()
     // Merging a branch identical to HEAD is a real (trivial) fast-forward/no-op merge — still a real `git merge` call.
     await page.waitForTimeout(500)
 
-    await page.getByTestId('worktree-remove').click()
-    await expect(page.getByTestId('worktree-row')).toHaveCount(0, { timeout: 10_000 })
+    await diff.getByTestId('worktree-remove').click()
+    await expect(diff.getByTestId('worktree-row')).toHaveCount(0, { timeout: 10_000 })
 
     const worktreeListAfterRemove = git(repoDir, ['worktree', 'list'])
     expect(worktreeListAfterRemove).not.toContain('feature-x')
@@ -242,9 +359,8 @@ test.describe('07-secondary-panels', () => {
 
   // ── 5a. Terminal-only session mode: a real plain shell, no agent ───────
   test('terminal-only session: real shell echoes real output', async () => {
-    await stubProjectFolder(electronApp, repoDir)
-    await page.getByTestId('new-session-button').click()
-    await page.getByTestId('pick-project-folder').click()
+        await page.getByTestId('new-session-button').click()
+    await page.getByTestId('project-path').fill(repoDir)
     await page.getByTestId('mode-terminal').click()
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -259,6 +375,22 @@ test.describe('07-secondary-panels', () => {
     await expect.poll(async () => term.textContent(), { timeout: 10_000 }).toContain('hello-from-terminal-mode')
     await page.screenshot({ path: join(artifactsDir, '07-terminal.png') })
     log('terminal-only mode: real pty echoed real output OK')
+  })
+
+  test('open local terminal button: one-click local terminal with Local meta', async () => {
+    await page.getByTestId('open-local-terminal-button').click()
+    await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 10_000 })
+    const row = page.locator('[data-testid="terminal-list"] [data-testid="session-row"][data-mode="terminal"]').last()
+    await expect(row.getByTestId('session-meta-host')).toHaveText('Local')
+    const sessionId = (await row.getAttribute('data-session-id')) as string
+    await page.screenshot({ path: join(artifactsDir, '07-local-terminal-sidebar.png') })
+    log('open local terminal: sidebar Local meta OK')
+
+    await row.getByTestId('session-menu-button').click()
+    await expect(row.getByTestId('menu-fork')).toHaveCount(0)
+    await row.getByTestId('menu-delete').click()
+    await expect(page.locator(`[data-session-id="${sessionId}"]`)).toHaveCount(0)
+    log('open local terminal: delete terminal row OK')
   })
 
   // ── 5b. Companion terminal drawer: independent shell, open/close ───────
@@ -291,10 +423,9 @@ test.describe('07-secondary-panels', () => {
 
   // ── 6. Ports panel (real devpod) ────────────────────────────────────────
   test('ports panel: real SSH local port forward against qingqin-go.devpod-us-or actually works', async ({}, testInfo) => {
-    await stubProjectFolder(electronApp, '') // remote sessions use a text path field, not the picker
     await page.getByTestId('new-session-button').click()
     await page.getByTestId('host-option-devpod-us-or').click()
-    await page.getByTestId('remote-project-path').fill('/home/user')
+    await page.getByTestId('project-path').fill('/home/user')
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -333,10 +464,9 @@ test.describe('07-secondary-panels', () => {
   // `ssh qingqin-go.devpod-us-or -- git -C ~/go-code rev-parse
   // --is-inside-work-tree` -> `true`).
   test('diff panel: real devpod session shows real remote git state, not "not a git repository"', async () => {
-    await stubProjectFolder(electronApp, '')
-    await page.getByTestId('new-session-button').click()
+        await page.getByTestId('new-session-button').click()
     await page.getByTestId('host-option-devpod-us-or').click()
-    await page.getByTestId('remote-project-path').fill('/home/user/go-code')
+    await page.getByTestId('project-path').fill('/home/user/go-code')
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -344,18 +474,14 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('tab-diff')).toBeVisible({ timeout: 20_000 })
     await page.getByTestId('tab-diff').click()
 
-    // Wait for the panel to settle (one batched remote git status + lazy sub-tabs).
-    await expect(page.getByTestId('diff-empty-not-repo').or(page.getByTestId('diff-panel'))).toBeVisible({ timeout: 30_000 })
+    const diff = page.getByTestId('diff-panel-active')
+    await expect(diff).toBeVisible({ timeout: 30_000 })
 
-    // The bug: this must NOT show the "not a git repository" empty state for
-    // a real remote repo.
     await expect(page.getByTestId('diff-empty-not-repo')).toHaveCount(0)
-    await expect(page.getByTestId('diff-panel')).toBeVisible()
+    await expect(diff).toBeVisible()
 
-    // Prove it's genuinely talking to the remote repo (not just "isRepo:
-    // true" by accident) via a real `git log` round trip over SSH.
-    await page.getByTestId('diff-sub-commits').click()
-    await expect(page.getByTestId('commit-row').first()).toBeVisible({ timeout: 15_000 })
+    await diff.getByTestId('diff-sub-commits').click()
+    await expect(diff.getByTestId('commit-row').first()).toBeVisible({ timeout: 15_000 })
 
     await page.screenshot({ path: join(artifactsDir, '07-diff-devpod.png') })
     log('diff panel: real devpod git state shown OK')
@@ -464,9 +590,8 @@ test.describe('07-secondary-panels', () => {
 
     // 1. Create terminal-only session A — no agent SDK call required, just a
     //    real pty. After creation the new session is immediately active.
-    await stubProjectFolder(electronApp, repoDir)
     await page.getByTestId('new-session-button').click()
-    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('project-path').fill(repoDir)
     await page.getByTestId('mode-terminal').click()
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -506,9 +631,8 @@ test.describe('07-secondary-panels', () => {
     //    React unmounts session A's TerminalPanel → its cleanup fires:
     //    ptyKill(A.id) → `tmux detach-client -s <name-A>` (graceful detach,
     //    tmux server session stays alive) → proc.kill().
-    await stubProjectFolder(electronApp, repoDir)
-    await page.getByTestId('new-session-button').click()
-    await page.getByTestId('pick-project-folder').click()
+        await page.getByTestId('new-session-button').click()
+    await page.getByTestId('project-path').fill(repoDir)
     await page.getByTestId('mode-terminal').click()
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -561,10 +685,9 @@ test.describe('07-secondary-panels', () => {
     log(`devpod tmux persistence: using host ${devpodHost.sshHost} (id=${devpodHost.id})`)
 
     // 1. Create a terminal-only session on the devpod.
-    await stubProjectFolder(electronApp, '')
-    await page.getByTestId('new-session-button').click()
+        await page.getByTestId('new-session-button').click()
     await page.getByTestId(`host-option-${devpodHost.id}`).click()
-    await page.getByTestId('remote-project-path').fill('/home/user')
+    await page.getByTestId('project-path').fill('/home/user')
     await page.getByTestId('mode-terminal').click()
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -626,9 +749,8 @@ test.describe('07-secondary-panels', () => {
     //    → its cleanup fires ptyKill → proc.kill() drops the SSH connection;
     //    the remote tmux server detects the disconnect and detaches the client,
     //    leaving the named tmux session (and its shell's cwd) alive on the devpod.
-    await stubProjectFolder(electronApp, repoDir)
     await page.getByTestId('new-session-button').click()
-    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('project-path').fill(repoDir)
     await page.getByTestId('mode-terminal').click()
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -679,10 +801,9 @@ test.describe('07-secondary-panels', () => {
       try { require('node:fs').unlinkSync(`/tmp/${f}`) } catch { /* best-effort */ }
     })
 
-    await stubProjectFolder(electronApp, '')
     await page.getByTestId('new-session-button').click()
     await page.getByTestId(`host-option-${devpodHost.id}`).click()
-    await page.getByTestId('remote-project-path').fill('/tmp')
+    await page.getByTestId('project-path').fill('/tmp')
     await page.getByTestId('mode-terminal').click()
     const t0 = Date.now()
     await page.getByTestId('start-session-button').click()

@@ -49,6 +49,10 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
   // fix-bug-triage-jul31 / bug #49: recently-used project paths for the New Session modal's history offering.
   ipcMain.handle('session:listRecentProjectPaths', (_event, hostId: string) => manager.listRecentProjectPaths(hostId))
 
+  ipcMain.handle('session:suggestProjectPaths', (_event, hostId: string, query: string) =>
+    manager.suggestProjectPaths(hostId, query)
+  )
+
   ipcMain.handle('session:listActive', () => manager.listActive())
 
   ipcMain.handle('session:listHistory', () => manager.listHistory())
@@ -66,12 +70,25 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
   ipcMain.handle('session:resume', (_event, sessionId: string) => {
     const snapshot = manager.resumeSnapshot(sessionId)
     // Live reconnect happens AFTER this handler returns, so the renderer
-    // always has the full stored transcript rendered first.
-    void manager.reconnect(sessionId).catch((err) =>
-      logger.error('session reconnect failed', { sessionId, error: err instanceof Error ? err.message : String(err) })
-    )
+    // always has the full stored transcript rendered first — except
+    // session-startup-idle, where the user must click Reconnect explicitly.
+    if (!manager.isSessionStartupIdle(sessionId)) {
+      void manager.reconnect(sessionId).catch((err) =>
+        logger.error('session reconnect failed', { sessionId, error: err instanceof Error ? err.message : String(err) })
+      )
+    }
     return snapshot
   })
+
+  ipcMain.handle('session:reconnect', async (_event, sessionId: string) => {
+    await manager.reconnect(sessionId)
+  })
+
+  ipcMain.handle('session:touchActive', (_event, sessionId: string) => {
+    manager.touchSessionActive(sessionId)
+  })
+
+  ipcMain.handle('session:isStartupIdle', (_event, sessionId: string) => manager.isSessionStartupIdle(sessionId))
 
   ipcMain.handle('session:sendMessage', (_event, sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment) => {
     logger.info('session:sendMessage invoked', { sessionId, textLength: text.length, modelSelection, hasImage: Boolean(image) })
@@ -87,6 +104,16 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
   ipcMain.handle('session:restart', (_event, sessionId: string) => manager.restartSession(sessionId))
 
   ipcMain.handle('session:close', (_event, sessionId: string) => manager.closeSession(sessionId))
+
+  ipcMain.handle(
+    'session:linkDailyTask',
+    async (_event, sessionId: string, noteDate: string, taskGid: string) =>
+      manager.linkDailyTask(sessionId, noteDate, taskGid)
+  )
+
+  ipcMain.handle('session:completeLinkedDailyTask', async (_event, sessionId: string) => {
+    await manager.completeLinkedDailyTask(sessionId)
+  })
 
   ipcMain.handle('session:delete', (_event, sessionId: string) => manager.deleteSession(sessionId))
 
@@ -169,4 +196,12 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
     logger.info('session:exportTranscript wrote file', { sessionId, format, filePath: result.filePath })
     return result.filePath
   })
+
+  ipcMain.handle('session:getWorkspaceSnapshot', (_event, sessionId: string) =>
+    manager.getSessionWorkspaceSnapshot(sessionId)
+  )
+
+  ipcMain.handle('session:refreshWorkspace', async (_event, sessionId: string, force: boolean) =>
+    manager.refreshSessionWorkspace(sessionId, force)
+  )
 }

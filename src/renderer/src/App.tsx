@@ -1,10 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import CommandPalette, { type PaletteItem } from './components/CommandPalette'
+import FileQuickOpenPalette from './components/FileQuickOpenPalette'
+import KeyboardHintsOverlay from './components/KeyboardHintsOverlay'
 import OnboardingWizard from './components/OnboardingWizard'
 import Sidebar from './components/Sidebar'
 import NewSessionModal from './components/NewSessionModal'
 import SettingsPanel from './components/SettingsPanel'
 import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
+import { DeleteSessionLinkedTaskDialog, TaskSessionReplaceDialog } from './components/daily-notes/TaskSessionLinkDialogs'
 import ChatTranscript from './components/chat/ChatTranscript'
 import TranscriptSearchBar from './components/chat/TranscriptSearchBar'
 import Composer, { type ComposerHandle } from './components/chat/Composer'
@@ -13,17 +16,66 @@ import ExportMenu from './components/chat/ExportMenu'
 import TabBar, { type SessionTab } from './components/panels/TabBar'
 import DiffPanel from './components/panels/DiffPanel'
 import FilesPanel from './components/panels/FilesPanel'
+import AppNotesPanel from './components/panels/AppNotesPanel'
 import PortsPanel from './components/panels/PortsPanel'
 import TerminalPanel from './components/panels/TerminalPanel'
 import CompanionTerminalDrawer from './components/panels/CompanionTerminalDrawer'
+import SessionDisconnectedPanel from './components/SessionDisconnectedPanel'
 import { useConfig } from './hooks/useConfig'
+import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig, type AtelierConfig } from '../../shared/config'
 import { useSessions } from './hooks/useSessions'
-import type { ImageAttachment, MessageSearchHit, ModelSelection, SessionRecord } from '../../shared/session-types'
+import { useSessionWorkspace } from './hooks/useSessionWorkspace'
+import { useAppNotes } from './hooks/useAppNotes'
+import type { DailyTask } from '../../shared/daily-note-types'
+import type {
+  ImageAttachment,
+  MessageSearchHit,
+  ModelSelection,
+  SessionRecord,
+  SessionStatus
+} from '../../shared/session-types'
 import { FTS_SNIPPET_START, FTS_SNIPPET_END } from '../../shared/chat-content'
+
+function nextTerminalSuggestedName(sessions: SessionRecord[]): string {
+  const names = new Set(sessions.filter((s) => s.mode === 'terminal').map((s) => s.name))
+  if (!names.has('Terminal')) return 'Terminal'
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `Terminal ${i}`
+    if (!names.has(candidate)) return candidate
+  }
+  return 'Terminal'
+}
 
 function resolveEffectiveTheme(theme: 'system' | 'light' | 'dark'): 'light' | 'dark' {
   if (theme !== 'system') return theme
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+/** Claude-code sessions that show the disconnected gate (no tabs until Reconnect). */
+function claudeCodeSessionDisconnected(
+  session: SessionRecord | null | undefined,
+  sessionId: string | null,
+  statuses: Record<string, SessionStatus>
+): boolean {
+  if (!session || session.mode !== 'claude-code' || !sessionId) return false
+  if (session.closedAt) return true
+  return statuses[sessionId] === 'startup-idle'
+}
+
+function defaultModelSelection(config: AtelierConfig): ModelSelection {
+  return {
+    model: defaultClaudeModelFromConfig(config),
+    effort: defaultClaudeEffortFromConfig(config)
+  }
+}
+
+function modelSelectionForSession(
+  sessionId: string,
+  session: SessionRecord | undefined,
+  overrides: Record<string, ModelSelection>,
+  config: AtelierConfig
+): ModelSelection {
+  return overrides[sessionId] ?? session?.modelSelection ?? defaultModelSelection(config)
 }
 
 /**
@@ -38,26 +90,47 @@ export default function App(): JSX.Element {
   const [date, setDate] = useState<string | null>(null)
   const { config, loaded, updateConfig } = useConfig()
   const sessions = useSessions()
+  const sessionWorkspace = useSessionWorkspace()
+  const appNotes = useAppNotes()
 
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [fileQuickOpenOpen, setFileQuickOpenOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [newSessionOpen, setNewSessionOpen] = useState(false)
+  const [pendingTaskSessionLink, setPendingTaskSessionLink] = useState<{
+    noteDate: string
+    taskGid: string
+    taskText: string
+  } | null>(null)
+  const [replaceLinkedDialogOpen, setReplaceLinkedDialogOpen] = useState(false)
+  const [deleteLinkedPrompt, setDeleteLinkedPrompt] = useState<{ sessionId: string; sessionName: string } | null>(null)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
-  const composerRef = useRef<ComposerHandle>(null)
-  // Defaults to Sonnet 5 (explicit override, always sent) rather than `null`
-  // (no override, harness/SDK picks its own default) — the app's default
-  // model must be Sonnet 5 even when the user never touches the composer's
-  // picker, including in e2e tests that never interact with it.
-  const [modelSelection, setModelSelection] = useState<ModelSelection | null>({
-    model: 'claude-sonnet-5',
-    effort: 'high'
-  })
+  const [activeAppNoteId, setActiveAppNoteId] = useState<string | null>(null)
+  const composerRefs = useRef<Map<string, ComposerHandle>>(new Map())
+  /** Picker overrides until the next session-list refresh picks up persisted model columns. */
+  const [modelSelectionBySession, setModelSelectionBySession] = useState<Record<string, ModelSelection>>({})
   const [activeTab, setActiveTab] = useState<SessionTab>('chat')
   const [visitedTabs, setVisitedTabs] = useState<Set<SessionTab>>(new Set(['chat']))
+  const [revealChangePath, setRevealChangePath] = useState<string | undefined>()
+  const [revealChangeSeq, setRevealChangeSeq] = useState(0)
+  const [revealFilePath, setRevealFilePath] = useState<string | undefined>()
+  const [revealFileSeq, setRevealFileSeq] = useState(0)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerHeight, setDrawerHeight] = useState(240)
-  /** Messages queued while the active session was busy (message-queue). Drained FIFO when busy → idle. */
-  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
+  /** Per-session FIFO queue while that session is busy (message-queue). */
+  const [queuedMessagesBySession, setQueuedMessagesBySession] = useState<Record<string, string[]>>({})
+  const queuedMessagesBySessionRef = useRef(queuedMessagesBySession)
+  queuedMessagesBySessionRef.current = queuedMessagesBySession
+
+  // Claude-code chat composers stay mounted per visited session (draft + git cap).
+  const [aliveChatComposers, setAliveChatComposers] = useState<Set<string>>(() => new Set())
+
+  const effectiveTheme = resolveEffectiveTheme(config.theme)
+
+  const fileQuickOpenChordAtRef = useRef<number | null>(null)
+  const fileQuickOpenOpenRef = useRef(false)
+  const activeSessionRef = useRef<SessionRecord | null>(null)
+  const activeAppNoteIdRef = useRef<string | null>(null)
 
   // Terminal keep-alive: maps ptyId → {cwd, hostname} for terminal-mode sessions
   // that have been visited. These TerminalPanels stay mounted permanently (only CSS
@@ -81,9 +154,19 @@ export default function App(): JSX.Element {
   // the effect below once that message's row actually exists in the DOM
   // (which may be a render or two after `selectSession` resolves).
   const [pendingJumpMessageId, setPendingJumpMessageId] = useState<number | null>(null)
+  const [terminalShellHostBySessionId, setTerminalShellHostBySessionId] = useState<Record<string, string | null>>({})
 
   useEffect(() => {
     window.atelier.getDefaultDate().then(setDate)
+  }, [])
+
+  useEffect(() => {
+    return window.atelier.onPtyShellContext(({ id, remoteHost }) => {
+      setTerminalShellHostBySessionId((prev) => {
+        if (prev[id] === remoteHost) return prev
+        return { ...prev, [id]: remoteHost }
+      })
+    })
   }, [])
 
   // Theme: really flips `data-theme` on <html> — this is the one source of
@@ -115,18 +198,46 @@ export default function App(): JSX.Element {
   // depending on where focus happens to be.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
+      if (e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.code === 'KeyX') {
+          fileQuickOpenChordAtRef.current = Date.now()
+          return
+        }
+        if (e.code === 'KeyF' && fileQuickOpenChordAtRef.current != null) {
+          const elapsed = Date.now() - fileQuickOpenChordAtRef.current
+          fileQuickOpenChordAtRef.current = null
+          if (elapsed <= 1500) {
+            const session = activeSessionRef.current
+            if (session?.mode === 'claude-code' && !activeAppNoteIdRef.current) {
+              e.preventDefault()
+              setFileQuickOpenOpen(true)
+            }
+          }
+          return
+        }
+      }
+      if (e.metaKey && !e.altKey && !e.ctrlKey && e.code === 'KeyK') {
+        e.preventDefault()
+        setPaletteOpen(true)
+        return
+      }
       if (e.altKey && e.code === 'KeyX') {
         e.preventDefault()
         setPaletteOpen(true)
         return
       }
       if (e.key === 'Escape') {
+        if (fileQuickOpenOpenRef.current) {
+          setFileQuickOpenOpen(false)
+          return
+        }
         // Modal-close always takes priority over interrupt — if any overlay
         // is open, close it and don't also fire the interrupt path.
         if (anyModalOpenRef.current) {
           setPaletteOpen(false)
           setSettingsOpen(false)
           setNewSessionOpen(false)
+          setFileQuickOpenOpen(false)
           return
         }
         // No overlay open: if the active session is busy, ESC interrupts it
@@ -135,8 +246,9 @@ export default function App(): JSX.Element {
         const sid = activeSessionIdRef.current
         if (sid && busyBySessionRef.current[sid]) {
           void sessions.interrupt(sid)
-          if (lastSubmittedTextRef.current) {
-            composerRef.current?.setValue(lastSubmittedTextRef.current)
+          const restore = lastSubmittedTextBySessionRef.current[sid]
+          if (restore) {
+            composerRefs.current.get(sid)?.setValue(restore)
           }
           return
         }
@@ -145,6 +257,9 @@ export default function App(): JSX.Element {
         setPaletteOpen(false)
         setSettingsOpen(false)
         setNewSessionOpen(false)
+        setReplaceLinkedDialogOpen(false)
+        setPendingTaskSessionLink(null)
+        setDeleteLinkedPrompt(null)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -156,34 +271,150 @@ export default function App(): JSX.Element {
     [sessions.activeSessions, sessions.historySessions]
   )
 
+  const performCloseSession = useCallback(
+    (id: string) => {
+      if (activeSessionId === id) setActiveSessionId(null)
+      sessionWorkspace.evictSession(id)
+      void sessions.closeSession(id)
+    },
+    [activeSessionId, sessions, sessionWorkspace]
+  )
+
+  const performDeleteSession = useCallback(
+    (id: string) => {
+      if (activeSessionId === id) setActiveSessionId(null)
+      void sessions.deleteSession(id)
+      setTerminalShellHostBySessionId((prev) => {
+        if (!(id in prev)) return prev
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      setAliveTerminals((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Map(prev)
+        next.delete(id)
+        return next
+      })
+      setAliveTabTerminals((prev) => {
+        const ptyId = `${id}:tab-terminal`
+        if (!prev.has(ptyId)) return prev
+        const next = new Map(prev)
+        next.delete(ptyId)
+        return next
+      })
+      void window.atelier.ptyKillTmuxSession(id)
+      void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`)
+      void window.atelier.ptyKillTmuxSession(`${id}:companion`)
+      sessionWorkspace.evictSession(id)
+      setAliveChatComposers((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      composerRefs.current.delete(id)
+    },
+    [activeSessionId, sessions, sessionWorkspace]
+  )
+
+  const handleDeleteSession = useCallback(
+    (id: string) => {
+      const session = allSessions.find((s) => s.id === id)
+      if (session?.linkedDailyTaskGid && session.linkedDailyNoteDate) {
+        setDeleteLinkedPrompt({ sessionId: id, sessionName: session.name })
+        return
+      }
+      performDeleteSession(id)
+    },
+    [allSessions, performDeleteSession]
+  )
+
+  const handleCreateSessionFromTask = useCallback(
+    (task: DailyTask) => {
+      if (!date) return
+      const pending = { noteDate: date, taskGid: task.gid, taskText: task.text }
+      if (task.linkedSessionId) {
+        setPendingTaskSessionLink(pending)
+        setReplaceLinkedDialogOpen(true)
+      } else {
+        setPendingTaskSessionLink(pending)
+        setNewSessionOpen(true)
+      }
+    },
+    [date]
+  )
+
   async function selectSession(session: SessionRecord): Promise<void> {
+    setActiveAppNoteId(null)
     setActiveSessionId(session.id)
     setActiveTab('chat')
     setVisitedTabs(new Set(['chat']))
     setDrawerOpen(false)
-    // restore-mode-and-model-on-resume: restores the persisted model selection
-    // so the composer's picker reflects what this session was last using,
-    // not whatever the previously-active session had set. Falls back to the
-    // app default (Sonnet 5 / high) for sessions that were never sent a
-    // message with an explicit model override.
-    setModelSelection(session.modelSelection ?? { model: 'claude-sonnet-5', effort: 'high' })
-    // Two independent reasons to call resumeSession (reopen + reconnect +
-    // fetch transcript), not just one:
-    //  - session.closedAt: an explicitly-closed session must always reopen
-    //    and reconnect its live harness connection, even if its transcript
-    //    happens to already be cached client-side from before it was closed.
-    //  - !messagesBySession[id]: an "active" session's transcript only ever
-    //    lived in this renderer's in-memory state, which resets on every app
-    //    relaunch — without this, reopening a session that was never
-    //    explicitly closed (the common case after just quitting and
-    //    restarting the app) showed an empty transcript despite the real
-    //    messages being intact in SQLite.
-    if (session.closedAt || !sessions.messagesBySession[session.id]) {
+    const startupIdle =
+      session.mode === 'claude-code' &&
+      !session.closedAt &&
+      (sessions.statuses[session.id] === 'startup-idle' ||
+        (await window.atelier.isSessionStartupIdle(session.id)))
+    const disconnectedGate = startupIdle || Boolean(session.closedAt)
+    if (session.mode === 'claude-code' && !disconnectedGate) {
+      void window.atelier.touchSessionActive(session.id)
+    }
+    // Reload transcript + reconnect for active sessions missing cached messages
+    // (common after app relaunch). Closed / startup-idle: no reconnect on select —
+    // user must click Reconnect on the disconnected gate.
+    if (!disconnectedGate && !sessions.messagesBySession[session.id]) {
       await sessions.resumeSession(session.id)
     }
+    sessionWorkspace.hydrateSnapshot(session.id)
   }
 
+  const handleSessionReconnect = useCallback(async (): Promise<void> => {
+    if (!activeSessionId) return
+    const session = allSessions.find((s) => s.id === activeSessionId)
+    if (session?.closedAt) {
+      await sessions.resumeSession(activeSessionId)
+      return
+    }
+    if (!sessions.messagesBySession[activeSessionId]) {
+      await sessions.loadSessionMessages(activeSessionId)
+    }
+    await sessions.reconnectSession(activeSessionId)
+  }, [activeSessionId, allSessions, sessions])
+
+  const openLocalTerminal = useCallback(async () => {
+    const home = await window.atelier.getHomedir()
+    const created = await sessions.createSession({
+      mode: 'terminal',
+      hostId: 'local',
+      projectPath: home,
+      suggestedName: nextTerminalSuggestedName(allSessions)
+    })
+    await selectSession(created)
+  }, [allSessions, sessions])
+
+  const selectAppNote = useCallback((noteId: string) => {
+    setActiveAppNoteId(noteId)
+  }, [])
+
+  const createAppNote = useCallback(async () => {
+    const note = await appNotes.createNote()
+    setActiveAppNoteId(note.id)
+  }, [appNotes])
+
+  const deleteAppNote = useCallback(
+    async (noteId: string) => {
+      const other = appNotes.notes.filter((n) => n.id !== noteId)
+      if (activeAppNoteId === noteId) {
+        setActiveAppNoteId(other[0]?.id ?? null)
+      }
+      await appNotes.deleteNote(noteId)
+    },
+    [activeAppNoteId, appNotes]
+  )
+
   function selectTab(tab: SessionTab): void {
+    if (claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)) return
     setActiveTab(tab)
     setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)))
   }
@@ -196,8 +427,6 @@ export default function App(): JSX.Element {
     setTranscriptSearchQuery('')
     setActiveMatchIndex(0)
     setMatchCount(0)
-    // Also discard any queued messages — they were for the previous session.
-    setQueuedMessages([])
   }, [activeSessionId])
 
   // Register terminal-mode sessions in the keep-alive map the first time they
@@ -206,6 +435,36 @@ export default function App(): JSX.Element {
   const activeSession = activeSessionId
     ? allSessions.find((s) => s.id === activeSessionId) ?? null
     : null
+  const activeAppNote = activeAppNoteId
+    ? appNotes.notes.find((n) => n.id === activeAppNoteId) ?? null
+    : null
+  activeSessionRef.current = activeSession
+  activeAppNoteIdRef.current = activeAppNoteId
+
+  const openChangedFileInDiff = useCallback(
+    (path: string) => {
+      const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
+      if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
+      setRevealChangePath(path)
+      setRevealChangeSeq((n) => n + 1)
+      setActiveTab('diff')
+      setVisitedTabs((prev) => (prev.has('diff') ? prev : new Set(prev).add('diff')))
+    },
+    [activeSessionId, allSessions, sessions.statuses]
+  )
+
+  const openFileInFiles = useCallback(
+    (absolutePath: string) => {
+      const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
+      if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
+      setRevealFilePath(absolutePath)
+      setRevealFileSeq((n) => n + 1)
+      setActiveTab('files')
+      setVisitedTabs((prev) => (prev.has('files') ? prev : new Set(prev).add('files')))
+    },
+    [activeSessionId, allSessions, sessions.statuses]
+  )
+
   useEffect(() => {
     if (!activeSession || activeSession.mode !== 'terminal') return
     setAliveTerminals((prev) => {
@@ -216,20 +475,26 @@ export default function App(): JSX.Element {
     })
   }, [activeSession?.id, activeSession?.mode])
 
-  // Register claude-code tab-terminal sessions the first time the terminal tab
-  // is visited. The TerminalPanel stays mounted in the cache layer so switching
-  // between sessions never detaches the tmux client.
+  // Tab-terminal + composer registration when main finishes workspace preload.
   useEffect(() => {
-    if (!activeSession || activeSession.mode !== 'claude-code') return
-    if (activeTab !== 'terminal') return
-    const ptyId = `${activeSession.id}:tab-terminal`
-    setAliveTabTerminals((prev) => {
-      if (prev.has(ptyId)) return prev
-      const next = new Map(prev)
-      next.set(ptyId, { cwd: activeSession.worktreePath ?? activeSession.projectPath, hostname: activeSession.hostname })
-      return next
-    })
-  }, [activeSession?.id, activeSession?.mode, activeTab])
+    for (const sessionId of sessionWorkspace.readySessionIds) {
+      const ws = sessionWorkspace.workspaceBySession[sessionId]
+      if (!ws) continue
+      setAliveTabTerminals((prev) => {
+        const ptyId = ws.tabTerminalPtyId
+        if (prev.has(ptyId)) return prev
+        const next = new Map(prev)
+        next.set(ptyId, { cwd: ws.workspacePath, hostname: ws.hostname })
+        return next
+      })
+      setAliveChatComposers((prev) => {
+        if (prev.has(sessionId)) return prev
+        const next = new Set(prev)
+        next.add(sessionId)
+        return next
+      })
+    }
+  }, [sessionWorkspace.readySessionIds, sessionWorkspace.workspaceBySession])
 
   function toggleTranscriptSearch(): void {
     setTranscriptSearchOpen((open) => {
@@ -359,40 +624,32 @@ export default function App(): JSX.Element {
     updateConfig({ onboardingCompleted: true })
   }
 
-  async function handleSend(text: string, image?: ImageAttachment): Promise<void> {
-    if (!activeSessionId || (!text.trim() && !image)) return
-    const busy = sessions.busyBySession[activeSessionId] ?? false
-    if (busy && !image) {
-      // Session is in flight — queue the message for automatic dispatch when
-      // the current turn completes. Image attachments can't be queued (the
-      // queued-strip only shows text), so they fall through to the normal path.
-      setQueuedMessages((prev) => [...prev, text.trim()])
-      return
-    }
-    // Save the trimmed text BEFORE the composer clears — if the user presses
-    // ESC while the turn is running, the global handler can restore it.
-    lastSubmittedTextRef.current = text.trim()
-    await sessions.sendMessage(activeSessionId, text.trim(), modelSelection ?? undefined, image)
+  async function handleSend(sessionId: string, text: string, image?: ImageAttachment): Promise<void> {
+    if (!text.trim() && !image) return
+    lastSubmittedTextBySessionRef.current[sessionId] = text.trim()
+    const session = allSessions.find((s) => s.id === sessionId)
+    const model = modelSelectionForSession(sessionId, session, modelSelectionBySession, config)
+    await sessions.sendMessage(sessionId, text.trim(), model, image)
   }
 
-  async function handleInterrupt(): Promise<void> {
-    if (!activeSessionId) return
-    await sessions.interrupt(activeSessionId)
+  async function handleInterrupt(sessionId: string): Promise<void> {
+    await sessions.interrupt(sessionId)
   }
 
-  // Drain the message queue when the active session transitions busy → idle
-  // (message-queue). Fires whenever busyBySession changes (i.e. any session
-  // flips). Reads queuedMessages from the render closure — React re-renders
-  // before running effects, so the value is always up-to-date at fire time.
+  // Drain per-session queues when that session transitions busy → idle (message-queue).
   useEffect(() => {
-    if (!activeSessionId) return
-    const busy = sessions.busyBySession[activeSessionId] ?? false
-    if (!busy && queuedMessages.length > 0) {
-      const [next, ...rest] = queuedMessages
-      setQueuedMessages(rest)
-      void sessions.sendMessage(activeSessionId, next, modelSelection ?? undefined)
+    for (const [sessionId, queue] of Object.entries(queuedMessagesBySessionRef.current)) {
+      if (queue.length === 0) continue
+      const busy = sessions.busyBySession[sessionId] ?? false
+      if (busy) continue
+      const [next, ...rest] = queue
+      setQueuedMessagesBySession((prev) => ({ ...prev, [sessionId]: rest }))
+      const session = allSessions.find((s) => s.id === sessionId)
+      const model = modelSelectionForSession(sessionId, session, modelSelectionBySession, config)
+      void sessions.sendMessage(sessionId, next, model)
+      break
     }
-  }, [sessions.busyBySession, activeSessionId])
+  }, [sessions.busyBySession, allSessions, modelSelectionBySession, sessions, config])
 
   async function handleExport(format: 'markdown' | 'json'): Promise<void> {
     if (!activeSessionId) return
@@ -400,6 +657,57 @@ export default function App(): JSX.Element {
   }
 
   const activeMessages = activeSessionId ? sessions.messagesBySession[activeSessionId] ?? [] : []
+  const activeSessionDisconnected = claudeCodeSessionDisconnected(
+    activeSession,
+    activeSessionId,
+    sessions.statuses
+  )
+
+  const workspacePanelSessionIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const id of aliveChatComposers) ids.add(id)
+    for (const id of sessionWorkspace.readySessionIds) ids.add(id)
+    if (activeSessionId && activeSession?.mode === 'claude-code' && !activeSessionDisconnected) {
+      ids.add(activeSessionId)
+    }
+    return [...ids]
+  }, [
+    aliveChatComposers,
+    sessionWorkspace.readySessionIds,
+    activeSessionId,
+    activeSession?.mode,
+    sessions.statuses,
+    activeSessionDisconnected
+  ])
+
+  // Register claude-code chat composers on first connected visit; keep mounted across session switches.
+  useEffect(() => {
+    if (!activeSessionId || !activeSession || activeSession.mode !== 'claude-code') return
+    if (sessions.statuses[activeSessionId] === 'startup-idle' || activeSession?.closedAt) return
+    if (sessionWorkspace.readySessionIds.has(activeSessionId)) return
+    setAliveChatComposers((prev) => {
+      if (prev.has(activeSessionId)) return prev
+      const next = new Set(prev)
+      next.add(activeSessionId)
+      return next
+    })
+  }, [activeSessionId, activeSession, sessions.statuses, sessionWorkspace.readySessionIds])
+
+  const appendToActiveComposer = useCallback((note: string) => {
+    const sid = activeSessionIdRef.current
+    if (!sid) return
+    const composer = composerRefs.current.get(sid)
+    const prev = composer?.getValue() ?? ''
+    composer?.setValue(prev ? `${prev}\n\n${note}` : note)
+  }, [])
+
+  const composerDockVisible = Boolean(
+    !activeAppNote &&
+    activeSession?.mode === 'claude-code' &&
+    !activeSessionDisconnected &&
+    activeTab === 'chat'
+  )
+
   const showOnboarding = loaded && !config.onboardingCompleted
 
   // Every overlay in this app (Onboarding, Command Palette, Settings, New
@@ -418,7 +726,14 @@ export default function App(): JSX.Element {
   // genuinely unfocusable/unclickable via the `inert` DOM attribute whenever
   // any overlay is open. React 18's JSX typings don't know `inert`, so it's
   // set imperatively via a ref.
-  const anyModalOpen = showOnboarding || paletteOpen || settingsOpen || newSessionOpen
+  const anyModalOpen =
+    showOnboarding ||
+    paletteOpen ||
+    settingsOpen ||
+    newSessionOpen ||
+    fileQuickOpenOpen ||
+    replaceLinkedDialogOpen ||
+    deleteLinkedPrompt !== null
   const appBodyRef = useRef<HTMLDivElement>(null)
 
   // Refs used inside the stable global ESC keydown handler (registered once
@@ -430,6 +745,7 @@ export default function App(): JSX.Element {
   busyBySessionRef.current = sessions.busyBySession
   const anyModalOpenRef = useRef(false)
   anyModalOpenRef.current = anyModalOpen
+  fileQuickOpenOpenRef.current = fileQuickOpenOpen
   /**
    * Text of the most recently submitted message — saved in `handleSend`
    * before `composerText` is cleared, so an ESC press during a busy turn
@@ -439,7 +755,7 @@ export default function App(): JSX.Element {
    * be cleared on turn completion because the interrupt branch only runs
    * when `busyBySession[sid]` is true.
    */
-  const lastSubmittedTextRef = useRef('')
+  const lastSubmittedTextBySessionRef = useRef<Record<string, string>>({})
   // A layout effect, not a plain effect: it must remove `inert` *before* the
   // "focus jumped to that session" effect below (declared earlier, but a
   // passive effect) tries to call `.focus()` on a session row — a `.focus()`
@@ -466,39 +782,12 @@ export default function App(): JSX.Element {
           historySessions={sessions.historySessions}
           activeSessionId={activeSessionId}
           onSelectSession={(s) => void selectSession(s)}
-          onOpenPalette={() => setPaletteOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
           onNewSession={() => setNewSessionOpen(true)}
           onRename={(id, name) => void sessions.renameSession(id, name)}
           onTogglePin={(id, pinned) => void sessions.setPinned(id, pinned)}
-          onClose={(id) => {
-            if (activeSessionId === id) setActiveSessionId(null)
-            void sessions.closeSession(id)
-          }}
-          onDelete={(id) => {
-            if (activeSessionId === id) setActiveSessionId(null)
-            void sessions.deleteSession(id)
-            // Remove from keep-alive caches so TerminalPanels unmount and ptyKill runs.
-            setAliveTerminals((prev) => {
-              if (!prev.has(id)) return prev
-              const next = new Map(prev)
-              next.delete(id)
-              return next
-            })
-            setAliveTabTerminals((prev) => {
-              const ptyId = `${id}:tab-terminal`
-              if (!prev.has(ptyId)) return prev
-              const next = new Map(prev)
-              next.delete(ptyId)
-              return next
-            })
-            // Kill the tmux server sessions for all pty variants of this
-            // Atelier session (terminal-only, tab terminal, companion drawer).
-            // No-op if tmux is not installed or the sessions never existed.
-            void window.atelier.ptyKillTmuxSession(id)
-            void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`)
-            void window.atelier.ptyKillTmuxSession(`${id}:companion`)
-          }}
+          onClose={(id) => performCloseSession(id)}
+          onDelete={(id) => handleDeleteSession(id)}
           onFork={(id) => void sessions.forkSession(id).then((forked) => setActiveSessionId(forked.id))}
           onRestart={(id) => void sessions.restartSession(id).then((forked) => setActiveSessionId(forked.id))}
           groups={sessions.groups}
@@ -516,14 +805,43 @@ export default function App(): JSX.Element {
           onDeleteGroup={(id) => void sessions.deleteGroup(id)}
           onReorderGroups={(orderedIds) => void sessions.reorderGroups(orderedIds)}
           worktreeProgressBySession={sessions.worktreeProgressBySession}
+          onOpenLocalTerminal={() => void openLocalTerminal()}
+          terminalShellHostBySessionId={terminalShellHostBySessionId}
+          appNotes={appNotes.notes}
+          activeAppNoteId={activeAppNoteId}
+          onSelectAppNote={selectAppNote}
+          onCreateAppNote={() => void createAppNote()}
+          onRenameAppNote={(id, title) => void appNotes.updateNote(id, { title })}
+          onDeleteAppNote={(id) => void deleteAppNote(id)}
         />
 
         <div className="main-area">
           <div className="topbar">
             <span className="title" data-testid="main-title">
-              {activeSession ? activeSession.name : 'Atelier'}
+              {activeAppNote ? (
+                <input
+                  className="input app-note-title-input"
+                  data-testid="app-note-title-input"
+                  value={activeAppNote.title}
+                  placeholder="Untitled note"
+                  onChange={(e) => void appNotes.updateNote(activeAppNote.id, { title: e.target.value })}
+                  style={{
+                    fontSize: 'inherit',
+                    fontWeight: 'inherit',
+                    border: 'none',
+                    background: 'transparent',
+                    padding: '2px 4px',
+                    minWidth: 120,
+                    maxWidth: 'min(480px, 50vw)'
+                  }}
+                />
+              ) : activeSession ? (
+                activeSession.name
+              ) : (
+                'Atelier'
+              )}
             </span>
-            {activeSession && activeSession.mode === 'claude-code' && (
+            {activeSession && !activeAppNote && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
               <>
                 <TabBar activeTab={activeTab} onSelect={selectTab} showPorts={Boolean(activeSession.hostname)} />
                 <div className="topbar-spacer" />
@@ -571,7 +889,11 @@ export default function App(): JSX.Element {
                 })}
                 {[...aliveTabTerminals.entries()].map(([ptyId, info]) => {
                   const sessionId = ptyId.replace(/:tab-terminal$/, '')
-                  const isActive = activeSession?.mode === 'claude-code' && activeSession.id === sessionId && activeTab === 'terminal'
+                  const isActive =
+                    activeSession?.mode === 'claude-code' &&
+                    activeSession.id === sessionId &&
+                    activeTab === 'terminal' &&
+                    !activeSessionDisconnected
                   return (
                     <div key={ptyId} className={`terminal-cache-entry${isActive ? ' active' : ''}`}>
                       <TerminalPanel ptyId={ptyId} cwd={info.cwd} hostname={info.hostname} active={isActive} />
@@ -581,11 +903,24 @@ export default function App(): JSX.Element {
               </div>
             )}
 
-          {activeSession ? (
+          {activeAppNote ? (
+            <AppNotesPanel
+              notes={appNotes.notes}
+              activeNoteId={activeAppNote.id}
+              effectiveTheme={effectiveTheme}
+              onUpdateNote={async (id, patch) => {
+                await appNotes.updateNote(id, patch)
+              }}
+              onSelectNote={selectAppNote}
+            />
+          ) : activeSession ? (
             activeSession.mode === 'terminal' ? (
-              // TerminalPanel lives in the keep-alive layer above. This placeholder
-              // keeps the layout slot and provides the testid for e2e tests.
-              <div style={{ flex: 1 }} data-testid="terminal-only-session" />
+              <div className="terminal-only-main" data-testid="terminal-only-session" />
+            ) : activeSessionDisconnected ? (
+              <SessionDisconnectedPanel
+                onReconnect={() => void handleSessionReconnect()}
+                connecting={sessions.statuses[activeSession.id] === 'connecting'}
+              />
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -599,61 +934,111 @@ export default function App(): JSX.Element {
                             searchQuery={transcriptSearchOpen ? transcriptSearchQuery : ''}
                             activeMatchIndex={activeMatchIndex}
                             onMatchCount={setMatchCount}
+                            onOpenPlanFile={openFileInFiles}
                           />
                         </div>
                         <TrackerRail messages={activeMessages} />
                       </div>
-                      {activeSession.mode === 'claude-code' && (
-                        <Composer
-                          ref={composerRef}
-                          onSend={(text, image) => void handleSend(text, image)}
-                          onInterrupt={() => void handleInterrupt()}
-                          busy={sessions.busyBySession[activeSession.id] ?? false}
-                          projectPath={activeSession.projectPath}
-                          worktreePath={activeSession.worktreePath}
-                          hostname={activeSession.hostname}
-                          onFork={() => void sessions.forkSession(activeSession.id).then((forked) => setActiveSessionId(forked.id))}
-                          modelSelection={modelSelection}
-                          onModelSelectionChange={(selection) => {
-                            setModelSelection(selection)
-                            if (activeSessionId && selection) {
-                              void window.atelier.setSessionModelSelection(activeSessionId, selection)
-                            }
-                          }}
-                          liveSlashCommands={sessions.commandsBySession[activeSession.id] ?? []}
-                          mode={activeSession.permissionMode}
-                          onCycleMode={() => void sessions.cycleMode(activeSession.id)}
-                          queuedMessages={queuedMessages}
-                          onCancelQueued={(index) => setQueuedMessages((prev) => prev.filter((_, i) => i !== index))}
-                          tokenUsage={sessions.tokenUsageBySession[activeSession.id]}
-                          onAddLocalMessage={(content) => sessions.addLocalMessage(activeSession.id, content)}
-                          onValidateModel={(model) => sessions.validateModel(activeSession.id, model)}
-                        />
-                      )}
+                      <div className="composer-cache">
+                        {[...aliveChatComposers].map((sessionId) => {
+                          const session = allSessions.find((s) => s.id === sessionId)
+                          if (!session || session.mode !== 'claude-code') return null
+                          const composerActive =
+                            composerDockVisible && !drawerOpen && activeSessionId === sessionId
+                          const ws = sessionWorkspace.workspaceBySession[sessionId]
+                          const mentionPaths = ws?.filesList.map((e) => e.relativePath)
+                          return (
+                            <div
+                              key={sessionId}
+                              className={`composer-cache-entry${composerActive ? ' active' : ''}`}
+                              data-session-id={sessionId}
+                            >
+                              <Composer
+                                ref={(handle) => {
+                                  if (handle) composerRefs.current.set(sessionId, handle)
+                                  else composerRefs.current.delete(sessionId)
+                                }}
+                                onSend={(text, image) => void handleSend(sessionId, text, image)}
+                                onInterrupt={() => void handleInterrupt(sessionId)}
+                                busy={sessions.busyBySession[sessionId] ?? false}
+                                projectPath={session.projectPath}
+                                worktreePath={session.worktreePath}
+                                hostname={session.hostname}
+                                gitWorkspacePath={session.worktreePath ?? session.projectPath}
+                                diffSummary={ws?.diff}
+                                mentionFilePaths={mentionPaths}
+                                onOpenChangedFile={openChangedFileInDiff}
+                                onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}
+                                modelSelection={modelSelectionForSession(sessionId, session, modelSelectionBySession, config)}
+                                onModelSelectionChange={(selection) => {
+                                  setModelSelectionBySession((prev) => ({ ...prev, [sessionId]: selection }))
+                                  void window.atelier.setSessionModelSelection(sessionId, selection)
+                                }}
+                                liveSlashCommands={sessions.commandsBySession[sessionId] ?? []}
+                                mode={session.permissionMode}
+                                onCycleMode={() => void sessions.cycleMode(sessionId)}
+                                queuedMessages={queuedMessagesBySession[sessionId] ?? []}
+                                onCancelQueued={(index) =>
+                                  setQueuedMessagesBySession((prev) => ({
+                                    ...prev,
+                                    [sessionId]: (prev[sessionId] ?? []).filter((_, i) => i !== index)
+                                  }))
+                                }
+                                tokenUsage={sessions.tokenUsageBySession[sessionId]}
+                                onAddLocalMessage={(content) => sessions.addLocalMessage(sessionId, content)}
+                                onValidateModel={(model) => sessions.validateModel(sessionId, model)}
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   </div>
 
-                  <div className={`tab-content${activeTab === 'diff' ? '' : ' hidden'}`} data-tab="diff">
-                    {visitedTabs.has('diff') && (
-                      <DiffPanel
-                        projectPath={activeSession.projectPath}
-                        hostname={activeSession.hostname}
-                        onAddComment={(note) => {
-                          const prev = composerRef.current?.getValue() ?? ''
-                          composerRef.current?.setValue(prev ? `${prev}\n\n${note}` : note)
-                        }}
-                      />
-                    )}
-                  </div>
+                  {[...workspacePanelSessionIds].map((sessionId) => {
+                    const session = allSessions.find((s) => s.id === sessionId)
+                    const ws = sessionWorkspace.workspaceBySession[sessionId]
+                    if (!session || session.mode !== 'claude-code') return null
+                    const panelsVisible = activeSessionId === sessionId && !activeSessionDisconnected
+                    const workspacePath = session.worktreePath ?? session.projectPath
+                    return (
+                      <div
+                        key={`workspace-panels-${sessionId}`}
+                        style={{ display: panelsVisible ? 'contents' : 'none' }}
+                      >
+                        <div className={`tab-content${activeTab === 'diff' ? '' : ' hidden'}`} data-tab="diff">
+                          <DiffPanel
+                            workspacePath={workspacePath}
+                            repoRoot={session.projectPath}
+                            hostname={session.hostname}
+                            effectiveTheme={effectiveTheme}
+                            panelScopeKey={session.id}
+                            active={panelsVisible && activeTab === 'diff'}
+                            workspaceDiff={ws?.diff}
+                            onRefreshWorkspace={() => void window.atelier.refreshSessionWorkspace(sessionId, true)}
+                            revealChangePath={panelsVisible ? revealChangePath : undefined}
+                            revealChangeSeq={panelsVisible ? revealChangeSeq : 0}
+                            onRevealChangeHandled={() => setRevealChangePath(undefined)}
+                            onAddComment={appendToActiveComposer}
+                          />
+                        </div>
 
-                  <div className={`tab-content${activeTab === 'files' ? '' : ' hidden'}`} data-tab="files">
-                    {visitedTabs.has('files') && (
-                      <FilesPanel
-                        projectPath={activeSession.worktreePath ?? activeSession.projectPath}
-                        hostname={activeSession.hostname}
-                      />
-                    )}
-                  </div>
+                        <div className={`tab-content${activeTab === 'files' ? '' : ' hidden'}`} data-tab="files">
+                          <FilesPanel
+                            projectPath={workspacePath}
+                            hostname={session.hostname}
+                            effectiveTheme={effectiveTheme}
+                            active={panelsVisible && activeTab === 'files'}
+                            initialFilesTree={ws?.filesTree}
+                            revealFilePath={panelsVisible ? revealFilePath : undefined}
+                            revealFileSeq={panelsVisible ? revealFileSeq : 0}
+                            onRevealFileHandled={() => setRevealFilePath(undefined)}
+                            onAddComment={appendToActiveComposer}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
 
                   <div className={`tab-content${activeTab === 'terminal' ? '' : ' hidden'}`} data-tab="terminal">
                     {/* TerminalPanel lives in the terminal-cache-layer above this session subtree.
@@ -700,7 +1085,14 @@ export default function App(): JSX.Element {
           </div>
         </div>
 
-        {date && <DailyNotesSidebar date={date} onClose={() => setDate(null)} vaultRoot={config.vault.root || undefined} />}
+        {date && (
+          <DailyNotesSidebar
+            date={date}
+            onClose={() => setDate(null)}
+            vaultRoot={config.vault.root || undefined}
+            onCreateSessionFromTask={handleCreateSessionFromTask}
+          />
+        )}
       </div>
 
       <CommandPalette
@@ -710,15 +1102,77 @@ export default function App(): JSX.Element {
         searchContent={searchSessionContent}
       />
 
+      {activeSession?.mode === 'claude-code' && !activeAppNote && (
+        <FileQuickOpenPalette
+          isOpen={fileQuickOpenOpen}
+          onClose={() => setFileQuickOpenOpen(false)}
+          workspaceRoot={activeSession.worktreePath ?? activeSession.projectPath}
+          hostname={activeSession.hostname}
+          onOpenFile={(path) => {
+            setFileQuickOpenOpen(false)
+            openFileInFiles(path)
+          }}
+        />
+      )}
+
+      <KeyboardHintsOverlay disabled={anyModalOpen} scanRootId="app" />
+
       <NewSessionModal
         isOpen={newSessionOpen}
         hosts={sessions.hosts}
-        onClose={() => setNewSessionOpen(false)}
+        onClose={() => {
+          setNewSessionOpen(false)
+          setPendingTaskSessionLink(null)
+        }}
         onCreate={async (opts) => {
-          const created = await sessions.createSession(opts)
+          const created = await sessions.createSession({
+            ...opts,
+            suggestedName: pendingTaskSessionLink?.taskText.trim() || opts.suggestedName
+          })
+          if (pendingTaskSessionLink) {
+            await sessions.linkDailyTask(
+              created.id,
+              pendingTaskSessionLink.noteDate,
+              pendingTaskSessionLink.taskGid
+            )
+            setPendingTaskSessionLink(null)
+          }
           setActiveSessionId(created.id)
         }}
       />
+
+      {replaceLinkedDialogOpen && pendingTaskSessionLink && (
+        <TaskSessionReplaceDialog
+          taskText={pendingTaskSessionLink.taskText}
+          onCancel={() => {
+            setReplaceLinkedDialogOpen(false)
+            setPendingTaskSessionLink(null)
+          }}
+          onConfirm={() => {
+            setReplaceLinkedDialogOpen(false)
+            setNewSessionOpen(true)
+          }}
+        />
+      )}
+
+      {deleteLinkedPrompt && (
+        <DeleteSessionLinkedTaskDialog
+          sessionName={deleteLinkedPrompt.sessionName}
+          onCancel={() => setDeleteLinkedPrompt(null)}
+          onDeleteOnly={() => {
+            const { sessionId } = deleteLinkedPrompt
+            setDeleteLinkedPrompt(null)
+            performDeleteSession(sessionId)
+          }}
+          onDeleteAndComplete={() => {
+            const { sessionId } = deleteLinkedPrompt
+            setDeleteLinkedPrompt(null)
+            void sessions.completeLinkedDailyTask(sessionId).finally(() => {
+              performDeleteSession(sessionId)
+            })
+          }}
+        />
+      )}
 
       <SettingsPanel
         isOpen={settingsOpen}

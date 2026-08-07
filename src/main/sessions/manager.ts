@@ -1,7 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { HarnessDriver, HarnessEvent, HarnessSession, PromptResponse, RemoteHost } from '../harness/types'
+import type { HarnessDriver, HarnessEvent, HarnessSession, HarnessStartOptions, PromptResponse, RemoteHost } from '../harness/types'
 import { logger } from '../logger'
 import type {
   CreateSessionOptions,
@@ -19,7 +19,10 @@ import type {
   SessionStatus,
   SlashCommandInfo
 } from '../../shared/session-types'
+import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
 import { TURN_INTERRUPTED_NOTICE } from '../../shared/session-types'
+import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig } from '../../shared/config'
+import { loadConfig } from '../config'
 import type {
   AskUserQuestionContent,
   CompactionContent,
@@ -31,11 +34,18 @@ import type {
 } from '../../shared/chat-content'
 import { parseStructuredContent } from '../../shared/chat-content'
 import type { SessionStore } from './store'
+import { suggestProjectPaths as computeProjectPathSuggestions } from './project-path-suggest'
+import { worktreeRootFromConfig, homeDirForWorktreeHost } from '../../shared/worktree-path'
 import { createWorktree, removeWorktree } from './worktree'
 import { warmRemoteGitHost } from '../panels/git'
+import { WorkspaceService } from './workspace-service'
+import { completeLinkedDailyTask, linkDailyTaskToSession } from '../daily-note-session-link'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
 const AUTO_NAME_PROMPT = 'Summarize this conversation topic in under 6 words. Reply with ONLY the title, no punctuation, no quotes.'
+
+/** Skip auto harness reconnect on relaunch when last active is older than this (session-startup-idle). */
+export const SESSION_STARTUP_IDLE_MS = 60 * 60 * 1000
 
 /**
  * The composer's Shift+Tab cycle order (11-composer-mode-indicator) — matches
@@ -163,6 +173,12 @@ export class SessionManager {
   private readonly connecting = new Set<string>()
   /** Sessions currently being set up with an async worktree creation — see `getStatus()`'s 'creating-worktree' case. */
   private readonly creatingWorktree = new Set<string>()
+  /** Open claude-code sessions left disconnected on launch due to 1h+ inactivity (session-startup-idle). */
+  private readonly startupIdle = new Set<string>()
+  /** After reconnect(), the first harness event triggers panel preload in the renderer. */
+  private readonly pendingPanelPreload = new Set<string>()
+  /** startupReconnect() paths — must not bump last_active_at when the harness connects. */
+  private readonly startupAutoReconnect = new Set<string>()
   /**
    * Tracks the current SDK permission mode for a session (05-interactive-
    * prompts; generalized from plan-only to all 4 `MODE_CYCLE` values in
@@ -196,6 +212,16 @@ export class SessionManager {
    * caller that predates this task).
    */
   private readonly modelSelections = new Map<string, ModelSelection>()
+
+  private workspace: WorkspaceService | null = null
+
+  setWorkspaceService(workspace: WorkspaceService): void {
+    this.workspace = workspace
+  }
+
+  getWorkspaceService(): WorkspaceService | null {
+    return this.workspace
+  }
 
   constructor(
     private readonly store: SessionStore,
@@ -239,6 +265,16 @@ export class SessionManager {
     return session ? this.decorate(session) : undefined
   }
 
+  getSessionWorkspaceSnapshot(sessionId: string): SessionWorkspacePayload | null {
+    return this.workspace?.getCached(sessionId) ?? null
+  }
+
+  async refreshSessionWorkspace(sessionId: string, force: boolean): Promise<SessionWorkspacePayload | null> {
+    const session = this.getSession(sessionId)
+    if (!session || session.mode !== 'claude-code' || !this.workspace) return null
+    return this.workspace.refreshWorkspace(session, force)
+  }
+
   /** Cross-session content search (10b-enrichment-full-text-search), backing the command palette's extended "Session" results. */
   searchMessages(query: string): MessageSearchHit[] {
     return this.store.searchMessages(query)
@@ -251,6 +287,10 @@ export class SessionManager {
   /** Recently-used project paths for `hostId` ('local' or a RemoteHostOption.id), newest first (fix-bug-triage-jul31 / bug #49). */
   listRecentProjectPaths(hostId: string): string[] {
     return this.store.listRecentProjectPaths(hostId)
+  }
+
+  suggestProjectPaths(hostId: string, query: string) {
+    return computeProjectPathSuggestions(hostId, query, this.store, this.hosts)
   }
 
   private sendLifecycle(event: SessionLifecycleEvent): void {
@@ -282,20 +322,73 @@ export class SessionManager {
   // currently-viewed session — via `session:status`, independent of which
   // session (if any) is focused in the renderer.
 
-  /** 'creating-worktree' while the async worktree setup is in flight; 'connecting' while `reconnect()` is in flight for `sessionId` (fix-session-resume-stale-sigterm-and-no-connect-indicator); 'working'/'waiting' for any session with a live entry this app run; 'idle' otherwise (never opened, or its live entry was torn down on close). */
+  /** 'creating-worktree' while the async worktree setup is in flight; 'connecting' while `reconnect()` is in flight; 'startup-idle' when launch skipped auto reconnect due to 1h+ inactivity; 'working'/'waiting' for any session with a live entry this app run; 'idle' otherwise. */
   getStatus(sessionId: string): SessionStatus {
     if (this.creatingWorktree.has(sessionId)) return 'creating-worktree'
     if (this.connecting.has(sessionId)) return 'connecting'
+    if (!this.live.has(sessionId) && this.isSessionStartupIdle(sessionId)) return 'startup-idle'
     const live = this.live.get(sessionId)
     if (!live) return 'idle'
     return live.busy ? 'working' : 'waiting'
   }
 
-  /** Snapshot of every currently-live-tracked session's status, for the renderer's initial paint (subsequent changes stream over `session:status`). */
+  /** Snapshot of every open session's live/startup status for the renderer's initial paint. */
   listStatuses(): Record<string, SessionStatus> {
     const result: Record<string, SessionStatus> = {}
-    for (const id of this.live.keys()) result[id] = this.getStatus(id)
+    for (const session of this.store.listActiveSessions()) {
+      result[session.id] = this.getStatus(session.id)
+    }
     return result
+  }
+
+  /**
+   * Classifies 1h+ inactive claude-code sessions before the renderer can
+   * select them (session-startup-idle). Must run synchronously at launch,
+   * not inside the delayed startupReconnect() window.
+   */
+  markStartupIdleSessions(): void {
+    for (const session of this.store.listActiveSessions()) {
+      if (session.mode !== 'claude-code') continue
+      if (!this.sessionIsStartupIdleEligible(session)) continue
+      this.startupIdle.add(session.id)
+    }
+  }
+
+  private touchLastActive(sessionId: string): void {
+    this.store.touchLastActive(sessionId)
+  }
+
+  /** Restores auto-naming turn bookkeeping after a harness reconnect (session-startup-idle). */
+  private initialTurnCountForReconnect(sessionId: string): number {
+    return this.store.listMessages(sessionId).filter((m) => m.role === 'user').length
+  }
+
+  private sessionIsStartupIdleEligible(session: SessionRecord): boolean {
+    const last = Date.parse(session.lastActiveAt)
+    if (Number.isNaN(last)) return false
+    return Date.now() - last > SESSION_STARTUP_IDLE_MS
+  }
+
+  private sendReconnectComplete(sessionId: string): void {
+    this.getWindow()?.webContents.send('session:reconnectComplete', { sessionId })
+  }
+
+  /** Records user focus on a session (sidebar select) for startup-idle eligibility. */
+  touchSessionActive(sessionId: string): void {
+    if (!this.store.getSession(sessionId)) return
+    // Browsing a disconnected (1h+) session must not bump last_active_at —
+    // that would make every stale session auto-reconnect on the next launch.
+    if (this.isSessionStartupIdle(sessionId)) return
+    this.touchLastActive(sessionId)
+  }
+
+  /** Open claude-code session left disconnected on launch (session-startup-idle). */
+  isSessionStartupIdle(sessionId: string): boolean {
+    if (this.live.has(sessionId) || this.connecting.has(sessionId)) return false
+    if (this.startupIdle.has(sessionId)) return true
+    const session = this.store.getSession(sessionId)
+    if (!session || session.mode !== 'claude-code' || session.closedAt) return false
+    return this.sessionIsStartupIdleEligible(session)
   }
 
   private sendStatus(sessionId: string): void {
@@ -360,6 +453,25 @@ export class SessionManager {
 
   // ── Create ──────────────────────────────────────────────────────────
 
+  private defaultModelSelection(): ModelSelection {
+    const cfg = loadConfig()
+    return {
+      model: defaultClaudeModelFromConfig(cfg),
+      effort: defaultClaudeEffortFromConfig(cfg)
+    }
+  }
+
+  private defaultHarnessModelOpts(): Pick<HarnessStartOptions, 'model' | 'effort'> {
+    const { model, effort } = this.defaultModelSelection()
+    return { model, effort }
+  }
+
+  private seedDefaultModelSelection(sessionId: string): void {
+    const selection = this.defaultModelSelection()
+    this.modelSelections.set(sessionId, selection)
+    this.store.setModelSelection(sessionId, selection)
+  }
+
   async createSession(opts: CreateSessionOptions): Promise<SessionRecord> {
     const host = this.resolveHost(opts.hostId)
     const hostOption = opts.hostId === 'local' ? undefined : this.hosts.resolve(opts.hostId)
@@ -378,7 +490,7 @@ export class SessionManager {
       // shows up in the sidebar and can be closed/renamed/deleted like any
       // other session.
       const session = this.store.createSession({
-        name: defaultName,
+        name: opts.suggestedName?.trim() || deriveDefaultName(opts.projectPath, opts.prompt),
         projectPath: opts.projectPath,
         mode: 'terminal',
         hostname: hostOption?.sshHost ?? null,
@@ -419,6 +531,8 @@ export class SessionManager {
       this.sendLifecycle({ type: 'session.created', session })
       if (session.hostname) void warmRemoteGitHost(session.hostname)
 
+      this.seedDefaultModelSelection(allocatedId)
+
       // Mark as 'creating-worktree' so the sidebar row shows the pending
       // state (50% opacity, pulsing grey dot, "Setting up worktree…" label).
       this.creatingWorktree.add(allocatedId)
@@ -438,6 +552,7 @@ export class SessionManager {
       // so a later `sendUserMessage` can inject live via `streamInput()`
       // instead of always reconnecting — see `HarnessStartOptions.keepAlive`.
       keepAlive: true,
+      ...this.defaultHarnessModelOpts(),
       ...(opts.planMode ? { permissionMode: 'plan' as const } : {})
     })
     if (opts.planMode) {
@@ -464,7 +579,9 @@ export class SessionManager {
 
     this.sendLifecycle({ type: 'session.created', session })
     if (session.hostname) void warmRemoteGitHost(session.hostname)
+    this.seedDefaultModelSelection(session.id)
     this.live.set(session.id, newLiveStream())
+    this.pendingPanelPreload.add(session.id)
     // A real turn is about to run only if there's an initial prompt to
     // process — an empty-prompt create just opens the connection.
     if (opts.prompt) {
@@ -495,9 +612,19 @@ export class SessionManager {
     hostname: string | undefined
   ): Promise<void> {
     try {
-      const worktreePath = await createWorktree(opts.projectPath, sessionId, hostname, (pct) => {
-        this.sendWorktreeProgress(sessionId, pct)
-      })
+      const cfg = loadConfig()
+      const worktreeRoot = worktreeRootFromConfig(cfg)
+      const homeDir = homeDirForWorktreeHost(opts.hostId)
+      const worktreePath = await createWorktree(
+        opts.projectPath,
+        sessionId,
+        worktreeRoot,
+        homeDir,
+        hostname,
+        (pct) => {
+          this.sendWorktreeProgress(sessionId, pct)
+        }
+      )
       logger.info('setupWorktreeAsync: worktree created', { sessionId, worktreePath })
 
       // Persist the worktree path now that we have it.
@@ -507,6 +634,7 @@ export class SessionManager {
         cwd: worktreePath,
         host,
         keepAlive: true as const,
+        ...this.defaultHarnessModelOpts(),
         ...(opts.planMode ? { permissionMode: 'plan' as const } : {})
       }
       const harnessSession = await this.harness.startWithId(sessionId, opts.prompt ?? '', harnessOpts)
@@ -523,6 +651,7 @@ export class SessionManager {
       // Remove creating-worktree state and transition to live.
       this.creatingWorktree.delete(sessionId)
       this.live.set(sessionId, newLiveStream())
+      this.pendingPanelPreload.add(sessionId)
       if (opts.prompt) {
         this.live.get(sessionId)!.busy = true
       }
@@ -539,7 +668,7 @@ export class SessionManager {
       // itself failed, so ignore errors here.
       const stored = this.store.getSession(sessionId)
       if (stored?.worktreePath) {
-        void removeWorktree(stored.worktreePath, sessionId, hostname).catch(() => undefined)
+        void removeWorktree(stored.worktreePath, sessionId, stored.projectPath, hostname).catch(() => undefined)
       }
       this.store.deleteSession(sessionId)
       this.sendLifecycle({ type: 'session.deleted', sessionId })
@@ -578,7 +707,7 @@ export class SessionManager {
    */
   private async reconnectHarness(
     session: SessionRecord,
-    opts: { permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort'] }
+    opts: { permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort']; initialPrompt?: string }
   ): Promise<HarnessSession> {
     const host = this.resolveHostFromSession(session.hostname)
     const startOpts = {
@@ -593,15 +722,9 @@ export class SessionManager {
       logger.info('reconnectHarness: session never had a real connection, starting fresh (not resume())', {
         sessionId: session.id
       })
-      // Same bounded lock-race retry as the conversation-lost fallback below
-      // (see startFreshWithRetry's doc comment) — a session that never
-      // completed its first-ever connection has no other path back, so a
-      // single unlucky "Session ID ... already in use" race here otherwise
-      // fails permanently with no self-healing, unlike the everConnected
-      // branch's resume() which already gets this protection.
       return {
         sessionId: session.id,
-        events: this.startFreshWithRetry(session, startOpts)
+        events: this.startFreshWithRetry(session, startOpts, opts.initialPrompt)
       }
     }
     const harnessSession = await this.harness.resume(session.id, startOpts)
@@ -705,12 +828,13 @@ export class SessionManager {
    */
   private async *startFreshWithRetry(
     session: SessionRecord,
-    startOpts: { cwd: string; host?: RemoteHost; keepAlive: boolean; permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort'] }
+    startOpts: { cwd: string; host?: RemoteHost; keepAlive: boolean; permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort'] },
+    initialPrompt?: string
   ): AsyncGenerator<HarnessEvent, void, void> {
     const MAX_ATTEMPTS = 4
     const RETRY_DELAYS_MS = [1500, 3000, 5000]
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const fresh = await this.harness.startWithId(session.id, '', startOpts)
+      const fresh = await this.harness.startWithId(session.id, initialPrompt ?? '', startOpts)
       const iterator = fresh.events[Symbol.asyncIterator]()
       const first = await iterator.next()
       if (first.done) return
@@ -744,6 +868,9 @@ export class SessionManager {
     if (this.creatingWorktree.has(sessionId)) return
     // Already live (e.g. connected by startupReconnect) — nothing to do.
     if (this.live.has(sessionId)) return
+    this.startupIdle.delete(sessionId)
+    this.touchLastActive(sessionId)
+    this.pendingPanelPreload.add(sessionId)
     // Fix (fix-session-resume-stale-sigterm-and-no-connect-indicator): mark
     // this session as 'connecting' for the topbar's "Connecting…" pill for
     // the whole gap between triggering this reconnect and the harness
@@ -764,11 +891,12 @@ export class SessionManager {
       // `query()` call was constructed, not that the subprocess has actually
       // spawned/handshaken yet. `connecting` is cleared in applyEvent() the
       // moment the first real harness event arrives (see its comment).
-      this.live.set(sessionId, newLiveStream())
+      this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
       this.sendStatus(sessionId)
       void this.consume(sessionId, harnessSession.events)
     } catch (err) {
       this.connecting.delete(sessionId)
+      this.pendingPanelPreload.delete(sessionId)
       // A genuine reconnect failure must still surface distinctly — this is
       // unrelated to Part A's fix above (which only suppresses the bogus
       // error a graceful CLOSE causes); reportHarnessFailure logs it AND
@@ -821,6 +949,7 @@ export class SessionManager {
       ? JSON.stringify({ kind: 'image_attachment', mimeType: image.mimeType, data: image.data, text } satisfies ImageAttachmentContent)
       : text
     const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
+    this.touchLastActive(sessionId)
     this.sendMessage(sessionId, userMessage)
 
     if (session.mode !== 'claude-code') return
@@ -891,12 +1020,23 @@ export class SessionManager {
       logger.info('sendUserMessage: no live harness session, reconnecting via resume()', { sessionId })
       const permissionMode = this.permissionModes.get(sessionId) ?? session.permissionMode
       const modelSelection = this.modelSelections.get(sessionId) ?? session.modelSelection ?? undefined
+      // fix-send-message-dropped-on-never-connected: for sessions that have
+      // never connected, startFreshWithRetry is a lazy async generator —
+      // this.sessions.set() (and therefore a valid queue to push to) only
+      // happens inside startWithId, which runs when consume() first pulls from
+      // the generator. Calling streamInput() before that would push to the OLD
+      // closed queue (a silent no-op). Instead, pass the text as initialPrompt
+      // so it's seeded into the new queue at startWithId/launch time.
+      const needsInitialPrompt = !session.everConnected
       const harnessSession = await this.reconnectHarness(session, {
         permissionMode,
         model: modelSelection?.model,
-        effort: modelSelection?.effort
+        effort: modelSelection?.effort,
+        ...(needsInitialPrompt ? { initialPrompt: text } : {})
       })
-      await this.harness.streamInput(sessionId, text, image)
+      if (!needsInitialPrompt) {
+        await this.harness.streamInput(sessionId, text, image)
+      }
       const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
       const previousLive = this.live.get(sessionId)
       this.finalizeStaleRunningToolCalls(sessionId, previousLive)
@@ -918,6 +1058,11 @@ export class SessionManager {
   /** `/model <id>` validation against the live SDK — see `HarnessDriver.validateModel`. */
   async validateModel(sessionId: string, model: string): Promise<{ ok: true } | { ok: false; error: string }> {
     return this.harness.validateModel(sessionId, model)
+  }
+
+  /** Settings default-model validation — see `HarnessDriver.validateClaudeModel`. */
+  async validateClaudeModel(model: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    return this.harness.validateClaudeModel(model)
   }
 
   // ── Interactive prompts (05-interactive-prompts) ─────────────────────
@@ -992,7 +1137,11 @@ export class SessionManager {
    * that `sendUserMessage` does when it detects a changed selection.
    */
   persistModelSelection(sessionId: string, selection: ModelSelection): void {
-    this.modelSelections.set(sessionId, selection)
+    // Persist for resume/display only — the in-memory `modelSelections` Map
+    // tracks what's actually running on the live harness and is updated in
+    // `sendUserMessage` when a new selection is applied. Updating the Map
+    // here too made picker changes look "already applied" on the very next
+    // send, skipping the forced reconnect that model/effort overrides require.
     this.store.setModelSelection(sessionId, selection)
   }
 
@@ -1084,11 +1233,30 @@ export class SessionManager {
     // pill visible for a session that's no longer even open.
     this.connecting.delete(sessionId)
     this.creatingWorktree.delete(sessionId)
+    this.pendingPanelPreload.delete(sessionId)
+    this.workspace?.evictSession(sessionId)
     this.sendTurnState(sessionId, false)
     const session = this.store.closeSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
     this.sendLifecycle({ type: 'session.closed', session })
     return session
+  }
+
+  async linkDailyTask(
+    sessionId: string,
+    noteDate: string,
+    taskGid: string
+  ): Promise<SessionRecord> {
+    await linkDailyTaskToSession(this.store, this.getWindow, sessionId, noteDate, taskGid)
+    const session = this.store.getSession(sessionId)
+    if (!session) throw new Error(`Unknown session: ${sessionId}`)
+    const decorated = this.decorate(session)
+    this.sendLifecycle({ type: 'session.updated', session: decorated })
+    return decorated
+  }
+
+  async completeLinkedDailyTask(sessionId: string): Promise<void> {
+    await completeLinkedDailyTask(this.store, this.getWindow, sessionId)
   }
 
   deleteSession(sessionId: string): void {
@@ -1098,7 +1266,7 @@ export class SessionManager {
     // are caught and logged — a failed cleanup must never block deletion.
     if (session?.worktreePath) {
       const hostname = session.hostname ? this.hosts.resolveByHostname(session.hostname)?.sshHost : undefined
-      void removeWorktree(session.worktreePath, sessionId, hostname).catch((err) => {
+      void removeWorktree(session.worktreePath, sessionId, session.projectPath, hostname).catch((err) => {
         logger.warn('deleteSession: worktree removal failed (ignored)', {
           sessionId,
           worktreePath: session.worktreePath,
@@ -1109,6 +1277,7 @@ export class SessionManager {
     this.live.delete(sessionId)
     this.connecting.delete(sessionId)
     this.creatingWorktree.delete(sessionId)
+    this.workspace?.evictSession(sessionId)
     this.store.deleteSession(sessionId)
     this.sendLifecycle({ type: 'session.deleted', sessionId })
   }
@@ -1265,6 +1434,23 @@ export class SessionManager {
     if (this.connecting.has(sessionId)) {
       this.connecting.delete(sessionId)
       this.sendStatus(sessionId)
+    }
+
+    const needsWorkspacePreload = this.pendingPanelPreload.delete(sessionId)
+    if (needsWorkspacePreload) {
+      this.startupAutoReconnect.delete(sessionId)
+      const row = this.store.getSession(sessionId)
+      if (this.workspace && row?.mode === 'claude-code') {
+        this.connecting.add(sessionId)
+        this.sendStatus(sessionId)
+        void this.workspace.completeSessionOpen(this.decorate(row)).finally(() => {
+          this.connecting.delete(sessionId)
+          this.sendStatus(sessionId)
+          this.sendReconnectComplete(sessionId)
+        })
+      } else {
+        this.sendReconnectComplete(sessionId)
+      }
     }
 
     switch (event.type) {
@@ -1654,11 +1840,20 @@ export class SessionManager {
         continue
       }
 
-      // claude-code: attempt startup reconnect for all active sessions.
-      // reconnectHarness handles both resume() (everConnected) and startWithId() (!everConnected).
+      // claude-code: attempt startup reconnect for recently-active sessions only.
+      if (this.sessionIsStartupIdleEligible(session)) {
+        this.startupIdle.add(session.id)
+        this.sendStatus(session.id)
+        logger.info('startupReconnect: skipping auto reconnect (session startup-idle)', {
+          sessionId: session.id,
+          lastActiveAt: session.lastActiveAt
+        })
+        continue
+      }
 
-      // Mark connecting, attempt reconnect, handle success/failure.
       const sessionId = session.id
+      this.startupAutoReconnect.add(sessionId)
+      this.pendingPanelPreload.add(sessionId)
       this.connecting.add(sessionId)
       this.sendStatus(sessionId)
 
@@ -1671,10 +1866,12 @@ export class SessionManager {
         effort: modelSelection?.effort,
       }).then((harnessSession) => {
         this.finalizeStaleRunningToolCalls(sessionId)
-        this.live.set(sessionId, newLiveStream())
+        this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
         this.sendStatus(sessionId)
         void this.consume(sessionId, harnessSession.events)
       }).catch(() => {
+        this.pendingPanelPreload.delete(sessionId)
+        this.startupAutoReconnect.delete(sessionId)
         // Don't mark as stale — transient startup failures are common (timing,
         // SSH mux not ready, etc.). Revert to idle so the user can click to retry.
         this.connecting.delete(sessionId)

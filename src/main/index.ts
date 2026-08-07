@@ -1,5 +1,8 @@
-import { app, BrowserWindow, ipcMain, Notification } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, nativeImage } from 'electron'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
+import './bootstrap-branding'
+import { applyDockIconWhenReady, resolveAppIconPath } from './app-branding'
 import { loadConfig, saveConfig } from './config'
 import { closeDatabase, openDatabase } from './db'
 import { getLogFilePath, logger, rendererLogger } from './logger'
@@ -9,8 +12,10 @@ import { registerDailyNoteHandlers } from './daily-notes-handlers'
 import { ClaudeAgentSdkHarness } from './harness'
 import { SessionStore } from './sessions/store'
 import { SessionManager } from './sessions/manager'
+import { WorkspaceService } from './sessions/workspace-service'
 import { createStaticHostResolver } from './sessions/hosts'
 import { registerSessionHandlers } from './sessions/ipc'
+import { registerAppNotesHandlers } from './app-notes/ipc'
 import { registerPanelHandlers } from './panels/ipc'
 import { registerSpendStatusHandlers } from './spend-status-ipc'
 import type { PtyManager } from './panels/pty'
@@ -21,14 +26,18 @@ let mainWindow: BrowserWindow | null = null
 let ptyManager: PtyManager | null = null
 let portManager: PortForwardManager | null = null
 let sessionManager: SessionManager | null = null
+let workspaceService: WorkspaceService | null = null
 /** Prevents a second `before-quit` from re-entering async harness teardown. */
 let appQuitHarnessShutdownDone = false
 
 function createWindow(): BrowserWindow {
+  const iconPath = resolveAppIconPath()
+  const icon = iconPath ? nativeImage.createFromPath(iconPath) : undefined
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
     title: 'Atelier',
+    icon: icon && !icon.isEmpty() ? icon : undefined,
     // Native title bar — desktop-only, no custom chrome.
     titleBarStyle: 'default',
     webPreferences: {
@@ -67,6 +76,8 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
     return getLogFilePath()
   })
 
+  ipcMain.handle('app:getHomedir', () => homedir())
+
   ipcMain.on('renderer:log', (_event, payload: { level: string; msg: string; extra?: Record<string, unknown> }) => {
     const { level, msg, extra } = payload
     const fn =
@@ -83,6 +94,8 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
   ipcMain.handle('config:get', () => loadConfig())
 
   ipcMain.handle('config:set', (_event, partial: Partial<AtelierConfig>) => saveConfig(partial))
+
+  ipcMain.handle('config:validateClaudeModel', (_event, model: string) => sessionManager.validateClaudeModel(model))
 
   // Debug-only trigger for desktop notifications: there's no real "session
   // needs attention" event yet (that lands with the session/chat surfaces),
@@ -101,11 +114,13 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
   })
 
   registerDailyNoteHandlers(() => mainWindow)
+  registerAppNotesHandlers()
   registerSessionHandlers(sessionManager, () => mainWindow)
   registerSpendStatusHandlers()
   const panelManagers = registerPanelHandlers(() => mainWindow)
   ptyManager = panelManagers.ptyManager
   portManager = panelManagers.portManager
+  workspaceService?.setPtyManager(panelManagers.ptyManager)
 }
 
 app.whenReady().then(() => {
@@ -122,12 +137,16 @@ app.whenReady().then(() => {
   // re-created per IPC call.
   const harness = new ClaudeAgentSdkHarness()
   sessionManager = new SessionManager(sessionStore, harness, createStaticHostResolver(), () => mainWindow)
+  workspaceService = new WorkspaceService(() => mainWindow)
+  sessionManager.setWorkspaceService(workspaceService)
   const manager = sessionManager
+  manager.markStartupIdleSessions()
   registerIpcHandlers(manager)
 
   logger.info('app ready', { version: app.getVersion(), platform: process.platform })
 
   mainWindow = createWindow()
+  applyDockIconWhenReady()
 
   // Fire-and-forget: probe each session's recoverability in the background
   // and push session:stale events to the renderer for any that can't resume.
@@ -137,6 +156,12 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
   })
+}).catch((err: unknown) => {
+  logger.error('app startup failed', {
+    error: err instanceof Error ? err.message : String(err),
+    stack: err instanceof Error ? err.stack : undefined
+  })
+  app.quit()
 })
 
 app.on('window-all-closed', () => {

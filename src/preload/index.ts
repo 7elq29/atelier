@@ -27,14 +27,24 @@ import type {
 import type {
   CommitInfo,
   DiffFileChange,
+  DiffFileContentPair,
+  DiffFileStatus,
   DiffSummary,
   FileReadResult,
   FileTreeNode,
   FileWriteResult,
   PortForward,
-  WorktreeInfo
+  WorktreeInfo,
+  WorkspaceFileEntry
 } from '../shared/panel-types'
 import type { SpendStatus } from '../shared/spend-status-types'
+import type { AppNoteRecord, AppNoteUpdate } from '../shared/app-note-types'
+import type { ProjectPathSuggestion } from '../shared/project-path-autocomplete'
+import type {
+  SessionOpenReadyEvent,
+  SessionWorkspacePayload,
+  SessionWorkspaceUpdatedEvent
+} from '../shared/session-workspace-types'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -43,6 +53,7 @@ const api = {
   getAppVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
   /** Path of the main-process structured log file, for debugging/e2e use. */
   getLogFilePath: (): Promise<string> => ipcRenderer.invoke('app:getLogFilePath'),
+  getHomedir: (): Promise<string> => ipcRenderer.invoke('app:getHomedir'),
   /** Forward a structured log line from the renderer to the main-process logger. */
   log: (level: LogLevel, msg: string, extra?: Record<string, unknown>): void => {
     ipcRenderer.send('renderer:log', { level, msg, extra })
@@ -52,6 +63,9 @@ const api = {
   /** Merges + persists a partial config update, returns the resulting full config. */
   setConfig: (partial: Partial<AtelierConfig>): Promise<AtelierConfig> =>
     ipcRenderer.invoke('config:set', partial),
+  /** Validates a global default model id against the live SDK (Settings). */
+  validateClaudeModel: (model: string): Promise<ModelValidationResult> =>
+    ipcRenderer.invoke('config:validateClaudeModel', model),
   /** Debug-only: fires a real OS notification via Electron's Notification API. */
   debugNotify: (title: string, body: string): Promise<boolean> =>
     ipcRenderer.invoke('notification:debugTrigger', { title, body }),
@@ -87,6 +101,8 @@ const api = {
   /** Recently-used project paths for a host ('local' or a RemoteHostOption.id), newest first (fix-bug-triage-jul31 / bug #49). */
   listRecentProjectPaths: (hostId: string): Promise<string[]> =>
     ipcRenderer.invoke('session:listRecentProjectPaths', hostId),
+  suggestProjectPaths: (hostId: string, query: string): Promise<ProjectPathSuggestion[]> =>
+    ipcRenderer.invoke('session:suggestProjectPaths', hostId, query),
   listActiveSessions: (): Promise<SessionRecord[]> => ipcRenderer.invoke('session:listActive'),
   listHistorySessions: (): Promise<SessionRecord[]> => ipcRenderer.invoke('session:listHistory'),
   listSessionMessages: (sessionId: string): Promise<MessageRecord[]> =>
@@ -96,6 +112,13 @@ const api = {
   createSession: (opts: CreateSessionOptions): Promise<SessionRecord> => ipcRenderer.invoke('session:create', opts),
   resumeSession: (sessionId: string): Promise<{ session: SessionRecord; messages: MessageRecord[] }> =>
     ipcRenderer.invoke('session:resume', sessionId),
+  reconnectSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:reconnect', sessionId),
+  getSessionWorkspaceSnapshot: (sessionId: string): Promise<SessionWorkspacePayload | null> =>
+    ipcRenderer.invoke('session:getWorkspaceSnapshot', sessionId),
+  refreshSessionWorkspace: (sessionId: string, force: boolean): Promise<SessionWorkspacePayload | null> =>
+    ipcRenderer.invoke('session:refreshWorkspace', sessionId, force),
+  touchSessionActive: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:touchActive', sessionId),
+  isSessionStartupIdle: (sessionId: string): Promise<boolean> => ipcRenderer.invoke('session:isStartupIdle', sessionId),
   sendSessionMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment): Promise<void> =>
     ipcRenderer.invoke('session:sendMessage', sessionId, text, modelSelection, image),
   interruptSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:interrupt', sessionId),
@@ -104,6 +127,10 @@ const api = {
   forkSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:fork', sessionId),
   restartSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:restart', sessionId),
   closeSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:close', sessionId),
+  linkDailyTask: (sessionId: string, noteDate: string, taskGid: string): Promise<SessionRecord> =>
+    ipcRenderer.invoke('session:linkDailyTask', sessionId, noteDate, taskGid),
+  completeLinkedDailyTask: (sessionId: string): Promise<void> =>
+    ipcRenderer.invoke('session:completeLinkedDailyTask', sessionId),
   deleteSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:delete', sessionId),
   renameSession: (sessionId: string, name: string): Promise<SessionRecord> =>
     ipcRenderer.invoke('session:rename', sessionId, name),
@@ -203,6 +230,16 @@ const api = {
     ipcRenderer.on('session:stale', listener)
     return () => ipcRenderer.removeListener('session:stale', listener)
   },
+  onSessionOpenReady: (callback: (event: SessionOpenReadyEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionOpenReadyEvent): void => callback(payload)
+    ipcRenderer.on('session:openReady', listener)
+    return () => ipcRenderer.removeListener('session:openReady', listener)
+  },
+  onSessionWorkspaceUpdated: (callback: (event: SessionWorkspaceUpdatedEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionWorkspaceUpdatedEvent): void => callback(payload)
+    ipcRenderer.on('session:workspaceUpdated', listener)
+    return () => ipcRenderer.removeListener('session:workspaceUpdated', listener)
+  },
   /** Test-only: raw read-only SQL query against the real SQLite DB (see session:debugQueryDb handler). */
   debugQueryDb: <T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> =>
     ipcRenderer.invoke('debug:queryDb', sql, params),
@@ -215,6 +252,30 @@ const api = {
     ipcRenderer.invoke('panel:git:diff', projectPath, hostname, force),
   gitFileDiff: (projectPath: string, filePath: string, hostname?: string | null): Promise<DiffFileChange | null> =>
     ipcRenderer.invoke('panel:git:fileDiff', projectPath, filePath, hostname),
+  gitCommitDiff: (projectPath: string, commit: string, hostname?: string | null): Promise<DiffSummary> =>
+    ipcRenderer.invoke('panel:git:commitDiff', projectPath, commit, hostname),
+  gitCommitFileDiff: (
+    projectPath: string,
+    commit: string,
+    filePath: string,
+    hostname?: string | null
+  ): Promise<DiffFileChange | null> =>
+    ipcRenderer.invoke('panel:git:commitFileDiff', projectPath, commit, filePath, hostname),
+  gitWorkingTreeFilePair: (
+    projectPath: string,
+    filePath: string,
+    status: DiffFileStatus,
+    hostname?: string | null
+  ): Promise<DiffFileContentPair | null> =>
+    ipcRenderer.invoke('panel:git:workingTreeFilePair', projectPath, filePath, status, hostname),
+  gitCommitFilePair: (
+    projectPath: string,
+    commit: string,
+    filePath: string,
+    status: DiffFileStatus,
+    hostname?: string | null
+  ): Promise<DiffFileContentPair | null> =>
+    ipcRenderer.invoke('panel:git:commitFilePair', projectPath, commit, filePath, status, hostname),
   gitCommits: (projectPath: string, hostname?: string | null, force?: boolean): Promise<CommitInfo[]> =>
     ipcRenderer.invoke('panel:git:commits', projectPath, hostname, force),
   gitWorktrees: (projectPath: string, hostname?: string | null, force?: boolean): Promise<WorktreeInfo[]> =>
@@ -231,6 +292,8 @@ const api = {
 
   filesTree: (projectPath: string, hostname?: string | null): Promise<FileTreeNode[]> => ipcRenderer.invoke('panel:files:tree', projectPath, hostname),
   filesDir: (root: string, dir: string, hostname?: string | null): Promise<FileTreeNode[]> => ipcRenderer.invoke('panel:files:dir', root, dir, hostname),
+  filesList: (workspaceRoot: string, underDir?: string | null, hostname?: string | null): Promise<WorkspaceFileEntry[]> =>
+    ipcRenderer.invoke('panel:files:list', workspaceRoot, underDir, hostname),
   filesRead: (path: string, hostname?: string | null): Promise<FileReadResult> => ipcRenderer.invoke('panel:files:read', path, hostname),
   filesWrite: (path: string, content: string, hostname?: string | null): Promise<FileWriteResult> => ipcRenderer.invoke('panel:files:write', path, content, hostname),
 
@@ -251,6 +314,11 @@ const api = {
     ipcRenderer.on('pty:exit', listener)
     return () => ipcRenderer.removeListener('pty:exit', listener)
   },
+  onPtyShellContext: (callback: (payload: { id: string; remoteHost: string | null }) => void): (() => void) => {
+    const listener = (_event: unknown, payload: { id: string; remoteHost: string | null }): void => callback(payload)
+    ipcRenderer.on('pty:shellContext', listener)
+    return () => ipcRenderer.removeListener('pty:shellContext', listener)
+  },
 
   portsAdd: (sessionId: string, sshHost: string, localPort: number, remoteHost: string, remotePort: number): Promise<PortForward> =>
     ipcRenderer.invoke('panel:ports:add', sessionId, sshHost, localPort, remoteHost, remotePort),
@@ -264,7 +332,13 @@ const api = {
 
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),
 
-  getSpendStatus: (): Promise<SpendStatus | null> => ipcRenderer.invoke('spendStatus:get')
+  getSpendStatus: (): Promise<SpendStatus | null> => ipcRenderer.invoke('spendStatus:get'),
+
+  listAppNotes: (): Promise<AppNoteRecord[]> => ipcRenderer.invoke('app-note:list'),
+  createAppNote: (title?: string): Promise<AppNoteRecord> => ipcRenderer.invoke('app-note:create', title),
+  updateAppNote: (id: string, patch: AppNoteUpdate): Promise<AppNoteRecord> =>
+    ipcRenderer.invoke('app-note:update', id, patch),
+  deleteAppNote: (id: string): Promise<void> => ipcRenderer.invoke('app-note:delete', id)
 }
 
 contextBridge.exposeInMainWorld('atelier', api)

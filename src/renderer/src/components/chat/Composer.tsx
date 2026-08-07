@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import type { FileTreeNode } from '../../../../shared/panel-types'
+import ChatUncommittedChanges from './ChatUncommittedChanges'
+import type { DiffSummary } from '../../../../shared/panel-types'
 import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
@@ -245,10 +246,18 @@ interface ComposerProps {
   busy: boolean
   /** Active session's project root — `@file` mentions are resolved (real, live `fs` walk via the existing Files-panel IPC) against this. Undefined/empty just disables the mention popover. */
   projectPath?: string
-  /** Worktree path if the session runs inside a git worktree, else null. Used by the context bar to show the effective cwd and worktree name. */
+  /** Worktree path if the session runs inside a git worktree, else null. Shown as an icon-only indicator in the context bar (full path in `title`). */
   worktreePath?: string | null
   /** Hostname for remote sessions — forwarded to the branch IPC call. */
   hostname?: string | null
+  /** Git cwd (`worktreePath ?? projectPath`) — drives the uncommitted-changes cap above the composer. */
+  gitWorkspacePath?: string
+  /** Preloaded diff summary for the changes cap (main workspace service). */
+  diffSummary?: DiffSummary | null
+  /** Preloaded workspace file paths for @-mentions (relative paths). */
+  mentionFilePaths?: string[]
+  /** Chat changes cap: open Diff › Changes for this repo-relative path. */
+  onOpenChangedFile?: (path: string) => void
   /** `/fork` slash command's real action: forks the active session (same as the sidebar's fork action). */
   onFork: () => void
   /** Current model/effort override (10f-enrichment-model-effort-picker); `null` until the user picks something, in which case no override is sent at all (harness default). */
@@ -285,15 +294,8 @@ interface ComposerProps {
   onAddLocalMessage: (content: string) => void
   /** Validates a `/model <id>` against the SDK's own live acceptance logic (calls `Query.setModel()` on the connected session), fetched on demand at the moment `/model <id>` is submitted — not a static list, since the backend silently substitutes the default model for an unrecognized id instead of erroring on it (the only reason `setModel()`'s real accept/reject signal is trustworthy here). */
   onValidateModel: (model: string) => Promise<ModelValidationResult>
-}
-
-/** Flattens the Files-panel's real `fs`-backed tree (07-secondary-panels) into a flat list of `relativePath`s, files only — dirs aren't mentionable. */
-function flattenFiles(nodes: FileTreeNode[], acc: string[] = []): string[] {
-  for (const node of nodes) {
-    if (node.type === 'file') acc.push(node.relativePath)
-    else if (node.children) flattenFiles(node.children, acc)
-  }
-  return acc
+  /** True when the harness is not connected (session-startup-idle) — composer is read-only until Reconnect. */
+  harnessDisconnected?: boolean
 }
 
 interface SlashCommand {
@@ -456,6 +458,10 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   projectPath,
   worktreePath,
   hostname,
+  gitWorkspacePath,
+  diffSummary,
+  mentionFilePaths,
+  onOpenChangedFile,
   onFork,
   modelSelection,
   onModelSelectionChange,
@@ -466,7 +472,8 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   onCancelQueued,
   tokenUsage,
   onAddLocalMessage,
-  onValidateModel
+  onValidateModel,
+  harnessDisconnected = false
 }: ComposerProps, ref): JSX.Element {
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -531,22 +538,25 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     return () => { cancelled = true }
   }, [projectPath, worktreePath, hostname])
 
-  // Real file list for @-mentions: same IPC the Files panel (07) already
-  // uses to walk the session's real project_path on disk — no fixture/fake
-  // list, no second file-walking implementation.
+  // Real file list for @-mentions: from preloaded workspace when available.
   useEffect(() => {
+    if (mentionFilePaths != null) {
+      setFileList(mentionFilePaths)
+      return undefined
+    }
     let cancelled = false
     if (!projectPath) {
       setFileList([])
       return undefined
     }
-    window.atelier.filesTree(projectPath).then((tree) => {
-      if (!cancelled) setFileList(flattenFiles(tree))
+    const listPath = worktreePath || projectPath
+    window.atelier.filesList(listPath, null, hostname ?? null).then((entries) => {
+      if (!cancelled) setFileList(entries.map((e) => e.relativePath))
     })
     return () => {
       cancelled = true
     }
-  }, [projectPath])
+  }, [projectPath, worktreePath, hostname, mentionFilePaths])
 
   // bug #56: the four commands Atelier handles itself, merged on top of
   // whatever the harness's live registry reports. `localNames` also drives
@@ -847,22 +857,34 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   }
 
   const displayPath = (() => {
-    const p = worktreePath || projectPath
-    if (!p) return null
-    const parts = p.replace(/^\/Users\/[^/]+/, '~').split('/').filter(Boolean)
+    if (!projectPath) return null
+    const parts = projectPath.replace(/^\/Users\/[^/]+/, '~').split('/').filter(Boolean)
     return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : `/${parts.join('/')}`
   })()
-  const worktreeName = worktreePath ? worktreePath.split('/').pop() ?? null : null
+  const worktreeTitle =
+    worktreePath && branch
+      ? `Worktree: ${worktreePath}\nBranch: ${branch}`
+      : worktreePath
+        ? `Worktree: ${worktreePath}`
+        : null
 
   return (
     <div className="composer-wrap">
+      <div className="composer-stack">
+        {gitWorkspacePath && onOpenChangedFile && (
+          <ChatUncommittedChanges
+            diffSummary={diffSummary}
+            onOpenFile={onOpenChangedFile}
+          />
+        )}
       <div
-        className={`composer-box${isDragOver ? ' drag-over' : ''}`}
+        className={`composer-box${isDragOver ? ' drag-over' : ''}${harnessDisconnected ? ' harness-disconnected' : ''}`}
+        data-testid={harnessDisconnected ? 'composer-harness-disconnected' : undefined}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {(displayPath || branch || worktreeName) && (
+        {(displayPath || branch || worktreePath) && (
           <>
             <div className="context-bar" data-testid="composer-context-bar">
               {displayPath && (
@@ -880,12 +902,21 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
                   </span>
                 </>
               )}
-              {worktreeName && (
+              {worktreePath && (
                 <>
-                  <span className="context-bar-sep">›</span>
-                  <span className="context-bar-item">
+                  <span className="context-bar-spacer" aria-hidden />
+                  <span
+                    className="context-bar-item context-bar-item--icon-only"
+                    data-testid="composer-worktree-indicator"
+                    title={worktreeTitle ?? undefined}
+                    role="img"
+                    aria-label="Worktree"
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      void navigator.clipboard.writeText(worktreePath)
+                    }}
+                  >
                     <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M20 4C10 4 4 10 4 18v2h2c8 0 14-6 14-16z"/><path d="M9 19c3-5 6-8 11-11"/></svg>
-                    {worktreeName}
                   </span>
                 </>
               )}
@@ -955,9 +986,10 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         <textarea
           ref={textareaRef}
           data-testid="composer-input"
-          placeholder="Message Atelier…"
+          placeholder={harnessDisconnected ? 'Reconnect to continue chatting…' : 'Message Atelier…'}
           rows={1}
           value={value}
+          readOnly={harnessDisconnected}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onKeyUp={onTextareaKeyActivity}
@@ -1037,7 +1069,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           <button
             className="send-btn"
             data-testid="send-button"
-            disabled={!value.trim() && !attachedImage}
+            disabled={harnessDisconnected || (!value.trim() && !attachedImage)}
             title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
             onClick={() => void handleSend()}
           >
@@ -1048,6 +1080,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             {busy ? 'Queue' : 'Send'}
           </button>
         </div>
+      </div>
       </div>
     </div>
   )

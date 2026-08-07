@@ -1,10 +1,248 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CommitInfo, DiffFileChange, DiffSummary, WorktreeInfo } from '../../../../shared/panel-types'
 import Linkify, { openExternalLink } from './Linkify'
+import DiffFullFileEditor from './DiffFullFileEditor'
 
 type DiffSubTab = 'changes' | 'commits' | 'worktrees'
+type DiffFileViewMode = 'hunks' | 'full'
 
-const POLL_MS = 3000
+function DiffFileHeader({
+  file,
+  viewMode,
+  onToggleViewMode,
+  fileDiffLoading
+}: {
+  file: DiffFileChange
+  viewMode: DiffFileViewMode
+  onToggleViewMode: () => void
+  fileDiffLoading?: boolean
+}): JSX.Element {
+  const expandLabel = viewMode === 'full' ? 'Show hunks' : 'Expand file'
+  const canExpand = file.additions > 0 || file.deletions > 0 || file.status === 'added' || file.status === 'deleted'
+  const expandDisabled =
+    viewMode === 'hunks' &&
+    Boolean(fileDiffLoading) &&
+    file.hunks.length === 0 &&
+    (file.additions > 0 || file.deletions > 0)
+  return (
+    <div className="diff-file-header">
+      <span className="diff-path">{file.path}</span>
+      <span className="badge-mod">{file.status}</span>
+      {fileDiffLoading && viewMode === 'hunks' && file.hunks.length === 0 && (
+        <span style={{ opacity: 0.7, fontSize: 13.5 }}>Loading…</span>
+      )}
+      {canExpand && (
+        <button
+          type="button"
+          className="diff-file-expand-btn"
+          data-testid="diff-file-expand-btn"
+          disabled={expandDisabled}
+          title={
+            expandDisabled
+              ? 'Loading diff…'
+              : viewMode === 'full'
+                ? 'Return to hunk diff'
+                : 'View full file with inline diff (read-only)'
+          }
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleViewMode()
+          }}
+        >
+          {expandLabel}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function DiffFileCard({
+  activeFile,
+  fileDiffLoading,
+  commentingLine,
+  commentText,
+  onToggleCommentLine,
+  onCommentTextChange,
+  onSubmitComment,
+  onCancelComment
+}: {
+  activeFile: DiffFileChange
+  fileDiffLoading: boolean
+  commentingLine: string | null
+  commentText: string
+  onToggleCommentLine: (lineKey: string) => void
+  onCommentTextChange: (text: string) => void
+  onSubmitComment: (file: string, lineKey: string, lineText: string) => void
+  onCancelComment: () => void
+}): JSX.Element {
+  return (
+    <div className="diff-file-card" data-testid="diff-file-card">
+      <div className="diff-lines">
+        {activeFile.hunks.length === 0 && !fileDiffLoading ? (
+          <div style={{ padding: 12, color: 'var(--text-tertiary)', fontSize: 13.5 }}>
+            {activeFile.additions === 0 && activeFile.deletions === 0
+              ? 'Binary or non-text change — no line diff to show'
+              : 'No diff lines for this file'}
+          </div>
+        ) : null}
+        {activeFile.hunks.map((hunk, hi) =>
+          hunk.lines.map((line, li) => {
+            const lineKey = `${hi}-${li}`
+            return (
+              <div key={lineKey}>
+                <div className={`diff-line ${line.kind === 'add' ? 'add' : line.kind === 'del' ? 'del' : 'ctx'}`}>
+                  <div className="ln">{line.newLine ?? line.oldLine ?? ''}</div>
+                  <div className="content">
+                    <button
+                      className="comment-add"
+                      title="Add inline comment"
+                      data-testid="diff-add-comment-btn"
+                      onClick={() => onToggleCommentLine(lineKey)}
+                    >
+                      💬
+                    </button>
+                    {line.content}
+                  </div>
+                </div>
+                {commentingLine === lineKey && (
+                  <div className="inline-comment" data-testid="diff-inline-comment">
+                    <textarea
+                      rows={2}
+                      placeholder="Comment on this line…"
+                      value={commentText}
+                      onChange={(e) => onCommentTextChange(e.target.value)}
+                      data-testid="diff-comment-input"
+                    />
+                    <div className="inline-comment-actions">
+                      <button
+                        className="btn btn-primary btn-sm"
+                        data-testid="diff-comment-submit"
+                        onClick={() => onSubmitComment(activeFile.path, lineKey, line.content)}
+                      >
+                        Add to next message
+                      </button>
+                      <button className="btn btn-sm" onClick={onCancelComment}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DiffReviewBody({
+  files,
+  selectedFile,
+  onSelectFile,
+  activeFile,
+  fileDiffLoading,
+  viewMode,
+  onToggleViewMode,
+  workspacePath,
+  hostname,
+  effectiveTheme,
+  panelScopeKey,
+  commitHash,
+  panelActive,
+  commentingLine,
+  commentText,
+  onToggleCommentLine,
+  onCommentTextChange,
+  onSubmitComment,
+  onCancelComment
+}: {
+  files: DiffFileChange[]
+  selectedFile: string | null
+  onSelectFile: (path: string) => void
+  activeFile: DiffFileChange | undefined
+  fileDiffLoading: boolean
+  viewMode: DiffFileViewMode
+  onToggleViewMode: () => void
+  workspacePath: string
+  hostname?: string | null
+  effectiveTheme: 'light' | 'dark'
+  panelScopeKey: string
+  commitHash?: string | null
+  panelActive: boolean
+  commentingLine: string | null
+  commentText: string
+  onToggleCommentLine: (lineKey: string) => void
+  onCommentTextChange: (text: string) => void
+  onSubmitComment: (file: string, lineKey: string, lineText: string) => void
+  onCancelComment: () => void
+}): JSX.Element {
+  return (
+    <div className="review-body">
+      <div className="file-tree">
+        <div className="ft-summary" data-testid="diff-file-summary">
+          {files.length} file{files.length === 1 ? '' : 's'} changed ·{' '}
+          <span className="ft-add">+{files.reduce((n, f) => n + f.additions, 0)}</span>
+          <span className="ft-del">−{files.reduce((n, f) => n + f.deletions, 0)}</span>
+        </div>
+        {files.map((f) => (
+          <div
+            key={f.path}
+            className={`ft-item${selectedFile === f.path ? ' active' : ''}`}
+            onClick={() => onSelectFile(f.path)}
+            data-testid="diff-file-row"
+          >
+            <span className="fname">{f.path}</span>
+            <span className="ft-counts">
+              {f.additions > 0 && <span className="ft-add">+{f.additions}</span>}
+              {f.deletions > 0 && <span className="ft-del">-{f.deletions}</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className={`diff-area${viewMode === 'full' ? ' diff-area--full-file' : ''}`}>
+        {activeFile && (
+          <>
+            <DiffFileHeader
+              file={activeFile}
+              viewMode={viewMode}
+              onToggleViewMode={onToggleViewMode}
+              fileDiffLoading={fileDiffLoading}
+            />
+            {viewMode === 'full' ? (
+              <DiffFullFileEditor
+                workspacePath={workspacePath}
+                file={activeFile}
+                hostname={hostname}
+                effectiveTheme={effectiveTheme}
+                active={panelActive}
+                commitHash={commitHash}
+                scopeKey={panelScopeKey}
+              />
+            ) : (
+              <DiffFileCard
+                activeFile={activeFile}
+                fileDiffLoading={fileDiffLoading}
+                commentingLine={commentingLine}
+                commentText={commentText}
+                onToggleCommentLine={onToggleCommentLine}
+                onCommentTextChange={onCommentTextChange}
+                onSubmitComment={onSubmitComment}
+                onCancelComment={onCancelComment}
+              />
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Prefer a text diff over binary (-/- numstat) when opening a commit. */
+function defaultCommitFilePath(files: DiffFileChange[]): string | null {
+  const withStats = files.find((f) => f.additions > 0 || f.deletions > 0)
+  return withStats?.path ?? files[0]?.path ?? null
+}
 
 /**
  * Diff/Review panel (07-secondary-panels §2): SCM-first changes list with
@@ -12,13 +250,38 @@ const POLL_MS = 3000
  * while mounted (VS Code–style remote git economics via session-scoped cache in main).
  */
 export default function DiffPanel({
-  projectPath,
+  workspacePath,
+  repoRoot,
   hostname,
-  onAddComment
+  onAddComment,
+  active = true,
+  effectiveTheme,
+  panelScopeKey,
+  revealChangePath,
+  revealChangeSeq = 0,
+  onRevealChangeHandled,
+  workspaceDiff,
+  onRefreshWorkspace
 }: {
-  projectPath: string
+  /** Git cwd for changes, file diffs, and commits (session worktree when set). */
+  workspacePath: string
+  /** Main repo root for worktree list/add/merge/remove (`.atelier/worktrees`). */
+  repoRoot: string
   hostname?: string | null
   onAddComment: (note: string) => void
+  /** When false, panel stays mounted but skips lazy sub-tab loads tied to visibility. */
+  active?: boolean
+  effectiveTheme: 'light' | 'dark'
+  /** Stable id for Monaco model URIs (session id). */
+  panelScopeKey: string
+  /** Repo-relative path to select on Changes (from chat uncommitted-changes cap). */
+  revealChangePath?: string
+  revealChangeSeq?: number
+  onRevealChangeHandled?: () => void
+  /** Preloaded / pushed diff summary from main workspace service. */
+  workspaceDiff?: DiffSummary | null
+  /** Request immediate git refresh in main (Diff › Changes). */
+  onRefreshWorkspace?: () => void
 }): JSX.Element {
   const [sub, setSub] = useState<DiffSubTab>('changes')
   const [summary, setSummary] = useState<DiffSummary | null>(null)
@@ -32,7 +295,63 @@ export default function DiffPanel({
   const [commentText, setCommentText] = useState('')
   const [newWorktreeBranch, setNewWorktreeBranch] = useState('')
   const [worktreeError, setWorktreeError] = useState<string | null>(null)
+  const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null)
+  const [commitFiles, setCommitFiles] = useState<DiffFileChange[] | null>(null)
+  const [commitSelectedFile, setCommitSelectedFile] = useState<string | null>(null)
+  const [commitDiffLoading, setCommitDiffLoading] = useState(false)
+  const [commitFileDiffLoading, setCommitFileDiffLoading] = useState(false)
+  const [changesViewMode, setChangesViewMode] = useState<DiffFileViewMode>('hunks')
+  const [commitViewMode, setCommitViewMode] = useState<DiffFileViewMode>('hunks')
   const loadedHunksRef = useRef<Set<string>>(new Set())
+  const commitLoadedHunksRef = useRef<Set<string>>(new Set())
+
+  const loadCommitFileHunks = useCallback(
+    async (commitHash: string, filePath: string, force = false): Promise<void> => {
+      if (!force && commitLoadedHunksRef.current.has(filePath)) return
+      setCommitFileDiffLoading(true)
+      try {
+        const file = await window.atelier.gitCommitFileDiff(workspacePath, commitHash, filePath, hostname)
+        if (file) {
+          commitLoadedHunksRef.current.add(filePath)
+          setCommitFiles((prev) => {
+            if (!prev) return [file]
+            return prev.map((f) => (f.path === filePath ? file : f))
+          })
+        }
+      } finally {
+        setCommitFileDiffLoading(false)
+      }
+    },
+    [workspacePath, hostname]
+  )
+
+  const openCommit = useCallback(
+    async (commit: CommitInfo): Promise<void> => {
+      setSelectedCommit(commit)
+      setCommitFiles(null)
+      setCommitSelectedFile(null)
+      commitLoadedHunksRef.current.clear()
+      setCommentingLine(null)
+      setCommitDiffLoading(true)
+      try {
+        const diff = await window.atelier.gitCommitDiff(workspacePath, commit.hash, hostname)
+        const first = defaultCommitFilePath(diff.files)
+        let files = diff.files
+        if (first) {
+          const file = await window.atelier.gitCommitFileDiff(workspacePath, commit.hash, first, hostname)
+          if (file) {
+            commitLoadedHunksRef.current.add(first)
+            files = diff.files.map((f) => (f.path === first ? file : f))
+          }
+        }
+        setCommitFiles(files)
+        setCommitSelectedFile(first)
+      } finally {
+        setCommitDiffLoading(false)
+      }
+    },
+    [workspacePath, hostname]
+  )
 
   const mergeFileIntoSummary = useCallback((file: DiffFileChange) => {
     setSummary((prev) => {
@@ -49,7 +368,7 @@ export default function DiffPanel({
       if (!force && loadedHunksRef.current.has(filePath)) return
       setFileDiffLoading(true)
       try {
-        const file = await window.atelier.gitFileDiff(projectPath, filePath, hostname)
+        const file = await window.atelier.gitFileDiff(workspacePath, filePath, hostname)
         if (file) {
           loadedHunksRef.current.add(filePath)
           mergeFileIntoSummary(file)
@@ -58,25 +377,26 @@ export default function DiffPanel({
         setFileDiffLoading(false)
       }
     },
-    [projectPath, hostname, mergeFileIntoSummary]
+    [workspacePath, hostname, mergeFileIntoSummary]
   )
 
-  const refreshChanges = useCallback(
-    async (force = false): Promise<void> => {
-      const diff = await window.atelier.gitDiff(projectPath, hostname, force)
-      setSummary((prev) => {
-        if (!prev?.isRepo) return diff
-        return {
-          ...diff,
-          files: diff.files.map((f) => {
-            const old = prev.files.find((o) => o.path === f.path)
-            if (old && old.hunks.length > 0 && loadedHunksRef.current.has(f.path)) {
-              return { ...f, hunks: old.hunks }
-            }
-            return f
-          })
+  const mergeIncomingSummary = useCallback((diff: DiffSummary, prev: DiffSummary | null): DiffSummary => {
+    if (!prev?.isRepo) return diff
+    return {
+      ...diff,
+      files: diff.files.map((f) => {
+        const old = prev.files.find((o) => o.path === f.path)
+        if (old && old.hunks.length > 0 && loadedHunksRef.current.has(f.path)) {
+          return { ...f, hunks: old.hunks }
         }
+        return f
       })
+    }
+  }, [])
+
+  const applySummary = useCallback(
+    (diff: DiffSummary) => {
+      setSummary((prev) => mergeIncomingSummary(diff, prev))
       if (diff.files.length === 0) {
         setSelectedFile(null)
         loadedHunksRef.current.clear()
@@ -90,49 +410,102 @@ export default function DiffPanel({
         return next
       })
     },
-    [projectPath, hostname, loadFileHunks]
+    [loadFileHunks, mergeIncomingSummary]
   )
 
+  const refreshChanges = useCallback(
+    async (force = false): Promise<void> => {
+      const diff = await window.atelier.gitDiff(workspacePath, hostname, force)
+      applySummary(diff)
+    },
+    [workspacePath, hostname, applySummary]
+  )
+
+  useEffect(() => {
+    if (workspaceDiff == null) return
+    applySummary(workspaceDiff)
+  }, [workspaceDiff, applySummary])
+
+  // Reset local UI when repo identity changes; fetch only if workspace push hasn't arrived yet.
   useEffect(() => {
     loadedHunksRef.current.clear()
     setSummary(null)
     setCommits(null)
     setWorktrees(null)
-    void refreshChanges(true)
-  }, [projectPath, hostname, refreshChanges])
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void refreshChanges(false)
-    }, POLL_MS)
-    return () => window.clearInterval(timer)
-  }, [refreshChanges])
+    setSelectedCommit(null)
+    setCommitFiles(null)
+    setCommitSelectedFile(null)
+    commitLoadedHunksRef.current.clear()
+    if (workspaceDiff != null) {
+      applySummary(workspaceDiff)
+    } else if (active) {
+      void refreshChanges(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset on repo identity, not on active toggle
+  }, [workspacePath, hostname, refreshChanges])
 
   useEffect(() => {
     if (sub === 'commits' && commits === null && !commitsLoading) {
       setCommitsLoading(true)
       void window.atelier
-        .gitCommits(projectPath, hostname, true)
+        .gitCommits(workspacePath, hostname, true)
         .then(setCommits)
         .finally(() => setCommitsLoading(false))
     }
-  }, [sub, commits, commitsLoading, projectPath, hostname])
+  }, [sub, commits, commitsLoading, workspacePath, hostname])
 
   useEffect(() => {
     if (sub === 'worktrees' && worktrees === null && !worktreesLoading) {
       setWorktreesLoading(true)
       void window.atelier
-        .gitWorktrees(projectPath, hostname, true)
+        .gitWorktrees(repoRoot, hostname, true)
         .then(setWorktrees)
         .finally(() => setWorktreesLoading(false))
     }
-  }, [sub, worktrees, worktreesLoading, projectPath, hostname])
+  }, [sub, worktrees, worktreesLoading, repoRoot, hostname])
 
   useEffect(() => {
     if (selectedFile) void loadFileHunks(selectedFile)
   }, [selectedFile, loadFileHunks])
 
+  useEffect(() => {
+    setChangesViewMode('hunks')
+  }, [selectedFile])
+
+  useEffect(() => {
+    setCommitViewMode('hunks')
+  }, [commitSelectedFile])
+
+  useEffect(() => {
+    if (!revealChangePath || !revealChangeSeq) return
+    setSub('changes')
+    setSelectedFile(revealChangePath)
+    void loadFileHunks(revealChangePath, true)
+    onRevealChangeHandled?.()
+  }, [revealChangeSeq, revealChangePath, loadFileHunks, onRevealChangeHandled])
+
+  useEffect(() => {
+    if (selectedCommit && commitSelectedFile) void loadCommitFileHunks(selectedCommit.hash, commitSelectedFile)
+  }, [selectedCommit, commitSelectedFile, loadCommitFileHunks])
+
   const activeFile: DiffFileChange | undefined = summary?.files.find((f) => f.path === selectedFile)
+  const commitActiveFile: DiffFileChange | undefined = commitFiles?.find((f) => f.path === commitSelectedFile)
+
+  function showCommitList(): void {
+    setSelectedCommit(null)
+    setCommitFiles(null)
+    setCommitSelectedFile(null)
+    commitLoadedHunksRef.current.clear()
+    setCommentingLine(null)
+  }
+
+  function selectSub(next: DiffSubTab): void {
+    if (next !== sub && next === 'commits') showCommitList()
+    if (next === 'changes' && sub !== 'changes') {
+      onRefreshWorkspace?.()
+    }
+    setSub(next)
+  }
 
   async function refreshAfterGitMutation(): Promise<void> {
     loadedHunksRef.current.clear()
@@ -142,14 +515,14 @@ export default function DiffPanel({
     if (sub === 'commits') {
       setCommitsLoading(true)
       void window.atelier
-        .gitCommits(projectPath, hostname, true)
+        .gitCommits(workspacePath, hostname, true)
         .then(setCommits)
         .finally(() => setCommitsLoading(false))
     }
     if (sub === 'worktrees') {
       setWorktreesLoading(true)
       void window.atelier
-        .gitWorktrees(projectPath, hostname, true)
+        .gitWorktrees(repoRoot, hostname, true)
         .then(setWorktrees)
         .finally(() => setWorktreesLoading(false))
     }
@@ -159,9 +532,9 @@ export default function DiffPanel({
     setWorktreeError(null)
     const branch = newWorktreeBranch.trim()
     if (!branch) return
-    const path = `${projectPath}/.atelier/worktrees/${branch}`
+    const path = `${repoRoot}/.atelier/worktrees/${branch}`
     try {
-      await window.atelier.gitWorktreeAdd(projectPath, path, branch, hostname)
+      await window.atelier.gitWorktreeAdd(repoRoot, path, branch, hostname)
       setNewWorktreeBranch('')
       await refreshAfterGitMutation()
     } catch (err) {
@@ -172,7 +545,7 @@ export default function DiffPanel({
   async function handleMergeWorktree(branch: string): Promise<void> {
     setWorktreeError(null)
     try {
-      await window.atelier.gitWorktreeMerge(projectPath, branch, hostname)
+      await window.atelier.gitWorktreeMerge(repoRoot, branch, hostname)
       await refreshAfterGitMutation()
     } catch (err) {
       setWorktreeError(err instanceof Error ? err.message : String(err))
@@ -182,7 +555,7 @@ export default function DiffPanel({
   async function handleRemoveWorktree(path: string): Promise<void> {
     setWorktreeError(null)
     try {
-      await window.atelier.gitWorktreeRemove(projectPath, path, hostname)
+      await window.atelier.gitWorktreeRemove(repoRoot, path, hostname)
       await refreshAfterGitMutation()
     } catch (err) {
       setWorktreeError(err instanceof Error ? err.message : String(err))
@@ -194,6 +567,10 @@ export default function DiffPanel({
     onAddComment(`Re ${file} (${lineKey}):\n> ${lineText.trim()}\n\n${commentText.trim()}`)
     setCommentText('')
     setCommentingLine(null)
+  }
+
+  function toggleCommentLine(lineKey: string): void {
+    setCommentingLine((prev) => (prev === lineKey ? null : lineKey))
   }
 
   if (!summary) {
@@ -209,21 +586,21 @@ export default function DiffPanel({
     return (
       <div className="empty-main" style={{ height: '100%' }}>
         <div className="empty-icon icon-standalone">🔀</div>
-        <div data-testid="diff-empty-not-repo">Not a git repository — nothing to diff</div>
+        <div data-testid={active ? 'diff-empty-not-repo' : undefined}>Not a git repository — nothing to diff</div>
       </div>
     )
   }
 
   return (
-    <div data-testid="diff-panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div data-testid={active ? 'diff-panel-active' : undefined} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <div className="diff-sub-tabs">
-        <button className={sub === 'changes' ? 'active' : ''} onClick={() => setSub('changes')} data-testid="diff-sub-changes">
+        <button className={sub === 'changes' ? 'active' : ''} onClick={() => selectSub('changes')} data-testid="diff-sub-changes">
           Changes
         </button>
-        <button className={sub === 'commits' ? 'active' : ''} onClick={() => setSub('commits')} data-testid="diff-sub-commits">
+        <button className={sub === 'commits' ? 'active' : ''} onClick={() => selectSub('commits')} data-testid="diff-sub-commits">
           Commits
         </button>
-        <button className={sub === 'worktrees' ? 'active' : ''} onClick={() => setSub('worktrees')} data-testid="diff-sub-worktrees">
+        <button className={sub === 'worktrees' ? 'active' : ''} onClick={() => selectSub('worktrees')} data-testid="diff-sub-worktrees">
           Worktrees
         </button>
       </div>
@@ -236,95 +613,86 @@ export default function DiffPanel({
           </div>
         ) : (
           <div className="diff-sub-content" data-testid="diff-changes">
-            <div className="review-body">
-              <div className="file-tree">
-                <div className="ft-summary" data-testid="diff-file-summary">
-                  {summary.files.length} file{summary.files.length === 1 ? '' : 's'} changed ·{' '}
-                  <span className="ft-add">+{summary.files.reduce((n, f) => n + f.additions, 0)}</span>
-                  <span className="ft-del">−{summary.files.reduce((n, f) => n + f.deletions, 0)}</span>
-                </div>
-                {summary.files.map((f) => (
-                  <div
-                    key={f.path}
-                    className={`ft-item${selectedFile === f.path ? ' active' : ''}`}
-                    onClick={() => setSelectedFile(f.path)}
-                    data-testid="diff-file-row"
-                  >
-                    <span className="fname">{f.path}</span>
-                    <span className="ft-counts">
-                      {f.additions > 0 && <span className="ft-add">+{f.additions}</span>}
-                      {f.deletions > 0 && <span className="ft-del">-{f.deletions}</span>}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="diff-area">
-                {activeFile && (
-                  <div className="diff-file-card" data-testid="diff-file-card">
-                    <div className="diff-file-header">
-                      {activeFile.path} <span className="badge-mod">{activeFile.status}</span>
-                      {fileDiffLoading && activeFile.hunks.length === 0 && (
-                        <span style={{ marginLeft: 8, opacity: 0.7 }}>Loading…</span>
-                      )}
-                    </div>
-                    <div className="diff-lines">
-                      {activeFile.hunks.map((hunk, hi) =>
-                        hunk.lines.map((line, li) => {
-                          const lineKey = `${hi}-${li}`
-                          return (
-                            <div key={lineKey}>
-                              <div className={`diff-line ${line.kind === 'add' ? 'add' : line.kind === 'del' ? 'del' : 'ctx'}`}>
-                                <div className="ln">{line.newLine ?? line.oldLine ?? ''}</div>
-                                <div className="content">
-                                  <button
-                                    className="comment-add"
-                                    title="Add inline comment"
-                                    data-testid="diff-add-comment-btn"
-                                    onClick={() => setCommentingLine(commentingLine === lineKey ? null : lineKey)}
-                                  >
-                                    💬
-                                  </button>
-                                  {line.content}
-                                </div>
-                              </div>
-                              {commentingLine === lineKey && (
-                                <div className="inline-comment" data-testid="diff-inline-comment">
-                                  <textarea
-                                    rows={2}
-                                    placeholder="Comment on this line…"
-                                    value={commentText}
-                                    onChange={(e) => setCommentText(e.target.value)}
-                                    data-testid="diff-comment-input"
-                                  />
-                                  <div className="inline-comment-actions">
-                                    <button
-                                      className="btn btn-primary btn-sm"
-                                      data-testid="diff-comment-submit"
-                                      onClick={() => submitComment(activeFile.path, lineKey, line.content)}
-                                    >
-                                      Add to next message
-                                    </button>
-                                    <button className="btn btn-sm" onClick={() => setCommentingLine(null)}>
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+            <DiffReviewBody
+              files={summary.files}
+              selectedFile={selectedFile}
+              onSelectFile={setSelectedFile}
+              activeFile={activeFile}
+              fileDiffLoading={fileDiffLoading}
+              viewMode={changesViewMode}
+              onToggleViewMode={() => setChangesViewMode((m) => (m === 'hunks' ? 'full' : 'hunks'))}
+              workspacePath={workspacePath}
+              hostname={hostname}
+              effectiveTheme={effectiveTheme}
+              panelScopeKey={panelScopeKey}
+              panelActive={active}
+              commentingLine={commentingLine}
+              commentText={commentText}
+              onToggleCommentLine={toggleCommentLine}
+              onCommentTextChange={setCommentText}
+              onSubmitComment={submitComment}
+              onCancelComment={() => setCommentingLine(null)}
+            />
           </div>
         ))}
 
       {sub === 'commits' && (
-        <div className="diff-sub-content" data-testid="diff-commits">
-          {commitsLoading || commits === null ? (
+        <div className="diff-sub-content commits-panel" data-testid="diff-commits">
+          {selectedCommit ? (
+            <div className="commit-detail-view" data-testid="diff-commit-detail">
+              <div className="commit-detail-bar">
+                <button type="button" className="back" data-testid="diff-commit-back" onClick={showCommitList}>
+                  ← All commits
+                </button>
+                <span className="commit-title">
+                  <Linkify text={selectedCommit.message} />
+                </span>
+                <span className="commit-meta-inline">
+                  {selectedCommit.hash.slice(0, 7)} · {selectedCommit.author} · {selectedCommit.date}
+                </span>
+                {commitFiles && commitFiles.length > 0 && (
+                  <span className="commit-stat">
+                    {commitFiles.length} file{commitFiles.length === 1 ? '' : 's'} ·{' '}
+                    <span className="ft-add">+{commitFiles.reduce((n, f) => n + f.additions, 0)}</span>
+                    <span className="ft-del">−{commitFiles.reduce((n, f) => n + f.deletions, 0)}</span>
+                  </span>
+                )}
+              </div>
+              {commitDiffLoading || commitFiles === null ? (
+                <div className="empty-main" style={{ flex: 1 }}>
+                  <div className="empty-icon icon-standalone">🔀</div>
+                  <div>Loading commit diff…</div>
+                </div>
+              ) : commitFiles.length === 0 ? (
+                <div className="empty-main" style={{ flex: 1 }}>
+                  <div className="empty-icon icon-standalone">🔀</div>
+                  <div>No file changes in this commit</div>
+                </div>
+              ) : (
+                <DiffReviewBody
+                  files={commitFiles}
+                  selectedFile={commitSelectedFile}
+                  onSelectFile={setCommitSelectedFile}
+                  activeFile={commitActiveFile}
+                  fileDiffLoading={commitFileDiffLoading}
+                  viewMode={commitViewMode}
+                  onToggleViewMode={() => setCommitViewMode((m) => (m === 'hunks' ? 'full' : 'hunks'))}
+                  workspacePath={workspacePath}
+                  hostname={hostname}
+                  effectiveTheme={effectiveTheme}
+                  panelScopeKey={panelScopeKey}
+                  commitHash={selectedCommit.hash}
+                  panelActive={active}
+                  commentingLine={commentingLine}
+                  commentText={commentText}
+                  onToggleCommentLine={toggleCommentLine}
+                  onCommentTextChange={setCommentText}
+                  onSubmitComment={submitComment}
+                  onCancelComment={() => setCommentingLine(null)}
+                />
+              )}
+            </div>
+          ) : commitsLoading || commits === null ? (
             <div className="empty-main" style={{ height: '100%' }}>
               <div className="empty-icon icon-standalone">🕒</div>
               <div>Loading commits…</div>
@@ -336,7 +704,20 @@ export default function DiffPanel({
             </div>
           ) : (
             commits.map((c) => (
-              <div className="commit-row" key={c.hash} data-testid="commit-row">
+              <div
+                className="commit-row"
+                key={c.hash}
+                data-testid="commit-row"
+                onClick={() => void openCommit(c)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    void openCommit(c)
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+              >
                 <div className="commit-msg">
                   <Linkify text={c.message} />
                 </div>

@@ -1,79 +1,37 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as monaco from 'monaco-editor'
 import type { FileReadResult, FileTreeNode } from '../../../../shared/panel-types'
+import { registerEmacsMonacoKeybindings } from '../../editor/emacs-monaco-keybindings'
+import { ensureAtelierMonacoThemes, monacoThemeId } from '../../editor/atelier-monaco-theme'
+import { detectLanguage } from '../../editor/monaco-language'
 
-// ── Monaco theme matching the Soft Paper / Atelier dark palette ─────────────
-monaco.editor.defineTheme('atelier-dark', {
-  base: 'vs-dark',
-  inherit: true,
-  rules: [
-    { token: 'keyword', foreground: '9096c9' },
-    { token: 'keyword.control', foreground: '9096c9' },
-    { token: 'storage.type', foreground: '9096c9' },
-    { token: 'storage.modifier', foreground: '9096c9' },
-    { token: 'entity.name.type', foreground: '7fc0c4' },
-    { token: 'entity.name.class', foreground: 'ece7d9' },
-    { token: 'entity.name.function', foreground: '8fc17f' },
-    { token: 'support.function', foreground: '8fc17f' },
-    { token: 'string', foreground: 'd9b374' },
-    { token: 'string.quoted', foreground: 'd9b374' },
-    { token: 'constant.numeric', foreground: 'd9b374' },
-    { token: 'constant.language', foreground: '9096c9' },
-    { token: 'comment', foreground: '5c5647', fontStyle: 'italic' },
-    { token: 'punctuation', foreground: '837c6b' },
-    { token: 'variable.parameter', foreground: 'c9a87c' },
-    { token: 'variable', foreground: 'd9c7a8' },
-  ],
-  colors: {
-    'editor.background': '#17150f',
-    'editor.foreground': '#b3ac9a',
-    'editor.lineHighlightBackground': '#1f1d17',
-    'editor.selectionBackground': '#3d382c',
-    'editor.inactiveSelectionBackground': '#2a2721',
-    'editorLineNumber.foreground': '#5c5647',
-    'editorLineNumber.activeForeground': '#ece7d9',
-    'editorCursor.foreground': '#ece7d9',
-    'editorWhitespace.foreground': '#302c25',
-    'editorIndentGuide.background1': '#2a2721',
-    'editorIndentGuide.activeBackground1': '#3d382c',
-    'editor.findMatchBackground': '#3d3010',
-    'editor.findMatchHighlightBackground': '#2a2210',
-    'editorWidget.background': '#2a2721',
-    'editorWidget.border': '#3d382c',
-    'input.background': '#302c25',
-    'input.border': '#3d382c',
-    'input.foreground': '#ece7d9',
-    'scrollbarSlider.background': '#302c2580',
-    'scrollbarSlider.hoverBackground': '#3d382c80',
-    'scrollbarSlider.activeBackground': '#3d382ca0',
-    'editorGutter.background': '#17150f',
-    'minimap.background': '#120f0a',
-  }
-})
+ensureAtelierMonacoThemes()
 
-// ── Language detection ────────────────────────────────────────────────────────
-const EXT_TO_LANG: Record<string, string> = {
-  ts: 'typescript', tsx: 'typescript',
-  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
-  py: 'python', rb: 'ruby', go: 'go', rs: 'rust', java: 'java',
-  c: 'c', cpp: 'cpp', cc: 'cpp', h: 'c', hpp: 'cpp',
-  cs: 'csharp', swift: 'swift', kt: 'kotlin',
-  json: 'json', jsonc: 'json', yaml: 'yaml', yml: 'yaml',
-  toml: 'ini', ini: 'ini', env: 'ini',
-  md: 'markdown', mdx: 'markdown',
-  html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
-  sh: 'shell', bash: 'shell', zsh: 'shell',
-  sql: 'sql', graphql: 'graphql', xml: 'xml',
-  dockerfile: 'dockerfile', tf: 'hcl',
-}
-
-function detectLanguage(ext: string): string {
-  return EXT_TO_LANG[ext.toLowerCase()] ?? 'plaintext'
-}
-
+// ── Path helpers ────────────────────────────────────────────────────────────────
 function dirnamePath(p: string): string {
   const i = p.lastIndexOf('/')
   return i <= 0 ? '/' : p.slice(0, i)
+}
+
+function basenamePath(p: string): string {
+  const i = p.lastIndexOf('/')
+  return i >= 0 ? p.slice(i + 1) : p
+}
+
+type OpenEditorTab = {
+  id: string
+  path: string | null
+  fileResult: FileReadResult | null
+  isDirty: boolean
+}
+
+function modelUriForPath(path: string): monaco.Uri {
+  return monaco.Uri.parse(`file://${path}`)
+}
+
+function disposeModelForPathIfUnused(tabs: OpenEditorTab[], path: string): void {
+  if (tabs.some((t) => t.path === path)) return
+  monaco.editor.getModel(modelUriForPath(path))?.dispose()
 }
 
 // ── Icons (paths from the mock's SVG symbol definitions) ─────────────────────
@@ -99,7 +57,7 @@ function FileTree({
   nodes,
   depth,
   selected,
-  dirtyPath,
+  dirtyPaths,
   expanded,
   loadingDirs,
   dirChildren,
@@ -109,7 +67,7 @@ function FileTree({
   nodes: FileTreeNode[]
   depth: number
   selected: string | null
-  dirtyPath: string | null
+  dirtyPaths: Set<string>
   expanded: Set<string>
   loadingDirs: Set<string>
   dirChildren: Map<string, FileTreeNode[]>
@@ -138,7 +96,7 @@ function FileTree({
                 : <IconFile />
               }
               {n.name}
-              {n.type === 'file' && dirtyPath === n.path && (
+              {n.type === 'file' && dirtyPaths.has(n.path) && (
                 <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', background: 'var(--text-tertiary)', display: 'inline-block', flexShrink: 0 }} />
               )}
             </div>
@@ -147,7 +105,7 @@ function FileTree({
                 nodes={children}
                 depth={depth + 1}
                 selected={selected}
-                dirtyPath={dirtyPath}
+                dirtyPaths={dirtyPaths}
                 expanded={expanded}
                 loadingDirs={loadingDirs}
                 dirChildren={dirChildren}
@@ -170,11 +128,36 @@ function FileTree({
  * replacing the old regex-highlighter <pre> viewer. Supports read + Ctrl/Cmd+S
  * save for both local and remote (devpod) sessions.
  */
-export default function FilesPanel({ projectPath, hostname }: { projectPath: string; hostname: string | null }): JSX.Element {
+export default function FilesPanel({
+  projectPath,
+  hostname,
+  effectiveTheme,
+  active = true,
+  revealFilePath,
+  revealFileSeq = 0,
+  onRevealFileHandled,
+  onAddComment,
+  initialFilesTree
+}: {
+  projectPath: string
+  hostname: string | null
+  /** Matches `data-theme` on `<html>` — drives Monaco editor colors. */
+  effectiveTheme: 'light' | 'dark'
+  /** When false, panel stays mounted (session buffered); Monaco layout refreshes on re-show. */
+  active?: boolean
+  /** Absolute path to select in the editor when `revealFileSeq` bumps (plan card → Files). */
+  revealFilePath?: string
+  revealFileSeq?: number
+  onRevealFileHandled?: () => void
+  /** Push an inline file-line comment into the session composer (same as Diff panel). */
+  onAddComment?: (note: string) => void
+  /** Preloaded one-level tree from session workspace (main process). */
+  initialFilesTree?: FileTreeNode[] | null
+}): JSX.Element {
   const [tree, setTree] = useState<FileTreeNode[] | null>(null)
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [fileResult, setFileResult] = useState<FileReadResult | null>(null)
-  const [isDirty, setIsDirty] = useState(false)
+  const [openTabs, setOpenTabs] = useState<OpenEditorTab[]>([])
+  const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  const nextTabIdRef = useRef(0)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set())
@@ -185,12 +168,41 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
   const [completionIdx, setCompletionIdx] = useState(0)
   const dirChildrenRef = useRef<Map<string, FileTreeNode[]>>(new Map())
   const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const locationInputRef = useRef<HTMLInputElement | null>(null)
+  const openTabsRef = useRef(openTabs)
+  const activeTabIdRef = useRef<string | null>(null)
+
+  function newEditorTabId(): string {
+    nextTabIdRef.current += 1
+    return `file-tab-${nextTabIdRef.current}`
+  }
+
+  const activeTab = openTabs.find((t) => t.id === activeTabId) ?? null
+  const fileResult = activeTab?.fileResult ?? null
+  const selectedPath = activeTab?.path ?? null
+  const isDirty = activeTab?.isDirty ?? false
+  const dirtyPaths = useMemo(
+    () => new Set(openTabs.filter((t) => t.isDirty && t.path).map((t) => t.path as string)),
+    [openTabs]
+  )
+
+  openTabsRef.current = openTabs
+  activeTabIdRef.current = activeTabId
 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const modelRef = useRef<monaco.editor.ITextModel | null>(null)
   const htmlPreviewRef = useRef<HTMLIFrameElement | null>(null)
   const selectedPathRef = useRef<string | null>(null)
   const saveCurrentFileRef = useRef<(() => Promise<void>) | null>(null)
+  const lastRevealSeqRef = useRef(0)
+  const handleLocationCommitRef = useRef<(path: string) => Promise<void>>(async () => {})
+  const fileViewRef = useRef<HTMLDivElement | null>(null)
+
+  const [gutterHoverLine, setGutterHoverLine] = useState<number | null>(null)
+  const [commentingLine, setCommentingLine] = useState<number | null>(null)
+  const [commentText, setCommentText] = useState('')
+  /** Bumped on Monaco scroll/layout so gutter overlays track visible lines. */
+  const [overlayTick, setOverlayTick] = useState(0)
 
   // Keep ref in sync so the save keybinding closure can read it
   useEffect(() => { selectedPathRef.current = selectedPath }, [selectedPath])
@@ -201,16 +213,36 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
   // ── Load file tree ─────────────────────────────────────────────────────────
   useEffect(() => {
     setTree(null)
-    setSelectedPath(null)
-    setFileResult(null)
-    setIsDirty(false)
+    setOpenTabs([])
+    setActiveTabId(null)
+    nextTabIdRef.current = 0
     setExpanded(new Set())
     setLoadingDirs(new Set())
     setDirChildren(new Map())
     dirChildrenRef.current = new Map()
     setLocationInput(projectPath)
-    void window.atelier.filesTree(projectPath, hostname).then(setTree)
+    lastRevealSeqRef.current = 0
+    if (initialFilesTree != null) {
+      setTree(initialFilesTree)
+    } else {
+      void window.atelier.filesTree(projectPath, hostname).then(setTree)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- workspace tree syncs via dedicated effect below
   }, [projectPath, hostname])
+
+  useEffect(() => {
+    if (initialFilesTree == null) return
+    setTree(initialFilesTree)
+  }, [initialFilesTree])
+
+  useEffect(() => {
+    if (!active) return
+    editorRef.current?.layout()
+  }, [active])
+
+  useEffect(() => {
+    monaco.editor.setTheme(monacoThemeId(effectiveTheme))
+  }, [effectiveTheme])
 
   // ── Bootstrap Monaco via callback ref ────────────────────────────────────
   // useEffect([]) fires at initial mount when tree===null (async load), so the
@@ -224,7 +256,7 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     }
     if (editorRef.current) return
     const editor = monaco.editor.create(node, {
-      theme: 'atelier-dark',
+      theme: monacoThemeId(effectiveTheme),
       automaticLayout: true,
       readOnly: false,
       minimap: { enabled: true },
@@ -240,12 +272,81 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
       suggest: { showWords: false },
     })
     editorRef.current = editor
+    registerEmacsMonacoKeybindings(editor)
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       void saveCurrentFileRef.current?.()
     })
   }, [])
 
   const showEditor = fileResult?.kind === 'text'
+
+  const lineHeight = 21
+
+  function fileLabelForComment(filePath: string | null): string {
+    if (!filePath) return 'file'
+    const root = projectPath.replace(/\/$/, '')
+    if (filePath.startsWith(root)) {
+      const rel = filePath.slice(root.length).replace(/^\//, '')
+      return rel || (filePath.split('/').pop() ?? filePath)
+    }
+    return filePath
+  }
+
+  function lineOverlayTop(lineNumber: number): number | null {
+    void overlayTick
+    const editor = editorRef.current
+    if (!editor) return null
+    const pos = editor.getScrolledVisiblePosition({ lineNumber, column: 1 })
+    return pos?.top ?? null
+  }
+
+  function submitFileComment(lineNumber: number): void {
+    if (!commentText.trim() || !onAddComment) return
+    const model = editorRef.current?.getModel()
+    const lineText = model?.getLineContent(lineNumber) ?? ''
+    const file = fileLabelForComment(selectedPath)
+    onAddComment(`Re ${file} (line ${lineNumber}):\n> ${lineText.trim()}\n\n${commentText.trim()}`)
+    setCommentText('')
+    setCommentingLine(null)
+    setGutterHoverLine(null)
+  }
+
+  useEffect(() => {
+    setCommentingLine(null)
+    setCommentText('')
+    setGutterHoverLine(null)
+  }, [selectedPath])
+
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor || !showEditor || !active || !onAddComment) {
+      setGutterHoverLine(null)
+      return
+    }
+
+    const gutterTypes = new Set<number>([
+      monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS,
+      monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN
+    ])
+
+    const moveSub = editor.onMouseMove((e) => {
+      const line = e.target.position?.lineNumber
+      if (line && gutterTypes.has(e.target.type)) {
+        setGutterHoverLine(line)
+      } else {
+        setGutterHoverLine(null)
+      }
+    })
+
+    const scrollSub = editor.onDidScrollChange(() => setOverlayTick((t) => t + 1))
+    const layoutSub = editor.onDidLayoutChange(() => setOverlayTick((t) => t + 1))
+
+    return () => {
+      moveSub.dispose()
+      scrollSub.dispose()
+      layoutSub.dispose()
+    }
+  }, [showEditor, active, onAddComment, selectedPath, fileResult])
 
   // ── Save handler — kept in a stable ref so the keybinding closure never goes stale
   const saveCurrentFile = useCallback(async () => {
@@ -255,7 +356,7 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     setSaveError(null)
     const result = await window.atelier.filesWrite(path, editor.getValue(), hostname)
     if (result.ok) {
-      setIsDirty(false)
+      setOpenTabs((prev) => prev.map((t) => (t.path === path ? { ...t, isDirty: false } : t)))
     } else {
       setSaveError(result.error)
     }
@@ -268,10 +369,11 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     if (!editor || fileResult?.kind !== 'text') return
 
     const lang = detectLanguage(fileResult.extension)
-    const uri = monaco.Uri.parse(`file://${selectedPath ?? 'untitled'}`)
+    const uri = modelUriForPath(selectedPath ?? 'untitled')
 
     // Reuse existing model for the same URI, create otherwise
     let model = monaco.editor.getModel(uri)
+    const modelExisted = Boolean(model)
     if (model) {
       // Only reset value if content actually changed (e.g. external reload)
       if (model.getValue() !== fileResult.content) {
@@ -282,17 +384,26 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
       model = monaco.editor.createModel(fileResult.content, lang, uri)
     }
 
-    // Dispose previous model if it was for a different file
     const prev = modelRef.current
-    if (prev && prev !== model) prev.dispose()
+    if (prev && prev !== model) {
+      const stillUsed = openTabsRef.current.some(
+        (t) => t.path != null && modelUriForPath(t.path).toString() === prev.uri.toString()
+      )
+      if (!stillUsed) prev.dispose()
+    }
     modelRef.current = model
 
     editor.setModel(model)
-    editor.setScrollPosition({ scrollTop: 0, scrollLeft: 0 })
+    if (!modelExisted) {
+      editor.setScrollPosition({ scrollTop: 0, scrollLeft: 0 })
+    }
     editor.layout() // force re-measure after container transitions from display:none
-    setIsDirty(false)
 
-    const sub = model.onDidChangeContent(() => setIsDirty(true))
+    const sub = model.onDidChangeContent(() => {
+      const path = selectedPathRef.current
+      if (!path) return
+      setOpenTabs((prev) => prev.map((t) => (t.path === path ? { ...t, isDirty: true } : t)))
+    })
     return () => sub.dispose()
   }, [fileResult, selectedPath])
 
@@ -364,6 +475,99 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     })
   }
 
+  // ── Open / switch / close editor tabs ─────────────────────────────────────
+  async function openInCurrentTab(path: string, cachedResult?: FileReadResult): Promise<void> {
+    const activeId = activeTabIdRef.current
+    const active = openTabsRef.current.find((t) => t.id === activeId)
+    if (active?.path === path) {
+      setLocationInput(path)
+      setSaveError(null)
+      await revealInTree(path)
+      return
+    }
+
+    const result = cachedResult ?? await window.atelier.filesRead(path, hostname)
+
+    if (!active) {
+      const id = newEditorTabId()
+      setOpenTabs([{ id, path, fileResult: result, isDirty: false }])
+      setActiveTabId(id)
+    } else {
+      const oldPath = active.path
+      setOpenTabs((prev) => {
+        const next = prev.map((t) =>
+          t.id === active.id ? { ...t, path, fileResult: result, isDirty: false } : t
+        )
+        if (oldPath) disposeModelForPathIfUnused(next, oldPath)
+        return next
+      })
+      setActiveTabId(active.id)
+    }
+
+    setLocationInput(path)
+    setSaveError(null)
+    await revealInTree(path)
+  }
+
+  function duplicateCurrentTab(): void {
+    const id = newEditorTabId()
+    let locationPath: string | null = null
+
+    setOpenTabs((prev) => {
+      if (prev.length === 0) {
+        locationPath = null
+        return [{ id, path: null, fileResult: null, isDirty: false }]
+      }
+      const sourceId = activeTabId ?? prev[prev.length - 1].id
+      const source = prev.find((t) => t.id === sourceId) ?? prev[prev.length - 1]
+      locationPath = source.path
+      const idx = prev.findIndex((t) => t.id === source.id)
+      const next = [...prev]
+      next.splice(idx + 1, 0, {
+        id,
+        path: source.path,
+        fileResult: source.fileResult,
+        isDirty: source.isDirty,
+      })
+      return next
+    })
+    setActiveTabId(id)
+    setLocationInput(locationPath ?? projectPath)
+  }
+
+  function activateEditorTab(tabId: string): void {
+    const tab = openTabsRef.current.find((t) => t.id === tabId)
+    if (!tab) return
+    setActiveTabId(tabId)
+    setLocationInput(tab.path ?? projectPath)
+    setSaveError(null)
+  }
+
+  function closeEditorTab(tabId: string, e: React.MouseEvent): void {
+    e.stopPropagation()
+    setOpenTabs((prev) => {
+      const idx = prev.findIndex((t) => t.id === tabId)
+      if (idx < 0) return prev
+      const closed = prev[idx]
+      const next = prev.filter((t) => t.id !== tabId)
+      if (closed.path) {
+        disposeModelForPathIfUnused(next, closed.path)
+        if (modelRef.current && modelUriForPath(closed.path).toString() === modelRef.current.uri.toString()) {
+          if (!next.some((t) => t.path === closed.path)) {
+            modelRef.current = null
+          }
+        }
+      }
+      if (activeTabIdRef.current === tabId) {
+        const newActive = idx > 0 ? next[idx - 1]?.id : next[0]?.id ?? null
+        setActiveTabId(newActive)
+        const newTab = newActive ? next.find((t) => t.id === newActive) : null
+        setLocationInput(newTab?.path ?? projectPath)
+      }
+      return next
+    })
+  }
+
   // ── Location bar commit ────────────────────────────────────────────────────
   async function handleLocationCommit(inputPath: string): Promise<void> {
     const path = inputPath.trim()
@@ -371,14 +575,8 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
     setLocationEditing(false)
     setCompletions([])
     try {
-      // Try as a file first
       const result = await window.atelier.filesRead(path, hostname)
-      setSelectedPath(path)
-      setFileResult(result)
-      setLocationInput(path)
-      setIsDirty(false)
-      setSaveError(null)
-      await revealInTree(path)
+      await openInCurrentTab(path, result)
     } catch {
       // Try as a directory — expand it and reveal its ancestors
       try {
@@ -393,6 +591,15 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
       }
     }
   }
+  useEffect(() => {
+    handleLocationCommitRef.current = handleLocationCommit
+  })
+
+  useEffect(() => {
+    if (!active || !revealFilePath || !revealFileSeq || revealFileSeq === lastRevealSeqRef.current) return
+    lastRevealSeqRef.current = revealFileSeq
+    void handleLocationCommitRef.current(revealFilePath).finally(() => onRevealFileHandled?.())
+  }, [active, revealFilePath, revealFileSeq, onRevealFileHandled])
 
   // ── Directory expansion ────────────────────────────────────────────────────
   async function handleToggleDir(node: FileTreeNode): Promise<void> {
@@ -412,18 +619,13 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
   // ── File selection ─────────────────────────────────────────────────────────
   async function handleSelect(node: FileTreeNode): Promise<void> {
     if (node.type === 'dir') return
-    setSelectedPath(node.path)
-    setFileResult(null)
-    setIsDirty(false)
-    setSaveError(null)
-    const result = await window.atelier.filesRead(node.path, hostname)
-    setFileResult(result)
+    await openInCurrentTab(node.path)
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div data-testid="files-panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div data-testid={active ? 'files-panel-active' : undefined} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {tree === null ? (
         <div className="empty-main" style={{ height: '100%' }}>
           <div className="empty-icon">📁</div>
@@ -439,6 +641,7 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
         <div className={`files-location-bar${locationEditing ? ' editing' : ''}`}>
           <IconFolder />
           <input
+            ref={locationInputRef}
             data-testid="files-location-input"
             value={locationInput}
             placeholder={projectPath}
@@ -480,13 +683,55 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
             </div>
           )}
         </div>
+        {(openTabs.length > 0 || tree.length > 0) && (
+          <div className="files-editor-tabs" data-testid="files-editor-tabs">
+            {openTabs.map((tab) => {
+              const rel = tab.path
+                ? tab.path.startsWith(projectPath)
+                  ? tab.path.slice(projectPath.length).replace(/^\//, '') || basenamePath(tab.path)
+                  : basenamePath(tab.path)
+                : 'untitled'
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`files-editor-tab${tab.id === activeTabId ? ' active' : ''}${tab.isDirty ? ' dirty' : ''}`}
+                  data-testid="files-editor-tab"
+                  data-tab-id={tab.id}
+                  data-path={rel}
+                  onClick={() => activateEditorTab(tab.id)}
+                >
+                  <span className="fname">{tab.path ? basenamePath(tab.path) : 'Untitled'}</span>
+                  {tab.isDirty && <span className="files-tab-dirty" aria-hidden />}
+                  <span
+                    className="files-tab-close"
+                    data-testid="files-editor-tab-close"
+                    role="presentation"
+                    onClick={(e) => closeEditorTab(tab.id, e)}
+                  >
+                    ×
+                  </span>
+                </button>
+              )
+            })}
+            <button
+              type="button"
+              className="files-editor-tab-add"
+              data-testid="files-editor-tab-add"
+              title="Duplicate current tab"
+              onClick={duplicateCurrentTab}
+            >
+              +
+            </button>
+          </div>
+        )}
         <div className="files-body">
           <div className="files-tree" data-testid="files-tree">
             <FileTree
               nodes={tree}
               depth={0}
               selected={selectedPath}
-              dirtyPath={isDirty ? selectedPath : null}
+              dirtyPaths={dirtyPaths}
               expanded={expanded}
               loadingDirs={loadingDirs}
               dirChildren={dirChildren}
@@ -495,10 +740,21 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
             />
           </div>
 
-          <div className="file-view" data-testid="file-view" style={{ position: 'relative', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div
+            className="file-view"
+            ref={fileViewRef}
+            data-testid="file-view"
+            style={{ position: 'relative', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+            onMouseLeave={(e) => {
+              const next = e.relatedTarget
+              if (next instanceof Node && fileViewRef.current?.contains(next)) return
+              setGutterHoverLine(null)
+            }}
+          >
             {/* Monaco editor — always mounted at full size so it always has correct dimensions */}
             <div
               ref={editorContainerRef}
+              data-hint-exclude-root=""
               data-testid="monaco-editor"
               style={{ display: 'flex', flex: 1, minHeight: 0 }}
             />
@@ -533,6 +789,64 @@ export default function FilesPanel({ projectPath, hostname }: { projectPath: str
             {fileResult?.kind === 'binary' && (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-code)', color: 'var(--text-tertiary)' }}>
                 Binary file — no preview available
+              </div>
+            )}
+
+            {showEditor && onAddComment && (
+              <div className="files-editor-overlays" aria-hidden={commentingLine === null && gutterHoverLine === null}>
+                {gutterHoverLine !== null && commentingLine === null && (() => {
+                  const top = lineOverlayTop(gutterHoverLine)
+                  if (top === null) return null
+                  return (
+                    <button
+                      type="button"
+                      className="files-line-comment-btn"
+                      data-testid="files-line-comment-btn"
+                      title="Add inline comment"
+                      style={{ top }}
+                      onMouseEnter={() => setGutterHoverLine(gutterHoverLine)}
+                      onClick={() => {
+                        setCommentingLine(gutterHoverLine)
+                        setCommentText('')
+                      }}
+                    >
+                      💬
+                    </button>
+                  )
+                })()}
+                {commentingLine !== null && (() => {
+                  const top = lineOverlayTop(commentingLine)
+                  if (top === null) return null
+                  return (
+                    <div
+                      className="inline-comment files-inline-comment"
+                      data-testid="files-inline-comment"
+                      style={{ top: top + lineHeight }}
+                    >
+                      <textarea
+                        rows={2}
+                        placeholder="Comment on this line…"
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        data-testid="files-comment-input"
+                        autoFocus
+                      />
+                      <div className="inline-comment-actions">
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          data-testid="files-comment-submit"
+                          onClick={() => submitFileComment(commentingLine)}
+                        >
+                          Add to next message
+                        </button>
+                        <button type="button" className="btn btn-sm" onClick={() => setCommentingLine(null)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
