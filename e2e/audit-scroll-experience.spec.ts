@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,11 +27,6 @@ import { join } from 'node:path'
 const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
 const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
 
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function setWindowSize(app: ElectronApplication, width: number, height: number): Promise<void> {
   await app.evaluate(({ BrowserWindow }, dims) => {
     const win = BrowserWindow.getAllWindows()[0]
@@ -38,11 +34,6 @@ async function setWindowSize(app: ElectronApplication, width: number, height: nu
   }, { width, height })
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 async function openNewSessionModal(page: Page): Promise<void> {
   await page.getByTestId('new-session-button').click()
@@ -183,9 +174,8 @@ test.describe('audit: real scroll-experience verification (not just overflow met
   })
 
   test('non-scrollable-by-design containers (topbar, composer footer) have no accidental inner scrollbar', async () => {
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     // claude-code mode (not terminal): `.composer-footer` only exists in the
     // chat surface, which terminal-mode sessions don't render. No initial
     // prompt is given, so no real SDK turn/cost is incurred — just the
@@ -214,9 +204,8 @@ test.describe('audit: real scroll-experience verification (not just overflow met
     // force the session list past its own height at the short-small window
     // size already in effect from beforeAll.
     for (let i = 0; i < 10; i++) {
-      await stubProjectFolder(electronApp, projectDir)
-      await openNewSessionModal(page)
-      await page.getByTestId('pick-project-folder').click()
+            await openNewSessionModal(page)
+      await page.getByTestId('project-path').fill(projectDir)
       await page.getByTestId('mode-terminal').click()
       await page.getByTestId('start-session-button').click()
       await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -243,9 +232,8 @@ test.describe('audit: real scroll-experience verification (not just overflow met
     // Open a claude-code-mode session so the composer (with @-mention wired
     // to a real project file list) is present; no message is sent, so no
     // real SDK turn/cost is incurred by this test.
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -272,9 +260,8 @@ test.describe('audit: real scroll-experience verification (not just overflow met
 
   test('transcript: overflow-y auto, and auto-scroll-to-bottom behavior on new real messages (proof, not assumption)', async ({}, testInfo) => {
     testInfo.setTimeout(90_000)
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
       'Reply with a numbered list from 1 to 40, one short line per number (e.g. "1. one"), and nothing else.'
@@ -359,9 +346,8 @@ test.describe('audit: real scroll-experience verification (not just overflow met
     // affected by whatever conversation state/model that other session
     // accumulated — same session-creation pattern as chat-surface-core's
     // own passing "todo rail renders and updates live from TodoWrite" test.
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
       'Use the TodoWrite tool now to create a todo list with exactly eight items: "Todo 1" through "Todo 8", ' +

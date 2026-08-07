@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -43,15 +44,6 @@ import { join } from 'node:path'
 const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
 const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -59,11 +51,6 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = []): Promise<T[]> {
   return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugQueryDb<T>(query, bindings), {
@@ -87,10 +74,9 @@ test('bug-repro: plan card renders real markdown, and an expired prompt shows a 
 
   const { app: electronApp, page } = await launchApp(userDataDir)
   try {
-    await stubProjectFolder(electronApp, projectDir)
-    await page.getByTestId('new-session-button').click()
+        await page.getByTestId('new-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toBeVisible()
-    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('plan-mode-checkbox').check()
     await page.getByTestId('initial-prompt').fill(

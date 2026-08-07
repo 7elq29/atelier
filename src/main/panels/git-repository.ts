@@ -4,7 +4,9 @@
  * commits/worktrees. Remote devpod sessions use multiplexed SSH via ssh-exec.ts.
  */
 import { execFile } from 'node:child_process'
-import type { CommitInfo, DiffFileChange, DiffFileStatus, DiffSummary, WorktreeInfo } from '../../shared/panel-types'
+import type { CommitInfo, DiffFileChange, DiffFileContentPair, DiffFileStatus, DiffSummary, WorktreeInfo } from '../../shared/panel-types'
+import { readFileForPreview } from './files'
+import { join } from 'node:path'
 import { remoteCdTarget, shQuote } from '../shell-quote'
 import { sshExec, warmSshMux } from '../ssh-exec'
 import { parseNumstatLines, parseUnifiedDiff, runGit } from './git-core'
@@ -127,6 +129,43 @@ class GitRepositoryManager {
     }
   }
 
+  /** File list for a single commit (numstat; empty hunks until loadCommitFileDiff). */
+  async loadCommitDiff(projectPath: string, commit: string, sshHost?: string | null): Promise<DiffSummary> {
+    const summary = await this.refreshChanges(projectPath, sshHost)
+    if (!summary.isRepo) return { isRepo: false, branch: null, files: [] }
+
+    // -m --first-parent: merge commits and root commits get a real patch (plain `git show` is often empty).
+    const res = await runGit(
+      projectPath,
+      ['show', '-m', '--first-parent', '--no-color', '--numstat', '--format=', commit],
+      sshHost
+    )
+    if (res.code !== 0) return { isRepo: true, branch: null, files: [] }
+    const files = parseNumstatLines(res.stdout.split('\n')).map((f) => ({ ...f, hunks: [] }))
+    return { isRepo: true, branch: null, files }
+  }
+
+  async loadCommitFileDiff(
+    projectPath: string,
+    commit: string,
+    filePath: string,
+    sshHost?: string | null
+  ): Promise<DiffFileChange | null> {
+    const diff = await runGit(
+      projectPath,
+      ['show', '-m', '--first-parent', '--no-color', '-U3', '--format=', commit, '--', filePath],
+      sshHost
+    )
+    const parsed = parseUnifiedDiff(diff.stdout)
+    const file = parsed[0]
+    if (!file) {
+      const list = await this.loadCommitDiff(projectPath, commit, sshHost)
+      const stub = list.files.find((f) => f.path === filePath)
+      return stub ? { ...stub, hunks: [] } : null
+    }
+    return file
+  }
+
   async loadFileDiff(projectPath: string, filePath: string, sshHost?: string | null): Promise<DiffFileChange | null> {
     const key = repoKey(projectPath, sshHost)
     const entry = this.cache.get(key)
@@ -206,6 +245,63 @@ class GitRepositoryManager {
   onMutatingGitOp(projectPath: string, sshHost?: string | null): void {
     this.invalidate(projectPath, sshHost)
   }
+
+  private async repoHasHead(projectPath: string, sshHost?: string | null): Promise<boolean> {
+    const key = repoKey(projectPath, sshHost)
+    const entry = this.cache.get(key)
+    if (entry != null) return entry.hasHead
+    return (await runGit(projectPath, ['rev-parse', '--verify', 'HEAD'], sshHost)).code === 0
+  }
+
+  /** Working tree vs HEAD (or empty tree) — for Diff › Expand file. */
+  async loadWorkingTreeFilePair(
+    projectPath: string,
+    filePath: string,
+    status: DiffFileStatus,
+    sshHost?: string | null
+  ): Promise<DiffFileContentPair | null> {
+    let original = ''
+    if (status !== 'added') {
+      const hasHead = await this.repoHasHead(projectPath, sshHost)
+      const ref = hasHead ? 'HEAD' : EMPTY_TREE
+      const res = await runGit(projectPath, ['show', `${ref}:${filePath}`], sshHost)
+      if (res.code === 0) original = res.stdout
+    }
+
+    let modified = ''
+    if (status !== 'deleted') {
+      const abs = join(projectPath, filePath)
+      const read = await readFileForPreview(abs, sshHost)
+      if (read.kind !== 'text' && read.kind !== 'html') return null
+      modified = read.content
+    }
+
+    return { original, modified }
+  }
+
+  /** Parent commit vs commit — for Diff › Commits › Expand file. */
+  async loadCommitFilePair(
+    projectPath: string,
+    commit: string,
+    filePath: string,
+    status: DiffFileStatus,
+    sshHost?: string | null
+  ): Promise<DiffFileContentPair | null> {
+    let original = ''
+    const parent = await runGit(projectPath, ['show', `${commit}^:${filePath}`], sshHost)
+    if (parent.code === 0) original = parent.stdout
+
+    let modified = ''
+    if (status !== 'deleted') {
+      const atCommit = await runGit(projectPath, ['show', `${commit}:${filePath}`], sshHost)
+      if (atCommit.code === 0) modified = atCommit.stdout
+      else return null
+    }
+
+    if (status === 'added' && !modified) return null
+    if (original.includes('\0') || modified.includes('\0')) return null
+    return { original, modified }
+  }
 }
 
 export const gitRepositories = new GitRepositoryManager()
@@ -217,6 +313,38 @@ export async function getDiffSummary(projectPath: string, sshHost?: string | nul
 
 export async function getFileDiff(projectPath: string, filePath: string, sshHost?: string | null): Promise<DiffFileChange | null> {
   return gitRepositories.loadFileDiff(projectPath, filePath, sshHost)
+}
+
+export async function getCommitDiff(projectPath: string, commit: string, sshHost?: string | null): Promise<DiffSummary> {
+  return gitRepositories.loadCommitDiff(projectPath, commit, sshHost)
+}
+
+export async function getCommitFileDiff(
+  projectPath: string,
+  commit: string,
+  filePath: string,
+  sshHost?: string | null
+): Promise<DiffFileChange | null> {
+  return gitRepositories.loadCommitFileDiff(projectPath, commit, filePath, sshHost)
+}
+
+export async function getWorkingTreeFilePair(
+  projectPath: string,
+  filePath: string,
+  status: DiffFileStatus,
+  sshHost?: string | null
+): Promise<DiffFileContentPair | null> {
+  return gitRepositories.loadWorkingTreeFilePair(projectPath, filePath, status, sshHost)
+}
+
+export async function getCommitFilePair(
+  projectPath: string,
+  commit: string,
+  filePath: string,
+  status: DiffFileStatus,
+  sshHost?: string | null
+): Promise<DiffFileContentPair | null> {
+  return gitRepositories.loadCommitFilePair(projectPath, commit, filePath, status, sshHost)
 }
 
 export async function listCommits(

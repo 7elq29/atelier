@@ -1,7 +1,11 @@
 <!DOCTYPE html>
 <!--
-  Atelier UI mocks — message queue indicator
-  Shows the composer in five states:
+  Atelier UI mocks — message queue indicator, sidebar local terminal, composer context bar, …
+  Sections include:
+    - Message queue composer states (A–E)
+    - Sidebar — open local terminal (separator + button below session list; one-click local terminal session rows)
+    - Sidebar — app notes (Sessions / Terminals / Notes stack; + creates note; Files-style editor tabs)
+    - Composer context bar (worktree icon-only)
     A) Idle — normal Send button
     B) Busy — Working… + Stop + Queue button (Send relabeled); no queued messages
     C) Busy + 1 queued — single queued-strip above footer + Stop + Queue button
@@ -102,6 +106,95 @@ html, body {
   margin-bottom: 10px;
 }
 
+/* ── File quick open (Ctrl+X Ctrl+F) — mirrors global.css .fqo-* ─────────── */
+.fqo-demo-wrap { padding: 0 24px; }
+.fqo-demo-backdrop {
+  background: rgba(0,0,0,.45);
+  border-radius: var(--r-lg);
+  padding: 12vh 24px 24px;
+  display: flex;
+  justify-content: center;
+}
+.fqo-dialog {
+  width: 520px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+}
+.fqo-dialog .fqo-head {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.fqo-dialog .fqo-head--dir-active { background: var(--bg-tint); }
+.fqo-dir-row, .fqo-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  min-height: 44px;
+}
+.fqo-dir-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  width: 2.5rem;
+}
+.fqo-dir-input, .fqo-search-input, .fqo-dir-display {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: left;
+  outline: none;
+}
+.fqo-dir-display { cursor: pointer; padding: 0; }
+.fqo-dir-display:hover { color: var(--accent-strong); }
+.fqo-search-input::placeholder { color: var(--text-tertiary); }
+.fqo-sep {
+  height: 1px;
+  background: var(--border-default);
+  margin: 0 12px;
+}
+.fqo-results { max-height: 220px; overflow-y: auto; padding: 8px; }
+.fqo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.fqo-item:hover, .fqo-item.selected { background: var(--bg-hover); }
+.fqo-item .cpsub { color: var(--text-tertiary); font-size: 12.5px; margin-left: auto; }
+.fqo-row-name--dir { color: var(--accent-strong); }
+.fqo-hint {
+  padding: 8px 16px 12px;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  border-top: 1px solid var(--border-subtle);
+}
+.fqo-mode-tabs { display: flex; gap: 8px; padding: 0 24px 12px; flex-wrap: wrap; }
+.fqo-mode-tabs button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-panel-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.fqo-mode-tabs button.active { border-color: var(--accent); color: var(--accent-strong); }
+
 /* ── Composer (mirrors global.css exactly) ───────────────────────────────── */
 .composer-wrap {
   padding: 0 16px;
@@ -130,6 +223,71 @@ html, body {
 }
 
 .composer-box textarea::placeholder { color: var(--text-tertiary); }
+
+/* Context bar — top of composer-box (path › branch › worktree icon) */
+.context-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px 4px;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+.context-bar-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.context-bar-item--icon-only {
+  flex-shrink: 0;
+  min-width: auto;
+  overflow: visible;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: default;
+}
+.context-bar-item--icon-only:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+.context-bar-sep { color: var(--border-strong); font-size: 10px; flex-shrink: 0; }
+.context-bar-spacer { flex: 1; min-width: 8px; }
+.context-bar-divider { height: 1px; background: var(--border-subtle); margin: 0 14px; }
+/* Interactive demo: visible tooltip mirror (prod uses native title on the icon) */
+.context-bar-tooltip {
+  position: absolute;
+  right: 14px;
+  left: auto;
+  bottom: calc(100% + 6px);
+  max-width: min(420px, calc(100vw - 48px));
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-popover, 0 8px 24px rgba(0,0,0,0.35));
+  white-space: pre-wrap;
+  word-break: break-all;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 8;
+}
+.context-bar-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.context-bar-wrap { position: relative; }
 
 .composer-footer {
   display: flex;
@@ -575,6 +733,367 @@ kbd.kbd, .kbd {
 }
 .textarea-restored { animation: restored-pulse 0.7s ease-out; }
 
+/* ── Sidebar — open local terminal (mirrors global.css .sidebar / .session-*) ─ */
+.term-sidebar-demo {
+  padding: 0 24px;
+}
+.term-sidebar-shell {
+  display: flex;
+  height: 420px;
+  max-width: 920px;
+  margin: 0 auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--bg-app);
+}
+.term-sidebar-shell .sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+}
+.term-sidebar-shell .sidebar-top {
+  padding: 16px 16px 10px;
+  display: flex;
+  align-items: center;
+}
+.term-sidebar-shell .app-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--accent-dim), var(--bg-panel-raised));
+  border: 1px solid var(--border-default);
+}
+.term-sidebar-shell .new-session-btn {
+  margin: 0 16px 10px;
+}
+.term-sidebar-shell .session-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 10px 8px;
+  min-height: 0;
+}
+.term-sidebar-shell .session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.term-sidebar-shell .session-row:hover { background: var(--bg-hover); }
+.term-sidebar-shell .session-row.active { background: var(--bg-active); }
+.term-sidebar-shell .session-indicator {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.term-sidebar-shell .session-indicator .color-core {
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+}
+.term-sidebar-shell .status-idle { background: var(--text-tertiary); }
+.term-sidebar-shell .status-disconnected { background: var(--text-disabled); }
+.term-sidebar-shell .session-main { flex: 1; min-width: 0; }
+.term-sidebar-shell .session-name {
+  font-size: 14.5px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.term-sidebar-shell .session-meta {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Separator + local terminal affordance — sits below the scrollable session list. */
+.term-sidebar-shell .sidebar-after-sessions {
+  flex-shrink: 0;
+  padding: 0 16px 12px;
+}
+.term-sidebar-shell .sidebar-section-separator {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0 10px;
+}
+.term-sidebar-shell .open-local-terminal-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.term-sidebar-shell .open-local-terminal-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.term-sidebar-shell .sidebar-bottom {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+.term-sidebar-shell .user-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #7c6ba8;
+}
+.term-sidebar-shell .main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-panel);
+}
+.term-sidebar-shell .topbar {
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.term-sidebar-shell .main-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.term-sidebar-shell .chat-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+.term-sidebar-shell .terminal-panel-mock {
+  flex: 1;
+  display: none;
+  flex-direction: column;
+  background: #141210;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 12px 16px;
+  color: #c8c0b0;
+  overflow: auto;
+}
+.term-sidebar-shell .terminal-panel-mock.show { display: flex; }
+.term-sidebar-shell .terminal-panel-mock .prompt { color: var(--accent); }
+.term-sidebar-shell .terminal-panel-mock .dim { color: var(--text-tertiary); }
+
+/* ── Sidebar — app notes (interactive spec) ───────────────────────────── */
+.notes-sidebar-demo { padding: 0 24px 24px; }
+.notes-sidebar-shell {
+  display: flex;
+  height: 420px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--bg-app);
+}
+.notes-sidebar-shell .sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
+}
+.notes-sidebar-shell .sidebar-lists-stack {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 0 10px 8px;
+}
+.notes-sidebar-shell .sidebar-section-hsep {
+  height: 1px;
+  flex-shrink: 0;
+  background: var(--border-default);
+  margin: 6px 6px 4px;
+}
+.notes-sidebar-shell .sidebar-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 6px;
+  flex-shrink: 0;
+}
+.notes-sidebar-shell .sidebar-pane-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-disabled);
+  padding: 0;
+}
+.notes-sidebar-shell .sidebar-action-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.notes-sidebar-shell .sidebar-action-icon.primary { color: var(--accent); }
+.notes-sidebar-shell .sidebar-action-icon:hover { color: var(--text-secondary); }
+.notes-sidebar-shell .history-empty-hint {
+  font-size: 12px;
+  color: var(--text-disabled);
+  padding: 6px 8px 4px;
+  line-height: 1.45;
+}
+.notes-sidebar-shell .session-list--natural { padding: 0 2px 2px; }
+.notes-sidebar-shell .session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 9px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.notes-sidebar-shell .session-row:hover { background: var(--bg-hover); }
+.notes-sidebar-shell .session-row.active { background: var(--bg-active); }
+.notes-sidebar-shell .session-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notes-sidebar-shell .session-meta { font-size: 11.5px; color: var(--text-tertiary); }
+.notes-sidebar-shell .topbar {
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 14px;
+  font-weight: 600;
+}
+.notes-sidebar-shell .notes-title-input {
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+  min-width: 120px;
+  max-width: min(480px, 50%);
+  padding: 2px 4px;
+  border-radius: var(--r-sm);
+}
+.notes-sidebar-shell .notes-title-input:focus {
+  background: var(--bg-hover);
+}
+.notes-sidebar-shell .files-editor-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 8px 0;
+  flex-shrink: 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+}
+.notes-sidebar-shell .files-editor-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.notes-sidebar-shell .files-editor-tab:hover { background: var(--bg-hover); color: var(--text-primary); }
+.notes-sidebar-shell .files-editor-tab.active { background: var(--bg-active); color: var(--text-primary); }
+.notes-sidebar-shell .files-editor-tab .fname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notes-sidebar-shell .files-tab-close {
+  opacity: 0.5;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.notes-sidebar-shell .files-editor-tab:hover .files-tab-close { opacity: 1; }
+.notes-sidebar-shell .sidebar-list-pane--notes { flex: 0 0 auto; }
+.notes-sidebar-shell .app-note-row .session-indicator {
+  width: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.notes-sidebar-shell .main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.notes-sidebar-shell .notes-editor-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-code);
+}
+.notes-sidebar-shell .notes-editor-body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 21px;
+  color: var(--text-primary);
+  border: none;
+  resize: none;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* ── New Session Modal (use-worktree progress indicator) ────────────────── */
 .modal-dialog {
   background: var(--bg-panel);
@@ -624,6 +1143,27 @@ kbd.kbd, .kbd {
 .modal-footer-left { flex: 1; }
 .modal-error { color: var(--danger); font-size: 13px; margin-top: 8px; }
 .modal-progress { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); margin-top: 8px; }
+
+/* ── Confirm dialog (todo ↔ session link) ─────────────────────────────── */
+.confirm-dialog.modal-dialog { width: min(400px, calc(100vw - 32px)); }
+.confirm-dialog .modal-header { padding: 14px 18px 10px; border-bottom: none; align-items: flex-start; }
+.confirm-dialog .modal-header h2 { font-size: 15px; line-height: 1.3; }
+.confirm-dialog-header-text { flex: 1; min-width: 0; }
+.confirm-dialog-step {
+  font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-tertiary); margin-bottom: 4px;
+}
+.confirm-dialog .modal-body { padding: 0 18px 16px; gap: 10px; }
+.confirm-dialog-lead { margin: 0; font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
+.confirm-dialog-subject-block { display: flex; flex-direction: column; gap: 6px; }
+.confirm-dialog-subject-label { font-size: 11px; font-weight: 500; color: var(--text-tertiary); }
+.confirm-dialog-subject {
+  margin: 0; padding: 10px 12px; font-size: 13.5px; line-height: 1.4; color: var(--text-primary);
+  word-break: break-word; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--r-md);
+}
+.confirm-dialog .modal-footer { padding: 12px 18px 14px; justify-content: flex-end; flex-wrap: wrap; }
+.confirm-dialog .modal-footer .btn-ghost { margin-right: auto; }
+
 .field-label { font-size: 14px; font-weight: 500; margin-bottom: 6px; }
 .project-picker {
   width: 100%;
@@ -863,6 +1403,38 @@ kbd.kbd, .kbd {
     </div>
   </div>
 
+  <!-- ── File quick open (Ctrl+X Ctrl+F) ─────────────────────────────────── -->
+  <div>
+    <div class="mock-section-label">File quick open — directory bar + search (Ctrl+X, Ctrl+F)</div>
+    <p style="padding:0 24px 12px;font-size:13px;color:var(--text-secondary);max-width:640px;line-height:1.5">
+      Session folder on top, rule, then file search. <strong>Search</strong> recurses under the current folder.
+      Click the path or Backspace in an empty search field to browse <strong>one level</strong> at a time; Tab completes the name, Tab again returns to search.
+    </p>
+    <div class="fqo-mode-tabs">
+      <button type="button" id="fqo-tab-search" class="active" onclick="window.fqoDemo.setMode('search')">Search mode</button>
+      <button type="button" id="fqo-tab-dir" onclick="window.fqoDemo.setMode('dir')">Directory mode</button>
+    </div>
+    <div class="fqo-demo-wrap">
+      <div class="fqo-demo-backdrop">
+        <div class="fqo-dialog" id="fqo-dialog">
+          <div class="fqo-head" id="fqo-head">
+            <div class="fqo-dir-row">
+              <span class="fqo-dir-label">Dir</span>
+              <button type="button" class="fqo-dir-display" id="fqo-dir-display" onclick="window.fqoDemo.focusDir()">~/gardenia/src</button>
+              <input class="fqo-dir-input" id="fqo-dir-input" placeholder="~/gardenia/src" style="display:none" aria-label="Filter folders at this level" />
+            </div>
+            <div class="fqo-sep" role="separator"></div>
+            <div class="fqo-search-row">
+              <input class="fqo-search-input" id="fqo-search-input" placeholder="Search files under this folder…" aria-label="Search files" />
+            </div>
+          </div>
+          <div class="fqo-results" id="fqo-results"></div>
+          <div class="fqo-hint" id="fqo-hint">Recursive search under folder · Backspace at empty edits directory</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Interactive Demo: full state machine ───────────────────────────── -->
   <div>
     <div class="mock-section-label">Interactive Demo — full state machine (click/type to explore)</div>
@@ -963,6 +1535,196 @@ kbd.kbd, .kbd {
 
     <div id="dq-hint" class="demo-hints">
       ↑ Type a message and click <strong>Send</strong> to start a turn.
+    </div>
+  </div>
+
+  <!-- ── Sidebar — open local terminal (interactive spec) ───────────────── -->
+  <div>
+    <div class="mock-section-label">Sidebar — open local terminal (interactive spec)</div>
+    <p style="padding:0 24px 12px;margin:0;font-size:13.5px;color:var(--text-secondary);max-width:720px;line-height:1.5">
+      Below the scrollable <strong>session list</strong>, a separator and <strong>Open Terminal</strong> button create a
+      <strong>local terminal-only session</strong> in one click — no New Session modal, no remote host, no Claude harness.
+      The new row appears in the <strong>same sidebar list</strong> as agent sessions; selecting it shows the terminal in the main area.
+      Class names and layout mirror <code>global.css</code> (<code>.sidebar</code>, <code>.session-row</code>, proposed
+      <code>.sidebar-after-sessions</code> / <code>.open-local-terminal-btn</code>).
+    </p>
+    <div class="term-sidebar-demo">
+      <div class="term-sidebar-shell" id="term-sidebar-shell">
+        <aside class="sidebar" data-testid="sidebar">
+          <div class="sidebar-top">
+            <div class="app-mark" aria-hidden="true"></div>
+          </div>
+          <div class="new-session-btn">
+            <button type="button" class="btn btn-primary" style="width:100%;justify-content:center" data-testid="new-session-button">
+              + New Session
+            </button>
+          </div>
+          <div class="session-list" data-testid="session-list" id="term-session-list"></div>
+          <div class="sidebar-after-sessions">
+            <div class="sidebar-section-separator" aria-hidden="true"></div>
+            <button
+              type="button"
+              class="open-local-terminal-btn"
+              id="term-open-btn"
+              data-testid="open-local-terminal-button"
+            >
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+              </svg>
+              Open Terminal
+            </button>
+          </div>
+          <div class="sidebar-bottom">
+            <div class="user-avatar" aria-hidden="true"></div>
+            <div style="flex:1"></div>
+            <button type="button" class="btn btn-icon btn-sm" title="Collapse sidebar" style="background:none;border:none;color:var(--text-tertiary);cursor:default">⇤</button>
+            <button type="button" class="btn btn-icon btn-sm" title="Settings" style="background:none;border:none;color:var(--text-tertiary);cursor:default">⚙</button>
+          </div>
+        </aside>
+        <div class="main-area">
+          <div class="topbar" id="term-main-title">Refactor auth middleware</div>
+          <div class="main-body">
+            <div class="chat-placeholder" id="term-chat-placeholder">Chat surface (claude-code session)</div>
+            <div class="terminal-panel-mock" id="term-panel-mock" data-testid="terminal-only-session">
+              <div><span class="prompt">qingqin@mac</span> <span class="dim">~</span> <span class="prompt">%</span> echo 'local terminal session'</div>
+              <div>local terminal session</div>
+              <div><span class="prompt">qingqin@mac</span> <span class="dim">~</span> <span class="prompt">%</span> <span class="dim">█</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="term-sidebar-hint" class="demo-hints">
+      Click <strong>Open Terminal</strong> to add a local terminal session to the sidebar list and focus it.
+    </div>
+  </div>
+
+  <!-- ── Sidebar — app notes (interactive spec) ─────────────────────────── -->
+  <div>
+    <div class="mock-section-label">Sidebar — app notes (interactive spec)</div>
+    <p style="padding:0 24px 12px;margin:0;font-size:13.5px;color:var(--text-secondary);max-width:820px;line-height:1.5">
+      Below <strong>Terminals</strong>, a second separator introduces a <strong>Notes</strong> section (same
+      <code>.sidebar-lists-stack</code> / <code>.sidebar-section-hsep</code> layout as the live app). Click
+      <strong>+</strong> to create a note; it opens in the main area with a <strong>Files-style tab bar</strong>
+      and a monospace editor (Monaco in the real app). This demo keeps note text in memory only.
+    </p>
+    <div class="notes-sidebar-demo">
+      <div class="notes-sidebar-shell" id="notes-sidebar-shell">
+        <aside class="sidebar" data-testid="sidebar">
+          <div class="sidebar-top"><div class="app-mark" aria-hidden="true"></div></div>
+          <div class="sidebar-lists-stack">
+            <div class="sidebar-list-pane sidebar-list-pane--sessions">
+              <div class="sidebar-section-head">
+                <div class="sidebar-pane-label">Sessions</div>
+              </div>
+              <div class="session-list session-list--natural" id="notes-demo-sessions"></div>
+            </div>
+            <div class="sidebar-section-hsep" aria-hidden="true"></div>
+            <div class="sidebar-list-pane sidebar-list-pane--terminals">
+              <div class="sidebar-section-head">
+                <div class="sidebar-pane-label">Terminals</div>
+                <button type="button" class="sidebar-action-icon" title="Open local terminal" style="cursor:default" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="session-list session-list--natural" id="notes-demo-terminals">
+                <div class="history-empty-hint">Open a local terminal with the icon above.</div>
+              </div>
+            </div>
+            <div class="sidebar-section-hsep" aria-hidden="true"></div>
+            <div class="sidebar-list-pane sidebar-list-pane--notes">
+              <div class="sidebar-section-head">
+                <div class="sidebar-pane-label">Notes</div>
+                <button type="button" class="sidebar-action-icon primary" id="notes-demo-new" data-testid="new-app-note-button" title="New note">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="session-list session-list--natural" data-testid="app-notes-list" id="notes-demo-list"></div>
+            </div>
+          </div>
+        </aside>
+        <div class="main-area">
+          <div class="topbar" id="notes-demo-topbar-wrap">
+            <span id="notes-demo-topbar">Refactor auth middleware</span>
+            <input type="text" class="notes-title-input" id="notes-demo-title-input" style="display:none" aria-label="Note title" />
+          </div>
+          <div class="notes-editor-wrap" id="notes-demo-editor-wrap" style="display:none">
+            <div class="files-editor-tabs" data-testid="app-notes-editor-tabs" id="notes-demo-tabs"></div>
+            <textarea class="notes-editor-body" id="notes-demo-editor" data-testid="app-note-editor" placeholder="Start writing…"></textarea>
+          </div>
+          <div class="chat-placeholder" id="notes-demo-chat-ph" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary)">
+            Chat surface (session selected)
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="notes-demo-hint" class="demo-hints">
+      Click <strong>+</strong> under Notes to create a note and edit it in the main panel.
+    </div>
+  </div>
+
+  <!-- ── Composer context bar — worktree icon (interactive) ─────────────── -->
+  <div>
+    <div class="mock-section-label">Composer context bar — worktree icon-only (interactive)</div>
+    <p style="padding:0 24px 10px;margin:0;font-size:13.5px;color:var(--text-secondary);max-width:720px;line-height:1.5">
+      Worktree sessions show repo path and branch as text; the worktree is <strong>icon-only</strong>.
+      Hover the leaf icon for the full worktree path (native <code>title</code> in app; visible tooltip here).
+    </p>
+    <div style="padding:0 24px 8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <label class="worktree-label" style="margin-top:0">
+        <input type="checkbox" id="cb-worktree-toggle" checked />
+        Worktree session
+      </label>
+      <button type="button" class="btn" id="cb-reset" style="padding:5px 12px;font-size:13px">Reset paths</button>
+    </div>
+    <div class="composer-wrap">
+      <div class="composer-box" id="cb-composer">
+        <div id="cb-context-wrap" class="context-bar-wrap">
+          <div class="context-bar" data-testid="composer-context-bar">
+            <span class="context-bar-item">
+              <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+              <span id="cb-repo-path">…/gardenia</span>
+            </span>
+            <span class="context-bar-sep">›</span>
+            <span class="context-bar-item">
+              <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 7.2V16.8M6 9.5a6 6 0 0 0 6 6h4"/></svg>
+              <span id="cb-branch">atelier-c2a2693c</span>
+            </span>
+            <span id="cb-wt-spacer" class="context-bar-spacer" aria-hidden="true"></span>
+            <span
+              id="cb-wt-icon"
+              class="context-bar-item context-bar-item--icon-only"
+              data-testid="composer-worktree-indicator"
+              tabindex="0"
+              role="img"
+              aria-label="Worktree"
+            >
+              <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 4C10 4 4 10 4 18v2h2c8 0 14-6 14-16z"/><path d="M9 19c3-5 6-8 11-11"/></svg>
+            </span>
+          </div>
+          <div id="cb-tooltip" class="context-bar-tooltip" aria-hidden="true"></div>
+        </div>
+        <div class="context-bar-divider" id="cb-divider"></div>
+        <textarea placeholder="Message Atelier…" rows="2" style="min-height:52px"></textarea>
+        <div class="composer-footer">
+          <span class="mode-pill">● Default</span>
+          <div class="spacer"></div>
+          <button class="footer-btn">✦ Sonnet 5 · High ▾</button>
+          <button class="send-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"/><polyline points="6 11 12 5 18 11"/>
+            </svg>
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+    <div id="cb-hint" class="demo-hints">
+      Hover the <strong>leaf icon</strong> for the path; <strong>right-click</strong> to copy it.
     </div>
   </div>
 
@@ -1277,6 +2039,167 @@ kbd.kbd, .kbd {
 </div><!-- /.mock-page -->
 
 <script>
+// ── Sidebar — open local terminal demo ──────────────────────────────────────
+(function () {
+  'use strict';
+  var listEl = document.getElementById('term-session-list');
+  var openBtn = document.getElementById('term-open-btn');
+  var hint = document.getElementById('term-sidebar-hint');
+  var titleEl = document.getElementById('term-main-title');
+  var chatPh = document.getElementById('term-chat-placeholder');
+  var termPanel = document.getElementById('term-panel-mock');
+  if (!listEl || !openBtn) return;
+
+  var activeId = 's-agent-1';
+  var termCount = 0;
+  var sessions = [
+    { id: 's-agent-1', mode: 'claude-code', name: 'Refactor auth middleware', meta: 'gardenia', dot: 'idle' },
+    { id: 's-agent-2', mode: 'claude-code', name: 'Fix flaky e2e on CI', meta: 'gardenia', dot: 'idle' }
+  ];
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  }
+
+  function renderList() {
+    listEl.innerHTML = sessions.map(function (s) {
+      var active = s.id === activeId ? ' active' : '';
+      return (
+        '<div class="session-row' + active + '" data-testid="session-row" data-session-id="' + esc(s.id) + '" data-mode="' + esc(s.mode) + '" data-active="' + (s.id === activeId) + '" role="button" tabindex="0">' +
+          '<span class="session-indicator"><span class="color-core status-' + esc(s.dot) + '" data-testid="session-dot"></span></span>' +
+          '<div class="session-main">' +
+            '<div class="session-name" data-testid="session-name">' + esc(s.name) + '</div>' +
+            '<div class="session-meta">' + esc(s.meta) + '</div>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    listEl.querySelectorAll('.session-row').forEach(function (row) {
+      row.addEventListener('click', function () {
+        activeId = row.getAttribute('data-session-id');
+        renderList();
+        renderMain();
+      });
+    });
+  }
+
+  function renderMain() {
+    var s = sessions.filter(function (x) { return x.id === activeId; })[0];
+    if (!s) return;
+    titleEl.textContent = s.name;
+    var isTerm = s.mode === 'terminal';
+    chatPh.style.display = isTerm ? 'none' : 'flex';
+    termPanel.classList.toggle('show', isTerm);
+    hint.innerHTML = isTerm
+      ? 'Terminal session <strong>' + esc(s.name) + '</strong> is selected — main area is terminal-only (no composer). Created via <strong>Open Terminal</strong> (local only).'
+      : 'Agent session selected. Click <strong>Open Terminal</strong> to add another row to this same list.';
+  }
+
+  openBtn.addEventListener('click', function () {
+    termCount += 1;
+    var id = 's-term-' + termCount;
+    var name = termCount === 1 ? 'Terminal' : 'Terminal ' + termCount;
+    sessions.push({
+      id: id,
+      mode: 'terminal',
+      name: name,
+      meta: 'Local terminal',
+      dot: 'disconnected'
+    });
+    activeId = id;
+    renderList();
+    renderMain();
+  });
+
+  renderList();
+  renderMain();
+})();
+
+// ── Composer context bar — worktree icon demo ───────────────────────────────
+(function () {
+  'use strict';
+  var REPO = '/Users/me/gardenia';
+  var WORKTREE = '/Users/me/gardenia/.atelier/worktrees/c2a2693c-545f-4160-88e4-536ee43e4ac6';
+  var BRANCH = 'atelier-c2a2693c';
+
+  function el(id) { return document.getElementById(id); }
+
+  function truncateRepo(p) {
+    var parts = p.replace(/^\/Users\/[^/]+/, '~').split('/').filter(Boolean);
+    return parts.length > 2 ? '…/' + parts.slice(-2).join('/') : '/' + parts.join('/');
+  }
+
+  function worktreeTitle() {
+    return 'Worktree: ' + WORKTREE + '\nBranch: ' + BRANCH;
+  }
+
+  function syncTooltipVisible(showTip) {
+    var tip = el('cb-tooltip');
+    if (!showTip) {
+      tip.classList.remove('visible');
+      tip.setAttribute('aria-hidden', 'true');
+      return;
+    }
+    tip.textContent = worktreeTitle();
+    tip.classList.add('visible');
+    tip.setAttribute('aria-hidden', 'false');
+  }
+
+  function renderWorktreeUi(on) {
+    var spacer = el('cb-wt-spacer');
+    var icon = el('cb-wt-icon');
+    var divider = el('cb-divider');
+    if (on) {
+      spacer.style.display = '';
+      icon.style.display = '';
+      divider.style.display = '';
+      icon.setAttribute('title', worktreeTitle());
+      el('cb-hint').innerHTML =
+        'Repo path is the <strong>main project</strong>, not the worktree folder. Hover the <strong>leaf icon</strong> (right) for the path; <strong>right-click</strong> to copy.';
+    } else {
+      spacer.style.display = 'none';
+      icon.style.display = 'none';
+      divider.style.display = 'none';
+      syncTooltipVisible(false);
+      el('cb-hint').innerHTML =
+        'Non-worktree session: context bar shows repo path and branch only.';
+    }
+  }
+
+  function render() {
+    var on = el('cb-worktree-toggle').checked;
+    el('cb-repo-path').textContent = truncateRepo(REPO);
+    el('cb-branch').textContent = BRANCH;
+    renderWorktreeUi(on);
+  }
+
+  el('cb-worktree-toggle').addEventListener('change', render);
+  el('cb-reset').addEventListener('click', function () {
+    el('cb-worktree-toggle').checked = true;
+    render();
+  });
+
+  var icon = el('cb-wt-icon');
+  icon.addEventListener('mouseenter', function () {
+    if (el('cb-worktree-toggle').checked) syncTooltipVisible(true);
+  });
+  icon.addEventListener('mouseleave', function () { syncTooltipVisible(false); });
+  icon.addEventListener('focus', function () {
+    if (el('cb-worktree-toggle').checked) syncTooltipVisible(true);
+  });
+  icon.addEventListener('blur', function () { syncTooltipVisible(false); });
+
+  icon.addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+    if (!el('cb-worktree-toggle').checked) return;
+    void navigator.clipboard.writeText(WORKTREE);
+    el('cb-hint').innerHTML = 'Copied worktree path to clipboard.';
+  });
+
+  render();
+})();
+
 // ── Worktree creating-state interactive demo ────────────────────────────────
 (function () {
   'use strict';
@@ -1700,6 +2623,459 @@ kbd.kbd, .kbd {
   render();
 
 }());
+</script>
+<script>
+(function fqoMock() {
+  var SESSION = '~/gardenia';
+  var currentDir = SESSION + '/src';
+  var mode = 'search';
+  var dirQuery = '';
+  var searchFilter = '';
+  var sel = 0;
+  function resolveDirQuery(q) {
+    q = (q || '').trim();
+    if (!q) return { listDir: SESSION, segment: '' };
+    if (q.endsWith('/')) return { listDir: q.replace(/\/$/, ''), segment: '' };
+    var i = q.lastIndexOf('/');
+    if (i <= SESSION.length) return { listDir: SESSION, segment: q.slice(SESSION.length + 1) };
+    return { listDir: q.slice(0, i), segment: q.slice(i + 1) };
+  }
+
+  var TREE = {
+    '~/gardenia': [
+      { kind: 'dir', name: 'src', path: '~/gardenia/src' },
+      { kind: 'dir', name: 'e2e', path: '~/gardenia/e2e' },
+      { kind: 'file', name: 'package.json', path: '~/gardenia/package.json' }
+    ],
+    '~/gardenia/src': [
+      { kind: 'dir', name: 'renderer', path: '~/gardenia/src/renderer' },
+      { kind: 'file', name: 'main.ts', path: '~/gardenia/src/main.ts' },
+      { kind: 'file', name: 'App.tsx', path: '~/gardenia/src/renderer/App.tsx' }
+    ],
+    '~/gardenia/src/renderer': [
+      { kind: 'file', name: 'App.tsx', path: '~/gardenia/src/renderer/App.tsx' }
+    ],
+    '~/gardenia/e2e': [{ kind: 'file', name: 'app-shell.spec.ts', path: '~/gardenia/e2e/app-shell.spec.ts' }]
+  };
+
+  function allFilesUnder(dir) {
+    var out = [];
+    function walk(d) {
+      (TREE[d] || []).forEach(function (row) {
+        if (row.kind === 'dir') walk(row.path);
+        else out.push(row);
+      });
+    }
+    walk(dir);
+    return out;
+  }
+
+  function substringMatch(q, text) {
+    if (!q) return true;
+    q = q.toLowerCase();
+    return text.toLowerCase().indexOf(q) !== -1;
+  }
+
+  function parentDir(d) {
+    if (d === SESSION) return null;
+    var i = d.lastIndexOf('/');
+    return i <= SESSION.length ? SESSION : d.slice(0, i);
+  }
+
+  function rows() {
+    if (mode === 'dir') {
+      var ctx = resolveDirQuery(dirQuery);
+      return (TREE[ctx.listDir] || []).filter(function (r) {
+        return substringMatch(ctx.segment, r.name);
+      });
+    }
+    return allFilesUnder(currentDir).filter(function (r) {
+      var q = searchFilter.trim();
+      if (!q) return true;
+      var rel = r.path.indexOf(currentDir + '/') === 0 ? r.path.slice(currentDir.length + 1) : r.name;
+      return substringMatch(q, r.name) || substringMatch(q, rel) || substringMatch(q, r.path);
+    });
+  }
+
+  function renderFqo() {
+    var head = document.getElementById('fqo-head');
+    var disp = document.getElementById('fqo-dir-display');
+    var din = document.getElementById('fqo-dir-input');
+    var hint = document.getElementById('fqo-hint');
+    var list = document.getElementById('fqo-results');
+    if (!head || !list) return;
+    head.className = 'fqo-head' + (mode === 'dir' ? ' fqo-head--dir-active' : '');
+    if (mode === 'dir') {
+      disp.style.display = 'none';
+      din.style.display = 'block';
+      din.value = dirQuery;
+    } else {
+      disp.style.display = 'block';
+      din.style.display = 'none';
+      disp.textContent = currentDir;
+    }
+    document.getElementById('fqo-search-input').value = searchFilter;
+    document.getElementById('fqo-tab-search').className = mode === 'search' ? 'active' : '';
+    document.getElementById('fqo-tab-dir').className = mode === 'dir' ? 'active' : '';
+    hint.textContent =
+      mode === 'dir'
+        ? 'One level at a time · Backspace at empty goes up · Tab completes · Tab again → search'
+        : 'Recursive search under folder · Backspace at empty edits directory';
+    var rs = rows();
+    if (sel >= rs.length) sel = 0;
+    list.innerHTML = rs
+      .map(function (r, i) {
+        var label = r.kind === 'dir' ? r.name + '/' : r.name;
+        var cls = 'fqo-item' + (i === sel ? ' selected' : '');
+        var sub = mode === 'search' && r.path.indexOf(currentDir + '/') === 0 ? r.path.slice(currentDir.length + 1) : '';
+        return (
+          '<div class="' +
+          cls +
+          '" data-i="' +
+          i +
+          '"><span class="fqo-row-name' +
+          (r.kind === 'dir' ? ' fqo-row-name--dir' : '') +
+          '">' +
+          label +
+          '</span>' +
+          (sub ? '<span class="cpsub">' +
+          sub +
+          '</span>' : '') +
+          '</div>'
+        );
+      })
+      .join('');
+    list.querySelectorAll('.fqo-item').forEach(function (el) {
+      el.onclick = function () {
+        sel = parseInt(el.getAttribute('data-i'), 10);
+        activateRow();
+      };
+    });
+  }
+
+  function activateRow() {
+    var r = rows()[sel];
+    if (!r) return;
+    if (r.kind === 'dir') {
+      currentDir = r.path;
+      dirQuery = r.path;
+      mode = 'search';
+      searchFilter = '';
+      document.getElementById('fqo-search-input').focus();
+    }
+    renderFqo();
+  }
+
+  window.fqoDemo = {
+    setMode: function (m) {
+      mode = m;
+      if (m === 'dir') {
+        dirQuery = currentDir;
+        document.getElementById('fqo-dir-input').focus();
+      } else document.getElementById('fqo-search-input').focus();
+      renderFqo();
+    },
+    focusDir: function () {
+      mode = 'dir';
+      dirQuery = currentDir;
+      document.getElementById('fqo-dir-input').focus();
+      renderFqo();
+      setTimeout(function () {
+        var el = document.getElementById('fqo-dir-input');
+        el.setSelectionRange(el.value.length, el.value.length);
+      }, 0);
+    }
+  };
+
+  document.getElementById('fqo-dir-input').addEventListener('input', function (e) {
+    dirQuery = e.target.value;
+    sel = 0;
+    renderFqo();
+  });
+  document.getElementById('fqo-dir-input').addEventListener('keydown', function (e) {
+    var rs = rows();
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      sel = Math.min(sel + 1, Math.max(rs.length - 1, 0));
+      renderFqo();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      sel = Math.max(sel - 1, 0);
+      renderFqo();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      var ctx = resolveDirQuery(dirQuery);
+      var pick = rs[sel];
+      if (ctx.segment && rs.length && pick && ctx.segment !== pick.name) {
+        dirQuery = pick.path;
+        renderFqo();
+        setTimeout(function () {
+          var el = document.getElementById('fqo-dir-input');
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        }, 0);
+      } else {
+        currentDir = dirQuery.replace(/\/$/, '') || currentDir;
+        mode = 'search';
+        searchFilter = '';
+        document.getElementById('fqo-search-input').focus();
+        renderFqo();
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      activateRow();
+    } else if (e.key === 'Backspace' && dirQuery.trim() === '') {
+      var p = parentDir(currentDir);
+      if (p) {
+        e.preventDefault();
+        currentDir = p;
+        dirQuery = p;
+        renderFqo();
+      }
+    }
+  });
+  document.getElementById('fqo-search-input').addEventListener('input', function (e) {
+    searchFilter = e.target.value;
+    sel = 0;
+    renderFqo();
+  });
+  document.getElementById('fqo-search-input').addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      sel = Math.min(sel + 1, Math.max(rows().length - 1, 0));
+      renderFqo();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      sel = Math.max(sel - 1, 0);
+      renderFqo();
+    } else if (e.key === 'Backspace' && searchFilter === '') {
+      e.preventDefault();
+      mode = 'dir';
+      dirQuery = currentDir;
+      document.getElementById('fqo-dir-input').focus();
+      renderFqo();
+    }
+  });
+
+  renderFqo();
+})();
+
+// ── Sidebar — app notes demo ────────────────────────────────────────────────
+(function () {
+  'use strict';
+  var sessionsEl = document.getElementById('notes-demo-sessions');
+  var listEl = document.getElementById('notes-demo-list');
+  var newBtn = document.getElementById('notes-demo-new');
+  var sessionTitle = document.getElementById('notes-demo-topbar');
+  var titleInput = document.getElementById('notes-demo-title-input');
+  var editorWrap = document.getElementById('notes-demo-editor-wrap');
+  var chatPh = document.getElementById('notes-demo-chat-ph');
+  var tabsEl = document.getElementById('notes-demo-tabs');
+  var editor = document.getElementById('notes-demo-editor');
+  var hint = document.getElementById('notes-demo-hint');
+  if (!sessionsEl || !listEl || !newBtn || !editor) return;
+
+  var focus = 'session';
+  var activeSessionId = 's1';
+  var activeNoteId = null;
+  var noteSeq = 0;
+  var notes = [];
+  var openNoteIds = [];
+
+  var agentSessions = [
+    { id: 's1', name: 'Refactor auth middleware', meta: 'gardenia' },
+    { id: 's2', name: 'Fix flaky e2e on CI', meta: 'gardenia' }
+  ];
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  }
+
+  function setTopbarForNote(n) {
+    if (!n) return;
+    if (sessionTitle) sessionTitle.style.display = 'none';
+    if (titleInput) {
+      titleInput.style.display = 'block';
+      titleInput.value = noteTitle(n);
+    }
+  }
+
+  function setTopbarForSession(name) {
+    if (titleInput) titleInput.style.display = 'none';
+    if (sessionTitle) {
+      sessionTitle.style.display = 'inline';
+      sessionTitle.textContent = name;
+    }
+  }
+
+  function activeNote() {
+    return notes.filter(function (x) { return x.id === activeNoteId; })[0];
+  }
+
+  function closeNoteTab(noteId, e) {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    openNoteIds = openNoteIds.filter(function (id) { return id !== noteId; });
+    if (activeNoteId === noteId) {
+      if (openNoteIds.length > 0) {
+        activeNoteId = openNoteIds[openNoteIds.length - 1];
+        focus = 'note';
+      } else {
+        activeNoteId = null;
+        focus = 'session';
+      }
+    }
+    renderAll();
+  }
+
+  function noteTitle(n) {
+    return (n.title && n.title.trim()) || 'Untitled note';
+  }
+
+  function renderSessions() {
+    sessionsEl.innerHTML = agentSessions.map(function (s) {
+      var active = focus === 'session' && s.id === activeSessionId ? ' active' : '';
+      return (
+        '<div class="session-row' + active + '" data-session-id="' + esc(s.id) + '" role="button" tabindex="0">' +
+          '<span class="session-indicator"><span class="color-core status-idle"></span></span>' +
+          '<div class="session-main"><div class="session-name">' + esc(s.name) + '</div>' +
+          '<div class="session-meta">' + esc(s.meta) + '</div></div></div>'
+      );
+    }).join('');
+    sessionsEl.querySelectorAll('.session-row').forEach(function (row) {
+      row.addEventListener('click', function () {
+        focus = 'session';
+        activeSessionId = row.getAttribute('data-session-id');
+        activeNoteId = null;
+        syncMain();
+        renderAll();
+      });
+    });
+  }
+
+  function renderNotes() {
+    if (notes.length === 0) {
+      listEl.innerHTML = '<div class="history-empty-hint">Create a note with the icon above.</div>';
+      return;
+    }
+    listEl.innerHTML = notes.map(function (n) {
+      var active = focus === 'note' && n.id === activeNoteId ? ' active' : '';
+      return (
+        '<div class="session-row app-note-row' + active + '" data-note-id="' + esc(n.id) + '" role="button" tabindex="0">' +
+          '<span class="session-indicator" aria-hidden="true">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4"/></svg>' +
+          '</span>' +
+          '<div class="session-main"><div class="session-name">' + esc(noteTitle(n)) + '</div></div></div>'
+      );
+    }).join('');
+    listEl.querySelectorAll('.app-note-row').forEach(function (row) {
+      row.addEventListener('click', function () {
+        focus = 'note';
+        activeNoteId = row.getAttribute('data-note-id');
+        if (openNoteIds.indexOf(activeNoteId) < 0) openNoteIds.push(activeNoteId);
+        syncMain();
+        renderAll();
+      });
+    });
+  }
+
+  function renderTabs() {
+    if (!tabsEl) return;
+    tabsEl.innerHTML = openNoteIds.map(function (id) {
+      var n = notes.filter(function (x) { return x.id === id; })[0];
+      if (!n) return '';
+      var active = id === activeNoteId ? ' active' : '';
+      return (
+        '<button type="button" class="files-editor-tab' + active + '" data-note-id="' + esc(id) + '">' +
+          '<span class="fname">' + esc(noteTitle(n)) + '</span>' +
+          '<span class="files-tab-close" role="presentation" aria-label="Close tab">×</span></button>'
+      );
+    }).join('');
+    tabsEl.querySelectorAll('.files-editor-tab').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        if (e.target && e.target.classList && e.target.classList.contains('files-tab-close')) return;
+        activeNoteId = btn.getAttribute('data-note-id');
+        focus = 'note';
+        var n = notes.filter(function (x) { return x.id === activeNoteId; })[0];
+        if (n) editor.value = n.content;
+        setTopbarForNote(n);
+        renderTabs();
+      });
+      var closeEl = btn.querySelector('.files-tab-close');
+      if (closeEl) {
+        closeEl.addEventListener('click', function (e) {
+          closeNoteTab(btn.getAttribute('data-note-id'), e);
+        });
+      }
+    });
+  }
+
+  function syncMain() {
+    if (focus === 'note' && activeNoteId) {
+      var n = notes.filter(function (x) { return x.id === activeNoteId; })[0];
+      if (editorWrap) editorWrap.style.display = 'flex';
+      if (chatPh) chatPh.style.display = 'none';
+      if (n) {
+        editor.value = n.content;
+        setTopbarForNote(n);
+      }
+      renderTabs();
+    } else {
+      if (editorWrap) editorWrap.style.display = 'none';
+      if (chatPh) chatPh.style.display = 'flex';
+      var s = agentSessions.filter(function (x) { return x.id === activeSessionId; })[0];
+      if (s) setTopbarForSession(s.name);
+    }
+  }
+
+  function renderAll() {
+    renderSessions();
+    renderNotes();
+    syncMain();
+  }
+
+  newBtn.addEventListener('click', function () {
+    noteSeq += 1;
+    var id = 'note-' + noteSeq;
+    var n = { id: id, title: 'Untitled note', content: '' };
+    notes.push(n);
+    focus = 'note';
+    activeNoteId = id;
+    openNoteIds.push(id);
+    if (hint) hint.innerHTML = 'Editing <strong>' + esc(noteTitle(n)) + '</strong> — type in the editor; switch back to a session row to hide it.';
+    renderAll();
+    editor.focus();
+  });
+
+  editor.addEventListener('input', function () {
+    if (!activeNoteId) return;
+    notes = notes.map(function (n) {
+      if (n.id !== activeNoteId) return n;
+      var content = editor.value;
+      var title = n.title;
+      var firstLine = content.split('\n')[0].replace(/^#+\s*/, '').trim();
+      if (firstLine) title = firstLine.slice(0, 48);
+      return { id: n.id, title: title, content: content };
+    });
+    renderNotes();
+    renderTabs();
+    var n = activeNote();
+    if (n) setTopbarForNote(n);
+  });
+
+  if (titleInput) {
+    titleInput.addEventListener('input', function () {
+      if (!activeNoteId) return;
+      var t = titleInput.value;
+      notes = notes.map(function (n) {
+        return n.id === activeNoteId ? { id: n.id, title: t, content: n.content } : n;
+      });
+      renderNotes();
+      renderTabs();
+    });
+  }
+
+  renderAll();
+})();
 </script>
 </body>
 </html>

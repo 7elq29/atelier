@@ -2,11 +2,10 @@
  * Git worktree helpers for isolated session workspaces (use-worktree).
  *
  * Each claude-code session created with "Use worktree" gets its own git
- * worktree at `<project>/.atelier/worktrees/<sessionId>` on a fresh branch
- * `atelier-<sessionId-prefix>`. Claude Code runs inside that path instead of
- * the main project root, so its file edits never touch the original working
- * tree. The worktree and its branch are cleaned up when the session is
- * deleted.
+ * worktree at `<worktreeRoot>/<sessionId>` (default `~/.atelier/worktrees/<id>`)
+ * on a fresh branch `atelier-<sessionId-prefix>`. Claude Code runs inside
+ * that path instead of the main project root. The worktree and its branch
+ * are cleaned up when the session is deleted.
  *
  * For remote (devpod) sessions, git commands are prefixed with
  * `ssh <hostname>` so they run on the remote host.
@@ -14,10 +13,12 @@
 
 import { execFile as _execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { logger } from '../logger'
 import { SSH_REMOTE_OPTS } from '../ssh-exec'
+import { sessionWorktreePath } from '../../shared/worktree-path'
+import { expandTildePath } from '../../shared/project-path-autocomplete'
 
 const execFile = promisify(_execFile)
 
@@ -91,6 +92,18 @@ function spawnWithProgress(
   })
 }
 
+async function ensureWorktreeRootExists(worktreeRoot: string, homeDir: string, hostname?: string): Promise<void> {
+  const absRoot = expandTildePath(worktreeRoot, homeDir)
+  if (hostname) {
+    await execFile('ssh', [...SSH_GIT_OPTS, hostname, 'mkdir', '-p', absRoot], {
+      encoding: 'utf8',
+      timeout: SSH_EXEC_TIMEOUT_MS
+    })
+  } else {
+    mkdirSync(absRoot, { recursive: true })
+  }
+}
+
 /**
  * Creates a git worktree for a session.
  *
@@ -103,13 +116,16 @@ function spawnWithProgress(
 export async function createWorktree(
   projectPath: string,
   sessionId: string,
+  worktreeRoot: string,
+  homeDir: string,
   hostname?: string,
   onProgress?: (pct: number) => void
 ): Promise<string> {
-  const worktreePath = join(projectPath, '.atelier', 'worktrees', sessionId)
+  await ensureWorktreeRootExists(worktreeRoot, homeDir, hostname)
+  const worktreePath = sessionWorktreePath(worktreeRoot, sessionId, homeDir)
   const branch = `atelier-${sessionId.slice(0, 8)}`
 
-  logger.info('worktree: creating', { projectPath, worktreePath, branch, hostname })
+  logger.info('worktree: creating', { projectPath, worktreePath, branch, worktreeRoot, hostname })
 
   if (hostname) {
     await spawnWithProgress(
@@ -118,17 +134,16 @@ export async function createWorktree(
       onProgress,
       SSH_EXEC_TIMEOUT_MS
     )
-    // Resolve the path to an absolute one — `worktreePath` may contain `~`
-    // which git expands (through the SSH shell), but the harness cwd is used
-    // as a raw path and may not expand `~` itself.
     const { stdout } = await execFile(
-      'ssh', [...SSH_GIT_OPTS, hostname, 'realpath', worktreePath],
+      'ssh',
+      [...SSH_GIT_OPTS, hostname, 'realpath', worktreePath],
       { encoding: 'utf8', timeout: SSH_EXEC_TIMEOUT_MS }
     )
     const resolved = stdout.trim()
     logger.info('worktree: created', { worktreePath: resolved, branch })
     return resolved
   } else {
+    mkdirSync(dirname(worktreePath), { recursive: true })
     await spawnWithProgress(
       'git',
       ['-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch],
@@ -143,22 +158,21 @@ export async function createWorktree(
 /**
  * Removes a session's git worktree and its branch.
  *
- * Walks up from `worktreePath` to find the main repo root (skips the
- * `.atelier/worktrees/<id>` path segments). For remote sessions, git
- * commands are run via `ssh <hostname>` — the local `existsSync` check is
- * skipped since the path lives on the remote host. Errors from either git
- * call are swallowed and logged — a failed cleanup must never block session
- * deletion.
+ * `projectPath` is the main git repo the worktree was created from. Errors
+ * from either git call are swallowed and logged — cleanup must never block
+ * session deletion.
  */
-export async function removeWorktree(worktreePath: string, sessionId: string, hostname?: string): Promise<void> {
+export async function removeWorktree(
+  worktreePath: string,
+  sessionId: string,
+  projectPath: string,
+  hostname?: string
+): Promise<void> {
   if (!hostname && !existsSync(worktreePath)) {
     logger.info('worktree: path does not exist, skipping removal', { worktreePath })
     return
   }
 
-  // Derive the main repo root: go up 3 levels from
-  // `<project>/.atelier/worktrees/<sessionId>`.
-  const projectPath = dirname(dirname(dirname(worktreePath)))
   const branch = `atelier-${sessionId.slice(0, 8)}`
 
   logger.info('worktree: removing', { worktreePath, projectPath, branch, hostname })
@@ -166,7 +180,8 @@ export async function removeWorktree(worktreePath: string, sessionId: string, ho
   if (hostname) {
     try {
       await execFile('ssh', [...SSH_GIT_OPTS, hostname, 'git', 'worktree', 'remove', worktreePath, '--force'], {
-        encoding: 'utf8', timeout: SSH_EXEC_TIMEOUT_MS
+        encoding: 'utf8',
+        timeout: SSH_EXEC_TIMEOUT_MS
       })
     } catch (err) {
       logger.warn('worktree: remote git worktree remove failed (ignored)', {
@@ -176,7 +191,8 @@ export async function removeWorktree(worktreePath: string, sessionId: string, ho
     }
     try {
       await execFile('ssh', [...SSH_GIT_OPTS, hostname, 'git', '-C', projectPath, 'branch', '-D', branch], {
-        encoding: 'utf8', timeout: SSH_EXEC_TIMEOUT_MS
+        encoding: 'utf8',
+        timeout: SSH_EXEC_TIMEOUT_MS
       })
     } catch (err) {
       logger.warn('worktree: remote git branch -D failed (ignored)', {

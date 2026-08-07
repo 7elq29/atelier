@@ -11,8 +11,13 @@ import { runHistoricalCostBackfill } from './sessions/historical-cost-recompute'
 
 let db: Database.Database | undefined
 
+function tableHasColumn(database: Database.Database, table: string, column: string): boolean {
+  const rows = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+  return rows.some((row) => row.name === column)
+}
+
 /** Ordered list of migrations. Each runs once, tracked in the `migrations` table. */
-const MIGRATIONS: Array<{ name: string; sql: string }> = [
+const MIGRATIONS: Array<{ name: string; sql?: string; run?: (database: Database.Database) => void }> = [
   {
     name: '0001_sessions_and_messages',
     sql: `
@@ -175,7 +180,7 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
     // use-worktree: optional isolated git worktree per session. When the
     // user enables "Use worktree" in the New Session modal for a local
     // claude-code session, Atelier creates a git worktree at
-    // `<project>/.atelier/worktrees/<session-id>` on a new branch
+    // `<worktreeRoot>/<session-id>` (config, default `~/.atelier/worktrees`) on a new branch
     // `atelier-<session-id-prefix>`, runs Claude Code inside that
     // worktree path instead of the original project path, and removes both
     // the worktree directory and its branch when the session is deleted.
@@ -195,6 +200,49 @@ const MIGRATIONS: Array<{ name: string; sql: string }> = [
     sql: `
       ALTER TABLE sessions ADD COLUMN pending_turn_interrupted_notice INTEGER NOT NULL DEFAULT 0;
     `
+  },
+  {
+    name: '0010_app_notes',
+    sql: `
+      CREATE TABLE IF NOT EXISTS app_notes (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        sort_order REAL NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_app_notes_sort ON app_notes(sort_order);
+    `
+  },
+  {
+    // session-startup-idle: when the user last interacted with a session
+    // (select or send). Backfilled from the latest message timestamp, else
+    // `created_at`, so existing rows are usable immediately after migrate.
+    name: '0011_session_last_active_at',
+    run(database) {
+      if (!tableHasColumn(database, 'sessions', 'last_active_at')) {
+        database.exec(`ALTER TABLE sessions ADD COLUMN last_active_at TEXT;`)
+      }
+      database.exec(`
+        UPDATE sessions SET last_active_at = COALESCE(
+          (SELECT MAX(created_at) FROM messages WHERE messages.session_id = sessions.id),
+          created_at
+        )
+        WHERE last_active_at IS NULL;
+      `)
+    }
+  },
+  {
+    name: '0012_session_linked_daily_task',
+    run(database) {
+      if (!tableHasColumn(database, 'sessions', 'linked_daily_task_gid')) {
+        database.exec(`ALTER TABLE sessions ADD COLUMN linked_daily_task_gid TEXT;`)
+      }
+      if (!tableHasColumn(database, 'sessions', 'linked_daily_note_date')) {
+        database.exec(`ALTER TABLE sessions ADD COLUMN linked_daily_note_date TEXT;`)
+      }
+    }
   }
 ]
 
@@ -215,7 +263,9 @@ function runMigrations(database: Database.Database): void {
   for (const migration of MIGRATIONS) {
     if (applied.has(migration.name)) continue
     const runOne = database.transaction(() => {
-      database.exec(migration.sql)
+      if (migration.run) migration.run(database)
+      else if (migration.sql) database.exec(migration.sql)
+      else throw new Error(`migration ${migration.name} has no sql or run`)
       insertMigration.run(migration.name, new Date().toISOString())
     })
     runOne()

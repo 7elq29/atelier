@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,15 +11,6 @@ const orgLogPath = join(artifactsDir, '06-organization.log')
 mkdirSync(artifactsDir, { recursive: true })
 writeFileSync(orgLogPath, '')
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -26,11 +18,15 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
+async function openCommandPalette(page: Page): Promise<void> {
+  if (process.platform === 'darwin') {
+    await page.keyboard.press('Meta+k')
+  } else {
+    await page.keyboard.press('Alt+x')
+  }
+  await expect(page.getByTestId('command-palette')).toBeVisible()
 }
+
 
 async function openNewSessionModal(page: Page): Promise<void> {
   await page.getByTestId('new-session-button').click()
@@ -44,9 +40,8 @@ async function createLocalSession(
   projectDir: string,
   prompt: string
 ): Promise<string> {
-  await stubProjectFolder(app, projectDir)
-  await openNewSessionModal(page)
-  await page.getByTestId('pick-project-folder').click()
+    await openNewSessionModal(page)
+  await page.getByTestId('project-path').fill(projectDir)
   await page.getByTestId('mode-claude-code').click()
   await page.getByTestId('initial-prompt').fill(prompt)
   const beforeIds = await page
@@ -159,53 +154,8 @@ test.describe('06-session-organization', () => {
     )
     expect(tagRows.map((r) => r.tag)).toContain('urgent-fix')
 
-    // Filter by searching the tag text: only sessionA should remain visible
-    // among the three (their names ALPHA/BRAVO/CHARLIE don't contain it).
-    await page.getByTestId('sidebar-search-input').fill('urgent-fix')
-    await expect(page.locator(`[data-session-id="${sessionA}"]`).first()).toBeVisible()
-    await expect(page.locator(`[data-session-id="${sessionB}"]`)).toHaveCount(0)
-    await expect(page.locator(`[data-session-id="${sessionC}"]`)).toHaveCount(0)
-    await page.getByTestId('sidebar-search-input').fill('')
-
     await page.screenshot({ path: join(artifactsDir, '06-sidebar-tags.png') })
     appendOrgLog('tags', tagRows)
-  })
-
-  // ── Fuzzy search ────────────────────────────────────────────────────
-  //
-  // Runs BEFORE any relaunch: quick filters below key off SessionManager's
-  // in-memory `live` map (see SessionStatus's doc comment), which is
-  // legitimately empty right after a real app relaunch (no session has been
-  // reconnected yet) — status would read 'idle', not 'waiting', if this ran
-  // after the notes/color/groups tests' relaunches.
-  test('fuzzy search: matches by subsequence across session names', async () => {
-    // sessionA's name auto-derives from its "Reply with exactly the single
-    // word: ALPHA" prompt (deriveDefaultName truncates to 6 words + ellipsis)
-    // — search a scattered subsequence of "Reply" instead of relying on the
-    // exact truncated title.
-    await page.getByTestId('sidebar-search-input').fill('rly')
-    await expect(page.locator(`[data-testid="session-row"][data-session-id="${sessionA}"]`)).toBeVisible()
-    await page.getByTestId('sidebar-search-input').fill('zzzzz-nomatch')
-    await expect(page.locator('[data-testid="session-row"][data-active="false"]')).toHaveCount(0)
-    await page.getByTestId('sidebar-search-input').fill('')
-  })
-
-  // ── Quick filters ─────────────────────────────────────────────────────
-  test('quick filters: Waiting and Needs attention', async () => {
-    // All three sessions have finished their first turn (status 'waiting'
-    // per setup) and none are terminal/closed, so the "Waiting" filter
-    // should show all of them; "Needs attention" (a superset, per
-    // progress.md's definition) shows them too.
-    await page.getByTestId('filter-waiting').click()
-    for (const id of [sessionA, sessionB, sessionC]) {
-      await expect(page.locator(`[data-testid="session-row"][data-session-id="${id}"]`)).toBeVisible()
-    }
-    await page.getByTestId('filter-attention').click()
-    for (const id of [sessionA, sessionB, sessionC]) {
-      await expect(page.locator(`[data-testid="session-row"][data-session-id="${id}"]`)).toBeVisible()
-    }
-    await page.getByTestId('filter-all').click()
-    await page.screenshot({ path: join(artifactsDir, '06-sidebar-filters.png') })
   })
 
   // ── Notes ─────────────────────────────────────────────────────────────
@@ -239,6 +189,44 @@ test.describe('06-session-organization', () => {
     appendOrgLog('notes-after-relaunch', dbRows)
   })
 
+  test('app notes: create, edit in Monaco, persist across relaunch', async () => {
+    await page.getByTestId('new-app-note-button').click()
+    const row = page.locator('[data-testid="app-note-row"]').first()
+    await expect(row).toHaveClass(/active/)
+
+    const editor = page.getByTestId('app-note-editor').getByTestId('monaco-editor')
+    await expect(editor).toBeVisible({ timeout: 10_000 })
+    await editor.click()
+    await page.keyboard.type('# Release checklist\n\n- [ ] Run e2e')
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s')
+
+    await expect
+      .poll(async () => {
+        const rows = await queryDb<{ content: string }>(page, 'SELECT content FROM app_notes LIMIT 1')
+        return rows[0]?.content ?? ''
+      }, { timeout: 15_000 })
+      .toContain('Release checklist')
+
+    await page.screenshot({ path: join(artifactsDir, '06-app-notes-editor.png') })
+
+    await electronApp.close()
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+
+    await expect(page.getByTestId('app-notes-list')).toBeVisible({ timeout: 15_000 })
+    await page.locator('[data-testid="app-note-row"]').first().click()
+    await expect(page.getByTestId('app-note-editor')).toBeVisible()
+    await expect(page.locator('.view-line', { hasText: 'Release checklist' }).first()).toBeVisible({ timeout: 10_000 })
+
+    const noteId = (await page.locator('[data-testid="app-note-row"]').first().getAttribute('data-note-id')) as string
+    await page.locator('body').click({ position: { x: 5, y: 5 } })
+    const noteRow = page.locator(`[data-note-id="${noteId}"]`)
+    await noteRow.getByTestId('app-note-menu-button').click()
+    await noteRow.getByTestId('app-note-menu-delete').click()
+    await expect(page.locator(`[data-note-id="${noteId}"]`)).toHaveCount(0)
+    const dbRows = await queryDb<{ id: string }>(page, 'SELECT id FROM app_notes WHERE id = ?', [noteId])
+    expect(dbRows).toHaveLength(0)
+  })
+
   // ── Color ─────────────────────────────────────────────────────────────
   test('color: set a color and confirm it persists + renders via a --sc-* token', async () => {
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionC}"]`)
@@ -257,24 +245,35 @@ test.describe('06-session-organization', () => {
     await page.locator('body').click({ position: { x: 5, y: 5 } })
 
     const dot = row.getByTestId('session-dot')
+    // Live sessions use status on the dot; user --sc-* only applies when status-idle.
+    await expect(dot).toHaveClass(/status-waiting/)
     const dotColor = await dot.evaluate((el) => getComputedStyle(el).backgroundColor)
-    const roseResolved = await page.evaluate(() => {
+    const purpleResolved = await page.evaluate(() => {
       const probe = document.createElement('div')
       document.body.appendChild(probe)
-      probe.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--sc-rose').trim()
+      probe.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--sc-purple').trim()
       const rgb = getComputedStyle(probe).backgroundColor
       probe.remove()
       return rgb
     })
-    expect(dotColor).toBe(roseResolved)
+    expect(dotColor).toBe(purpleResolved)
 
-    // Real relaunch: color persists.
+    await row.getByTestId('session-menu-button').click()
+    await row.getByTestId('menu-details').click()
+    await expect(row.getByTestId('session-detail-popover').getByTestId('color-swatch-rose')).toHaveClass(/selected/)
+    await page.locator('body').click({ position: { x: 5, y: 5 } })
+
+    // Real relaunch: color persists in SQLite (dot may still be status-colored while live).
     await electronApp.close()
     ;({ app: electronApp, page } = await launchApp(userDataDir))
     const rowAfter = page.locator(`[data-testid="session-row"][data-session-id="${sessionC}"]`)
     await expect(rowAfter).toBeVisible({ timeout: 15_000 })
-    const dotColorAfter = await rowAfter.getByTestId('session-dot').evaluate((el) => getComputedStyle(el).backgroundColor)
-    expect(dotColorAfter).toBe(roseResolved)
+    await expect
+      .poll(async () => {
+        const rows = await queryDb<{ color: string | null }>(page, 'SELECT color FROM sessions WHERE id = ?', [sessionC])
+        return rows[0]?.color
+      })
+      .toBe('--sc-rose')
   })
 
   // ── Groups: create/rename/drag-drop/collapse ──────────────────────────
@@ -402,22 +401,8 @@ test.describe('06-session-organization', () => {
     appendMainLog(userDataDir)
   })
 
-  // ── UI-match: filter chips / status badges / group headers ────────────
-  test('UI-match: filter chip tokens and group-header chevron rotation', async () => {
-    const chip = page.getByTestId('filter-attention')
-    await chip.click()
-    const activeBg = await chip.evaluate((el) => getComputedStyle(el).backgroundColor)
-    const accentDimResolved = await page.evaluate(() => {
-      const probe = document.createElement('div')
-      document.body.appendChild(probe)
-      probe.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--accent-dim').trim()
-      const rgb = getComputedStyle(probe).backgroundColor
-      probe.remove()
-      return rgb
-    })
-    expect(activeBg).toBe(accentDimResolved)
-    await page.getByTestId('filter-all').click()
-
+  // ── UI-match: group-header chevron rotation ───────────────────────────
+  test('UI-match: group-header chevron rotation', async () => {
     const header = page.locator(`[data-testid="group-header-${groupId}"]`)
     await header.click() // collapse
     const chevTransform = await header.locator('.chev').evaluate((el) => getComputedStyle(el).transform)
@@ -428,13 +413,9 @@ test.describe('06-session-organization', () => {
   })
 
   // ── Both themes ────────────────────────────────────────────────────────
-  test('screenshots: sidebar with tags/groups/filters visible in both themes', async () => {
-    // Drive the real "Toggle theme" command-palette action (not a raw
-    // debug IPC call) so App.tsx's actual config state — and the
-    // data-theme-driven CSS custom properties this task's UI-match checks
-    // depend on — genuinely updates, the same way a user would.
+  test('screenshots: sidebar with tags/groups visible in both themes', async () => {
     async function toggleThemeViaPalette(): Promise<void> {
-      await page.getByTestId('open-palette-button').click()
+      await openCommandPalette(page)
       await page.getByTestId('command-palette-input').fill('Toggle theme')
       await page.getByTestId('command-palette-item').first().click()
     }

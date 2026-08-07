@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -138,11 +139,6 @@ async function checkNoUnexpectedClipping(page: Page, size: string, state: string
   }
 }
 
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function setWindowSize(app: ElectronApplication, width: number, height: number): Promise<void> {
   await app.evaluate(({ BrowserWindow }, dims) => {
     const win = BrowserWindow.getAllWindows()[0]
@@ -150,11 +146,6 @@ async function setWindowSize(app: ElectronApplication, width: number, height: nu
   }, { width, height })
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 async function openNewSessionModal(page: Page): Promise<void> {
   await page.getByTestId('new-session-button').click()
@@ -230,9 +221,8 @@ test.describe('audit: window-resize layout integrity across sizes and states', (
 
   test('create one real session so state (b)/(c) have something to resize around', async ({}, testInfo) => {
     testInfo.setTimeout(60_000)
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     // Must actually populate the tracker rail (real TodoWrite call), not
     // just "Reply with exactly: READY." — TrackerRail.tsx now renders
@@ -310,7 +300,11 @@ test.describe('audit: window-resize layout integrity across sizes and states', (
       await expect(page.getByTestId('tracker-rail')).toBeVisible()
 
       // (e) command palette open.
-      await page.keyboard.press('ControlOrMeta+k')
+      if (process.platform === 'darwin') {
+        await page.keyboard.press('Meta+k')
+      } else {
+        await page.keyboard.press('Alt+x')
+      }
       await expect(page.getByTestId('command-palette')).toBeVisible()
       await checkNoSiblingOverlap(page, size.name, 'e-command-palette', '.modal-dialog')
       await checkNoUnexpectedClipping(page, size.name, 'e-command-palette')
@@ -399,9 +393,8 @@ test.describe('audit: pass-2 per-card assertions (isolated app)', () => {
     electronApp = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
       'Use the TodoWrite tool now to create a todo list with exactly two items: "Step one" (in_progress) and ' +
@@ -574,9 +567,8 @@ test.describe('audit: pass-2 per-card assertions (isolated app)', () => {
     // subagents — TrackerRail.tsx returns null entirely in this case (see
     // fix-empty-tracker-rail-reserves-width), so `.tracker-rail` shouldn't
     // even be in the DOM.
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly: READY. Do not use any tools.')
     await page.getByTestId('start-session-button').click()
@@ -611,9 +603,8 @@ test.describe('audit: pass-2 per-card assertions (isolated app)', () => {
     await setWindowSize(electronApp, 1024, 700)
     await page.waitForTimeout(150)
 
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
       'Use the AskUserQuestion tool right now to ask me exactly one question: "Which environment should this deploy to?" ' +

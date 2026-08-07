@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 02: Charcoal field, cream A -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Atelier 02">
+  <rect width="1024" height="1024" rx="224" fill="#201e19"/>
+  <path fill="#ece7d9" fill-rule="evenodd" d="M512 208c-14 0-26 8-32 20L248 788c-10 24 8 52 34 52h80c16 0 30-10 36-24l50-128h128l50 128c6 14 20 24 36 24h80c26 0 44-28 34-52L544 228c-6-12-18-20-32-20zm0 140l72 212H440L512 348z"/>
+</svg>

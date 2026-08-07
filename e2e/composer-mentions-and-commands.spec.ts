@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,15 +9,6 @@ const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
 
 mkdirSync(artifactsDir, { recursive: true })
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -24,11 +16,10 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
+function activeComposer(page: Page) {
+  return page.locator('.composer-cache-entry.active')
 }
+
 
 /** Real fixture project dir with a few real files on disk — no fake/fixture file list, `@file` mentions must resolve against these via the same `filesTree` IPC the Files panel (07-secondary-panels) already uses. */
 function buildFixtureProject(): string {
@@ -69,10 +60,9 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
   // ── 0. Create a real claude-code session on the fixture project ────────
   test('setup: create session on fixture project', async ({}, testInfo) => {
     testInfo.setTimeout(90_000)
-    await stubProjectFolder(electronApp, projectDir)
-    await page.getByTestId('new-session-button').click()
+        await page.getByTestId('new-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toBeVisible()
-    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly: READY.')
     await page.getByTestId('start-session-button').click()
@@ -83,37 +73,47 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
     sessionId = (await row.getAttribute('data-session-id')) as string
     expect(sessionId).toBeTruthy()
 
-    await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 30_000 })
+    await expect(activeComposer(page).getByTestId('composer-working-pill')).toHaveCount(0, { timeout: 90_000 })
+    await expect(activeComposer(page).getByTestId('send-button')).toBeVisible()
+    await expect
+      .poll(async () => {
+        const n = await page.evaluate(async (dir) => {
+          const entries = await window.atelier.filesList(dir)
+          return entries.length
+        }, projectDir)
+        return n
+      }, { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(3)
   })
 
   // ── 1. `@partial` opens a popover of REAL matching files ────────────────
   test('@ mention popover lists real files under projectPath, filtered live', async () => {
-    const textarea = page.getByTestId('composer-input')
-    await textarea.click()
-    await textarea.type('please look at @inde')
+    const composer = activeComposer(page)
+    const textarea = composer.getByTestId('composer-input')
+    await textarea.fill('@inde')
 
-    const popover = page.getByTestId('mention-popover')
+    const popover = composer.getByTestId('mention-popover')
     await expect(popover).toBeVisible()
-    const items = page.getByTestId('mention-item')
+    const items = composer.getByTestId('mention-item')
     await expect(items).toHaveCount(1)
     expect(await items.first().getAttribute('data-path')).toBe('src/index.ts')
     await expect(items.first()).toContainText('index.ts')
     await expect(items.first()).toContainText('src/index.ts')
 
     // node_modules must never surface, same as the Files panel's own walk.
-    await expect(page.getByTestId('mention-item').filter({ hasText: 'ignored-pkg' })).toHaveCount(0)
+    await expect(composer.getByTestId('mention-item').filter({ hasText: 'ignored-pkg' })).toHaveCount(0)
 
     await page.screenshot({ path: join(artifactsDir, '10e-file-mention-popover.png') })
 
     // ── 2. Keyboard select inserts the real relative path at the cursor ──
     await textarea.press('Enter')
     await expect(popover).toHaveCount(0)
-    await expect(textarea).toHaveValue('please look at @src/index.ts ')
+    await expect(textarea).toHaveValue('@src/index.ts ')
   })
 
   // ── 3. Broader query still filters correctly (substring match) ─────────
   test('@ mention popover filters live as more characters are typed', async () => {
-    const textarea = page.getByTestId('composer-input')
+    const textarea = activeComposer(page).getByTestId('composer-input')
     await textarea.fill('')
     await textarea.click()
     await textarea.type('@ut')
@@ -131,7 +131,7 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
 
   // ── 4. `/` at the start opens the real slash-command popover ───────────
   test('slash command popover lists registered commands, keyboard nav works', async () => {
-    const textarea = page.getByTestId('composer-input')
+    const textarea = activeComposer(page).getByTestId('composer-input')
     await textarea.click()
     await textarea.type('/')
 
@@ -187,7 +187,7 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
 
   // ── 5. Selecting a slash command runs a REAL action: /clear ────────────
   test('/clear selection clears the composer for real', async () => {
-    const textarea = page.getByTestId('composer-input')
+    const textarea = activeComposer(page).getByTestId('composer-input')
     await textarea.click()
     await textarea.type('/cle')
     await expect(page.getByTestId('slash-popover')).toBeVisible()
@@ -201,7 +201,7 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
     testInfo.setTimeout(30_000)
     const rowsBefore = await page.locator('[data-testid="session-row"]').count()
 
-    const textarea = page.getByTestId('composer-input')
+    const textarea = activeComposer(page).getByTestId('composer-input')
     await textarea.click()
     await textarea.type('/fork')
     const popover = page.getByTestId('slash-popover')

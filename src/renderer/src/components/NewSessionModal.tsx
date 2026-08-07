@@ -1,39 +1,40 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CreateSessionOptions, RemoteHostOption, SessionMode } from '../../../shared/session-types'
+import type { ProjectPathSuggestion } from '../../../shared/project-path-autocomplete'
+import { worktreeRootFromConfig } from '../../../shared/worktree-path'
+import type { AtelierConfig } from '../../../shared/config'
 
 interface NewSessionModalProps {
   isOpen: boolean
   hosts: RemoteHostOption[]
+  config: AtelierConfig
   onClose: () => void
   onCreate: (opts: CreateSessionOptions) => Promise<void>
 }
 
 /**
- * New Session dialog (02-session-lifecycle): project folder picker (real
- * `dialog.showOpenDialog`), Terminal/Claude Code segmented mode, host picker
- * (Local + devpod-us-or, verified running via `devpod ps`), optional initial
- * prompt for Claude Code mode. Matches mocks/index.html's #modal-new-session.
+ * New Session dialog (02-session-lifecycle): free-text project path (local or
+ * remote), Terminal/Claude Code segmented mode, host picker (Local +
+ * devpod-us-or, verified running via `devpod ps`), optional initial prompt
+ * for Claude Code mode. Matches mocks/index.html's #modal-new-session.
  */
-export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: NewSessionModalProps): JSX.Element | null {
-  const [projectPath, setProjectPath] = useState<string | null>(null)
+export default function NewSessionModal({ isOpen, hosts, config, onClose, onCreate }: NewSessionModalProps): JSX.Element | null {
+  const [projectPath, setProjectPath] = useState('')
   const [mode, setMode] = useState<SessionMode>('claude-code')
   const [hostId, setHostId] = useState<string>('local')
   const [prompt, setPrompt] = useState('')
   const [planMode, setPlanMode] = useState(false)
   const [useWorktree, setUseWorktree] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [elapsedMs, setElapsedMs] = useState(0)
-  const creatingStartRef = useRef<number | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  // fix-bug-triage-jul31 / bug #49: recently-used remote paths for the
-  // currently-selected host, offered via a <datalist> on the remote path
-  // input rather than auto-filled — auto-filling risks silently creating a
-  // session in the wrong directory, so history is opt-in/selectable only.
   const [recentPaths, setRecentPaths] = useState<string[]>([])
+  const [suggestions, setSuggestions] = useState<ProjectPathSuggestion[]>([])
+  const [suggestionIdx, setSuggestionIdx] = useState(0)
+  const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const suggestGenRef = useRef(0)
 
   useEffect(() => {
     if (isOpen) {
-      setProjectPath(null)
       setMode('claude-code')
       setHostId('local')
       setPrompt('')
@@ -41,44 +42,75 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
       setUseWorktree(false)
       setCreating(false)
       setErrorMessage(null)
+      setSuggestions([])
+      setSuggestionIdx(0)
     }
   }, [isOpen])
 
-  // Re-fetch this host's path history whenever the modal opens or the
-  // selected host changes, so switching hosts always shows that host's own
-  // history rather than the previous host's.
   useEffect(() => {
     if (!isOpen) return
     let cancelled = false
+    setProjectPath('')
+    setRecentPaths([])
     window.atelier
       .listRecentProjectPaths(hostId)
       .then((paths) => {
-        if (!cancelled) setRecentPaths(paths)
+        if (!cancelled) {
+          setRecentPaths(paths)
+          setProjectPath(paths[0] ?? '')
+        }
       })
       .catch(() => {
-        if (!cancelled) setRecentPaths([])
+        if (!cancelled) {
+          setRecentPaths([])
+          setProjectPath('')
+        }
       })
     return () => {
       cancelled = true
     }
   }, [isOpen, hostId])
 
-  if (!isOpen) return null
-
-  const isRemote = hostId !== 'local'
-
-  async function pickFolder(): Promise<void> {
-    const picked = await window.atelier.pickProjectFolder()
-    if (picked) setProjectPath(picked)
+  function scheduleSuggestions(query: string): void {
+    if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current)
+    suggestTimerRef.current = setTimeout(() => {
+      const gen = ++suggestGenRef.current
+      void window.atelier.suggestProjectPaths(hostId, query).then((items) => {
+        if (gen !== suggestGenRef.current) return
+        setSuggestions(items)
+        setSuggestionIdx(0)
+      })
+    }, 120)
   }
 
+  useEffect(() => {
+    if (!isOpen) return
+    scheduleSuggestions(projectPath)
+    return () => {
+      if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current)
+    }
+  }, [isOpen, hostId, projectPath])
+
+  function acceptSuggestion(item: ProjectPathSuggestion): void {
+    setProjectPath(item.value)
+    setSuggestions([])
+    scheduleSuggestions(item.value)
+  }
+
+  if (!isOpen) return null
+
+  const trimmedProjectPath = projectPath.trim()
+  const isRemote = hostId !== 'local'
+  const worktreeRootLabel = worktreeRootFromConfig(config)
+  const showSuggestions = suggestions.length > 0
+
   async function handleCreate(): Promise<void> {
-    if (!projectPath || creating) return
+    if (!trimmedProjectPath || creating) return
     setCreating(true)
     setErrorMessage(null)
     try {
       await onCreate({
-        projectPath,
+        projectPath: trimmedProjectPath,
         mode,
         hostId,
         prompt: mode === 'claude-code' && prompt.trim() ? prompt.trim() : undefined,
@@ -109,37 +141,62 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
           </button>
         </div>
         <div className="modal-body">
-          <div>
-            <div className="field-label">Project</div>
-            {isRemote ? (
-              // Remote hosts have their own filesystem — a local folder-picker
-              // dialog can't address it, so this is a plain path field
-              // (matches the harness's RemoteHost model: `cwd` is interpreted
-              // on the remote host when `host` is set).
-              <>
-                <input
-                  className="input"
-                  style={{ width: '100%' }}
-                  data-testid="remote-project-path"
-                  placeholder="/home/user/code/my-project"
-                  value={projectPath ?? ''}
-                  onChange={(e) => setProjectPath(e.target.value)}
-                  list="remote-project-path-history"
-                />
-                {/* Selectable history only — never auto-filled as a default
-                    value, to avoid silently creating a session in the wrong
-                    directory (fix-bug-triage-jul31 / bug #49). */}
-                <datalist id="remote-project-path-history" data-testid="remote-project-path-history">
-                  {recentPaths.map((path) => (
-                    <option key={path} value={path} />
-                  ))}
-                </datalist>
-              </>
-            ) : (
-              <button className="project-picker" data-testid="pick-project-folder" onClick={pickFolder} style={buttonReset}>
-                <span style={{ flex: 1, textAlign: 'left' }}>{projectPath ?? 'Choose a project folder…'}</span>
-                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>browse</span>
-              </button>
+          <div className="project-path-field">
+            <div className="field-label">Project path</div>
+            <input
+              className="input"
+              style={{ width: '100%' }}
+              data-testid="project-path"
+              placeholder={isRemote ? '/home/user/code/my-project' : '/Users/you/code/my-project'}
+              value={projectPath}
+              onChange={(e) => setProjectPath(e.target.value)}
+              onKeyDown={(e) => {
+                if (showSuggestions) {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    setSuggestionIdx((i) => Math.min(i + 1, suggestions.length - 1))
+                    return
+                  }
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    setSuggestionIdx((i) => Math.max(i - 1, 0))
+                    return
+                  }
+                  if (e.key === 'Tab' || (e.key === 'Enter' && suggestions.length > 0)) {
+                    e.preventDefault()
+                    const item = suggestions[suggestionIdx]
+                    if (item) acceptSuggestion(item)
+                    return
+                  }
+                }
+                if (e.key === 'Escape') {
+                  setSuggestions([])
+                }
+              }}
+            />
+            <datalist id="project-path-history" data-testid="project-path-history">
+              {recentPaths.map((path) => (
+                <option key={path} value={path} />
+              ))}
+            </datalist>
+            {showSuggestions && (
+              <div className="project-path-suggestions" data-testid="project-path-suggestions">
+                {suggestions.map((item, i) => (
+                  <div
+                    key={`${item.kind}:${item.value}`}
+                    className={`mention-item${i === suggestionIdx ? ' selected' : ''}`}
+                    data-testid={item.kind === 'history' ? 'project-path-suggestion-history' : 'project-path-suggestion-dir'}
+                    onMouseDown={(ev) => {
+                      ev.preventDefault()
+                      acceptSuggestion(item)
+                    }}
+                    onMouseEnter={() => setSuggestionIdx(i)}
+                  >
+                    <span className="project-path-suggestion-label">{item.label}</span>
+                    {item.kind === 'history' && <span className="project-path-suggestion-tag">Recent</span>}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
@@ -212,16 +269,9 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
                 />
                 <span>
                   Use worktree
-                  {projectPath && (
-                    <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
-                      — isolated copy at {projectPath}/.atelier/worktrees/&lt;id&gt;
-                    </span>
-                  )}
-                  {!projectPath && (
-                    <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
-                      — isolated copy at &lt;project&gt;/.atelier/worktrees/&lt;id&gt;
-                    </span>
-                  )}
+                  <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
+                    — isolated copy at {worktreeRootLabel}/&lt;id&gt;
+                  </span>
                 </span>
               </label>
             </div>
@@ -237,7 +287,7 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
           <button
             className="btn btn-primary"
             data-testid="start-session-button"
-            disabled={!projectPath || creating}
+            disabled={!trimmedProjectPath || creating}
             onClick={handleCreate}
           >
             {creating ? 'Starting…' : 'Start Session'}
@@ -246,12 +296,4 @@ export default function NewSessionModal({ isOpen, hosts, onClose, onCreate }: Ne
       </div>
     </div>
   )
-}
-
-const buttonReset: CSSProperties = {
-  width: '100%',
-  cursor: 'pointer',
-  font: 'inherit',
-  color: 'inherit',
-  appearance: 'none'
 }

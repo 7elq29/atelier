@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { APP_DISPLAY_NAME } from '../../../shared/app-brand'
 import type { GitIdentity } from '../../../shared/config'
 
 interface OnboardingWizardProps {
@@ -40,7 +41,7 @@ export default function OnboardingWizard({
     <div className="modal-backdrop" data-testid="onboarding-backdrop">
       <div className="modal-dialog onboarding-dialog" data-testid="onboarding-wizard">
         <div className="modal-header">
-          <h2>Welcome to Atelier</h2>
+          <h2>Welcome to {APP_DISPLAY_NAME}</h2>
         </div>
         <div className="ob-steps">
           <div className={'ob-step-dot' + (step >= 0 ? ' done' : '')} />

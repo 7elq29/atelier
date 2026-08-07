@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding, E2E_DEFAULT_CLAUDE_MODEL } from './e2e-config'
 import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
@@ -15,15 +16,13 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-/** Stubs Electron's native folder-picker dialog to return a fixed path, so New Session can be driven headlessly (same pattern as session-lifecycle.spec.ts). */
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
+/** ⌘K on macOS; Alt+X elsewhere (Ctrl+K is not bound to the palette). */
+async function openCommandPaletteViaKeyboard(page: Page): Promise<void> {
+  if (process.platform === 'darwin') {
+    await page.keyboard.press('Meta+k')
+  } else {
+    await page.keyboard.press('Alt+x')
+  }
 }
 
 /**
@@ -36,12 +35,10 @@ async function stubProjectFolder(app: ElectronApplication, path: string): Promis
  * a user would (via the New Session modal) rather than assuming a seeded
  * placeholder.
  */
-async function createTerminalSession(app: ElectronApplication, page: Page, projectDir: string): Promise<string> {
-  await stubProjectFolder(app, projectDir)
+async function createTerminalSession(_app: ElectronApplication, page: Page, projectDir: string): Promise<string> {
   await page.getByTestId('new-session-button').click()
   await expect(page.getByTestId('new-session-modal')).toBeVisible()
-  await page.getByTestId('pick-project-folder').click()
-  await expect(page.getByTestId('pick-project-folder')).toContainText(projectDir)
+  await page.getByTestId('project-path').fill(projectDir)
   await page.getByTestId('mode-terminal').click()
   await page.getByTestId('start-session-button').click()
   await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -67,7 +64,7 @@ test.describe('command palette', () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-palette-'))
     // Pre-seed onboarding as completed so it doesn't block the palette tests.
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
     ;({ app: electronApp, page } = await launchApp(userDataDir))
 
     const primaryProjectDir = join(userDataDir, primaryName)
@@ -83,9 +80,13 @@ test.describe('command palette', () => {
     await electronApp.close()
   })
 
-  test('opens via keyboard (Ctrl/Cmd+K), no mouse', async () => {
+  test('opens via keyboard (⌘K on macOS, Alt+X elsewhere), no mouse', async () => {
     await expect(page.getByTestId('command-palette')).toHaveCount(0)
-    await page.keyboard.press('ControlOrMeta+k')
+    if (process.platform === 'darwin') {
+      await page.keyboard.press('Meta+k')
+    } else {
+      await page.keyboard.press('Alt+x')
+    }
     await expect(page.getByTestId('command-palette')).toBeVisible()
     mkdirSync(artifactsDir, { recursive: true })
     await page.screenshot({ path: join(artifactsDir, '08-palette.png') })
@@ -94,7 +95,7 @@ test.describe('command palette', () => {
   // Bug: full-app-audit-onboarding-nav. The palette (like every other modal
   // in this app) is rendered as a sibling of the sidebar, not an ancestor —
   // nothing stopped Tab from leaving the dialog and landing on live sidebar
-  // buttons (e.g. "open-palette-button") behind the still-open palette.
+  // buttons (e.g. "new-session-button") behind the still-open palette.
   test('Tab cannot escape the palette into the sidebar behind it', async () => {
     for (let i = 0; i < 6; i++) {
       await page.keyboard.press('Tab')
@@ -141,7 +142,7 @@ test.describe('command palette', () => {
   })
 
   test('fuzzy-matching a shared substring shows both similarly named sessions, then narrowing jumps to the right one', async () => {
-    await page.keyboard.press('ControlOrMeta+k')
+    await openCommandPaletteViaKeyboard(page)
     const input = page.getByTestId('command-palette-input')
 
     // Both session names share "invoice" — a real multi-session disambiguation
@@ -170,7 +171,7 @@ test.describe('command palette', () => {
   test('theme toggle from the palette flips data-theme and re-renders', async () => {
     const before = await page.evaluate(() => document.documentElement.dataset.theme)
 
-    await page.keyboard.press('ControlOrMeta+k')
+    await openCommandPaletteViaKeyboard(page)
     await page.getByTestId('command-palette-input').fill('Toggle theme')
     await page.keyboard.press('Enter')
 
@@ -190,7 +191,7 @@ test.describe('collapsed rail mode', () => {
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-rail-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 
@@ -224,7 +225,7 @@ test.describe('settings: theme + independent font sizes', () => {
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-settings-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
     ;({ app: electronApp, page } = await launchApp(userDataDir))
     await page.getByTestId('open-settings-button').click()
     await expect(page.getByTestId('settings-panel')).toBeVisible()
@@ -310,6 +311,125 @@ test.describe('settings: theme + independent font sizes', () => {
     expect(after.interface).toBe(before.interface)
     expect(after.agentMessage).toBe(before.agentMessage)
   })
+
+  test('Agent pane rejects an invalid default model via live SDK validation', async ({}, testInfo) => {
+    testInfo.setTimeout(90_000)
+    await page.locator('.settings-nav button', { hasText: 'Agent' }).click()
+    await expect(page.getByTestId('settings-pane-agent')).toBeVisible()
+
+    await page.getByTestId('default-claude-model-input').fill('aaa-not-a-real-model')
+    const beforeSave = JSON.parse(readFileSync(configPath(userDataDir), 'utf-8')).defaultClaudeModel
+    await page.getByTestId('default-claude-model-save-btn').click()
+
+    await expect(page.getByTestId('default-claude-model-error')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('default-claude-model-save-status')).toHaveCount(0)
+
+    const afterFailed = JSON.parse(readFileSync(configPath(userDataDir), 'utf-8')).defaultClaudeModel
+    expect(afterFailed).toBe(beforeSave)
+  })
+
+  test('Agent pane saves a valid default model to config.json', async ({}, testInfo) => {
+    testInfo.setTimeout(90_000)
+    await page.locator('.settings-nav button', { hasText: 'Agent' }).click()
+
+    await page.getByTestId('default-claude-model-input').fill('claude-sonnet-5')
+    await page.getByTestId('default-claude-model-save-btn').click()
+
+    await expect(page.getByTestId('default-claude-model-save-status')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('default-claude-model-error')).toHaveCount(0)
+
+    await expect
+      .poll(() => JSON.parse(readFileSync(configPath(userDataDir), 'utf-8')).defaultClaudeModel)
+      .toBe('claude-sonnet-5')
+
+    await page.screenshot({ path: join(artifactsDir, '08-settings-agent-default-model.png') })
+  })
+
+  test('Sessions pane saves default worktree location to config.json', async () => {
+    await page.getByTestId('settings-nav-sessions').click()
+    await expect(page.getByTestId('settings-pane-sessions')).toBeVisible()
+
+    const customRoot = '~/my-atelier-worktrees'
+    await page.getByTestId('worktree-root-input').fill(customRoot)
+    await page.getByTestId('worktree-root-save-btn').click()
+
+    await expect(page.getByTestId('worktree-root-save-status')).toBeVisible()
+    await expect
+      .poll(() => JSON.parse(readFileSync(configPath(userDataDir), 'utf-8')).worktreeRoot)
+      .toBe(customRoot)
+
+    await page.screenshot({ path: join(artifactsDir, '08-settings-sessions-worktree-root.png') })
+  })
+
+  test('Agent pane saves default effort together with model settings', async ({}, testInfo) => {
+    testInfo.setTimeout(90_000)
+    await page.locator('.settings-nav button', { hasText: 'Agent' }).click()
+
+    await page.getByTestId('default-claude-effort-select').selectOption('medium')
+    await page.getByTestId('default-claude-model-input').fill('claude-sonnet-5')
+    await page.getByTestId('default-claude-model-save-btn').click()
+
+    await expect(page.getByTestId('default-claude-model-save-status')).toBeVisible({ timeout: 60_000 })
+
+    await expect
+      .poll(() => JSON.parse(readFileSync(configPath(userDataDir), 'utf-8')).defaultClaudeEffort)
+      .toBe('medium')
+  })
+})
+
+function sessionStartedModels(logPath: string, sessionId: string): string[] {
+  const raw = readFileSync(logPath, 'utf-8')
+  return raw
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l))
+    .filter((e) => e.msg === 'harness event: session_started' && e.sessionId === sessionId)
+    .map((e) => e.model as string)
+}
+
+test.describe('settings: default claude model applies to new sessions', () => {
+  let electronApp: ElectronApplication
+  let page: Page
+  let userDataDir: string
+  let projectDir: string
+  let logPath: string
+
+  test.beforeAll(async () => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-default-model-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-default-model-project-'))
+    seedE2eConfig(userDataDir, { defaultClaudeModel: 'claude-opus-4-8' })
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+    logPath = await page.evaluate(() => window.atelier.getLogFilePath())
+  })
+
+  test.afterAll(async () => {
+    await electronApp.close().catch(() => undefined)
+  })
+
+  test('new agent session starts on the configured global default model', async ({}, testInfo) => {
+    testInfo.setTimeout(120_000)
+
+        await page.getByTestId('new-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toBeVisible()
+    await page.getByTestId('project-path').fill(projectDir)
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    const row = page.locator('[data-testid="session-row"]').first()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    const sessionId = (await row.getAttribute('data-session-id')) as string
+
+    const textarea = page.getByTestId('composer-input')
+    await textarea.fill('Reply with exactly: DEFAULTMODEL.')
+    await textarea.press('Enter')
+    await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 90_000 })
+
+    await expect
+      .poll(() => sessionStartedModels(logPath, sessionId).length, { timeout: 15_000 })
+      .toBeGreaterThan(0)
+    expect(sessionStartedModels(logPath, sessionId)[0]).toBe('claude-opus-4-8')
+  })
 })
 
 // Bug: full-app-audit-onboarding-nav. The Command Palette closes itself on
@@ -327,7 +447,7 @@ test.describe('Escape key closes any open overlay, not just the command palette'
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-escape-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 
@@ -396,7 +516,7 @@ test.describe('desktop notification debug trigger', () => {
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-notify-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
     ;({ app: electronApp, page } = await launchApp(userDataDir))
   })
 
@@ -485,7 +605,7 @@ test.describe('onboarding — first-run wizard shows once', () => {
       expect(
         testId,
         `Tab press #${i} moved focus to "${testId}", which lives in the sidebar behind the modal, not inside onboarding`
-      ).not.toBe('open-palette-button')
+      ).not.toBe('new-session-button')
     }
 
     mkdirSync(artifactsDir, { recursive: true })
@@ -534,7 +654,8 @@ test.describe('sidebar spend-status chip', () => {
       .catch(() => false)
 
     if (appeared) {
-      await expect(chip).toHaveText(/^\$[\d,]+\/(\$[\d,]+|\?) spent · view usage$/)
+      await expect(chip).toContainText('spent this month')
+      await expect(chip.getByRole('button', { name: /view usage/i })).toBeVisible()
     }
 
     await app.close()

@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -105,7 +106,7 @@ test.describe('16-task-move-to-date: right-click "Move to..." context menu', () 
   test.beforeAll(async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-move-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
 
     const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-move-'))
     vaultRoot = join(vaultParent, 'vault')
@@ -322,7 +323,7 @@ test.describe('16-task-move-to-date: visual confirmation on the target date', ()
   test('the moved "Write PR description" task renders in tomorrow\'s newly-created note\'s Unscheduled/Backlog list', async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-move-verify-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
 
     const verifyApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],

@@ -7,6 +7,7 @@ interface TaskContextMenuProps {
   options: MoveDateOptions
   onSelect: (targetDate: string) => void
   onRename: () => void
+  onCreateSession?: () => void
   onClose: () => void
 }
 
@@ -16,6 +17,7 @@ export default function TaskMoveContextMenu({
   options,
   onSelect,
   onRename,
+  onCreateSession,
   onClose
 }: TaskContextMenuProps): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
@@ -66,6 +68,15 @@ export default function TaskMoveContextMenu({
       >
         Rename
       </div>
+      {onCreateSession && (
+        <div
+          className="smi"
+          data-testid="task-create-session-option"
+          onClick={() => { onCreateSession(); onClose() }}
+        >
+          Create session
+        </div>
+      )}
       <div className="sm-sep" />
       <div className="smi dn-submenu-parent" data-testid="task-move-to-parent">
         Move to…

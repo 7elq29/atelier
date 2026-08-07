@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,15 +11,6 @@ const costLogPath = join(artifactsDir, '10a-cost-tracking.log')
 mkdirSync(artifactsDir, { recursive: true })
 writeFileSync(costLogPath, '')
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -26,11 +18,6 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 async function openNewSessionModal(page: Page): Promise<void> {
   await page.getByTestId('new-session-button').click()
@@ -85,12 +72,9 @@ test.describe('10a-enrichment-cost-tracking', () => {
 
   // ── 1. First real turn: chip shows a real non-zero cost matching SQLite ──
   test('cost chip shows a real non-zero dollar amount matching the SDK-reported total_cost_usd after the first turn', async () => {
-    await stubProjectFolder(electronApp, localProjectDir)
-    await openNewSessionModal(page)
+        await openNewSessionModal(page)
 
-    await page.getByTestId('pick-project-folder').click()
-    await expect(page.getByTestId('pick-project-folder')).toContainText(localProjectDir)
-
+    await page.getByTestId('project-path').fill(localProjectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
     await page.getByTestId('start-session-button').click()

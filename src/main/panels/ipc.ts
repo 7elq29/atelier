@@ -6,9 +6,10 @@
  * file previews, chat).
  */
 import { ipcMain, shell, type BrowserWindow } from 'electron'
+import type { DiffFileStatus } from '../../shared/panel-types'
 import { logger } from '../logger'
 import * as git from './git'
-import { walkFileTree, walkDirChildren, readFileForPreview, writeFileContent } from './files'
+import { walkFileTree, walkDirChildren, listWorkspaceFiles, readFileForPreview, writeFileContent } from './files'
 import { PtyManager } from './pty'
 import { PortForwardManager } from './ports'
 
@@ -22,6 +23,24 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
   )
   ipcMain.handle('panel:git:fileDiff', (_e, projectPath: string, filePath: string, hostname?: string | null) =>
     git.getFileDiff(projectPath, filePath, hostname)
+  )
+  ipcMain.handle('panel:git:commitDiff', (_e, projectPath: string, commit: string, hostname?: string | null) =>
+    git.getCommitDiff(projectPath, commit, hostname)
+  )
+  ipcMain.handle(
+    'panel:git:commitFileDiff',
+    (_e, projectPath: string, commit: string, filePath: string, hostname?: string | null) =>
+      git.getCommitFileDiff(projectPath, commit, filePath, hostname)
+  )
+  ipcMain.handle(
+    'panel:git:workingTreeFilePair',
+    (_e, projectPath: string, filePath: string, status: DiffFileStatus, hostname?: string | null) =>
+      git.getWorkingTreeFilePair(projectPath, filePath, status, hostname)
+  )
+  ipcMain.handle(
+    'panel:git:commitFilePair',
+    (_e, projectPath: string, commit: string, filePath: string, status: DiffFileStatus, hostname?: string | null) =>
+      git.getCommitFilePair(projectPath, commit, filePath, status, hostname)
   )
   ipcMain.handle('panel:git:commits', (_e, projectPath: string, hostname?: string | null, force?: boolean) =>
     git.listCommits(projectPath, 50, hostname, force)
@@ -46,6 +65,9 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
   // ── Files ────────────────────────────────────────────────────────────
   ipcMain.handle('panel:files:tree', (_e, projectPath: string, hostname?: string | null) => walkFileTree(projectPath, hostname))
   ipcMain.handle('panel:files:dir', (_e, root: string, dir: string, hostname?: string | null) => walkDirChildren(root, dir, hostname))
+  ipcMain.handle('panel:files:list', (_e, workspaceRoot: string, underDir?: string | null, hostname?: string | null) =>
+    listWorkspaceFiles(workspaceRoot, hostname, underDir)
+  )
   ipcMain.handle('panel:files:read', (_e, path: string, hostname?: string | null) => readFileForPreview(path, hostname))
   ipcMain.handle('panel:files:write', (_e, path: string, content: string, hostname?: string | null) => writeFileContent(path, content, hostname))
 

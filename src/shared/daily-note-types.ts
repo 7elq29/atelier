@@ -39,6 +39,8 @@ export interface DailyTask {
   isTracker: boolean
   /** A plain bullet (no checkbox) — a note/time-block rather than a todo. */
   isNote: boolean
+  /** Atelier session id stored as `[session:: …]` in the vault task line. */
+  linkedSessionId?: string
 }
 
 /** Non-task markdown this note contains, preserved verbatim for round-tripping. */

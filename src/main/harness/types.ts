@@ -380,6 +380,9 @@ export interface HarnessDriver {
    */
   validateModel(sessionId: string, model: string): Promise<{ ok: true } | { ok: false; error: string }>
 
+  /** Live SDK validation for Settings → default model (probe session). */
+  validateClaudeModel(model: string): Promise<{ ok: true } | { ok: false; error: string }>
+
   /**
    * Push an additional user message into a still-open, streaming-input
    * session (e.g. mid-turn steering). No-op if the session has already

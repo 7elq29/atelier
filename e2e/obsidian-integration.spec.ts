@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import {
   mkdtempSync,
   mkdirSync,
@@ -76,8 +77,7 @@ test.beforeAll(async () => {
   userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-'))
   // Pre-seed onboarding as completed (08-global-nav-and-settings) so its
   // modal backdrop doesn't intercept clicks meant for the Daily Notes panel.
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+  seedE2eConfig(userDataDir)
 
   const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-'))
   vaultRoot = join(vaultParent, 'vault')
@@ -508,7 +508,7 @@ type: daily
   test.beforeAll(async () => {
     shapesUserDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-shapes-'))
     mkdirSync(join(shapesUserDataDir, 'data'), { recursive: true })
-    writeFileSync(join(shapesUserDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(shapesUserDataDir)
 
     const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-shapes-'))
     shapesVaultRoot = join(vaultParent, 'vault')
@@ -604,7 +604,7 @@ test.describe('current-time marker relative to an in-progress task', () => {
 
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-inprogress-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
 
     const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-inprogress-'))
     const vaultRoot = join(vaultParent, 'vault')
@@ -708,7 +708,7 @@ type: daily
   test.beforeAll(async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-grid-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
 
     const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-grid-'))
     gridVaultRoot = join(vaultParent, 'vault')
@@ -875,7 +875,7 @@ type: daily
   test.beforeAll(async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-carryover-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
 
     const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-carryover-'))
     carryVaultRoot = join(vaultParent, 'vault')
@@ -1020,7 +1020,7 @@ type: daily
   test.beforeAll(async () => {
     affUserDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-userdata-affordances-'))
     mkdirSync(join(affUserDataDir, 'data'), { recursive: true })
-    writeFileSync(join(affUserDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(affUserDataDir)
 
     const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-vault-affordances-'))
     affVaultRoot = join(vaultParent, 'vault')

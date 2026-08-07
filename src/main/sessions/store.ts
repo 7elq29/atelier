@@ -51,6 +51,9 @@ interface SessionRow {
   effort: string | null
   worktree_path: string | null
   pending_turn_interrupted_notice: number
+  last_active_at: string
+  linked_daily_task_gid: string | null
+  linked_daily_note_date: string | null
 }
 
 interface MessageRow {
@@ -113,7 +116,10 @@ function toSessionRecord(row: SessionRow, tags: string[] = []): SessionRecord {
     modelSelection: row.model_id ? { model: row.model_id, effort: row.effort as ModelSelection['effort'] | undefined } : null,
     // use-worktree: absolute path to the session's isolated git worktree, or
     // null for sessions not created with the "Use worktree" toggle.
-    worktreePath: row.worktree_path ?? null
+    worktreePath: row.worktree_path ?? null,
+    lastActiveAt: row.last_active_at || row.created_at,
+    linkedDailyTaskGid: row.linked_daily_task_gid ?? null,
+    linkedDailyNoteDate: row.linked_daily_note_date ?? null
   }
 }
 
@@ -172,8 +178,8 @@ export class SessionStore {
     const createdAt = new Date().toISOString()
     this.db
       .prepare(
-        `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order, worktree_path)
-         VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, @pinned, @color, @createdAt, NULL, NULL, @sortOrder, @worktreePath)`
+        `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order, worktree_path, last_active_at)
+         VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, @pinned, @color, @createdAt, NULL, NULL, @sortOrder, @worktreePath, @lastActiveAt)`
       )
       .run({
         id,
@@ -186,7 +192,8 @@ export class SessionStore {
         color: input.color ?? null,
         createdAt,
         sortOrder: input.sortOrder ?? Date.now(),
-        worktreePath: input.worktreePath ?? null
+        worktreePath: input.worktreePath ?? null,
+        lastActiveAt: createdAt
       })
     return this.getSession(id)!
   }
@@ -254,6 +261,11 @@ export class SessionStore {
   setWorktreePath(id: string, worktreePath: string): SessionRecord | undefined {
     this.db.prepare('UPDATE sessions SET worktree_path = ? WHERE id = ?').run(worktreePath, id)
     return this.getSession(id)
+  }
+
+  /** Bumps persisted last-active time (session-startup-idle). */
+  touchLastActive(id: string, at: string = new Date().toISOString()): void {
+    this.db.prepare('UPDATE sessions SET last_active_at = ? WHERE id = ?').run(at, id)
   }
 
   /**
@@ -423,6 +435,22 @@ export class SessionStore {
       .prepare('UPDATE sessions SET closed_at = ?, pinned = 0 WHERE id = ?')
       .run(new Date().toISOString(), id)
     return this.getSession(id)
+  }
+
+  setLinkedDailyTask(sessionId: string, taskGid: string, noteDate: string): SessionRecord | undefined {
+    this.db
+      .prepare(
+        'UPDATE sessions SET linked_daily_task_gid = ?, linked_daily_note_date = ? WHERE id = ?'
+      )
+      .run(taskGid, noteDate, sessionId)
+    return this.getSession(sessionId)
+  }
+
+  clearLinkedDailyTask(sessionId: string): SessionRecord | undefined {
+    this.db
+      .prepare('UPDATE sessions SET linked_daily_task_gid = NULL, linked_daily_note_date = NULL WHERE id = ?')
+      .run(sessionId)
+    return this.getSession(sessionId)
   }
 
   /** Resume: clears closed_at so the session reappears in the active view. */

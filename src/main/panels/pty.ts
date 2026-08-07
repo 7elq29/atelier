@@ -26,6 +26,8 @@ import type { BrowserWindow } from 'electron'
 import { logger } from '../logger'
 import { SSH_MUX_OPTS } from '../ssh-exec'
 import { ShellPoolManager } from './shell-pool'
+import { hostname as osHostname } from 'node:os'
+import { parseSshConnectionClosed, parseSshHostFromShellLine, inferShellHostFromPtyTail, localMachineHostLabels } from '../../shared/terminal-shell-context'
 
 const execFileAsync = promisify(execFile)
 
@@ -57,6 +59,12 @@ interface PtyEntry {
   tmuxName?: string
   /** SSH hostname for remote/devpod sessions that use tmux — needed by kill() to SSH in and detach. */
   hostname?: string
+  /** Local shells: tracks nested `ssh` from the user's shell (sidebar "Local" vs host label). */
+  shellRemoteHost: string | null
+  inputLineBuffer: string
+  /** Rolling PTY output for prompt-based host detection (local shells only). */
+  outputTail: string
+  localHostLabels: string[]
 }
 
 export class PtyManager {
@@ -64,6 +72,50 @@ export class PtyManager {
   private genCounter = 0
 
   constructor(private readonly getWindow: () => BrowserWindow | null) {}
+
+  private emitShellContext(id: string, remoteHost: string | null): void {
+    this.getWindow()?.webContents.send('pty:shellContext', { id, remoteHost })
+  }
+
+  private setShellContext(entry: PtyEntry, id: string, remoteHost: string | null): void {
+    if (entry.shellRemoteHost === remoteHost) return
+    entry.shellRemoteHost = remoteHost
+    this.emitShellContext(id, remoteHost)
+  }
+
+  private applyInferredShellHost(entry: PtyEntry, id: string): void {
+    const inferred = inferShellHostFromPtyTail(entry.outputTail, entry.localHostLabels)
+    if (inferred === undefined) return
+    if (inferred !== entry.shellRemoteHost) {
+      this.setShellContext(entry, id, inferred)
+    }
+  }
+
+  private appendInputChars(entry: PtyEntry, id: string, data: string): void {
+    let i = 0
+    while (i < data.length) {
+      const ch = data[i]
+      if (ch === '\x1b' && i + 1 < data.length && data[i + 1] === '[') {
+        i += 2
+        while (i < data.length && !/[A-Za-z~]/.test(data[i])) i++
+        if (i < data.length) i++
+        continue
+      }
+      if (ch === '\r' || ch === '\n') {
+        const host = parseSshHostFromShellLine(entry.inputLineBuffer)
+        entry.inputLineBuffer = ''
+        if (host) this.setShellContext(entry, id, host)
+      } else if (ch === '\u007f' || ch === '\b') {
+        entry.inputLineBuffer = entry.inputLineBuffer.slice(0, -1)
+      } else if (ch >= ' ' || ch === '\t') {
+        entry.inputLineBuffer += ch
+        if (entry.inputLineBuffer.length > 512) {
+          entry.inputLineBuffer = entry.inputLineBuffer.slice(-512)
+        }
+      }
+      i++
+    }
+  }
 
   async spawn(id: string, opts: { cwd: string; hostname?: string | null; cols: number; rows: number }): Promise<void> {
     this.kill(id)
@@ -177,6 +229,20 @@ export class PtyManager {
       env: process.env as Record<string, string>
     })
 
+    const initialShellHost = isRemote ? (opts.hostname as string) : null
+    const entry: PtyEntry = {
+      proc,
+      gen,
+      tmuxName: entryTmuxName,
+      hostname: entryHostname,
+      shellRemoteHost: initialShellHost,
+      inputLineBuffer: '',
+      outputTail: '',
+      localHostLabels: isRemote ? [] : localMachineHostLabels(osHostname())
+    }
+    this.ptys.set(id, entry)
+    this.emitShellContext(id, initialShellHost)
+
     proc.onData((data) => {
       // A rapid kill+respawn under the same id (e.g. React StrictMode's
       // dev-only mount->cleanup->mount, which fires this exact sequence with
@@ -190,6 +256,13 @@ export class PtyManager {
         return
       }
       this.getWindow()?.webContents.send('pty:data', { id, data })
+      if (current.hostname) return
+      current.outputTail = (current.outputTail + data).slice(-8192)
+      if (parseSshConnectionClosed(data)) {
+        this.setShellContext(current, id, null)
+      } else {
+        this.applyInferredShellHost(current, id)
+      }
     })
     proc.onExit(({ exitCode }) => {
       if (this.ptys.get(id)?.proc !== proc) return
@@ -210,12 +283,23 @@ export class PtyManager {
       proc.write(`cd ${JSON.stringify(opts.cwd)} && clear\r`)
     }
 
-    this.ptys.set(id, { proc, gen, tmuxName: entryTmuxName, hostname: entryHostname })
     logger.info('pty spawned', { id, shell, remote: isRemote, tmux: Boolean(entryTmuxName), cwd: opts.cwd, gen, totalElapsedMs: elapsed() })
+
+    if (!isRemote) {
+      setTimeout(() => {
+        const live = this.ptys.get(id)
+        if (live?.proc !== proc) return
+        this.applyInferredShellHost(live, id)
+      }, 400)
+    }
   }
 
   write(id: string, data: string): void {
-    this.ptys.get(id)?.proc.write(data)
+    const entry = this.ptys.get(id)
+    if (!entry) return
+    entry.proc.write(data)
+    if (entry.hostname) return
+    this.appendInputChars(entry, id, data)
   }
 
   resize(id: string, cols: number, rows: number): void {

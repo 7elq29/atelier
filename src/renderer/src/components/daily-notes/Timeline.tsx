@@ -32,6 +32,7 @@ interface TimelineProps {
   onUpdateText: (id: string, text: string) => void
   moveDateOptions: MoveDateOptions
   onMoveToDate: (id: string, targetDate: string) => void
+  onCreateSessionFromTask?: (task: DailyTask) => void
 }
 
 interface DraftForm {
@@ -76,7 +77,8 @@ export default function Timeline({
   onDelete,
   onUpdateText,
   moveDateOptions,
-  onMoveToDate
+  onMoveToDate,
+  onCreateSessionFromTask
 }: TimelineProps): JSX.Element {
   const [draft, setDraft] = useState<DraftForm | null>(null)
   const [nowMinutes, setNowMinutes] = useState(() => minutesNow())
@@ -408,6 +410,14 @@ export default function Timeline({
             const task = tasks.find((t) => t.id === moveMenu.taskId)
             if (task) { setRenameText(task.text); setRenamingTaskId(task.id) }
           }}
+          onCreateSession={
+            onCreateSessionFromTask
+              ? () => {
+                  const task = tasks.find((t) => t.id === moveMenu.taskId)
+                  if (task) onCreateSessionFromTask(task)
+                }
+              : undefined
+          }
           onClose={() => setMoveMenu(null)}
         />
       )}

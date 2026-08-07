@@ -113,8 +113,8 @@ iterating.
 
 | | |
 |---|---|
-| **Spec files** | `obsidian-integration.spec.ts`, `bug-57-obsidian-external-edit-timeline-sync.spec.ts`, `bug-daily-note-template.spec.ts`, `bug-daily-notes-time-editing.spec.ts`, `task-move-to-date.spec.ts` |
-| **Source paths** | `src/renderer/src/components/daily-notes/*` (`Timeline.tsx`, `DailyNotesSidebar.tsx`, `TaskItem.tsx`, `TaskMoveContextMenu.tsx`, `move-date-options.ts`, `CurrentTimeLine.tsx`, `section-resize.ts`, `timeline-scale.ts`), `src/main/daily-note-io.ts`, `src/main/daily-notes-handlers.ts` |
+| **Spec files** | `obsidian-integration.spec.ts`, `bug-57-obsidian-external-edit-timeline-sync.spec.ts`, `bug-daily-note-template.spec.ts`, `bug-daily-notes-time-editing.spec.ts`, `task-move-to-date.spec.ts`, `todo-session-link.spec.ts` |
+| **Source paths** | `src/renderer/src/components/daily-notes/*` (`Timeline.tsx`, `DailyNotesSidebar.tsx`, `TaskItem.tsx`, `TaskMoveContextMenu.tsx`, `move-date-options.ts`, `CurrentTimeLine.tsx`, `section-resize.ts`, `timeline-scale.ts`, `TaskSessionLinkDialogs.tsx`), `src/main/daily-note-io.ts`, `src/main/daily-notes-handlers.ts`, `src/main/daily-note-session-link.ts`, `src/main/sessions/store.ts`, `src/main/sessions/manager.ts`, `src/main/sessions/ipc.ts`, `src/renderer/src/App.tsx` |
 | **Catches** | Parsing/rendering of real vault markdown fixtures into Timeline/Backlog/Delegated/Unscheduled, external-edit file-watch propagation (bug #57's parser mis-classification of moved tasks), vault-template-based daily note creation, right-click-to-create + edit tasks in the timeline, absolute-grid interactions (54a rewrite), list-management affordances (add-task/edit/tags/Big Three/collapse/close), current-time marker placement, section resize/carry-over on note creation, right-click "Move to..." context menu on Timeline/Unscheduled tasks and the cross-file move to another date's Backlog section — including target-note creation from the template and appending into an already-existing Backlog section (16-task-move-to-date, `task-move-to-date.spec.ts`). |
 
 ### 12. UI Chrome Bug Fixes (small, targeted repros)
@@ -138,7 +138,7 @@ iterating.
 ## Notes on scope overlap
 
 Nearly every spec launches through the same New Session Modal boilerplate
-(`new-session-button` -> `new-session-modal` -> `pick-project-folder` ->
+(`new-session-button` -> `new-session-modal` -> `project-path` ->
 `mode-claude-code`/`mode-terminal` -> `initial-prompt` -> `start-session-button`),
 so a regression in `NewSessionModal.tsx` or `src/main/sessions/*` can show up
 as failures across nearly all categories above, not just category 2. If

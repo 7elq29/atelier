@@ -2,7 +2,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { PlanProposedContent } from '../../../../shared/chat-content'
 import type { PromptDecision } from '../../../../shared/session-types'
-import { markdownComponents } from './MarkdownMessage'
+import { createMarkdownComponents } from './MarkdownMessage'
 
 /**
  * Plan card (05-interactive-prompts) — dedicated card for the SDK's
@@ -20,34 +20,69 @@ import { markdownComponents } from './MarkdownMessage'
  */
 export default function PlanProposedCard({
   content,
-  onRespond
+  onRespond,
+  onOpenPlanFile,
+  workspaceRoot,
+  projectRoot
 }: {
   content: PlanProposedContent
   onRespond: (decision: PromptDecision) => void
+  /** Opens `planFilePath` in the Files tab (07-secondary-panels). */
+  onOpenPlanFile?: (planFilePath: string) => void
+  workspaceRoot?: string
+  projectRoot?: string
 }): JSX.Element {
   const resolved = content.status !== 'pending'
+  const planMarkdownComponents = createMarkdownComponents({
+    workspaceRoot,
+    projectRoot,
+    onOpenFileInFiles: onOpenPlanFile
+  })
 
   return (
     <div className={`plan-card${resolved ? ' resolved' : ''}`} data-testid="plan-card" data-status={content.status}>
       <div className="plan-head">
-        <span aria-hidden="true">▤</span> Proposed plan
+        <span className="plan-head-title">
+          <span aria-hidden="true">▤</span> Proposed plan
+        </span>
+        {content.planFilePath && onOpenPlanFile && (
+          <button
+            type="button"
+            className="btn btn-sm plan-open-in-files"
+            data-testid="plan-open-in-files"
+            onClick={() => onOpenPlanFile(content.planFilePath!)}
+          >
+            Open in Files
+          </button>
+        )}
       </div>
       <div className="plan-body" data-testid="plan-body">
         <div className="md-body">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={planMarkdownComponents}>
             {content.plan}
           </ReactMarkdown>
         </div>
       </div>
       <div className="plan-actions" data-testid="plan-actions">
-        <button className="btn btn-allow" data-testid="plan-accept" onClick={() => onRespond({ kind: 'plan', decision: 'accept' })}>
+        <button
+          type="button"
+          className="btn btn-sm btn-allow"
+          data-testid="plan-accept"
+          onClick={() => onRespond({ kind: 'plan', decision: 'accept' })}
+        >
           Accept plan
         </button>
-        <button className="btn btn-deny" data-testid="plan-reject" onClick={() => onRespond({ kind: 'plan', decision: 'reject' })}>
+        <button
+          type="button"
+          className="btn btn-sm btn-deny"
+          data-testid="plan-reject"
+          onClick={() => onRespond({ kind: 'plan', decision: 'reject' })}
+        >
           Reject
         </button>
         <button
-          className="btn btn-keep-planning"
+          type="button"
+          className="btn btn-sm btn-keep-planning"
           data-testid="plan-keep-planning"
           onClick={() => onRespond({ kind: 'plan', decision: 'keep_planning' })}
         >

@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,15 +9,6 @@ const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
 
 mkdirSync(artifactsDir, { recursive: true })
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -24,11 +16,6 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 /** Deterministic save path for the native Save dialog, same stubbing pattern as showOpenDialog above. */
 async function stubSavePath(app: ElectronApplication, path: string): Promise<void> {
@@ -84,12 +71,9 @@ test.describe('10c-enrichment-export-conversation', () => {
 
   // ── 1. Set up a real session with a real SDK exchange including a tool call ──
   test('creates a session with a real assistant reply and a completed Bash tool call', async () => {
-    await stubProjectFolder(electronApp, localProjectDir)
-    await openNewSessionModal(page)
+        await openNewSessionModal(page)
 
-    await page.getByTestId('pick-project-folder').click()
-    await expect(page.getByTestId('pick-project-folder')).toContainText(localProjectDir)
-
+    await page.getByTestId('project-path').fill(localProjectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
       'Use the Bash tool to run exactly: echo export-check. Then reply with exactly the single word: DONE.'

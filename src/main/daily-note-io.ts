@@ -179,7 +179,8 @@ function parseBulletLine(
       externalLinks,
       delegatedTo,
       isTracker,
-      isNote
+      isNote,
+      linkedSessionId: metadata.session
     },
     mintedGid: !hadGid
   }
@@ -329,6 +330,7 @@ export function serializeTaskLine(task: DailyTask): string {
   if (task.scheduled) metaParts.push(`[scheduled:: ${task.scheduled}]`)
   if (task.completion) metaParts.push(`[completion:: ${task.completion}]`)
   if (task.due) metaParts.push(`[due:: ${task.due}]`)
+  if (task.linkedSessionId) metaParts.push(`[session:: ${task.linkedSessionId}]`)
   // gid always round-trips, minted lazily by the parser if missing.
   metaParts.push(`[gid:: ${task.gid}]`)
   if (metaParts.length > 0) parts.push(metaParts.join(' '))

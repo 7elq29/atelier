@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 04: Cream paper field, sage geometric lowercase a -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Atelier 04">
+  <rect width="1024" height="1024" rx="224" fill="#ece7d9"/>
+  <path fill="#8fc17f" d="M640 560c0-106-86-192-192-192s-192 86-192 192 86 192 192 192c52 0 99-21 133-54v72h96V560h-37zm-192 96c-53 0-96-43-96-96s43-96 96-96 96 43 96 96-43 96-96 96z"/>
+</svg>

@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, renameSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -86,7 +87,7 @@ test.describe('bug-57: external Obsidian edit moving a task from Tasks to Backlo
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug57-userdata-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
 
     const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-bug57-vault-'))
     vaultRoot = join(vaultParent, 'vault')

@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,15 +9,6 @@ const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
 
 mkdirSync(artifactsDir, { recursive: true })
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -24,11 +16,6 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 async function openNewSessionModal(page: Page): Promise<void> {
   await page.getByTestId('new-session-button').click()
@@ -43,9 +30,8 @@ async function createSessionWithReply(
   prompt: string,
   expectedSnippet: string
 ): Promise<string> {
-  await stubProjectFolder(electronApp, projectDir)
-  await openNewSessionModal(page)
-  await page.getByTestId('pick-project-folder').click()
+    await openNewSessionModal(page)
+  await page.getByTestId('project-path').fill(projectDir)
   await page.getByTestId('mode-claude-code').click()
   await page.getByTestId('initial-prompt').fill(prompt)
   await page.getByTestId('start-session-button').click()
@@ -136,6 +122,17 @@ test.describe('10b-enrichment-full-text-search', () => {
 
     const bar = page.getByTestId('transcript-search-bar')
     await expect(bar).not.toHaveClass(/show/)
+
+    await page.getByTestId('composer-input').click()
+    await page.keyboard.down('Control')
+    await page.keyboard.press('KeyS')
+    await page.keyboard.up('Control')
+    await expect(bar).toHaveClass(/show/)
+    await page.keyboard.down('Control')
+    await page.keyboard.press('KeyS')
+    await page.keyboard.up('Control')
+    await expect(bar).not.toHaveClass(/show/)
+
     await toggleBtn.click()
     await expect(bar).toHaveClass(/show/)
 
@@ -197,7 +194,11 @@ test.describe('10b-enrichment-full-text-search', () => {
 
   test('UI-match: in-conversation search bar renders in both light and dark themes', async () => {
     async function toggleThemeViaPalette(): Promise<void> {
-      await page.getByTestId('open-palette-button').click()
+      if (process.platform === 'darwin') {
+        await page.keyboard.press('Meta+k')
+      } else {
+        await page.keyboard.press('Alt+x')
+      }
       await page.getByTestId('command-palette-input').fill('Toggle theme')
       await page.getByTestId('command-palette-item').first().click()
     }
@@ -226,7 +227,11 @@ test.describe('10b-enrichment-full-text-search', () => {
 
   // ── Cross-session content search via the command palette ───────────────
   test('command palette: extended Session results match message content, not just session name', async () => {
-    await page.getByTestId('open-palette-button').click()
+    if (process.platform === 'darwin') {
+      await page.keyboard.press('Meta+k')
+    } else {
+      await page.keyboard.press('Alt+x')
+    }
     await expect(page.getByTestId('command-palette')).toBeVisible()
 
     // "quantum" appears only in session B's reply text, never in either

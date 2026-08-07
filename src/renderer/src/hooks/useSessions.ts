@@ -33,6 +33,9 @@ export interface UseSessionsResult {
   refresh: () => Promise<void>
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
+  /** Loads transcript from SQLite without reconnecting the harness (session-startup-idle). */
+  loadSessionMessages: (sessionId: string) => Promise<void>
+  reconnectSession: (sessionId: string) => Promise<void>
   sendMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment) => Promise<void>
   interrupt: (sessionId: string) => Promise<void>
   /** Validates a `/model <id>` against the SDK's live acceptance logic, on demand (not cached) — see `ModelValidationResult`'s doc comment. */
@@ -45,6 +48,8 @@ export interface UseSessionsResult {
   forkSession: (sessionId: string) => Promise<SessionRecord>
   restartSession: (sessionId: string) => Promise<SessionRecord>
   closeSession: (sessionId: string) => Promise<void>
+  linkDailyTask: (sessionId: string, noteDate: string, taskGid: string) => Promise<SessionRecord>
+  completeLinkedDailyTask: (sessionId: string) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
   renameSession: (sessionId: string, name: string) => Promise<void>
   setPinned: (sessionId: string, pinned: boolean) => Promise<void>
@@ -202,6 +207,15 @@ export function useSessions(): UseSessionsResult {
     setMessagesBySession((prev) => ({ ...prev, [sessionId]: messages }))
   }, [])
 
+  const loadSessionMessages = useCallback(async (sessionId: string): Promise<void> => {
+    const messages = await window.atelier.listSessionMessages(sessionId)
+    setMessagesBySession((prev) => ({ ...prev, [sessionId]: messages }))
+  }, [])
+
+  const reconnectSession = useCallback(async (sessionId: string): Promise<void> => {
+    await window.atelier.reconnectSession(sessionId)
+  }, [])
+
   const sendMessage = useCallback(async (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment): Promise<void> => {
     await window.atelier.sendSessionMessage(sessionId, text, modelSelection, image)
   }, [])
@@ -269,6 +283,16 @@ export function useSessions(): UseSessionsResult {
 
   const closeSession = useCallback(async (sessionId: string): Promise<void> => {
     await window.atelier.closeSession(sessionId)
+  }, [])
+
+  const linkDailyTask = useCallback(
+    async (sessionId: string, noteDate: string, taskGid: string): Promise<SessionRecord> =>
+      window.atelier.linkDailyTask(sessionId, noteDate, taskGid),
+    []
+  )
+
+  const completeLinkedDailyTask = useCallback(async (sessionId: string): Promise<void> => {
+    await window.atelier.completeLinkedDailyTask(sessionId)
   }, [])
 
   const deleteSession = useCallback(async (sessionId: string): Promise<void> => {
@@ -364,6 +388,8 @@ export function useSessions(): UseSessionsResult {
     refresh,
     createSession,
     resumeSession,
+    loadSessionMessages,
+    reconnectSession,
     sendMessage,
     interrupt,
     validateModel,
@@ -373,6 +399,8 @@ export function useSessions(): UseSessionsResult {
     forkSession,
     restartSession,
     closeSession,
+    linkDailyTask,
+    completeLinkedDailyTask,
     deleteSession,
     renameSession,
     setPinned,

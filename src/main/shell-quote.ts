@@ -28,8 +28,8 @@ export function shDoubleQuoteEscape(value: string): string {
  * `shQuote` (single-quoting) is correct for arbitrary path bytes, but it
  * also disables the remote shell's own `~` expansion — `cd '~'` fails with
  * "no such file or directory: ~" because a single-quoted `~` is never
- * tilde-expanded by POSIX shells. Since Atelier's remote-project-path
- * field is free text (see NewSessionModal's `remote-project-path` input),
+ * tilde-expanded by POSIX shells. Since Atelier's project-path field is free
+ * text (see NewSessionModal's `project-path` input), a user typing the
  * a user typing the completely natural `~` or `~/projects/foo` would break
  * remote session creation entirely.
  *

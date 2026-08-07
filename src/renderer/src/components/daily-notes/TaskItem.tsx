@@ -21,6 +21,7 @@ interface TaskItemProps {
    * affordance entirely rather than duplicating the menu logic. */
   moveDateOptions?: MoveDateOptions
   onMoveToDate?: (id: string, targetDate: string) => void
+  onCreateSessionFromTask?: (task: DailyTask) => void
 }
 
 /** Fixed tag suggestion list (54b list affordances). */
@@ -52,7 +53,8 @@ export default function TaskItem({
   draggable = true,
   testId = 'unscheduled-task',
   moveDateOptions,
-  onMoveToDate
+  onMoveToDate,
+  onCreateSessionFromTask
 }: TaskItemProps): JSX.Element {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
@@ -221,6 +223,7 @@ export default function TaskItem({
           options={moveDateOptions}
           onSelect={(targetDate) => onMoveToDate(task.id, targetDate)}
           onRename={() => { setEditText(task.text); setEditing(true) }}
+          onCreateSession={onCreateSessionFromTask ? () => onCreateSessionFromTask(task) : undefined}
           onClose={() => setMoveMenu(null)}
         />
       )}

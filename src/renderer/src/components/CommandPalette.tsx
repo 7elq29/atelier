@@ -24,7 +24,7 @@ interface CommandPaletteProps {
 }
 
 /**
- * Keyboard-driven command palette overlay (⌘K / Ctrl+K). Real search/filter
+ * Keyboard-driven command palette overlay (⌘K on macOS). Real search/filter
  * as-you-type against `items`; arrow keys move selection, Enter runs the
  * selected item and closes, Escape closes without running anything.
  */

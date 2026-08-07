@@ -46,17 +46,13 @@ import type {
 } from './types'
 import { logger } from '../logger'
 import type { PermissionModeValue } from '../../shared/session-types'
+import { defaultClaudeModelFromConfig } from '../../shared/config'
+import { loadConfig } from '../config'
 import { shQuote, remoteCdTarget } from '../shell-quote'
 
-/**
- * The app's real default model, applied whenever a caller doesn't specify
- * one explicitly — session creation, resume, and every turn that never
- * touched the composer's model picker (i.e. `opts.model` is `undefined`)
- * all get this instead of silently falling through to whatever the SDK's
- * own baked-in default happens to be. Applies uniformly, including in e2e
- * tests, which almost never interact with the model picker.
- */
-const DEFAULT_MODEL = 'claude-sonnet-5'
+function resolveDefaultModel(): string {
+  return defaultClaudeModelFromConfig(loadConfig())
+}
 
 /**
  * Builds the SDK's `spawnClaudeCodeProcess` override for remote/devpod
@@ -344,6 +340,20 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     }
   }
 
+  /**
+   * Settings / global-default validation when no user session is connected.
+   * Spins a short-lived local probe session, runs the same `setModel()` check
+   * as `validateModel`, then tears the probe down.
+   */
+  async validateClaudeModel(model: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const probe = await this.start('', { cwd: process.cwd(), keepAlive: true })
+    try {
+      return await this.validateModel(probe.sessionId, model)
+    } finally {
+      await this.interrupt(probe.sessionId)
+    }
+  }
+
   async streamInput(sessionId: string, message: string, image?: HarnessImageInput): Promise<void> {
     const active = this.sessions.get(sessionId)
     if (!active) return
@@ -454,7 +464,7 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       cwd: opts.cwd,
       includePartialMessages: true,
       ...(spec.mode === 'resume' ? { resume: sessionId } : { sessionId }),
-      model: opts.model ?? DEFAULT_MODEL,
+      model: opts.model ?? resolveDefaultModel(),
       ...(opts.effort ? { effort: opts.effort } : {}),
       ...(opts.systemPrompt ? { systemPrompt: opts.systemPrompt } : {}),
       ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),

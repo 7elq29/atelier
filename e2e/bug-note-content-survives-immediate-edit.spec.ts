@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -39,11 +40,6 @@ import { join } from 'node:path'
 
 const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
 const TEST_DATE = '2026-07-30'
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
-}
 
 test.describe('fix-confirmed: newly-created note survives an immediate task add + drag-to-timeline edit', () => {
   let electronApp: ElectronApplication

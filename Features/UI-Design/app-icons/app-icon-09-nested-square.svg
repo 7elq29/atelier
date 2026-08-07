@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 09: Cream field, centered sage tile -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Atelier 09">
+  <rect width="1024" height="1024" rx="224" fill="#ece7d9"/>
+  <rect x="312" y="312" width="400" height="400" rx="88" fill="#8fc17f"/>
+</svg>

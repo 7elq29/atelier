@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding, E2E_DEFAULT_CLAUDE_MODEL } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,15 +9,6 @@ const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
 
 mkdirSync(artifactsDir, { recursive: true })
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -24,11 +16,6 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 async function openNewSessionModal(page: Page): Promise<void> {
   await page.getByTestId('new-session-button').click()
@@ -78,9 +65,8 @@ test.describe('10f-enrichment-model-effort-picker', () => {
 
   test('picker control matches the mock: "Model · Effort ▾" footer button + dropdown', async ({}, testInfo) => {
     testInfo.setTimeout(90_000)
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly: READY.')
     await page.getByTestId('start-session-button').click()
@@ -92,7 +78,11 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     expect(sessionId).toBeTruthy()
 
     // Wait for the initial turn (default model, no override) to finish.
-    await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 60_000 })
+    await expect
+      .poll(() => sessionStartedModels(logPath, sessionId).length, { timeout: 60_000 })
+      .toBeGreaterThanOrEqual(1)
+    expect(sessionStartedModels(logPath, sessionId)[0]).toBe(E2E_DEFAULT_CLAUDE_MODEL)
 
     const pickerButton = page.getByTestId('model-picker-button')
     await expect(pickerButton).toBeVisible()
@@ -121,13 +111,12 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     testInfo.setTimeout(120_000)
 
     // Turn 1 (from the previous test's session creation) already completed
-    // with the app's default model (claude-sonnet-5, per App.tsx's
-    // `modelSelection` initial state / the harness's own DEFAULT_MODEL
-    // fallback) — capture that as the baseline.
+    // with the e2e default model (Haiku 4.5 via `e2e-config.ts`) — capture
+    // that as the baseline.
     const beforeChange = sessionStartedModels(logPath, sessionId)
     expect(beforeChange.length).toBeGreaterThanOrEqual(1)
     const defaultModel = beforeChange[0]
-    expect(defaultModel).toBe('claude-sonnet-5')
+    expect(defaultModel).toBe(E2E_DEFAULT_CLAUDE_MODEL)
 
     // Change the selection to Opus 4.8 · Medium via the real picker UI —
     // deliberately a DIFFERENT model than the default above, so this test
@@ -137,7 +126,7 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     await expect(page.getByTestId('model-picker-popover')).toBeVisible()
     await page.getByTestId('model-option-claude-opus-4-8').click()
     await expect(page.getByTestId('model-picker-popover')).toHaveCount(0)
-    await expect(page.getByTestId('model-picker-button')).toHaveText(/Opus 4.8 · High ▾/)
+    await expect(page.getByTestId('model-picker-button')).toHaveText(/Opus 4\.8 · Low ▾/)
 
     await page.getByTestId('model-picker-button').click()
     await page.getByTestId('effort-option-medium').click()
@@ -154,10 +143,10 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     await textarea.press('Enter')
 
     // Wait for this second real SDK turn to fully finish.
-    await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 90_000 })
 
     await expect
-      .poll(async () => sessionStartedModels(logPath, sessionId).length, { timeout: 10_000 })
+      .poll(async () => sessionStartedModels(logPath, sessionId).length, { timeout: 60_000 })
       .toBeGreaterThan(beforeChange.length)
 
     const afterChange = sessionStartedModels(logPath, sessionId)
@@ -170,16 +159,19 @@ test.describe('10f-enrichment-model-effort-picker', () => {
 
     // The assistant actually replied under this new connection — not a
     // silently-dropped/failed reconnect.
-    const assistantRows = await page.evaluate(
-      (id) =>
-        window.atelier.debugQueryDb<{ content: string }>(
-          "SELECT content FROM messages WHERE session_id = ? AND role='assistant' AND content NOT LIKE '{%' ORDER BY id ASC",
-          [id]
-        ),
-      sessionId
-    )
-    const combinedAssistantText = assistantRows.map((r) => r.content).join('\n')
-    expect(combinedAssistantText).toMatch(/SECONDTURN/)
+    await expect
+      .poll(async () => {
+        const assistantRows = await page.evaluate(
+          (id) =>
+            window.atelier.debugQueryDb<{ content: string }>(
+              "SELECT content FROM messages WHERE session_id = ? AND role='assistant' AND content NOT LIKE '{%' ORDER BY id ASC",
+              [id]
+            ),
+          sessionId
+        )
+        return assistantRows.map((r) => r.content).join('\n')
+      }, { timeout: 90_000 })
+      .toMatch(/SECONDTURN/)
 
     // The main-process log shows the forced-reconnect path was taken
     // (not the fast streamInput-only path), proving this went through a
@@ -218,7 +210,7 @@ test.describe('10f-enrichment-model-effort-picker', () => {
 
     // The model chip must reflect the forced model ID as its label (not fall
     // back to "Opus 4.8" — the first-option default for unknown IDs).
-    await expect(pickerButton).toHaveText(/claude-sonnet-4\-6\[1m\] · /)
+    await expect(pickerButton).toHaveText(/claude-sonnet-4\-6\[1m\] · /, { timeout: 60_000 })
 
     await page.screenshot({ path: join(artifactsDir, '10f-model-slash-force-switch.png') })
 

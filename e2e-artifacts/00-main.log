@@ -1,17 +1,20 @@
-{"ts":"2026-08-07T01:50:12.729Z","level":"info","process":"main","msg":"tmux available","path":"/opt/homebrew/bin/tmux"}
-{"ts":"2026-08-07T01:50:12.768Z","level":"info","process":"main","msg":"shell-pool: warm shell ready","name":"atelier-pool-23f8b1db"}
-{"ts":"2026-08-07T01:50:12.768Z","level":"info","process":"main","msg":"shell-pool: warm shell ready","name":"atelier-pool-d0260359"}
-{"ts":"2026-08-07T01:50:12.977Z","level":"info","process":"main","msg":"database migration applied","name":"0001_sessions_and_messages"}
-{"ts":"2026-08-07T01:50:12.977Z","level":"info","process":"main","msg":"database migration applied","name":"0002_tags_notes_groups_ordering"}
-{"ts":"2026-08-07T01:50:12.977Z","level":"info","process":"main","msg":"database migration applied","name":"0003_session_cost_tracking"}
-{"ts":"2026-08-07T01:50:12.977Z","level":"info","process":"main","msg":"database migration applied","name":"0004_message_full_text_search"}
-{"ts":"2026-08-07T01:50:12.978Z","level":"info","process":"main","msg":"database migration applied","name":"0005_project_path_history"}
-{"ts":"2026-08-07T01:50:12.978Z","level":"info","process":"main","msg":"database migration applied","name":"0006_session_ever_connected"}
-{"ts":"2026-08-07T01:50:12.978Z","level":"info","process":"main","msg":"database migration applied","name":"0007_session_mode_model"}
-{"ts":"2026-08-07T01:50:12.978Z","level":"info","process":"main","msg":"database migration applied","name":"0008_session_worktree"}
-{"ts":"2026-08-07T01:50:12.978Z","level":"info","process":"main","msg":"database migration applied","name":"0009_pending_turn_interrupted_notice"}
-{"ts":"2026-08-07T01:50:12.978Z","level":"info","process":"main","msg":"historical cost backfill complete","recomputed":0,"resetToZero":0}
-{"ts":"2026-08-07T01:50:12.978Z","level":"info","process":"main","msg":"database opened","dbPath":"/private/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-mSROsV/data/atelier.sqlite"}
-{"ts":"2026-08-07T01:50:12.979Z","level":"info","process":"main","msg":"app ready","version":"32.3.3","platform":"darwin"}
-{"ts":"2026-08-07T01:50:13.383Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
-{"ts":"2026-08-07T01:50:13.385Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
+{"ts":"2026-08-07T15:01:06.775Z","level":"info","process":"main","msg":"tmux available","path":"/opt/homebrew/bin/tmux"}
+{"ts":"2026-08-07T15:01:06.830Z","level":"info","process":"main","msg":"shell-pool: warm shell ready","name":"atelier-pool-f53ff391"}
+{"ts":"2026-08-07T15:01:06.830Z","level":"info","process":"main","msg":"shell-pool: warm shell ready","name":"atelier-pool-1ea49f85"}
+{"ts":"2026-08-07T15:01:06.847Z","level":"info","process":"main","msg":"database migration applied","name":"0001_sessions_and_messages"}
+{"ts":"2026-08-07T15:01:06.847Z","level":"info","process":"main","msg":"database migration applied","name":"0002_tags_notes_groups_ordering"}
+{"ts":"2026-08-07T15:01:06.847Z","level":"info","process":"main","msg":"database migration applied","name":"0003_session_cost_tracking"}
+{"ts":"2026-08-07T15:01:06.847Z","level":"info","process":"main","msg":"database migration applied","name":"0004_message_full_text_search"}
+{"ts":"2026-08-07T15:01:06.847Z","level":"info","process":"main","msg":"database migration applied","name":"0005_project_path_history"}
+{"ts":"2026-08-07T15:01:06.848Z","level":"info","process":"main","msg":"database migration applied","name":"0006_session_ever_connected"}
+{"ts":"2026-08-07T15:01:06.848Z","level":"info","process":"main","msg":"database migration applied","name":"0007_session_mode_model"}
+{"ts":"2026-08-07T15:01:06.848Z","level":"info","process":"main","msg":"database migration applied","name":"0008_session_worktree"}
+{"ts":"2026-08-07T15:01:06.848Z","level":"info","process":"main","msg":"database migration applied","name":"0009_pending_turn_interrupted_notice"}
+{"ts":"2026-08-07T15:01:06.848Z","level":"info","process":"main","msg":"database migration applied","name":"0010_app_notes"}
+{"ts":"2026-08-07T15:01:06.848Z","level":"info","process":"main","msg":"database migration applied","name":"0011_session_last_active_at"}
+{"ts":"2026-08-07T15:01:06.848Z","level":"info","process":"main","msg":"gardenia → atelier worktree migration applied","sessionsUpdated":0}
+{"ts":"2026-08-07T15:01:06.849Z","level":"info","process":"main","msg":"historical cost backfill complete","recomputed":0,"resetToZero":0}
+{"ts":"2026-08-07T15:01:06.849Z","level":"info","process":"main","msg":"database opened","dbPath":"/private/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-gykw6z/data/atelier.sqlite"}
+{"ts":"2026-08-07T15:01:06.849Z","level":"info","process":"main","msg":"app ready","version":"32.3.3","platform":"darwin"}
+{"ts":"2026-08-07T15:01:07.349Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
+{"ts":"2026-08-07T15:01:07.351Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}

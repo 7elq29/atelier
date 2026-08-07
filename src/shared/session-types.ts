@@ -1,3 +1,5 @@
+import { APP_DISPLAY_NAME } from './app-brand'
+
 /**
  * Shared session/message types (02-session-lifecycle). Used by main (DB rows,
  * IPC payloads) and renderer (state, UI) alike — kept free of
@@ -7,8 +9,7 @@
 export type SessionMode = 'terminal' | 'claude-code'
 
 /** System transcript copy shown once after a mid-turn app close/quit (fix-app-quit-interrupted-turn-notice). */
-export const TURN_INTERRUPTED_NOTICE =
-  'The previous turn was stopped because Atelier closed while the assistant was still working. You can continue from the transcript below.'
+export const TURN_INTERRUPTED_NOTICE = `The previous turn was stopped because ${APP_DISPLAY_NAME} closed while the assistant was still working. You can continue from the transcript below.`
 
 /**
  * SDK permission-mode values Atelier exposes to the user (11-composer-mode-
@@ -94,6 +95,21 @@ export interface SessionRecord {
    * deleted.
    */
   worktreePath: string | null
+  /**
+   * ISO timestamp of the last time the user actively used this session
+   * (session-startup-idle): updated on select, send, reconnect, and create.
+   * Used to skip auto harness reconnect on relaunch when older than 1 hour.
+   */
+  lastActiveAt: string
+  /** Obsidian daily-note task gid linked via todo-session-link. */
+  linkedDailyTaskGid: string | null
+  /** Date (YYYY-MM-DD) of the note containing `linkedDailyTaskGid`. */
+  linkedDailyNoteDate: string | null
+}
+
+/** Fired after a harness reconnect finishes handshaking — renderer preloads secondary panels. */
+export interface SessionReconnectCompleteEvent {
+  sessionId: string
 }
 
 /** A named, collapsible, reorderable session group (06-session-organization). */
@@ -121,6 +137,10 @@ export interface SessionGroupRecord {
  *  - 'idle': a claude-code session with no open live connection this app
  *    run (never opened, or its most recent message IS a user message with
  *    no live turn yet observed).
+ *  - 'startup-idle': an open claude-code session deliberately left
+ *    disconnected on app launch because its persisted last-active time is
+ *    more than 1 hour ago — only affects auto reconnect on restart; the user
+ *    must click Reconnect to restore Claude and secondary panels.
  *  - 'disconnected': terminal-mode sessions (no harness at all) and closed
  *    sessions.
  *  - 'connecting': a claude-code session between triggering a resume
@@ -128,7 +148,14 @@ export interface SessionGroupRecord {
  *    actually being (re)established — see 'connecting'-pill in the topbar
  *    (fix-session-resume-stale-sigterm-and-no-connect-indicator).
  */
-export type SessionStatus = 'working' | 'waiting' | 'idle' | 'disconnected' | 'connecting' | 'creating-worktree'
+export type SessionStatus =
+  | 'working'
+  | 'waiting'
+  | 'idle'
+  | 'startup-idle'
+  | 'disconnected'
+  | 'connecting'
+  | 'creating-worktree'
 
 export interface SessionStatusEvent {
   sessionId: string
@@ -190,6 +217,8 @@ export interface CreateSessionOptions {
   planMode?: boolean
   /** Create an isolated git worktree for this session (use-worktree). Only meaningful for local claude-code sessions. */
   useWorktree?: boolean
+  /** Override the default derived session name (e.g. quick local terminal rows). */
+  suggestedName?: string
 }
 
 /**

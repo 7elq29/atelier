@@ -12,9 +12,9 @@ import { execFile, spawn } from 'node:child_process'
 import { shQuote, remoteCdTarget } from '../shell-quote'
 import { logger } from '../logger'
 import { sshExec, SSH_MUX_OPTS } from '../ssh-exec'
-import type { FileKind, FileReadResult, FileTreeNode, FileWriteResult } from '../../shared/panel-types'
+import type { FileKind, FileReadResult, FileTreeNode, FileWriteResult, WorkspaceFileEntry } from '../../shared/panel-types'
 
-const ALWAYS_IGNORED = new Set(['.git', 'node_modules', '.DS_Store'])
+const ALWAYS_IGNORED = new Set(['.git', 'node_modules', '.DS_Store', '.claude'])
 const MAX_ENTRIES = 3000
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'])
@@ -101,6 +101,47 @@ function walkLocalChildren(root: string, dir: string): FileTreeNode[] {
   return walkLocalDir(root, dir, matchers)
 }
 
+function collectLocalFiles(
+  root: string,
+  dir: string,
+  matchers: ReturnType<typeof loadIgnoreMatchers>,
+  out: WorkspaceFileEntry[],
+  count: { n: number }
+): void {
+  if (count.n >= MAX_ENTRIES) return
+  const nodes = walkLocalDir(root, dir, matchers)
+  for (const node of nodes) {
+    if (count.n >= MAX_ENTRIES) break
+    if (node.type === 'file') {
+      out.push({ name: node.name, path: node.path, relativePath: node.relativePath })
+      count.n++
+    } else {
+      collectLocalFiles(root, node.path, matchers, out, count)
+    }
+  }
+}
+
+function normalizeUnderWorkspace(workspaceRoot: string, underDir: string): string {
+  const root = workspaceRoot.replace(/\/$/, '')
+  const dir = underDir.replace(/\/$/, '') || root
+  if (dir === '/') return '/'
+  if (dir === root) return root
+  if (dir.startsWith(`${root}/`)) return dir
+  if (root.startsWith(`${dir}/`)) return dir
+  return root
+}
+
+function listLocalWorkspaceFiles(workspaceRoot: string, underDir?: string): WorkspaceFileEntry[] {
+  const root = workspaceRoot.replace(/\/$/, '')
+  const startDir = normalizeUnderWorkspace(root, underDir ?? root)
+  if (!existsSync(startDir)) return []
+  const matchers = loadIgnoreMatchers(root)
+  const out: WorkspaceFileEntry[] = []
+  collectLocalFiles(root, startDir, matchers, out, { n: 0 })
+  out.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+  return out
+}
+
 // ── Remote helpers ───────────────────────────────────────────────────────────
 
 /**
@@ -172,6 +213,28 @@ async function walkRemoteChildren(root: string, dir: string, sshHost: string): P
   return buildRemoteTree(dir, stdout)
 }
 
+async function listRemoteWorkspaceFiles(workspaceRoot: string, sshHost: string, underDir?: string): Promise<WorkspaceFileEntry[]> {
+  const root = workspaceRoot.replace(/\/$/, '')
+  const startDir = normalizeUnderWorkspace(root, underDir ?? root)
+  const ignoredNames = [...ALWAYS_IGNORED].map((n) => `-name ${shQuote(n)}`).join(' -o ')
+  const cmd = `cd ${remoteCdTarget(startDir)} && find . \\( ${ignoredNames} \\) -prune -o -type f -print 2>/dev/null | head -n ${MAX_ENTRIES}`
+  const { stdout, code } = await sshExec(sshHost, cmd)
+  logger.info('files:list:remote:done', { root, startDir, sshHost, code, lines: stdout.split('\n').length })
+  const out: WorkspaceFileEntry[] = []
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed === '.') continue
+    const relFromStart = trimmed.replace(/^\.\//, '')
+    if (!relFromStart) continue
+    const absPath = `${startDir}/${relFromStart}`
+    const relativePath = relative(root, absPath)
+    const name = basename(relFromStart)
+    out.push({ name, path: absPath, relativePath })
+  }
+  out.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+  return out
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /** Walks only the top-level of `root`, returning a flat list of first-level entries (dirs have no children until expanded). */
@@ -188,6 +251,19 @@ export function walkDirChildren(root: string, dir: string, sshHost?: string | nu
   logger.info('files:dir', { root, dir, remote: Boolean(sshHost) })
   if (sshHost) return walkRemoteChildren(root, dir, sshHost)
   return walkLocalChildren(root, dir)
+}
+
+/** Recursive flat list of files under `underDir` (defaults to workspace root). */
+export function listWorkspaceFiles(
+  workspaceRoot: string,
+  sshHost?: string | null,
+  underDir?: string | null
+): Promise<WorkspaceFileEntry[]> | WorkspaceFileEntry[] {
+  logger.info('files:list', { workspaceRoot, underDir, remote: Boolean(sshHost) })
+  if (sshHost) return listRemoteWorkspaceFiles(workspaceRoot, sshHost, underDir ?? undefined)
+  const result = listLocalWorkspaceFiles(workspaceRoot, underDir ?? undefined)
+  logger.info('files:list:done', { workspaceRoot, underDir, count: result.length })
+  return result
 }
 
 export async function readFileForPreview(path: string, sshHost?: string | null): Promise<FileReadResult> {

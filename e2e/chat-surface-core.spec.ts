@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,15 +10,6 @@ const chatLogPath = join(artifactsDir, '03-chat.log')
 
 mkdirSync(artifactsDir, { recursive: true })
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -25,11 +17,6 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 async function openNewSessionModal(page: Page): Promise<void> {
   await page.getByTestId('new-session-button').click()
@@ -165,9 +152,8 @@ test.describe('03-chat-surface-core', () => {
 
   // ── 1. Create + progressive streaming + tool-call lifecycle ─────────────
   test('create session: assistant text streams progressively and a tool-call card runs then completes', async () => {
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
       'Use the Bash tool to run exactly: sleep 2 && echo done. Wait for it to finish, then reply with three full sentences describing what the command did.'
@@ -637,6 +623,24 @@ test.describe('03-chat-surface-core', () => {
     expect(page.url()).not.toContain('example.com')
 
     await logTranscriptState(page, sessionId, 'turn5-markdown-link')
+  })
+
+  test('assistant file paths in markdown open the Files tab when clicked', async () => {
+    await page.getByTestId('composer-input').fill(
+      'Reply with exactly this sentence and nothing else, do not use any tools: Update `a.txt` when done.'
+    )
+    await page.getByTestId('send-button').click()
+    await waitForTurnIdle(page, 60_000)
+
+    const assistantMsg = page.locator('.msg-assistant[data-testid="transcript-message"]').last()
+    await expect(assistantMsg).toBeVisible({ timeout: 30_000 })
+
+    const fileLink = assistantMsg.locator('[data-testid="msg-file-link"]').first()
+    await expect(fileLink).toHaveText('a.txt', { timeout: 30_000 })
+    await fileLink.click()
+
+    await expect(page.getByTestId('files-panel-active')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('files-location-input')).toHaveValue(/a\.txt$/)
   })
 
   test('user messages are NOT Markdown-rendered: literal ** / ` stay literal', async () => {

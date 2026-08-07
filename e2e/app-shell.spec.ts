@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig } from './e2e-config'
 import { mkdtempSync, mkdirSync, copyFileSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,7 +13,7 @@ let userDataDir: string
 
 test.beforeAll(async () => {
   userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-'))
-
+  seedE2eConfig(userDataDir)
   electronApp = await electron.launch({
     args: [mainEntry, `--user-data-dir=${userDataDir}`]
   })
@@ -63,7 +64,11 @@ test('main-process log file contains "app ready" and IPC entries', async () => {
   copyFileSync(logPath, join(artifactsDir, '00-main.log'))
 })
 
-test('shell renders shared.css design tokens, not Electron/browser defaults', async () => {
+  test('shell renders app mark in sidebar', async () => {
+    await expect(page.getByTestId('app-mark')).toBeVisible()
+  })
+
+  test('shell renders shared.css design tokens, not Electron/browser defaults', async () => {
   mkdirSync(artifactsDir, { recursive: true })
   await page.screenshot({ path: join(artifactsDir, '00-launch.png') })
 

@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -88,15 +89,6 @@ function readCostLogEntries(logPath: string, sessionId: string): CostLogEntry[] 
     .map((l) => JSON.parse(l) as CostLogEntry)
 }
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -104,11 +96,6 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 async function queryDb<T>(activePage: Page, sql: string, params: unknown[] = []): Promise<T[]> {
   return activePage.evaluate(({ sql: query, params: bindings }) => window.atelier.debugQueryDb<T>(query, bindings), {
@@ -158,11 +145,9 @@ test.describe('session-cost-tracking (fix-session-cost-total-overcounted)', () =
   test('3 real turns in one session: persisted total matches sum of each turn\'s independently-recomputed cost, not a compounding over-count', async ({}, testInfo) => {
     testInfo.setTimeout(180_000)
 
-    await stubProjectFolder(electronApp, localProjectDir)
-    await page.getByTestId('new-session-button').click()
+        await page.getByTestId('new-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toBeVisible()
-    await page.getByTestId('pick-project-folder').click()
-    await expect(page.getByTestId('pick-project-folder')).toContainText(localProjectDir)
+    await page.getByTestId('project-path').fill(localProjectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: ONE')
     await page.getByTestId('start-session-button').click()

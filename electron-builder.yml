@@ -9,6 +9,7 @@ files:
 mac:
   target: dir
   category: public.app-category.developer-tools
+  icon: icon.icns
 win:
   target: dir
 linux:

@@ -1120,6 +1120,7 @@ export default function App(): JSX.Element {
       <NewSessionModal
         isOpen={newSessionOpen}
         hosts={sessions.hosts}
+        config={config}
         onClose={() => {
           setNewSessionOpen(false)
           setPendingTaskSessionLink(null)

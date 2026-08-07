@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 06: Charcoal field, sage ring (portal / focus) -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Atelier 06">
+  <rect width="1024" height="1024" rx="224" fill="#1c1a16"/>
+  <path fill="#8fc17f" fill-rule="evenodd" d="M512 256a256 256 0 1 1 0 512 256 256 0 0 1 0-512zm0 128a128 128 0 1 0 0 256 128 128 0 0 0 0-256z"/>
+</svg>

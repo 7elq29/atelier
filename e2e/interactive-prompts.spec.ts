@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,15 +11,6 @@ const logPath = join(artifactsDir, '05-prompts.log')
 mkdirSync(artifactsDir, { recursive: true })
 writeFileSync(logPath, '')
 
-function configPath(userDataDir: string): string {
-  return join(userDataDir, 'data', 'config.json')
-}
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(configPath(userDataDir), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -26,10 +18,12 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
+
+async function execDb(page: Page, sql: string, params: unknown[] = []): Promise<void> {
+  await page.evaluate(({ sql: query, params: bindings }) => window.atelier.debugExecDb(query, bindings), {
+    sql,
+    params
+  })
 }
 
 async function openNewSessionModal(page: Page): Promise<void> {
@@ -80,9 +74,8 @@ test.describe('05-interactive-prompts', () => {
 
   // ── 1. AskUserQuestion: real clickable card, answer round-trips into the SDK ──
   test('AskUserQuestion: clicking an option sends the structured answer back into the SDK, conversation continues with it', async () => {
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
       'Use the AskUserQuestion tool right now to ask me exactly one question: "Which fruit do you prefer?" ' +
@@ -149,9 +142,8 @@ test.describe('05-interactive-prompts', () => {
 
   // ── 2. Permission prompts: real Allow/Deny before the tool runs, plus "always allow" ──
   test('Permission: Allow runs the tool, Deny blocks it, and "always allow" suppresses a second identical prompt', async () => {
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
       'Use the Bash tool to run exactly: npm test -- --atelier-e2e-marker-one. ' +
@@ -232,9 +224,8 @@ test.describe('05-interactive-prompts', () => {
 
   // ── 3. Plan mode: real Accept/Reject that resolve the SDK-side approval ──
   test('Plan mode: Reject keeps Claude planning, Accept exits plan mode and lets the file write actually happen', async () => {
-    await stubProjectFolder(electronApp, projectDir)
-    await openNewSessionModal(page)
-    await page.getByTestId('pick-project-folder').click()
+        await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('plan-mode-checkbox').check()
     await page.getByTestId('initial-prompt').fill(
@@ -253,10 +244,34 @@ test.describe('05-interactive-prompts', () => {
     await expect(planCard1.getByTestId('plan-body')).toContainText('atelier-plan-test.txt')
     await page.screenshot({ path: join(artifactsDir, '05-plan.png') })
 
+    const planFile = join(projectDir, 'atelier-e2e-plan-view.md')
+    writeFileSync(planFile, 'line 1\nline 2\n')
+    const planMsgRows = await page.evaluate(
+      (id) =>
+        window.atelier.debugQueryDb<{ id: number; content: string }>(
+          `SELECT id, content FROM messages WHERE session_id = ? AND content LIKE '%"kind":"plan_proposed"%' ORDER BY id DESC LIMIT 1`,
+          [id]
+        ),
+      sessionId
+    )
+    expect(planMsgRows.length).toBeGreaterThan(0)
+    const patched = { ...JSON.parse(planMsgRows[0].content), planFilePath: planFile }
+    await execDb(page, 'UPDATE messages SET content = ? WHERE id = ?', [JSON.stringify(patched), planMsgRows[0].id])
+    await page.reload()
+    await page.waitForLoadState('domcontentloaded')
+    await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
+    const planCardOpen = page.getByTestId('plan-card').first()
+    await expect(planCardOpen.getByTestId('plan-open-in-files')).toBeVisible()
+    await planCardOpen.getByTestId('plan-open-in-files').click()
+    await expect(page.getByTestId('files-panel-active')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('files-location-input')).toHaveValue(planFile)
+    await page.getByTestId('tab-chat').click()
+    await expect(planCardOpen).toBeVisible()
+
     // Reject: the note says so, actions hide, and the file must NOT exist.
-    await planCard1.getByTestId('plan-reject').click()
-    await expect(planCard1).toHaveClass(/resolved/, { timeout: 10_000 })
-    await expect(planCard1.getByTestId('plan-resolved-note')).toContainText('rejected')
+    await planCardOpen.getByTestId('plan-reject').click()
+    await expect(planCardOpen).toHaveClass(/resolved/, { timeout: 10_000 })
+    await expect(planCardOpen.getByTestId('plan-resolved-note')).toContainText('rejected')
 
     // Wait for Claude's turn (reacting to the rejection) to actually finish
     // before sending the next composer message, so it doesn't race an

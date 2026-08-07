@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -52,11 +53,6 @@ type: daily
 > [!invisible] Trackers
 > - [ ] Exercise #tracker  [scheduled:: {{date:YYYY-MM-DD}}]
 `
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
-}
 
 test.describe('fix-confirmed: daily note creation uses the real vault template', () => {
   let electronApp: ElectronApplication

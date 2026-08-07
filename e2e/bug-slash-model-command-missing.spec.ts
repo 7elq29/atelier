@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -40,11 +41,6 @@ const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
 
 mkdirSync(artifactsDir, { recursive: true })
 
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
-}
-
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
   const page = await app.firstWindow()
@@ -52,11 +48,6 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
   return { app, page }
 }
 
-async function stubProjectFolder(app: ElectronApplication, path: string): Promise<void> {
-  await app.evaluate(({ dialog }, folderPath) => {
-    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folderPath] })) as typeof dialog.showOpenDialog
-  }, path)
-}
 
 /** Every persisted message row for `sessionId` whose content is literally "/model" — the exact regression this bug reported (real user-message text instead of a local action). Zero rows both before and after each scenario proves it was never sent. */
 async function literalModelMessageCount(page: Page, sessionId: string): Promise<number> {
@@ -93,10 +84,9 @@ test.describe('bug-fix: /model is intercepted locally (opens ModelPicker), never
 
   test('setup: create a real claude-code session', async ({}, testInfo) => {
     testInfo.setTimeout(90_000)
-    await stubProjectFolder(electronApp, projectDir)
-    await page.getByTestId('new-session-button').click()
+        await page.getByTestId('new-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toBeVisible()
-    await page.getByTestId('pick-project-folder').click()
+    await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly: READY.')
     await page.getByTestId('start-session-button').click()

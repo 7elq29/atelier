@@ -1,6 +1,6 @@
 09-vault-sync.log — obsidian-integration e2e run
-vaultRoot=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault
-notePath=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md
+vaultRoot=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault
+notePath=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md
 
 
 ===== after task creation =====
@@ -16,7 +16,7 @@ type: daily
 - [ ] 11:00–11:30 1:1 with manager [gid:: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb]
 - [ ] 17:45–18:30 Deep work: Terrablob failover doc [gid:: ffffffff-ffff-4fff-8fff-ffffffffffff]
 - [ ] 20:00–20:30 Prep for oncall handoff [gid:: 99999999-9999-4999-8999-999999999999]
-- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 34ce588f-6470-4313-ae61-c39e82fa3412]
+- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 9b125af8-6256-437e-b5be-7f16127a4eea]
 
 ### ⚪ Backlog
 - [ ] Write PR description [gid:: cccccccc-cccc-4ccc-8ccc-cccccccccccc]
@@ -44,7 +44,7 @@ type: daily
 - [ ] 17:45–18:30 Deep work: Terrablob failover doc [gid:: ffffffff-ffff-4fff-8fff-ffffffffffff]
 - [ ] 20:00–20:30 Prep for oncall handoff [gid:: 99999999-9999-4999-8999-999999999999]
 - [ ] 06:00-06:30 Write PR description [gid:: cccccccc-cccc-4ccc-8ccc-cccccccccccc]
-- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 34ce588f-6470-4313-ae61-c39e82fa3412]
+- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 9b125af8-6256-437e-b5be-7f16127a4eea]
 
 ### ⚪ Backlog
 - [ ] Reply to design review comments [gid:: dddddddd-dddd-4ddd-8ddd-dddddddddddd]
@@ -70,7 +70,7 @@ type: daily
 - [ ] 11:00–11:30 1:1 with manager [gid:: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb]
 - [ ] 17:45–18:30 Deep work: Terrablob failover doc [gid:: ffffffff-ffff-4fff-8fff-ffffffffffff]
 - [ ] 06:00-06:30 Write PR description [gid:: cccccccc-cccc-4ccc-8ccc-cccccccccccc]
-- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 34ce588f-6470-4313-ae61-c39e82fa3412]
+- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 9b125af8-6256-437e-b5be-7f16127a4eea]
 
 ### ⚪ Backlog
 - [ ] Prep for oncall handoff [gid:: 99999999-9999-4999-8999-999999999999]
@@ -97,7 +97,7 @@ type: daily
 - [ ] 11:00–11:30 1:1 with manager [gid:: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb]
 - [ ] 17:45–18:30 Deep work: Terrablob failover doc [gid:: ffffffff-ffff-4fff-8fff-ffffffffffff]
 - [ ] 06:00-06:30 Write PR description [gid:: cccccccc-cccc-4ccc-8ccc-cccccccccccc]
-- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 34ce588f-6470-4313-ae61-c39e82fa3412]
+- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 9b125af8-6256-437e-b5be-7f16127a4eea]
 
 ### ⚪ Backlog
 - [ ] Prep for oncall handoff [gid:: 99999999-9999-4999-8999-999999999999]
@@ -127,7 +127,7 @@ type: daily
 - [x] 09:00–09:15 Standup [completion:: 2026-07-31] [gid:: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa]
 - [ ] 17:45–18:30 Deep work: Terrablob failover doc [gid:: ffffffff-ffff-4fff-8fff-ffffffffffff]
 - [ ] 06:00-06:30 Write PR description [gid:: cccccccc-cccc-4ccc-8ccc-cccccccccccc]
-- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 34ce588f-6470-4313-ae61-c39e82fa3412]
+- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 9b125af8-6256-437e-b5be-7f16127a4eea]
 
 ### ⚪ Backlog
 - [ ] Prep for oncall handoff [gid:: 99999999-9999-4999-8999-999999999999]
@@ -144,11 +144,11 @@ type: daily
 ===== tombstone-diff decision (regression test) =====
 {
   "delayedEntry": {
-    "ts": "2026-08-07T01:34:26.307Z",
+    "ts": "2026-08-07T15:51:54.264Z",
     "level": "info",
     "process": "main",
     "msg": "daily-note write delayed (test hook)",
-    "path": "/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md",
+    "path": "/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md",
     "delayMs": 1500,
     "incomingIds": [
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -159,15 +159,15 @@ type: daily
       "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
       "88888888-8888-4888-8888-888888888888",
-      "34ce588f-6470-4313-ae61-c39e82fa3412"
+      "9b125af8-6256-437e-b5be-7f16127a4eea"
     ]
   },
   "tombstoneEntry": {
-    "ts": "2026-08-07T01:34:27.810Z",
+    "ts": "2026-08-07T15:51:55.770Z",
     "level": "info",
     "process": "main",
     "msg": "daily-note tombstone diff: dropping externally-deleted tasks",
-    "path": "/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md",
+    "path": "/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md",
     "tombstoned": [
       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     ],
@@ -180,13 +180,13 @@ type: daily
       "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
       "88888888-8888-4888-8888-888888888888",
-      "34ce588f-6470-4313-ae61-c39e82fa3412"
+      "9b125af8-6256-437e-b5be-7f16127a4eea"
     ],
     "freshIds": [
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "ffffffff-ffff-4fff-8fff-ffffffffffff",
       "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      "34ce588f-6470-4313-ae61-c39e82fa3412",
+      "9b125af8-6256-437e-b5be-7f16127a4eea",
       "99999999-9999-4999-8999-999999999999",
       "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -208,7 +208,7 @@ type: daily
 - [x] 09:00–09:15 Standup [completion:: 2026-07-31] [gid:: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa]
 - [ ] 17:45–18:30 Deep work: Terrablob failover doc [gid:: ffffffff-ffff-4fff-8fff-ffffffffffff]
 - [ ] 06:00-06:30 Write PR description [gid:: cccccccc-cccc-4ccc-8ccc-cccccccccccc]
-- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 34ce588f-6470-4313-ae61-c39e82fa3412]
+- [ ] 06:15-06:45 Deep work: token refresh fix [gid:: 9b125af8-6256-437e-b5be-7f16127a4eea]
 
 ### ⚪ Backlog
 - [ ] Focus-regain external edit marker [gid:: a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1]
@@ -237,7 +237,7 @@ type: daily
 - [ ] 15:00–15:30 Delete target [gid:: a6a6a6a6-a6a6-4a6a-8a6a-a6a6a6a6a6a6]
 - [ ] 10:00–11:00 Overlap A [gid:: b7b7b7b7-b7b7-4b7b-8b7b-b7b7b7b7b7b7]
 - [ ] 10:00–11:00 Overlap B [gid:: c8c8c8c8-c8c8-4c8c-8c8c-c8c8c8c8c8c8]
-- [ ] 06:45-07:15 Pixel-Y right-click task [gid:: 6917b5c1-037f-4fa9-a0d4-76ef96c1cbd6]
+- [ ] 06:45-07:15 Pixel-Y right-click task [gid:: 6ca317e6-f2f4-4ee5-956d-360dc9cd1f46]
 
 ### ⚪ Backlog
 - 
@@ -261,7 +261,7 @@ type: daily
 - [ ] 15:00–15:30 Delete target [gid:: a6a6a6a6-a6a6-4a6a-8a6a-a6a6a6a6a6a6]
 - [ ] 10:00–11:00 Overlap A [gid:: b7b7b7b7-b7b7-4b7b-8b7b-b7b7b7b7b7b7]
 - [ ] 10:00–11:00 Overlap B [gid:: c8c8c8c8-c8c8-4c8c-8c8c-c8c8c8c8c8c8]
-- [ ] 06:45-07:15 Pixel-Y right-click task [gid:: 6917b5c1-037f-4fa9-a0d4-76ef96c1cbd6]
+- [ ] 06:45-07:15 Pixel-Y right-click task [gid:: 6ca317e6-f2f4-4ee5-956d-360dc9cd1f46]
 
 ### ⚪ Backlog
 - 
@@ -284,7 +284,7 @@ type: daily
 - [ ] 13:00–13:30 Resize target [gid:: 77777777-7777-4777-8777-777777777777]
 - [ ] 10:00–11:00 Overlap A [gid:: b7b7b7b7-b7b7-4b7b-8b7b-b7b7b7b7b7b7]
 - [ ] 10:00–11:00 Overlap B [gid:: c8c8c8c8-c8c8-4c8c-8c8c-c8c8c8c8c8c8]
-- [ ] 06:45-07:15 Pixel-Y right-click task [gid:: 6917b5c1-037f-4fa9-a0d4-76ef96c1cbd6]
+- [ ] 06:45-07:15 Pixel-Y right-click task [gid:: 6ca317e6-f2f4-4ee5-956d-360dc9cd1f46]
 
 ### ⚪ Backlog
 - 
@@ -295,30 +295,30 @@ type: daily
 
 
 ===== main-process daily-note log lines =====
-{"ts":"2026-08-07T01:34:21.634Z","level":"info","process":"main","msg":"daily-note watcher: started","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","dir":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31"}
-{"ts":"2026-08-07T01:34:21.636Z","level":"info","process":"main","msg":"daily-note read","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":8}
-{"ts":"2026-08-07T01:34:22.406Z","level":"info","process":"main","msg":"daily-note write committed","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":9}
-{"ts":"2026-08-07T01:34:22.418Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:22.418Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:22.723Z","level":"info","process":"main","msg":"daily-note watcher: suppressed self-write echo","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md"}
-{"ts":"2026-08-07T01:34:23.626Z","level":"info","process":"main","msg":"daily-note write committed","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":9}
-{"ts":"2026-08-07T01:34:23.637Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:23.637Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:23.941Z","level":"info","process":"main","msg":"daily-note watcher: suppressed self-write echo","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md"}
-{"ts":"2026-08-07T01:34:24.838Z","level":"info","process":"main","msg":"daily-note write committed","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":9}
-{"ts":"2026-08-07T01:34:24.850Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:24.850Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:25.155Z","level":"info","process":"main","msg":"daily-note watcher: suppressed self-write echo","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md"}
-{"ts":"2026-08-07T01:34:26.307Z","level":"info","process":"main","msg":"daily-note write delayed (test hook)","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","delayMs":1500,"incomingIds":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","ffffffff-ffff-4fff-8fff-ffffffffffff","99999999-9999-4999-8999-999999999999","cccccccc-cccc-4ccc-8ccc-cccccccccccc","dddddddd-dddd-4ddd-8ddd-dddddddddddd","eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee","88888888-8888-4888-8888-888888888888","34ce588f-6470-4313-ae61-c39e82fa3412"]}
-{"ts":"2026-08-07T01:34:26.511Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:26.512Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:26.815Z","level":"info","process":"main","msg":"daily-note watcher: reparsed after change","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":8}
-{"ts":"2026-08-07T01:34:27.810Z","level":"info","process":"main","msg":"daily-note tombstone diff: dropping externally-deleted tasks","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","tombstoned":["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"],"incomingIds":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","ffffffff-ffff-4fff-8fff-ffffffffffff","99999999-9999-4999-8999-999999999999","cccccccc-cccc-4ccc-8ccc-cccccccccccc","dddddddd-dddd-4ddd-8ddd-dddddddddddd","eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee","88888888-8888-4888-8888-888888888888","34ce588f-6470-4313-ae61-c39e82fa3412"],"freshIds":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","ffffffff-ffff-4fff-8fff-ffffffffffff","cccccccc-cccc-4ccc-8ccc-cccccccccccc","34ce588f-6470-4313-ae61-c39e82fa3412","99999999-9999-4999-8999-999999999999","dddddddd-dddd-4ddd-8ddd-dddddddddddd","eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee","88888888-8888-4888-8888-888888888888"]}
-{"ts":"2026-08-07T01:34:27.810Z","level":"info","process":"main","msg":"daily-note write committed","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":8}
-{"ts":"2026-08-07T01:34:27.822Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:27.822Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:28.127Z","level":"info","process":"main","msg":"daily-note watcher: suppressed self-write echo","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md"}
-{"ts":"2026-08-07T01:34:29.619Z","level":"info","process":"main","msg":"daily-note read","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":9}
-{"ts":"2026-08-07T01:34:29.622Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:29.622Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
-{"ts":"2026-08-07T01:34:29.928Z","level":"info","process":"main","msg":"daily-note watcher: reparsed after change","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/gardenia-e2e-vault-MSqjzQ/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":9}
+{"ts":"2026-08-07T15:51:49.414Z","level":"info","process":"main","msg":"daily-note watcher: started","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","dir":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31"}
+{"ts":"2026-08-07T15:51:49.416Z","level":"info","process":"main","msg":"daily-note read","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":8}
+{"ts":"2026-08-07T15:51:50.229Z","level":"info","process":"main","msg":"daily-note write committed","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":9}
+{"ts":"2026-08-07T15:51:50.240Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:50.240Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:50.545Z","level":"info","process":"main","msg":"daily-note watcher: suppressed self-write echo","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md"}
+{"ts":"2026-08-07T15:51:51.442Z","level":"info","process":"main","msg":"daily-note write committed","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":9}
+{"ts":"2026-08-07T15:51:51.454Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:51.454Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:51.756Z","level":"info","process":"main","msg":"daily-note watcher: suppressed self-write echo","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md"}
+{"ts":"2026-08-07T15:51:52.658Z","level":"info","process":"main","msg":"daily-note write committed","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":9}
+{"ts":"2026-08-07T15:51:52.670Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:52.670Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:52.975Z","level":"info","process":"main","msg":"daily-note watcher: suppressed self-write echo","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md"}
+{"ts":"2026-08-07T15:51:54.264Z","level":"info","process":"main","msg":"daily-note write delayed (test hook)","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","delayMs":1500,"incomingIds":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","ffffffff-ffff-4fff-8fff-ffffffffffff","99999999-9999-4999-8999-999999999999","cccccccc-cccc-4ccc-8ccc-cccccccccccc","dddddddd-dddd-4ddd-8ddd-dddddddddddd","eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee","88888888-8888-4888-8888-888888888888","9b125af8-6256-437e-b5be-7f16127a4eea"]}
+{"ts":"2026-08-07T15:51:54.478Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:54.478Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:54.783Z","level":"info","process":"main","msg":"daily-note watcher: reparsed after change","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":8}
+{"ts":"2026-08-07T15:51:55.770Z","level":"info","process":"main","msg":"daily-note tombstone diff: dropping externally-deleted tasks","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","tombstoned":["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"],"incomingIds":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","ffffffff-ffff-4fff-8fff-ffffffffffff","99999999-9999-4999-8999-999999999999","cccccccc-cccc-4ccc-8ccc-cccccccccccc","dddddddd-dddd-4ddd-8ddd-dddddddddddd","eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee","88888888-8888-4888-8888-888888888888","9b125af8-6256-437e-b5be-7f16127a4eea"],"freshIds":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","ffffffff-ffff-4fff-8fff-ffffffffffff","cccccccc-cccc-4ccc-8ccc-cccccccccccc","9b125af8-6256-437e-b5be-7f16127a4eea","99999999-9999-4999-8999-999999999999","dddddddd-dddd-4ddd-8ddd-dddddddddddd","eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee","88888888-8888-4888-8888-888888888888"]}
+{"ts":"2026-08-07T15:51:55.771Z","level":"info","process":"main","msg":"daily-note write committed","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":8}
+{"ts":"2026-08-07T15:51:55.782Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:55.782Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:56.084Z","level":"info","process":"main","msg":"daily-note watcher: suppressed self-write echo","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md"}
+{"ts":"2026-08-07T15:51:57.591Z","level":"info","process":"main","msg":"daily-note read","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":9}
+{"ts":"2026-08-07T15:51:57.601Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:57.601Z","level":"info","process":"main","msg":"daily-note watcher: fs event","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","filename":"2026-07-31.md"}
+{"ts":"2026-08-07T15:51:57.906Z","level":"info","process":"main","msg":"daily-note watcher: reparsed after change","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-plSxuC/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":9}

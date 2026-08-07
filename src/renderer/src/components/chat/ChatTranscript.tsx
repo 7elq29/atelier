@@ -108,6 +108,10 @@ interface TopRow {
 export default function ChatTranscript({
   messages,
   onRespond,
+  onOpenPlanFile,
+  workspaceRoot,
+  projectRoot,
+  onOpenFileInFiles,
   searchQuery,
   activeMatchIndex = -1,
   onMatchCount
@@ -115,6 +119,12 @@ export default function ChatTranscript({
   messages: MessageRecord[]
   /** Resolves a permission/AskUserQuestion/plan card by requestId (05-interactive-prompts). */
   onRespond: (requestId: string, decision: PromptDecision) => void
+  /** Opens a plan file on disk in the Files tab (plan card header). */
+  onOpenPlanFile?: (planFilePath: string) => void
+  workspaceRoot?: string
+  projectRoot?: string
+  /** Opens a resolved absolute path in the Files tab (assistant markdown file links). */
+  onOpenFileInFiles?: (absolutePath: string) => void
   /** Non-empty while the "Find in conversation" bar is active and has typed text. */
   searchQuery?: string
   /** Which match (in document order) is the current navigation target; -1 means none highlighted as active. */
@@ -260,7 +270,13 @@ export default function ChatTranscript({
     if (parsed?.kind === 'plan_proposed') {
       return (
         <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
-          <PlanProposedCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+          <PlanProposedCard
+            content={parsed}
+            onRespond={(decision) => onRespond(parsed.requestId, decision)}
+            onOpenPlanFile={onOpenPlanFile}
+            workspaceRoot={workspaceRoot}
+            projectRoot={projectRoot}
+          />
         </div>
       )
     }
@@ -345,7 +361,13 @@ export default function ChatTranscript({
     } else if (parsed?.kind === 'plan_proposed') {
       nodes.push(
         <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
-          <PlanProposedCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+          <PlanProposedCard
+            content={parsed}
+            onRespond={(decision) => onRespond(parsed.requestId, decision)}
+            onOpenPlanFile={onOpenPlanFile}
+            workspaceRoot={workspaceRoot}
+            projectRoot={projectRoot}
+          />
         </div>
       )
     } else if (message.role === 'system') {
@@ -362,7 +384,12 @@ export default function ChatTranscript({
             {query ? (
               highlightMatches(message.content, query, matchCounter, activeMatchIndex)
             ) : (
-              <MarkdownMessage content={message.content} />
+              <MarkdownMessage
+                content={message.content}
+                workspaceRoot={workspaceRoot}
+                projectRoot={projectRoot}
+                onOpenFileInFiles={onOpenFileInFiles}
+              />
             )}
           </div>
         </div>

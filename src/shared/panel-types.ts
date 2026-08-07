@@ -36,6 +36,12 @@ export interface DiffSummary {
   files: DiffFileChange[]
 }
 
+/** Original vs modified text for Monaco inline diff (Diff › Expand file). */
+export interface DiffFileContentPair {
+  original: string
+  modified: string
+}
+
 export interface CommitInfo {
   hash: string
   author: string
@@ -57,6 +63,13 @@ export interface FileTreeNode {
   relativePath: string
   type: 'file' | 'dir'
   children?: FileTreeNode[]
+}
+
+/** Flat file entry for quick-open palette (recursive workspace listing). */
+export interface WorkspaceFileEntry {
+  name: string
+  path: string
+  relativePath: string
 }
 
 export type FileKind = 'text' | 'image' | 'html' | 'binary'

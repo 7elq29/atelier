@@ -72,7 +72,7 @@ export default function TranscriptSearchBar({
       </div>
       <button
         className="btn btn-icon btn-sm"
-        title="Search this conversation"
+        title="Search this conversation (Ctrl+S)"
         data-testid="toggle-transcript-search"
         onClick={onToggle}
       >

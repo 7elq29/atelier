@@ -1,5 +1,14 @@
-import { useState, type MouseEvent } from 'react'
-import type { AtelierConfig, VaultConfig } from '../../../shared/config'
+import { useState, useEffect, type MouseEvent } from 'react'
+import { APP_DISPLAY_NAME } from '../../../shared/app-brand'
+import {
+  defaultClaudeModelFromConfig,
+  defaultClaudeEffortFromConfig,
+  DEFAULT_CLAUDE_EFFORT_OPTIONS,
+  type AtelierConfig,
+  type VaultConfig
+} from '../../../shared/config'
+import { worktreeRootFromConfig } from '../../../shared/worktree-path'
+import type { EffortLevel } from '../../../shared/session-types'
 
 interface SettingsPanelProps {
   isOpen: boolean
@@ -9,7 +18,7 @@ interface SettingsPanelProps {
   onReplayOnboarding: () => void
 }
 
-type Pane = 'theme' | 'fonts' | 'notifications' | 'vault'
+type Pane = 'theme' | 'fonts' | 'notifications' | 'vault' | 'agent' | 'sessions'
 
 /**
  * Settings modal: theme (system/light/dark, really flips `data-theme` on
@@ -28,6 +37,25 @@ export default function SettingsPanel({
   const [notifyStatus, setNotifyStatus] = useState<string | null>(null)
   const [vaultEdit, setVaultEdit] = useState<VaultConfig>(() => config.vault)
   const [vaultSaved, setVaultSaved] = useState(false)
+  const [defaultModelEdit, setDefaultModelEdit] = useState(() => defaultClaudeModelFromConfig(config))
+  const [defaultEffortEdit, setDefaultEffortEdit] = useState<EffortLevel>(() => defaultClaudeEffortFromConfig(config))
+  const [defaultModelError, setDefaultModelError] = useState<string | null>(null)
+  const [defaultModelValidating, setDefaultModelValidating] = useState(false)
+  const [defaultModelSaved, setDefaultModelSaved] = useState(false)
+  const [worktreeRootEdit, setWorktreeRootEdit] = useState(() => worktreeRootFromConfig(config))
+  const [worktreeRootSaved, setWorktreeRootSaved] = useState(false)
+
+  useEffect(() => {
+    setDefaultModelEdit(defaultClaudeModelFromConfig(config))
+  }, [config.defaultClaudeModel])
+
+  useEffect(() => {
+    setDefaultEffortEdit(defaultClaudeEffortFromConfig(config))
+  }, [config.defaultClaudeEffort])
+
+  useEffect(() => {
+    setWorktreeRootEdit(worktreeRootFromConfig(config))
+  }, [config.worktreeRoot])
 
   if (!isOpen) return null
 
@@ -37,7 +65,7 @@ export default function SettingsPanel({
 
   async function sendTestNotification(): Promise<void> {
     const ok = await window.atelier.debugNotify(
-      'Atelier',
+      APP_DISPLAY_NAME,
       'This is a test notification triggered from Settings.'
     )
     setNotifyStatus(ok ? 'Notification sent.' : 'Notifications are not supported on this platform.')
@@ -52,6 +80,31 @@ export default function SettingsPanel({
     onUpdate({ vault: vaultEdit })
     setVaultSaved(true)
     setTimeout(() => setVaultSaved(false), 2000)
+  }
+
+  async function saveDefaultModel(): Promise<void> {
+    const trimmed = defaultModelEdit.trim()
+    if (!trimmed) {
+      setDefaultModelError('Enter a model id.')
+      return
+    }
+    setDefaultModelValidating(true)
+    setDefaultModelError(null)
+    const result = await window.atelier.validateClaudeModel(trimmed)
+    setDefaultModelValidating(false)
+    if (!result.ok) {
+      setDefaultModelError(result.error)
+      return
+    }
+    onUpdate({ defaultClaudeModel: trimmed, defaultClaudeEffort: defaultEffortEdit })
+    setDefaultModelSaved(true)
+    setTimeout(() => setDefaultModelSaved(false), 2000)
+  }
+
+  function saveWorktreeRoot(): void {
+    onUpdate({ worktreeRoot: worktreeRootEdit.trim() || '~/.atelier/worktrees' })
+    setWorktreeRootSaved(true)
+    setTimeout(() => setWorktreeRootSaved(false), 2000)
   }
 
   return (
@@ -76,6 +129,16 @@ export default function SettingsPanel({
             </button>
             <button className={pane === 'vault' ? 'active' : ''} onClick={() => setPane('vault')}>
               Vault
+            </button>
+            <button className={pane === 'agent' ? 'active' : ''} onClick={() => setPane('agent')}>
+              Agent
+            </button>
+            <button
+              className={pane === 'sessions' ? 'active' : ''}
+              data-testid="settings-nav-sessions"
+              onClick={() => setPane('sessions')}
+            >
+              Sessions
             </button>
             <button
               onClick={onReplayOnboarding}
@@ -185,6 +248,105 @@ export default function SettingsPanel({
                   {notifyStatus}
                 </div>
               )}
+            </div>
+          )}
+
+          {pane === 'agent' && (
+            <div className="settings-pane active" data-testid="settings-pane-agent">
+              <div className="setting-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+                <div>
+                  <div className="stitle">Default model</div>
+                  <div className="ssub">
+                    Used when new agent sessions are created. Any model id the SDK accepts — not only the composer
+                    picker list.
+                  </div>
+                </div>
+                <input
+                  className="input"
+                  type="text"
+                  data-testid="default-claude-model-input"
+                  value={defaultModelEdit}
+                  onChange={(e) => {
+                    setDefaultModelEdit(e.target.value)
+                    setDefaultModelError(null)
+                  }}
+                  style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13.5px' }}
+                  spellCheck={false}
+                />
+                {defaultModelError && (
+                  <div className="field-hint" data-testid="default-claude-model-error" style={{ color: 'var(--danger)' }}>
+                    {defaultModelError}
+                  </div>
+                )}
+                <div>
+                  <div className="stitle">Default effort</div>
+                  <div className="ssub">Reasoning effort for new agent sessions (SDK `effort`).</div>
+                </div>
+                <select
+                  className="input"
+                  data-testid="default-claude-effort-select"
+                  value={defaultEffortEdit}
+                  onChange={(e) => setDefaultEffortEdit(e.target.value as EffortLevel)}
+                  style={{ width: '100%', fontSize: '13.5px' }}
+                >
+                  {DEFAULT_CLAUDE_EFFORT_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    data-testid="default-claude-model-save-btn"
+                    onClick={() => void saveDefaultModel()}
+                    disabled={defaultModelValidating}
+                  >
+                    {defaultModelValidating ? 'Validating…' : 'Save'}
+                  </button>
+                  {defaultModelSaved && (
+                    <span className="field-hint" data-testid="default-claude-model-save-status">
+                      Saved.
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {pane === 'sessions' && (
+            <div className="settings-pane active" data-testid="settings-pane-sessions">
+              <div>
+                <div className="field-label">Default worktree location</div>
+                <input
+                  className="input"
+                  type="text"
+                  data-testid="worktree-root-input"
+                  value={worktreeRootEdit}
+                  placeholder="~/.atelier/worktrees"
+                  onChange={(e) => setWorktreeRootEdit(e.target.value)}
+                  style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13.5px' }}
+                  spellCheck={false}
+                />
+                <div className="field-hint">
+                  Parent folder for <strong>Use worktree</strong> sessions. Each session gets its own subdirectory named
+                  with the session id. Supports <code>~</code> on local and remote hosts.
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    data-testid="worktree-root-save-btn"
+                    onClick={saveWorktreeRoot}
+                  >
+                    Save
+                  </button>
+                  {worktreeRootSaved && (
+                    <span className="field-hint" data-testid="worktree-root-save-status">
+                      Saved.
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

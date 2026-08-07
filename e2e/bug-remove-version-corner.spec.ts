@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -36,11 +37,6 @@ import { join } from 'node:path'
 
 const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
 const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
-
-function seedSkipOnboarding(userDataDir: string): void {
-  mkdirSync(join(userDataDir, 'data'), { recursive: true })
-  writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
-}
 
 test.describe('bug-repro: permanent version corner not present in either mock', () => {
   let electronApp: ElectronApplication

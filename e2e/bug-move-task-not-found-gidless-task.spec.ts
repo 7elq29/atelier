@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -73,7 +74,7 @@ test.describe('fix-gidless-task-id-not-persisted: moving a task that has never h
   test.beforeAll(async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-gidless-userdata-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
 
     const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-gidless-vault-'))
     vaultRoot = join(vaultParent, 'vault')

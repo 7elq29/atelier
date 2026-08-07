@@ -1,13 +1,14 @@
 {
   "name": "atelier",
+  "productName": "Atelier",
   "version": "0.1.0",
   "private": true,
   "description": "Atelier desktop app",
   "main": "./out/main/index.js",
   "author": "qingqin",
   "scripts": {
-    "postinstall": "electron-rebuild -f -w better-sqlite3,node-pty",
-    "dev": "electron-vite dev",
+    "postinstall": "electron-rebuild -f -w better-sqlite3,node-pty && bash scripts/ensure-atelier-electron-mac.sh || true",
+    "dev": "bash scripts/dev-electron.sh",
     "dev:full": "bash scripts/dev-full.sh",
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build && tsc -p tsconfig.e2e.json",
     "package": "npm run build && electron-builder --config electron-builder.yml",

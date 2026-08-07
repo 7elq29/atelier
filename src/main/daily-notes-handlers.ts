@@ -126,6 +126,25 @@ function recordWrittenContent(path: string, content: string): void {
   lastWrittenContent.set(path, content)
 }
 
+export function recordWrittenContentForPath(path: string, content: string): void {
+  recordWrittenContent(path, content)
+}
+
+export function recordKnownIdsForPath(path: string, ids: Set<string>): void {
+  recordKnownIds(path, ids)
+}
+
+export function readVaultSettings(): VaultSettings | null {
+  return resolveVaultSettings()
+}
+
+export function notifyDailyNoteChanged(getMainWindow: () => BrowserWindow | null, note: DailyNote): void {
+  const win = getMainWindow()
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('daily-note:changed', note)
+  }
+}
+
 /**
  * fix-gidless-task-id-not-persisted: `parseDailyNote` mints a fresh random
  * id for any task line lacking a `[gid:: ...]` tag (e.g. hand-typed in
@@ -149,7 +168,7 @@ function recordWrittenContent(path: string, content: string): void {
  * fix-note-content-reverts-to-template-on-edit) correctly treats the fs
  * event this write triggers as our own, not an external edit.
  */
-function persistMintedGids(path: string, note: DailyNote, raw: RawSections, mintedIds: string[]): void {
+export function persistMintedGids(path: string, note: DailyNote, raw: RawSections, mintedIds: string[]): void {
   if (mintedIds.length === 0) return
   const serialized = serializeDailyNote(note, raw)
   mkdirSync(dirname(path), { recursive: true })

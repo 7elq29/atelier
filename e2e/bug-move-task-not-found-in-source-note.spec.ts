@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, renameSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -119,7 +120,7 @@ test.describe('fix-move-task-not-found-in-source-note: stale Timeline "Move to..
   test.beforeAll(async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-movebug-userdata-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
 
     const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-movebug-vault-'))
     vaultRoot = join(vaultParent, 'vault')
@@ -249,7 +250,7 @@ test.describe('fix-move-task-not-found-in-source-note: rapid double-fire on the 
   test.beforeAll(async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-movebug-doublefire-userdata-'))
     mkdirSync(join(userDataDir, 'data'), { recursive: true })
-    writeFileSync(join(userDataDir, 'data', 'config.json'), JSON.stringify({ onboardingCompleted: true }))
+    seedE2eConfig(userDataDir)
 
     const vaultParent = mkdtempSync(join(tmpdir(), 'atelier-e2e-movebug-doublefire-vault-'))
     vaultRoot = join(vaultParent, 'vault')

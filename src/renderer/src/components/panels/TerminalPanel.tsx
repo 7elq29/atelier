@@ -148,5 +148,12 @@ export default function TerminalPanel({
     void window.atelier.ptyResize(ptyId, term.cols, term.rows)
   }, [config.theme, config.fontSizes.terminal, ptyId])
 
-  return <div ref={containerRef} className="term-body" data-testid={active ? 'terminal-body' : undefined} />
+  return (
+    <div
+      ref={containerRef}
+      className="term-body"
+      data-hint-exclude-root=""
+      data-testid={active ? 'terminal-body' : undefined}
+    />
+  )
 }

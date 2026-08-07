@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { DailyTask } from '../../../../shared/daily-note-types'
 import { useDailyNote } from '../../hooks/useDailyNote'
 import { useSectionResize } from './section-resize'
 import Timeline from './Timeline'
@@ -9,6 +10,7 @@ export interface DailyNotesSidebarProps {
   date: string
   onClose: () => void
   vaultRoot?: string
+  onCreateSessionFromTask?: (task: DailyTask) => void
 }
 
 interface AddTaskInputProps {
@@ -80,7 +82,7 @@ function AddTaskInput({ testId, buttonLabel = '+ New task', onAdd }: AddTaskInpu
  * sizing (`.dn-head`, `.dn-section`, `.dn-section-head`, `.dn-resize-handle`,
  * `.dn-section-body`).
  */
-export default function DailyNotesSidebar({ date, onClose, vaultRoot }: DailyNotesSidebarProps): JSX.Element {
+export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSessionFromTask }: DailyNotesSidebarProps): JSX.Element {
   const {
     note,
     loading,
@@ -216,6 +218,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot }: DailyNot
           onUpdateText={(id, text) => updateTask(id, { text })}
           moveDateOptions={moveDateOptions}
           onMoveToDate={moveTaskToDate}
+          onCreateSessionFromTask={onCreateSessionFromTask}
         />
       </div>
 
@@ -275,6 +278,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot }: DailyNot
               onUpdateTags={(id, tags) => updateTask(id, { tags })}
               moveDateOptions={moveDateOptions}
               onMoveToDate={moveTaskToDate}
+              onCreateSessionFromTask={onCreateSessionFromTask}
             />
           ))}
         </div>
