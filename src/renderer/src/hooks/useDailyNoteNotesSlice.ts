@@ -34,6 +34,7 @@ export interface UseDailyNoteNotesSliceResult {
   vaultConfigured: boolean
   syncState: 'synced' | 'saving' | 'external'
   createdBanner: boolean
+  editorMountKey: number
   onEditorChange: (markdown: string) => void
   shiftDate: (deltaDays: number) => void
   jumpToday: () => void
@@ -47,6 +48,7 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
   const [vaultConfigured, setVaultConfigured] = useState(true)
   const [syncState, setSyncState] = useState<'synced' | 'saving' | 'external'>('synced')
   const [createdBanner, setCreatedBanner] = useState(false)
+  const [editorMountKey, setEditorMountKey] = useState(0)
 
   const notesBodyRef = useRef('')
   const writeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -54,12 +56,18 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
   viewDateRef.current = viewDate
   notesBodyRef.current = notesBody
 
-  const applySlice = useCallback((result: DailyNoteNotesSliceResult) => {
+  const applySlice = useCallback((result: DailyNoteNotesSliceResult, opts?: { remountEditor?: boolean }) => {
     setNotesBody(result.notesBody)
+    notesBodyRef.current = result.notesBody
     setVaultRelativePath(result.vaultRelativePath)
     setCreatedBanner(result.created)
     setSyncState('synced')
+    if (opts?.remountEditor) setEditorMountKey((k) => k + 1)
   }, [])
+
+  useEffect(() => {
+    setEditorMountKey(0)
+  }, [viewDate])
 
   const loadSlice = useCallback(async (date: string, createIfMissing: boolean) => {
     setLoading(true)
@@ -95,7 +103,7 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
         .then((result) => {
           if (cancelled) return
           const sameAsLocal = result.notesBody === notesBodyRef.current
-          applySlice(result)
+          applySlice(result, { remountEditor: !sameAsLocal })
           if (!sameAsLocal) setSyncState('external')
         })
         .catch(() => {})
@@ -108,7 +116,7 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
         .then((result) => {
           if (cancelled) return
           if (result.notesBody !== notesBodyRef.current) {
-            applySlice(result)
+            applySlice(result, { remountEditor: true })
             setSyncState('external')
           }
         })
@@ -161,6 +169,7 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
     vaultConfigured,
     syncState,
     createdBanner,
+    editorMountKey,
     onEditorChange,
     shiftDate,
     jumpToday

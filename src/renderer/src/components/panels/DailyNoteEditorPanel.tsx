@@ -124,8 +124,8 @@ export default function DailyNoteEditorPanel({
           <div className="daily-note-loading">Loading…</div>
         ) : (
           <AtomicCodeMirrorEditor
-            key={slice.viewDate}
-            documentId={slice.viewDate}
+            key={`${slice.viewDate}:${slice.editorMountKey}`}
+            documentId={`${slice.viewDate}:${slice.editorMountKey}`}
             markdownSource={slice.notesBody}
             onMarkdownChange={slice.onEditorChange}
             editorHandleRef={editorHandleRef}
