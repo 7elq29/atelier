@@ -10,6 +10,7 @@ import type {
   PromptDecision,
   RemoteHostOption,
   SessionCommandsEvent,
+  SessionHarnessCwdEvent,
   SessionGroupEvent,
   SessionGroupRecord,
   SessionLifecycleEvent,
@@ -211,6 +212,12 @@ const api = {
     const listener = (_event: unknown, payload: SessionCommandsEvent): void => callback(payload)
     ipcRenderer.on('session:commands', listener)
     return () => ipcRenderer.removeListener('session:commands', listener)
+  },
+  /** Claude Code working directory for the composer context bar — SDK init cwd and inferred Bash `cd`. */
+  onSessionHarnessCwd: (callback: (event: SessionHarnessCwdEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionHarnessCwdEvent): void => callback(payload)
+    ipcRenderer.on('session:harnessCwd', listener)
+    return () => ipcRenderer.removeListener('session:harnessCwd', listener)
   },
   /** Context-window token usage push (token-usage-indicator) — fired after each completed turn with cumulative inputTokens and contextWindow for the session's active connection. */
   onSessionTokenUsage: (callback: (event: SessionTokenUsageEvent) => void): (() => void) => {

@@ -1,6 +1,7 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -71,6 +72,9 @@ test.describe('04-composer-core', () => {
   // ── 0. Create a real claude-code session to attach the composer to ─────
   test('create session', async ({}, testInfo) => {
     testInfo.setTimeout(90_000)
+    execFileSync('git', ['init'], { cwd: projectDir })
+    execFileSync('git', ['checkout', '-b', 'composer-e2e-branch'], { cwd: projectDir })
+    execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: projectDir })
         await openNewSessionModal(page)
     await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
@@ -87,6 +91,13 @@ test.describe('04-composer-core', () => {
     // before the rest of the suite starts driving it.
     await expect(activeComposer(page).getByTestId('composer-working-pill')).toHaveCount(0, { timeout: 90_000 })
     await expect(activeComposer(page).getByTestId('send-button')).toBeVisible()
+    await expect(activeComposer(page).getByTestId('composer-context-workspace')).toBeVisible()
+    await expect(activeComposer(page).getByTestId('composer-context-workspace')).toContainText('Workspace')
+    await expect(activeComposer(page).getByTestId('composer-context-workspace')).not.toContainText('/~/')
+    await expect(activeComposer(page).getByTestId('composer-context-claude-path')).toBeVisible()
+    await expect
+      .poll(() => activeComposer(page).getByTestId('composer-context-branch').textContent(), { timeout: 30_000 })
+      .toContain('composer-e2e-branch')
     await page.screenshot({ path: join(artifactsDir, '04-composer-idle.png') })
   })
 

@@ -1173,8 +1173,7 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     const worktreePath = rows[0]!.worktree_path!
     const contextBar = page.getByTestId('composer-context-bar')
     await expect(contextBar).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('composer-worktree-indicator')).toBeVisible()
-    await expect(contextBar).not.toContainText(worktreePath.split('/').pop()!)
+    await expect(page.getByTestId('composer-context-workspace')).toContainText(worktreePath.split('/').slice(-2).join('/'))
 
     const composer = page.getByTestId('composer-input')
     await composer.fill('Print your current working directory path. Reply with only the path, nothing else.')

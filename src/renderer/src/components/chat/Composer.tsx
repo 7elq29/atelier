@@ -29,6 +29,30 @@ function tokenBar(pct: number): string {
 /** Cap on how many `@file` matches are rendered at once — the underlying file walk is already capped (files.ts's MAX_ENTRIES), this just keeps the popover itself short and scannable. */
 const MAX_MENTION_MATCHES = 20
 
+/** Shorten an absolute path for the composer context bar (`~` + last two segments). */
+function truncateContextPath(absPath: string | null | undefined): string | null {
+  if (!absPath) return null
+  const shortened = absPath.replace(/^\/Users\/[^/]+(?=\/|$)/, '~')
+  const parts = shortened.split('/').filter(Boolean)
+  if (parts.length === 0) return shortened
+  if (parts.length <= 2) {
+    if (parts[0] === '~') {
+      return parts.length === 1 ? '~' : `~/${parts.slice(1).join('/')}`
+    }
+    return shortened.startsWith('/') ? shortened : `/${parts.join('/')}`
+  }
+  const tail = parts.slice(-2).join('/')
+  return `…/${tail}`
+}
+
+const CONTEXT_FOLDER_ICON = (
+  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+)
+
+const CONTEXT_BRANCH_ICON = (
+  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 7.2V16.8M6 9.5a6 6 0 0 0 6 6h4"/></svg>
+)
+
 /**
  * Icon + label per permission mode (11-composer-mode-indicator), quoted
  * verbatim from mocks/index.html's `composer-mode-row` markup — same glyphs,
@@ -246,9 +270,11 @@ interface ComposerProps {
   busy: boolean
   /** Active session's project root — `@file` mentions are resolved (real, live `fs` walk via the existing Files-panel IPC) against this. Undefined/empty just disables the mention popover. */
   projectPath?: string
-  /** Worktree path if the session runs inside a git worktree, else null. Shown as an icon-only indicator in the context bar (full path in `title`). */
+  /** Worktree path if the session runs inside a git worktree, else null. */
   worktreePath?: string | null
-  /** Hostname for remote sessions — forwarded to the branch IPC call. */
+  /** Claude Code cwd from the harness (SDK init + inferred Bash `cd`). */
+  harnessCwd?: string | null
+  /** Hostname for remote sessions — forwarded to git IPC calls. */
   hostname?: string | null
   /** Git cwd (`worktreePath ?? projectPath`) — drives the uncommitted-changes cap above the composer. */
   gitWorkspacePath?: string
@@ -457,6 +483,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   busy,
   projectPath,
   worktreePath,
+  harnessCwd,
   hostname,
   gitWorkspacePath,
   diffSummary,
@@ -529,14 +556,18 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     getValue: () => value,
   }), [value])
 
-  // Fetch the current git branch for the context bar whenever the effective cwd changes.
+  // Git branch at Claude's current path — refreshed when cwd or workspace diff changes.
   useEffect(() => {
-    const cwd = worktreePath || projectPath
-    if (!cwd) { setBranch(null); return }
+    const claudePath = harnessCwd ?? worktreePath ?? projectPath
+    if (!claudePath) { setBranch(null); return }
+    if (gitWorkspacePath === claudePath && diffSummary?.isRepo) {
+      setBranch(diffSummary.branch)
+      return undefined
+    }
     let cancelled = false
-    window.atelier.gitBranch(cwd, hostname ?? null).then((b) => { if (!cancelled) setBranch(b) }).catch(() => { if (!cancelled) setBranch(null) })
+    window.atelier.gitBranch(claudePath, hostname ?? null).then((b) => { if (!cancelled) setBranch(b) }).catch(() => { if (!cancelled) setBranch(null) })
     return () => { cancelled = true }
-  }, [projectPath, worktreePath, hostname])
+  }, [projectPath, worktreePath, harnessCwd, gitWorkspacePath, diffSummary, hostname])
 
   // Real file list for @-mentions: from preloaded workspace when available.
   useEffect(() => {
@@ -856,17 +887,10 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     }
   }
 
-  const displayPath = (() => {
-    if (!projectPath) return null
-    const parts = projectPath.replace(/^\/Users\/[^/]+/, '~').split('/').filter(Boolean)
-    return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : `/${parts.join('/')}`
-  })()
-  const worktreeTitle =
-    worktreePath && branch
-      ? `Worktree: ${worktreePath}\nBranch: ${branch}`
-      : worktreePath
-        ? `Worktree: ${worktreePath}`
-        : null
+  const workspacePath = worktreePath ?? projectPath ?? null
+  const claudePath = harnessCwd ?? workspacePath
+  const displayWorkspace = truncateContextPath(workspacePath)
+  const displayClaudePath = truncateContextPath(claudePath)
 
   return (
     <div className="composer-wrap">
@@ -884,39 +908,40 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {(displayPath || branch || worktreePath) && (
+        {workspacePath && (
           <>
             <div className="context-bar" data-testid="composer-context-bar">
-              {displayPath && (
-                <span className="context-bar-item">
-                  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
-                  {displayPath}
+              {displayWorkspace && (
+                <span
+                  className="context-bar-item"
+                  data-testid="composer-context-workspace"
+                  title={workspacePath ? `Workspace: ${workspacePath}` : undefined}
+                >
+                  {CONTEXT_FOLDER_ICON}
+                  <span className="context-bar-label">Workspace</span>
+                  <span className="context-bar-value">{displayWorkspace}</span>
                 </span>
               )}
-              {branch && (
+              {displayClaudePath && (
                 <>
-                  {displayPath && <span className="context-bar-sep">›</span>}
-                  <span className="context-bar-item">
-                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 7.2V16.8M6 9.5a6 6 0 0 0 6 6h4"/></svg>
-                    {branch}
+                  {displayWorkspace && <span className="context-bar-sep">›</span>}
+                  <span
+                    className="context-bar-item"
+                    data-testid="composer-context-claude-path"
+                    title={claudePath ? `Path: ${claudePath}` : undefined}
+                  >
+                    {CONTEXT_FOLDER_ICON}
+                    <span className="context-bar-label">Path</span>
+                    <span className="context-bar-value">{displayClaudePath}</span>
                   </span>
                 </>
               )}
-              {worktreePath && (
+              {branch && (
                 <>
-                  <span className="context-bar-spacer" aria-hidden />
-                  <span
-                    className="context-bar-item context-bar-item--icon-only"
-                    data-testid="composer-worktree-indicator"
-                    title={worktreeTitle ?? undefined}
-                    role="img"
-                    aria-label="Worktree"
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      void navigator.clipboard.writeText(worktreePath)
-                    }}
-                  >
-                    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M20 4C10 4 4 10 4 18v2h2c8 0 14-6 14-16z"/><path d="M9 19c3-5 6-8 11-11"/></svg>
+                  {(displayWorkspace || displayClaudePath) && <span className="context-bar-sep">›</span>}
+                  <span className="context-bar-item" data-testid="composer-context-branch" title={`Branch at ${claudePath ?? workspacePath}`}>
+                    {CONTEXT_BRANCH_ICON}
+                    {branch}
                   </span>
                 </>
               )}

@@ -1421,8 +1421,10 @@ input[type='range'] {
 .composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 .composer-box textarea { width: 100%; border: none; border-top-left-radius: var(--r-xl); border-top-right-radius: var(--r-xl); background: transparent; color: var(--text-primary); padding: 11px 13px 4px; font-family: var(--font-ui); font-size: var(--text-base); resize: none; outline: none; min-height: 22px; max-height: 160px; line-height: 1.5; overflow-y: auto; caret-color: transparent; }
 /* Context bar — fused inside the top of the composer box, variant C */
-.context-bar { display: flex; align-items: center; gap: 6px; padding: 7px 14px 4px; border-radius: var(--r-xl) var(--r-xl) 0 0; }
-.context-bar-item { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.context-bar { display: flex; align-items: center; gap: 6px; padding: 7px 14px 4px; border-radius: var(--r-xl) var(--r-xl) 0 0; overflow-x: auto; scrollbar-width: thin; }
+.context-bar-item { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; flex-shrink: 0; max-width: min(100%, 280px); }
+.context-bar-label { font-size: 10px; font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-quaternary, var(--text-tertiary)); opacity: 0.85; flex-shrink: 0; }
+.context-bar-value { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
 .context-bar-item--icon-only { flex-shrink: 0; min-width: auto; overflow: visible; padding: 2px 4px; border-radius: 4px; cursor: default; }
 .context-bar-item--icon-only:hover { background: var(--bg-hover); color: var(--text-secondary); }
 .context-bar-sep { color: var(--border-strong); font-size: 10px; flex-shrink: 0; }

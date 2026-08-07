@@ -377,6 +377,12 @@ export interface SessionCommandsEvent {
   commands: SlashCommandInfo[]
 }
 
+/** Live Claude Code working directory (composer context bar). From the SDK's `system`/`init` `cwd` and updated on Bash `cd` when inferrable. */
+export interface SessionHarnessCwdEvent {
+  sessionId: string
+  cwd: string
+}
+
 /**
  * Context-window token usage push (token-usage-indicator). Fired after every
  * completed turn's `result` harness event — the numbers are the SDK's own

@@ -40,6 +40,7 @@ import { homeDirForWorktreeHost } from './worktree-home'
 import { createWorktree, removeWorktree } from './worktree'
 import { warmRemoteGitHost } from '../panels/git'
 import { WorkspaceService } from './workspace-service'
+import { applyBashCdCommands } from './harness-cwd'
 import { completeLinkedDailyTask, linkDailyTaskToSession } from '../daily-note-session-link'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
@@ -107,6 +108,8 @@ interface LiveStream {
   busy: boolean
   /** Interactive prompts awaiting a user decision, keyed by requestId (05-interactive-prompts). */
   pendingPrompts: Map<string, PendingPrompt>
+  /** Latest Claude Code cwd for this connection (SDK init + inferred Bash `cd`). */
+  harnessCwd: string | null
 }
 
 
@@ -149,7 +152,8 @@ function newLiveStream(turnCount = 0): LiveStream {
     connectionCostUsd: 0,
     pendingTools: new Map(),
     busy: false,
-    pendingPrompts: new Map()
+    pendingPrompts: new Map(),
+    harnessCwd: null
   }
 }
 
@@ -427,6 +431,10 @@ export class SessionManager {
 
   private sendCommands(sessionId: string, commands: SlashCommandInfo[]): void {
     this.getWindow()?.webContents.send('session:commands', { sessionId, commands })
+  }
+
+  private sendHarnessCwd(sessionId: string, cwd: string): void {
+    this.getWindow()?.webContents.send('session:harnessCwd', { sessionId, cwd })
   }
 
   private resolveHost(hostId: string): RemoteHost | undefined {
@@ -1475,6 +1483,19 @@ export class SessionManager {
 
       case 'tool_call_start': {
         this.flushBuffer(sessionId, live)
+        if (event.name === 'Bash') {
+          const command = (event.input as { command?: string } | undefined)?.command
+          const row = this.store.getSession(sessionId)
+          const base =
+            live.harnessCwd ?? (row ? (row.worktreePath ?? row.projectPath) : null)
+          if (command && base) {
+            const next = applyBashCdCommands(base, command)
+            if (next !== base) {
+              live.harnessCwd = next
+              this.sendHarnessCwd(sessionId, next)
+            }
+          }
+        }
         const content: ToolCallContent = {
           kind: 'tool_call',
           toolUseId: event.toolUseId,
@@ -1527,13 +1548,20 @@ export class SessionManager {
       }
 
       case 'session_started':
+        live.harnessCwd = event.cwd
+        this.sendHarnessCwd(sessionId, event.cwd)
         // Not rendered as its own transcript row, but logged (10f-enrichment-
         // model-effort-picker) so e2e specs — and anyone debugging a "did my
         // model/effort change actually take" question — can grep the REAL
         // model the SDK resolved for this connection, straight from its own
         // `system`/`init` message (`event.model`), independent of whatever
         // string was requested via `HarnessStartOptions.model`.
-        logger.info('harness event: session_started', { sessionId, model: event.model, apiKeySource: event.apiKeySource })
+        logger.info('harness event: session_started', {
+          sessionId,
+          model: event.model,
+          apiKeySource: event.apiKeySource,
+          cwd: event.cwd
+        })
         // fix-no-conversation-found-remote-resume: this IS the CLI's own
         // confirmation that a real conversation now exists server-side for
         // this session id — persisted so every future reconnect (this run or
