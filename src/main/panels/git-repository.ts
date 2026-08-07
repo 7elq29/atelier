@@ -9,7 +9,7 @@ import { readFileForPreview } from './files'
 import { join } from 'node:path'
 import { remoteCdTarget, shQuote } from '../shell-quote'
 import { sshExec, warmSshMux } from '../ssh-exec'
-import { parseNumstatLines, parseUnifiedDiff, runGit } from './git-core'
+import { gitPatchOutputUsable, numstatPathForGit, parseNumstatLines, parseUnifiedDiff, runGit } from './git-core'
 
 const EMPTY_TREE = '4b825dc642cb6eb6a060e54bf8d69288fbee4904'
 
@@ -146,7 +146,15 @@ class GitRepositoryManager {
   }
 
   private pickParsedCommitFile(parsed: DiffFileChange[], filePath: string): DiffFileChange | undefined {
-    return parsed.find((f) => f.path === filePath || f.oldPath === filePath)
+    const gitPath = numstatPathForGit(filePath)
+    return parsed.find(
+      (f) =>
+        f.path === filePath ||
+        f.path === gitPath ||
+        f.oldPath === filePath ||
+        f.oldPath === gitPath ||
+        (gitPath.length > 0 && (f.path.endsWith(`/${gitPath}`) || gitPath.endsWith(`/${f.path}`)))
+    )
   }
 
   private mergeCommitFileStub(stub: DiffFileChange, parsed: DiffFileChange): DiffFileChange {
@@ -161,6 +169,15 @@ class GitRepositoryManager {
     }
   }
 
+  private async commitDiffParentBase(
+    projectPath: string,
+    commit: string,
+    sshHost?: string | null
+  ): Promise<string> {
+    const parentRev = await runGit(projectPath, ['rev-parse', `${commit}^`], sshHost)
+    return parentRev.code === 0 && parentRev.stdout.trim() ? `${commit}^` : EMPTY_TREE
+  }
+
   async loadCommitFileDiff(
     projectPath: string,
     commit: string,
@@ -169,31 +186,44 @@ class GitRepositoryManager {
   ): Promise<DiffFileChange | null> {
     const list = await this.loadCommitDiff(projectPath, commit, sshHost)
     const stub = list.files.find((f) => f.path === filePath)
+    const gitPath = numstatPathForGit(filePath)
 
     const parseForFile = (stdout: string): DiffFileChange | undefined => {
       const parsed = parseUnifiedDiff(stdout)
-      return this.pickParsedCommitFile(parsed, filePath)
+      return this.pickParsedCommitFile(parsed, filePath) ?? this.pickParsedCommitFile(parsed, gitPath)
     }
 
-    const show = await runGit(
+    let parsed: DiffFileChange | undefined
+
+    const base = await this.commitDiffParentBase(projectPath, commit, sshHost)
+    const diffRes = await runGit(
       projectPath,
-      ['show', '-m', '--first-parent', '--no-color', '-U3', '--format=', commit, '--', filePath],
+      ['diff', '--no-color', '-U3', base, commit, '--', gitPath],
       sshHost
     )
-    let parsed = show.code === 0 ? parseForFile(show.stdout) : undefined
+    if (gitPatchOutputUsable(diffRes.code, diffRes.stdout)) {
+      parsed = parseForFile(diffRes.stdout)
+    }
 
-    // Fallback when `git show -m` returns no parseable hunks (root commits, some merge layouts, etc.).
     if (!parsed?.hunks.length) {
-      const parentRev = await runGit(projectPath, ['rev-parse', `${commit}^`], sshHost)
-      const base =
-        parentRev.code === 0 && parentRev.stdout.trim() ? `${commit}^` : EMPTY_TREE
-      const diffRes = await runGit(
+      const show = await runGit(
         projectPath,
-        ['diff', '--no-color', '-U3', base, commit, '--', filePath],
+        ['show', '-m', '--first-parent', '--no-color', '-U3', '--format=', commit, '--', gitPath],
         sshHost
       )
-      if (diffRes.code === 0) {
-        parsed = parseForFile(diffRes.stdout) ?? parsed
+      if (gitPatchOutputUsable(show.code, show.stdout)) {
+        parsed = parseForFile(show.stdout) ?? parsed
+      }
+    }
+
+    if (!parsed?.hunks.length) {
+      const showPlain = await runGit(
+        projectPath,
+        ['show', '--no-color', '-U3', '--format=', commit, '--', gitPath],
+        sshHost
+      )
+      if (gitPatchOutputUsable(showPlain.code, showPlain.stdout)) {
+        parsed = parseForFile(showPlain.stdout) ?? parsed
       }
     }
 
@@ -324,13 +354,14 @@ class GitRepositoryManager {
     status: DiffFileStatus,
     sshHost?: string | null
   ): Promise<DiffFileContentPair | null> {
+    const gitPath = numstatPathForGit(filePath)
     let original = ''
-    const parent = await runGit(projectPath, ['show', `${commit}^:${filePath}`], sshHost)
+    const parent = await runGit(projectPath, ['show', `${commit}^:${gitPath}`], sshHost)
     if (parent.code === 0) original = parent.stdout
 
     let modified = ''
     if (status !== 'deleted') {
-      const atCommit = await runGit(projectPath, ['show', `${commit}:${filePath}`], sshHost)
+      const atCommit = await runGit(projectPath, ['show', `${commit}:${gitPath}`], sshHost)
       if (atCommit.code === 0) modified = atCommit.stdout
       else return null
     }
