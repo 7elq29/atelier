@@ -83,7 +83,7 @@ export default function DailyNoteEditorPanel({
       <div className="daily-note-scope-bar">
         <span className="daily-note-live-badge">Live preview</span>
         <span>
-          Editing vault slice <strong>## Notes</strong> through end of file — Timeline / Trackers stay in Obsidian.
+          Editing vault slice <strong>{slice.notesSectionHeading}</strong> through end of file — Timeline / Trackers stay in Obsidian.
         </span>
         {slice.createdBanner && (
           <span className="daily-note-created-banner" data-testid="daily-note-created-banner">
@@ -116,7 +116,9 @@ export default function DailyNoteEditorPanel({
             {formatDailyNoteLabel(slice.viewDate)}
           </span>
         </div>
-        <span className="daily-note-section-heading">## Notes</span>
+        <span className="daily-note-section-heading" data-testid="daily-note-section-heading">
+          {slice.notesSectionHeading}
+        </span>
       </div>
 
       <div className="daily-note-atomic-host" data-testid="daily-note-editor" style={{ flex: 1, minHeight: 0 }}>

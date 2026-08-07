@@ -25,7 +25,8 @@ import {
   generateNewNote,
   getTaskIds,
   extractNotesBodyFromAfterTasks,
-  mergeNotesBodyIntoAfterTasks
+  mergeNotesBodyIntoAfterTasks,
+  DEFAULT_NOTES_SECTION_HEADING
 } from './daily-note-io'
 import { logger } from './logger'
 import { loadConfig } from './config'
@@ -342,7 +343,7 @@ async function readNotesSliceForDate(
 
   if (!existsSync(path)) {
     if (!createIfMissing) {
-      return { exists: false, notesBody: '', vaultRelativePath: rel, created: false }
+      return { exists: false, notesBody: '', vaultRelativePath: rel, created: false, notesSectionHeading: DEFAULT_NOTES_SECTION_HEADING }
     }
     await ensureNoteExists(date, settings)
     created = true
@@ -352,9 +353,15 @@ async function readNotesSliceForDate(
   const { note, raw, mintedIds } = parseDailyNote(content, date)
   persistMintedGids(path, note, raw, mintedIds)
   recordKnownIds(path, getTaskIds(note))
-  const { notesBody } = extractNotesBodyFromAfterTasks(raw.afterTasks)
+  const { notesBody, notesHeadingLine } = extractNotesBodyFromAfterTasks(raw.afterTasks)
   logger.info('daily-note read notes slice', { path, created, bodyLength: notesBody.length })
-  return { exists: true, notesBody, vaultRelativePath: rel, created }
+  return {
+    exists: true,
+    notesBody,
+    vaultRelativePath: rel,
+    created,
+    notesSectionHeading: notesHeadingLine ?? DEFAULT_NOTES_SECTION_HEADING
+  }
 }
 
 export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | null): void {
@@ -414,7 +421,6 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
     renameSync(tmpPath, path)
     recordWrittenContent(path, serialized)
     recordKnownIds(path, getTaskIds(parsed.note))
-    notifyDailyNoteChanged(getMainWindow, parsed.note)
     logger.info('daily-note write notes slice committed', { path, bodyLength: notesBody.length })
     return { ok: true as const }
   })

@@ -13,6 +13,14 @@ function shiftDateKey(key: string, deltaDays: number): string {
   return `${yy}-${mm}-${dd}`
 }
 
+function normalizeNotesBody(body: string): string {
+  return body.replace(/\r\n/g, '\n').replace(/\s+$/, '')
+}
+
+function notesBodiesEquivalent(a: string, b: string): boolean {
+  return normalizeNotesBody(a) === normalizeNotesBody(b)
+}
+
 export function formatDailyNoteLabel(dateKey: string): string {
   const [y, m, d] = dateKey.split('-').map(Number)
   return new Date(y, m - 1, d).toLocaleDateString(undefined, {
@@ -30,6 +38,7 @@ export interface UseDailyNoteNotesSliceResult {
   setViewDate: (date: string) => void
   notesBody: string
   vaultRelativePath: string
+  notesSectionHeading: string
   loading: boolean
   vaultConfigured: boolean
   syncState: 'synced' | 'saving' | 'external'
@@ -44,6 +53,7 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
   const [viewDate, setViewDate] = useState(initialDate)
   const [notesBody, setNotesBody] = useState('')
   const [vaultRelativePath, setVaultRelativePath] = useState('')
+  const [notesSectionHeading, setNotesSectionHeading] = useState('## 📝 Notes')
   const [loading, setLoading] = useState(true)
   const [vaultConfigured, setVaultConfigured] = useState(true)
   const [syncState, setSyncState] = useState<'synced' | 'saving' | 'external'>('synced')
@@ -51,7 +61,9 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
   const [editorMountKey, setEditorMountKey] = useState(0)
 
   const notesBodyRef = useRef('')
+  const lastWrittenNotesBodyRef = useRef<string | null>(null)
   const writeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const writeInFlightRef = useRef(false)
   const viewDateRef = useRef(viewDate)
   viewDateRef.current = viewDate
   notesBodyRef.current = notesBody
@@ -59,14 +71,40 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
   const applySlice = useCallback((result: DailyNoteNotesSliceResult, opts?: { remountEditor?: boolean }) => {
     setNotesBody(result.notesBody)
     notesBodyRef.current = result.notesBody
+    lastWrittenNotesBodyRef.current = result.notesBody
     setVaultRelativePath(result.vaultRelativePath)
+    setNotesSectionHeading(result.notesSectionHeading)
     setCreatedBanner(result.created)
     setSyncState('synced')
     if (opts?.remountEditor) setEditorMountKey((k) => k + 1)
   }, [])
 
+  const reconcileVaultSlice = useCallback(
+    (result: DailyNoteNotesSliceResult): void => {
+      const local = notesBodyRef.current
+      const lastWritten = lastWrittenNotesBodyRef.current
+
+      if (lastWritten !== null && !notesBodiesEquivalent(local, lastWritten)) {
+        // Local edits not yet on disk — never stomp or remount over the caret.
+        return
+      }
+
+      if (notesBodiesEquivalent(result.notesBody, local)) {
+        notesBodyRef.current = result.notesBody
+        lastWrittenNotesBodyRef.current = result.notesBody
+        setSyncState('synced')
+        return
+      }
+
+      applySlice(result, { remountEditor: true })
+      setSyncState('external')
+    },
+    [applySlice]
+  )
+
   useEffect(() => {
     setEditorMountKey(0)
+    lastWrittenNotesBodyRef.current = null
   }, [viewDate])
 
   const loadSlice = useCallback(async (date: string, createIfMissing: boolean) => {
@@ -89,36 +127,31 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
 
   useEffect(() => {
     let cancelled = false
+
+    const vaultSyncBlocked = (): boolean =>
+      writeTimerRef.current !== null || writeInFlightRef.current
+
     void loadSlice(viewDate, true)
 
     void window.atelier.watchDailyNote(viewDate).catch(() => {})
     const unsub = window.atelier.onDailyNoteChanged(() => {
-      if (cancelled) return
-      if (writeTimerRef.current) {
-        clearTimeout(writeTimerRef.current)
-        writeTimerRef.current = null
-      }
+      if (cancelled || vaultSyncBlocked()) return
       void window.atelier
         .readDailyNoteNotesSlice(viewDateRef.current, false)
         .then((result) => {
-          if (cancelled) return
-          const sameAsLocal = result.notesBody === notesBodyRef.current
-          applySlice(result, { remountEditor: !sameAsLocal })
-          if (!sameAsLocal) setSyncState('external')
+          if (cancelled || vaultSyncBlocked()) return
+          reconcileVaultSlice(result)
         })
         .catch(() => {})
     })
 
     const onFocus = (): void => {
-      if (cancelled || writeTimerRef.current) return
+      if (cancelled || vaultSyncBlocked()) return
       void window.atelier
         .readDailyNoteNotesSlice(viewDateRef.current, false)
         .then((result) => {
-          if (cancelled) return
-          if (result.notesBody !== notesBodyRef.current) {
-            applySlice(result, { remountEditor: true })
-            setSyncState('external')
-          }
+          if (cancelled || vaultSyncBlocked()) return
+          reconcileVaultSlice(result)
         })
         .catch(() => {})
     }
@@ -131,15 +164,23 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
       window.removeEventListener('focus', onFocus)
       if (writeTimerRef.current) clearTimeout(writeTimerRef.current)
     }
-  }, [viewDate, loadSlice, applySlice])
+  }, [viewDate, loadSlice, applySlice, reconcileVaultSlice])
 
   const scheduleWrite = useCallback((date: string, body: string) => {
     if (writeTimerRef.current) clearTimeout(writeTimerRef.current)
     setSyncState('saving')
     writeTimerRef.current = setTimeout(() => {
-      void window.atelier.writeDailyNoteNotesSlice(date, body).then(() => {
-        setSyncState('synced')
-      })
+      writeTimerRef.current = null
+      writeInFlightRef.current = true
+      void window.atelier
+        .writeDailyNoteNotesSlice(date, body)
+        .then(() => {
+          lastWrittenNotesBodyRef.current = body
+          setSyncState('synced')
+        })
+        .finally(() => {
+          writeInFlightRef.current = false
+        })
     }, WRITE_DEBOUNCE_MS)
   }, [])
 
@@ -165,6 +206,7 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
     setViewDate,
     notesBody,
     vaultRelativePath,
+    notesSectionHeading,
     loading,
     vaultConfigured,
     syncState,

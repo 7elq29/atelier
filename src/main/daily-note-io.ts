@@ -211,26 +211,35 @@ function detectSection(line: string): SectionKind | null {
 
 const NOTES_SECTION_HEADING_RE = /^##\s+.*Notes/i
 
-/** Lines in `raw.afterTasks` before the `## Notes` heading (Retro, Claude Log, etc.). */
-export function extractNotesBodyFromAfterTasks(afterTasks: string[]): { prefixBeforeNotes: string[]; notesBody: string } {
+/** Default when the vault file has no Notes heading yet (matches vault template). */
+export const DEFAULT_NOTES_SECTION_HEADING = '## 📝 Notes'
+
+/** Lines in `raw.afterTasks` before the Notes heading (Retro, Claude Log, etc.). */
+export function extractNotesBodyFromAfterTasks(afterTasks: string[]): {
+  prefixBeforeNotes: string[]
+  notesBody: string
+  notesHeadingLine: string | null
+} {
   const idx = afterTasks.findIndex((line) => NOTES_SECTION_HEADING_RE.test(line.trim()))
   if (idx === -1) {
-    return { prefixBeforeNotes: [...afterTasks], notesBody: '' }
+    return { prefixBeforeNotes: [...afterTasks], notesBody: '', notesHeadingLine: null }
   }
+  const notesHeadingLine = afterTasks[idx]!.trimEnd()
   const rest = afterTasks.slice(idx + 1)
   let start = 0
   while (start < rest.length && rest[start]!.trim() === '') start++
   const notesBody = rest.slice(start).join('\n').replace(/\n$/, '')
-  return { prefixBeforeNotes: afterTasks.slice(0, idx), notesBody }
+  return { prefixBeforeNotes: afterTasks.slice(0, idx), notesBody, notesHeadingLine }
 }
 
-/** Replace or append the `## Notes` block inside `raw.afterTasks`, preserving earlier after-task sections. */
+/** Replace or append the Notes block inside `raw.afterTasks`, preserving heading emoji/text from the file. */
 export function mergeNotesBodyIntoAfterTasks(afterTasks: string[], notesBody: string): string[] {
-  const { prefixBeforeNotes } = extractNotesBodyFromAfterTasks(afterTasks)
+  const { prefixBeforeNotes, notesHeadingLine } = extractNotesBodyFromAfterTasks(afterTasks)
   const prefix = [...prefixBeforeNotes]
   while (prefix.length > 0 && prefix[prefix.length - 1]!.trim() === '') prefix.pop()
 
-  const block: string[] = ['## Notes', '']
+  const heading = notesHeadingLine ?? DEFAULT_NOTES_SECTION_HEADING
+  const block: string[] = [heading, '']
   const normalized = notesBody.replace(/\r\n/g, '\n').replace(/\s+$/, '')
   if (normalized) block.push(...normalized.split('\n'))
 
