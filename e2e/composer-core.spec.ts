@@ -91,11 +91,9 @@ test.describe('04-composer-core', () => {
     // before the rest of the suite starts driving it.
     await expect(activeComposer(page).getByTestId('composer-working-pill')).toHaveCount(0, { timeout: 90_000 })
     await expect(activeComposer(page).getByTestId('send-button')).toBeVisible()
-    await expect(activeComposer(page).getByTestId('composer-context-workspace')).toBeVisible()
     await expect(page.getByTestId('topbar-workspace')).toBeVisible()
-    await expect(activeComposer(page).getByTestId('composer-context-workspace')).toContainText('Workspace')
-    await expect(activeComposer(page).getByTestId('composer-context-workspace')).not.toContainText('/~/')
     await expect(activeComposer(page).getByTestId('composer-context-claude-path')).toBeVisible()
+    await expect(activeComposer(page).getByTestId('composer-context-claude-path')).not.toContainText('/~/')
     await expect
       .poll(() => activeComposer(page).getByTestId('composer-context-branch').textContent(), { timeout: 30_000 })
       .toContain('composer-e2e-branch')

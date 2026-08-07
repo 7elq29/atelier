@@ -3,6 +3,20 @@ import type { DailyTask, DailyNote, TaskSection } from '../../../shared/daily-no
 
 const WRITE_DEBOUNCE_MS = 500
 
+/** Insert index for a new backlog/delegated row so it appears first in its subsection. */
+function insertIndexForUnscheduledTask(tasks: DailyTask[], delegated: boolean): number {
+  if (delegated) {
+    const i = tasks.findIndex((t) => t.section === 'unscheduled' && t.tags.includes('#delegated'))
+    return i === -1 ? tasks.length : i
+  }
+  const backlog = tasks.findIndex((t) => t.section === 'unscheduled' && !t.tags.includes('#delegated'))
+  if (backlog !== -1) return backlog
+  const delegatedStart = tasks.findIndex((t) => t.section === 'unscheduled' && t.tags.includes('#delegated'))
+  if (delegatedStart !== -1) return delegatedStart
+  const trackers = tasks.findIndex((t) => t.section === 'tracker')
+  return trackers === -1 ? tasks.length : trackers
+}
+
 export interface UseDailyNoteResult {
   note: DailyNote | null
   loading: boolean
@@ -184,7 +198,13 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
           isNote: false,
           ...(timeBlock ? { timeBlock } : {})
         }
-        return { ...prev, tasks: [...prev.tasks, newTask] }
+        const tasks = [...prev.tasks]
+        if (section === 'unscheduled') {
+          tasks.splice(insertIndexForUnscheduledTask(tasks, newTask.tags.includes('#delegated')), 0, newTask)
+        } else {
+          tasks.push(newTask)
+        }
+        return { ...prev, tasks }
       }),
     [mutate]
   )
