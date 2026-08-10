@@ -9,7 +9,7 @@ import { DEFAULT_CONFIG, type AtelierConfig } from '../../../shared/config'
 export function useConfig(): {
   config: AtelierConfig
   loaded: boolean
-  updateConfig: (partial: Partial<AtelierConfig>) => void
+  updateConfig: (partial: Partial<AtelierConfig>) => Promise<AtelierConfig>
 } {
   const [config, setConfig] = useState<AtelierConfig>(DEFAULT_CONFIG)
   const [loaded, setLoaded] = useState(false)
@@ -26,7 +26,7 @@ export function useConfig(): {
     }
   }, [])
 
-  const updateConfig = useCallback((partial: Partial<AtelierConfig>) => {
+  const updateConfig = useCallback((partial: Partial<AtelierConfig>): Promise<AtelierConfig> => {
     setConfig((prev) => ({
       ...prev,
       ...partial,
@@ -34,7 +34,10 @@ export function useConfig(): {
       gitIdentity: { ...prev.gitIdentity, ...(partial.gitIdentity ?? {}) },
       vault: { ...prev.vault, ...(partial.vault ?? {}) }
     }))
-    window.atelier.setConfig(partial).then(setConfig)
+    return window.atelier.setConfig(partial).then((saved) => {
+      setConfig(saved)
+      return saved
+    })
   }, [])
 
   return { config, loaded, updateConfig }

@@ -368,6 +368,9 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
   const isTestMode = process.env.ATELIER_TEST_VAULT_ROOT !== undefined
 
   ipcMain.handle('daily-note:getVaultRoot', () => resolveVaultRoot())
+  ipcMain.handle('daily-note:isVaultRootFromEnv', () =>
+    Boolean(process.env.ATELIER_TEST_VAULT_ROOT ?? process.env.ATELIER_VAULT_ROOT)
+  )
   ipcMain.handle('daily-note:getDefaultDate', () => resolveDefaultDate())
 
   ipcMain.handle('daily-note:pickVaultRoot', async () => {
