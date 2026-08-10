@@ -182,7 +182,7 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     void refreshWeeklyPlanStatus()
-  }, [refreshWeeklyPlanStatus])
+  }, [refreshWeeklyPlanStatus, loaded, config.vault.root])
 
   useEffect(() => {
     return window.atelier.onPtyShellContext(({ id, remoteHost }) => {
@@ -448,6 +448,11 @@ export default function App(): JSX.Element {
 
   const startWeeklyPlanWizard = useCallback(async () => {
     if (weeklyPlanStatus?.fileExists) return
+    const vaultRoot = await window.atelier.getVaultRoot()
+    if (!vaultRoot) {
+      setWeeklyPlanExistsHint('Set your Obsidian vault path in Settings to use Weekly plan.')
+      return
+    }
     const ctx = await window.atelier.loadWeeklyPlanContext()
     if (!ctx) return
     setActiveAppNoteId(null)
@@ -900,8 +905,8 @@ export default function App(): JSX.Element {
           appNotes={appNotes.notes}
           activeAppNoteId={activeAppNoteId}
           activeDailyNote={activeDailyNoteDate !== null}
-          weeklyPlanIsoWeek={weeklyPlanStatus?.isoWeek ?? null}
-          weeklyPlanFileExists={weeklyPlanStatus?.fileExists ?? true}
+          weeklyPlanIsoWeek={weeklyPlanStatus?.isoWeek ?? '…'}
+          weeklyPlanFileExists={weeklyPlanStatus?.fileExists ?? false}
           activeWeeklyPlan={activeWeeklyPlanOpen}
           onSelectWeeklyPlanRow={onWeeklyPlanRowClick}
           onStartWeeklyPlan={() => void startWeeklyPlanWizard()}

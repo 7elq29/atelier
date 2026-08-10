@@ -42,10 +42,8 @@ function resolveVaultScan() {
 
 export function registerWeeklyPlanHandlers(): void {
   ipcMain.handle('weekly-plan:getStatus', () => {
-    const root = resolveVaultRoot()
-    if (!root) return null
     const date = resolveDefaultDate()
-    return weeklyStatusForDate(root, date)
+    return weeklyStatusForDate(resolveVaultRoot(), date)
   })
 
   ipcMain.handle('weekly-plan:loadContext', async () => {
