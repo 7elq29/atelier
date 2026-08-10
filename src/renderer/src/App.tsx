@@ -54,7 +54,7 @@ function resolveEffectiveTheme(theme: 'system' | 'light' | 'dark'): 'light' | 'd
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-/** Claude-code sessions that show the disconnected gate (no tabs until Reconnect). */
+/** Claude-code sessions that show the main gate (no tabs/composer/panels until connected). */
 function claudeCodeSessionDisconnected(
   session: SessionRecord | null | undefined,
   sessionId: string | null,
@@ -62,7 +62,8 @@ function claudeCodeSessionDisconnected(
 ): boolean {
   if (!session || session.mode !== 'claude-code' || !sessionId) return false
   if (session.closedAt) return true
-  return statuses[sessionId] === 'startup-idle'
+  const status = statuses[sessionId]
+  return status === 'startup-idle' || status === 'connecting'
 }
 
 function defaultModelSelection(config: AtelierConfig): ModelSelection {
@@ -352,6 +353,16 @@ export default function App(): JSX.Element {
   )
 
   async function selectSession(session: SessionRecord): Promise<void> {
+    if (activeSessionId && session.id !== activeSessionId) {
+      const current = allSessions.find((s) => s.id === activeSessionId)
+      if (
+        current?.mode === 'claude-code' &&
+        !current.closedAt &&
+        sessions.statuses[activeSessionId] === 'connecting'
+      ) {
+        return
+      }
+    }
     setActiveAppNoteId(null)
     setActiveDailyNoteDate(null)
     setActiveSessionId(session.id)
@@ -363,13 +374,14 @@ export default function App(): JSX.Element {
       !session.closedAt &&
       (sessions.statuses[session.id] === 'startup-idle' ||
         (await window.atelier.isSessionStartupIdle(session.id)))
-    const disconnectedGate = startupIdle || Boolean(session.closedAt)
+    const connecting = sessions.statuses[session.id] === 'connecting'
+    const disconnectedGate = startupIdle || Boolean(session.closedAt) || connecting
     if (session.mode === 'claude-code' && !disconnectedGate) {
       void window.atelier.touchSessionActive(session.id)
     }
     // Reload transcript + reconnect for active sessions missing cached messages
-    // (common after app relaunch). Closed / startup-idle: no reconnect on select —
-    // user must click Reconnect on the disconnected gate.
+    // (common after app relaunch). Closed / startup-idle / connecting: no reconnect on select —
+    // user must wait or use Reconnect on the disconnected gate.
     if (!disconnectedGate && !sessions.messagesBySession[session.id]) {
       await sessions.resumeSession(session.id)
     }
@@ -894,12 +906,6 @@ export default function App(): JSX.Element {
               <>
                 <TabBar activeTab={activeTab} onSelect={selectTab} showPorts={Boolean(activeSession.hostname)} />
                 <div className="topbar-spacer" />
-                {sessions.statuses[activeSession.id] === 'connecting' && (
-                  <span className="topbar-chip connecting-pill" data-testid="connecting-pill">
-                    <span className="spinner" />
-                    Connecting…
-                  </span>
-                )}
                 <span className="topbar-chip" data-testid="cost-chip">
                   ${activeSession.totalCostUsd.toFixed(2)}
                 </span>
@@ -975,7 +981,9 @@ export default function App(): JSX.Element {
             ) : activeSessionDisconnected ? (
               <SessionDisconnectedPanel
                 onReconnect={() => void handleSessionReconnect()}
-                connecting={sessions.statuses[activeSession.id] === 'connecting'}
+                connecting={
+                  !activeSession.closedAt && sessions.statuses[activeSession.id] === 'connecting'
+                }
               />
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>

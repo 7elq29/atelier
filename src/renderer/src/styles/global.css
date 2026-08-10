@@ -475,6 +475,13 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   line-height: 1.45;
   color: var(--text-secondary);
 }
+.session-connecting-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+  font-size: var(--font-interface-size);
+}
 .preview-stack {
   display: flex;
   flex-direction: column;

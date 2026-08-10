@@ -135,7 +135,9 @@ test.describe('02-session-lifecycle', () => {
     await expect(page.getByTestId('composer-input')).toHaveCount(0)
 
     await page.getByTestId('session-reconnect-button').click()
-    await expect(page.getByTestId('connecting-pill')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('session-disconnected-panel')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('session-connecting-state')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('tab-strip')).toHaveCount(0)
     const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
     await expect(activeRow).not.toHaveAttribute('data-status', 'startup-idle', { timeout: 90_000 })
     await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 90_000 })
@@ -456,6 +458,30 @@ test.describe('02-session-lifecycle', () => {
     appendMainLog(userDataDir)
   })
 
+  test('connecting gate blocks switching to another session until connect finishes', async () => {
+    const localRow = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
+    await localRow.getByTestId('session-menu-button').click()
+    await localRow.getByTestId('menu-close').click()
+    const historyLocal = page.locator(`[data-group="history"] [data-session-id="${localSessionId}"]`)
+    await expect(historyLocal).toBeVisible({ timeout: 10_000 })
+    await historyLocal.click()
+    const remoteRow = page.locator(`[data-testid="session-row"][data-session-id="${remoteSessionId}"]`)
+
+    await page.getByTestId('session-reconnect-button').click()
+
+    // While panels are still gated (no tab strip), repeated clicks on another
+    // session must not change the active row — even if the connecting copy
+    // paints too briefly to catch in a single assertion.
+    for (let i = 0; i < 200; i++) {
+      if (await page.getByTestId('tab-strip').isVisible()) break
+      await remoteRow.click()
+      await expect(localRow).toHaveAttribute('data-active', 'true')
+      await page.waitForTimeout(25)
+    }
+
+    await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 90_000 })
+  })
+
   // ── 8b. Remote with a literal `~` project path (tilde-expansion bug) ───
   test('remote: project path "~" expands to $HOME on the remote host instead of breaking cd', async ({}, testInfo) => {
     // Regression test for the bug where `cd '~'` (single-quoted, so never
@@ -624,7 +650,7 @@ test.describe('02-session-lifecycle', () => {
 
     // Reconnect may finish before the connecting pill paints — only assert it
     // does not stay visible once the session is interactive again.
-    await expect(page.getByTestId('connecting-pill')).toHaveCount(0, { timeout: 15_000 })
+    await expect(page.getByTestId('session-connecting-state')).toHaveCount(0, { timeout: 15_000 })
 
     // Part A: no bogus SDK "Error: ..." from our own close/interrupt.
     const rowsAfterClose = await queryDb<{ role: string; content: string }>(
@@ -716,7 +742,7 @@ test.describe('02-session-lifecycle', () => {
     await reconnectClosedSessionFromHistory(page, sessionId)
     const activeRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
     await expect(activeRow).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('connecting-pill')).toHaveCount(0, { timeout: 15_000 })
+    await expect(page.getByTestId('session-connecting-state')).toHaveCount(0, { timeout: 15_000 })
 
     await expect(page.locator('[data-testid="tool-running-indicator"]')).toHaveCount(0)
     const bashCard = page.locator('[data-testid="tool-card"][data-tool-name="Bash"]').first()
@@ -1016,7 +1042,7 @@ test.describe('02-session-lifecycle', () => {
       // Best case: the fallback's fresh conversation actually connected
       // in-process. Verify it's genuinely usable — a follow-up gets a real
       // new assistant response — and has a real transcript file on disk.
-      await expect(page.getByTestId('connecting-pill')).toHaveCount(0, { timeout: 15_000 })
+      await expect(page.getByTestId('session-connecting-state')).toHaveCount(0, { timeout: 15_000 })
       const assistantCountBefore = await page.locator('[data-testid="transcript-message"][data-role="assistant"]').count()
       const composer = page.getByTestId('composer-input')
       await composer.fill('Reply with exactly the single word: PONG')
