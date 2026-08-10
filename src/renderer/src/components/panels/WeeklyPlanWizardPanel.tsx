@@ -1,0 +1,617 @@
+import { useCallback, useMemo, useState } from 'react'
+import type {
+  WeeklyPlanCarrySuggestion,
+  WeeklyPlanContextLine,
+  WeeklyPlanScheduleEntry,
+  WeeklyPlanWizardContext,
+  WeeklyPlanWizardData
+} from '../../../../shared/weekly-plan-types'
+import { WeeklyPlanScheduleStep } from './weekly-plan/WeeklyPlanScheduleStep'
+import { syncScheduleEntries } from './weekly-plan/schedule-utils'
+
+const WP_STEPS = [
+  {
+    phase: 'Start',
+    title: 'Weekly review & plan',
+    lead: 'Retro last week, plan Big Three and ideas, then time-block what matters. Finishing writes your vault weekly note.'
+  },
+  {
+    phase: 'Retro',
+    title: 'After action review',
+    lead: 'List 3–5 biggest wins from last week (## AFTER ACTION REVIEW in your weekly note).'
+  },
+  {
+    phase: 'Retro',
+    title: 'Last week & reflection',
+    lead: "Prefilled from last week's weekly note when it exists. Score Big Three completion, then reflect."
+  },
+  {
+    phase: 'Plan',
+    title: 'Rejuvenation',
+    lead: 'Three recovery commitments for the week (## REJUVENATION).'
+  },
+  {
+    phase: 'Plan',
+    title: 'Ideas',
+    lead: "Backlog candidates for the week (## Ideas). Add carry-overs from last week's daily notes."
+  },
+  {
+    phase: 'Plan',
+    title: 'Weekly Big Three',
+    lead: 'Three outcomes — not vague tasks. At least one should be #q2 (important, not urgent).'
+  },
+  {
+    phase: 'Schedule',
+    title: 'Schedule the week',
+    lead: 'Drag items from Rejuvenation, Big Three, and Ideas onto the week board. #q2 timed blocks also populate Q2 Blocks.'
+  }
+] as const
+
+function parsePct(p: string): number | null {
+  if (String(p).trim().toLowerCase() === 'n/a') return null
+  const n = parseInt(String(p), 10)
+  if (Number.isNaN(n)) return 0
+  return Math.min(100, Math.max(0, n))
+}
+
+function ObsidianTagText({ text }: { text: string }): JSX.Element {
+  const parts = text.split(/(#(?:[a-zA-Z][\w/-]*))/g)
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith('#') ? (
+          <span key={i} className="obs-tag">
+            {part}
+          </span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  )
+}
+
+function ContextPanel({
+  title,
+  hint,
+  children
+}: {
+  title: string
+  hint?: string
+  children: React.ReactNode
+}): JSX.Element {
+  return (
+    <aside className="wp-context-panel">
+      <div className="wp-context-title">{title}</div>
+      {hint ? <div className="wp-context-sub">{hint}</div> : null}
+      {children}
+    </aside>
+  )
+}
+
+function ContextLineEditor({
+  lines,
+  onChange,
+  done
+}: {
+  lines: WeeklyPlanContextLine[]
+  onChange: (index: number, text: string) => void
+  done?: boolean
+}): JSX.Element {
+  return (
+    <>
+      {lines.map((t, i) => (
+        <div key={`${t.source}-${i}`} className={`wp-context-item${done ? ' is-done' : ' is-open'}`}>
+          <span className="wp-context-check">{done ? '✓' : ''}</span>
+          <div className="wp-context-body">
+            <input
+              className={`input wp-context-edit${done ? ' is-done' : ''}`}
+              value={t.text}
+              onChange={(e) => onChange(i, e.target.value)}
+              aria-label={done ? 'Completed task' : 'Open task'}
+            />
+            <div className="wp-context-src">{t.source}</div>
+          </div>
+        </div>
+      ))}
+    </>
+  )
+}
+
+interface WeeklyPlanWizardPanelProps {
+  context: WeeklyPlanWizardContext & { initialData: WeeklyPlanWizardData }
+  onClose: () => void
+  onCreated: () => void
+}
+
+export default function WeeklyPlanWizardPanel({
+  context,
+  onClose,
+  onCreated
+}: WeeklyPlanWizardPanelProps): JSX.Element {
+  const [step, setStep] = useState(0)
+  const [data, setData] = useState<WeeklyPlanWizardData>(context.initialData)
+  const [carryAdded, setCarryAdded] = useState<Set<string>>(() => new Set())
+  const [completedLines, setCompletedLines] = useState(() => [...context.lastWeekCompleted])
+  const [openLines, setOpenLines] = useState(() => [...context.lastWeekOpen])
+  const [creating, setCreating] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const prevWeek = context.prevWeek
+  const isoWeek = context.isoWeek
+  const isWide = step >= 1 && step <= 6
+
+  const incompleteLastBigThree = useMemo(
+    () =>
+      data.lastBigThree.filter((row) => {
+        const p = String(row.pct).trim().toLowerCase()
+        if (p === 'n/a') return false
+        const n = parsePct(row.pct)
+        return n === null || n < 100
+      }),
+    [data.lastBigThree]
+  )
+
+  const setPct = useCallback((i: number, val: string) => {
+    let n = parseInt(String(val), 10)
+    if (Number.isNaN(n)) n = 0
+    n = Math.min(100, Math.max(0, n))
+    setData((d) => {
+      const lastBigThree = [...d.lastBigThree]
+      lastBigThree[i] = { ...lastBigThree[i]!, pct: String(n) }
+      return { ...d, lastBigThree }
+    })
+  }, [])
+
+  const finish = useCallback(async () => {
+    setCreating(true)
+    try {
+      const payload = { ...data, scheduleEntries: syncScheduleEntries(data) }
+      await window.atelier.createWeeklyPlan({ isoWeek, data: payload })
+      setDone(true)
+      setStep(WP_STEPS.length)
+      onCreated()
+    } finally {
+      setCreating(false)
+    }
+  }, [data, isoWeek, onCreated])
+
+  const nextLabel =
+    step >= WP_STEPS.length
+      ? 'Done'
+      : step === WP_STEPS.length - 1
+        ? creating
+          ? 'Creating…'
+          : 'Create weekly note'
+        : 'Continue'
+
+  async function onNext(): Promise<void> {
+    if (step >= WP_STEPS.length) {
+      onClose()
+      return
+    }
+    if (step === WP_STEPS.length - 1) {
+      await finish()
+      return
+    }
+    setStep((s) => s + 1)
+  }
+
+  function renderStepBody(): JSX.Element {
+    if (done || step >= WP_STEPS.length) {
+      return (
+        <div className="wp-done-card" data-testid="weekly-plan-done">
+          <strong>{context.relativePath}</strong> was written to your vault with retro, plan, ideas, Big Three, and
+          scheduled blocks.
+        </div>
+      )
+    }
+
+    const s = WP_STEPS[step]!
+
+    if (step === 6) {
+      return (
+        <WeeklyPlanScheduleStep
+          isoWeek={isoWeek}
+          data={data}
+          onChange={(scheduleEntries) => setData((d) => ({ ...d, scheduleEntries }))}
+        />
+      )
+    }
+
+    let main: JSX.Element
+    let side: JSX.Element | null = null
+    let sideTitle = ''
+    let sideHint = ''
+
+    if (step === 1) {
+      main = (
+        <>
+          {data.wins.map((w, i) => (
+            <div key={i} className="wp-field">
+              <label>Win {i + 1}</label>
+              <input
+                className="input"
+                value={w}
+                placeholder="Biggest win…"
+                onChange={(e) => {
+                  const wins = [...data.wins]
+                  wins[i] = e.target.value
+                  setData((d) => ({ ...d, wins }))
+                }}
+              />
+            </div>
+          ))}
+        </>
+      )
+      sideTitle = 'Completed last week'
+      sideHint = `From ${prevWeek} dailies & weekly note.`
+      side = <ContextLineEditor lines={completedLines} done onChange={(i, text) => {
+        setCompletedLines((lines) => lines.map((l, j) => (j === i ? { ...l, text } : l)))
+      }} />
+    } else if (step === 2) {
+      main = (
+        <>
+          {data.lastBigThree.map((row, i) => {
+            const isNa = String(row.pct).trim().toLowerCase() === 'n/a'
+            const pct = parsePct(row.pct)
+            const sliderVal = isNa ? 0 : pct ?? 0
+            const low = !isNa && sliderVal < 40
+            return (
+              <div key={i} className="wp-big3-retro" data-idx={i}>
+                <div className="wp-big3-retro-head">
+                  <span className="wp-big3-retro-num">#{i + 1}</span>
+                  <input
+                    className="input"
+                    value={row.text}
+                    placeholder="Outcome from last week…"
+                    onChange={(e) => {
+                      const lastBigThree = [...data.lastBigThree]
+                      lastBigThree[i] = { ...lastBigThree[i]!, text: e.target.value }
+                      setData((d) => ({ ...d, lastBigThree }))
+                    }}
+                  />
+                </div>
+                <div className="wp-completion">
+                  <label>Completion</label>
+                  <div className="wp-completion-row">
+                    <input
+                      type="range"
+                      className={`wp-completion-slider${low ? ' is-low' : ''}`}
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={sliderVal}
+                      disabled={isNa}
+                      style={{ ['--pct' as string]: `${sliderVal}%` }}
+                      onChange={(e) => setPct(i, e.target.value)}
+                      aria-label="Completion percent"
+                    />
+                    {isNa ? (
+                      <span className="wp-completion-val is-na">n/a</span>
+                    ) : (
+                      <span className="wp-completion-pct-wrap">
+                        <input
+                          type="text"
+                          className="input wp-completion-pct-input"
+                          inputMode="numeric"
+                          value={sliderVal}
+                          onChange={(e) => setPct(i, e.target.value.replace(/\D/g, ''))}
+                          aria-label="Completion percent"
+                        />
+                        <span className="wp-completion-pct-suffix">%</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="wp-completion-na">
+                    <button
+                      type="button"
+                      className={isNa ? 'is-active' : ''}
+                      onClick={() => {
+                        const lastBigThree = [...data.lastBigThree]
+                        lastBigThree[i] = { ...lastBigThree[i]!, pct: 'n/a' }
+                        setData((d) => ({ ...d, lastBigThree }))
+                      }}
+                    >
+                      Not applicable
+                    </button>
+                    {isNa ? (
+                      <button type="button" onClick={() => setPct(i, '0')}>
+                        Set %
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+          <div className="wp-field">
+            <label>What worked? What didn&apos;t? Why? How would you change?</label>
+            <textarea
+              className="input"
+              value={data.retroReflect}
+              placeholder="Reflection…"
+              onChange={(e) => setData((d) => ({ ...d, retroReflect: e.target.value }))}
+            />
+          </div>
+        </>
+      )
+      sideTitle = 'Completed last week'
+      sideHint = `Tasks marked done in ${prevWeek}.`
+      side = <ContextLineEditor lines={completedLines} done onChange={(i, text) => {
+        setCompletedLines((lines) => lines.map((l, j) => (j === i ? { ...l, text } : l)))
+      }} />
+    } else if (step === 3) {
+      main = (
+        <div className="wp-field">
+          <label>Rejuvenation</label>
+          {data.rejuvenation.map((r, i) => (
+            <input
+              key={i}
+              className="input"
+              style={{ marginBottom: 8 }}
+              value={r}
+              placeholder={`Rest / recovery ${i + 1}`}
+              onChange={(e) => {
+                const rejuvenation = [...data.rejuvenation]
+                rejuvenation[i] = e.target.value
+                setData((d) => ({ ...d, rejuvenation }))
+              }}
+            />
+          ))}
+        </div>
+      )
+      sideTitle = 'Still open'
+      sideHint = 'Unfinished lines from last week (deduped).'
+      side = <ContextLineEditor lines={openLines} onChange={(i, text) => {
+        setOpenLines((lines) => lines.map((l, j) => (j === i ? { ...l, text } : l)))
+      }} />
+    } else if (step === 4) {
+      main = (
+        <>
+          <div className="wp-carry">
+            <div className="wp-carry-head">Suggested carry-overs</div>
+            <div className="wp-carry-hint">From daily notes in {prevWeek} — Add puts the line into Ideas.</div>
+            {context.carrySuggestions.map((c) => (
+              <CarryRow
+                key={c.id}
+                item={c}
+                added={carryAdded.has(c.id)}
+                onAdd={() => {
+                  if (carryAdded.has(c.id)) return
+                  setCarryAdded((s) => new Set(s).add(c.id))
+                  setData((d) => {
+                    const ideas = [...d.ideas]
+                    const slot = ideas.findIndex((x) => !x.trim())
+                    const idx = slot >= 0 ? slot : ideas.length
+                    if (idx >= ideas.length) ideas.push(c.text)
+                    else ideas[idx] = c.text
+                    return { ...d, ideas }
+                  })
+                }}
+              />
+            ))}
+          </div>
+          <ul className="wp-idea-list">
+            {data.ideas.map((idea, i) => (
+              <li key={i}>
+                <span className="wp-idea-num">{i + 1}.</span>
+                <input
+                  className="input"
+                  value={idea}
+                  placeholder="Idea or candidate task…"
+                  onChange={(e) => {
+                    const ideas = [...data.ideas]
+                    ideas[i] = e.target.value
+                    setData((d) => ({ ...d, ideas }))
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+          <div className="wp-idea-actions">
+            <button type="button" className="btn btn-sm" onClick={() => setData((d) => ({ ...d, ideas: [...d.ideas, ''] }))}>
+              + Add idea
+            </button>
+            <span className="wp-tag-hint">
+              Obsidian tags inline: <code>#q2</code>, <code>#project/name</code>
+            </span>
+          </div>
+        </>
+      )
+      sideTitle = 'Still open'
+      sideHint = 'Same pool as carry-over suggestions, deduped.'
+      side = <ContextLineEditor lines={openLines} onChange={(i, text) => {
+        setOpenLines((lines) => lines.map((l, j) => (j === i ? { ...l, text } : l)))
+      }} />
+    } else if (step === 5) {
+      main = (
+        <>
+          {incompleteLastBigThree.length ? (
+            <div className="wp-carry">
+              <div className="wp-carry-head">Unfinished Big Three from {prevWeek}</div>
+              <div className="wp-carry-hint">Add rolls the outcome into this week&apos;s Big Three.</div>
+              {incompleteLastBigThree.map((row) => {
+                const i = data.lastBigThree.indexOf(row)
+                const p = parsePct(row.pct)
+                return (
+                  <div key={i} className="wp-carry-item">
+                    <div>
+                      <div>
+                        <ObsidianTagText text={row.text} />
+                      </div>
+                      <div className="src">{p !== null ? `${p}% complete` : 'n/a'}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        const text = row.text.trim()
+                        if (!text) return
+                        setData((d) => {
+                          const bigThree = [...d.bigThree]
+                          const slot = bigThree.findIndex((x) => !x.trim())
+                          const at = slot >= 0 ? slot : bigThree.length
+                          if (at >= bigThree.length) bigThree.push(text)
+                          else bigThree[at] = text
+                          return { ...d, bigThree }
+                        })
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
+          <div className="wp-inline-hint">
+            At least one outcome should include an Obsidian tag like <code>#q2</code>.
+          </div>
+          {data.bigThree.map((b, i) => (
+            <div key={i} className="wp-field">
+              <label>Big Three #{i + 1}</label>
+              <input
+                className="input"
+                value={b}
+                placeholder="Outcome… #q2"
+                onChange={(e) => {
+                  const bigThree = [...data.bigThree]
+                  bigThree[i] = e.target.value
+                  setData((d) => ({ ...d, bigThree }))
+                }}
+              />
+            </div>
+          ))}
+        </>
+      )
+      sideTitle = 'Carry into this week'
+      sideHint = 'Editable reference — incomplete Big Three + open tasks.'
+      side = (
+        <>
+          {incompleteLastBigThree.map((row) => {
+            const i = data.lastBigThree.indexOf(row)
+            const p = parsePct(row.pct)
+            const partial = p !== null && p > 0
+            return (
+              <div key={i} className={`wp-context-item${partial ? ' is-partial' : ' is-open'}`}>
+                <span className="wp-context-check">{partial ? `${p}%` : ''}</span>
+                <div className="wp-context-body">
+                  <input
+                    className="input wp-context-edit"
+                    value={row.text}
+                    onChange={(e) => {
+                      const lastBigThree = [...data.lastBigThree]
+                      lastBigThree[i] = { ...lastBigThree[i]!, text: e.target.value }
+                      setData((d) => ({ ...d, lastBigThree }))
+                    }}
+                  />
+                  <div className="wp-context-src">Last week Big Three</div>
+                </div>
+              </div>
+            )
+          })}
+          <div className="wp-context-sub">Open from dailies &amp; notes (deduped)</div>
+          <ContextLineEditor lines={openLines} onChange={(i, text) => {
+            setOpenLines((lines) => lines.map((l, j) => (j === i ? { ...l, text } : l)))
+          }} />
+        </>
+      )
+    } else {
+      main = <p className="wp-lead">{s.lead}</p>
+    }
+
+    const body = (
+      <>
+        <div className="wp-phase-label">{s.phase}</div>
+        <h3 className="wp-title">{s.title}</h3>
+        {side ? (
+          <div className="wp-split">
+            <div className="wp-split-main">{main}</div>
+            <ContextPanel title={sideTitle} hint={sideHint}>
+              {side}
+            </ContextPanel>
+          </div>
+        ) : (
+          main
+        )}
+      </>
+    )
+
+    return body
+  }
+
+  return (
+    <div className="session-panel weekly-plan-panel" data-testid="weekly-plan-panel" data-panel="weekly-plan">
+      <div className="weekly-plan-scope-bar">
+        Opens from the <strong>+</strong> on Weekly plan when this week&apos;s file is missing. Writes{' '}
+        <code>{context.relativePath}</code> when you finish.
+      </div>
+      <div className={`weekly-plan-main${isWide ? ' is-wide' : ''}`}>
+        <div className="wp-progress" data-testid="weekly-plan-progress">
+          {WP_STEPS.map((_, i) => (
+            <span
+              key={i}
+              className={`wp-progress-dot${i < step ? ' done' : ''}${i === step ? ' active' : ''}`}
+            />
+          ))}
+        </div>
+        <div className="wp-body">{renderStepBody()}</div>
+        <div className="wp-footer">
+          <button
+            type="button"
+            className="btn btn-sm"
+            data-testid="weekly-plan-back"
+            style={{ visibility: step === 0 ? 'hidden' : 'visible' }}
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+          >
+            Back
+          </button>
+          <span className="wp-step-label" data-testid="weekly-plan-step-label">
+            {step >= WP_STEPS.length ? 'Complete' : `Step ${step + 1} of ${WP_STEPS.length}`}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            data-testid="weekly-plan-next"
+            disabled={creating}
+            onClick={() => void onNext()}
+          >
+            {nextLabel}
+          </button>
+          <button type="button" className="btn btn-icon btn-sm" title="Close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CarryRow({
+  item,
+  added,
+  onAdd
+}: {
+  item: WeeklyPlanCarrySuggestion
+  added: boolean
+  onAdd: () => void
+}): JSX.Element {
+  return (
+    <div className="wp-carry-item">
+      <div>
+        <div>
+          <ObsidianTagText text={item.text} />
+        </div>
+        <div className="src">{item.source}</div>
+      </div>
+      {added ? (
+        <span style={{ fontSize: 13, color: 'var(--accent)' }}>Added</span>
+      ) : (
+        <button type="button" className="btn btn-sm" onClick={onAdd}>
+          Add
+        </button>
+      )}
+    </div>
+  )
+}

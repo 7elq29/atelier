@@ -9,6 +9,7 @@ import { getLogFilePath, logger, rendererLogger } from './logger'
 import { migrateLegacyUserDataFromGardeniaProfiles } from './migrations/gardenia-to-atelier'
 import type { AtelierConfig } from '../shared/config'
 import { registerDailyNoteHandlers } from './daily-notes-handlers'
+import { registerWeeklyPlanHandlers } from './weekly-notes-handlers'
 import { ClaudeAgentSdkHarness } from './harness'
 import { SessionStore } from './sessions/store'
 import { SessionManager } from './sessions/manager'
@@ -115,6 +116,7 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
   })
 
   registerDailyNoteHandlers(() => mainWindow)
+  registerWeeklyPlanHandlers()
   registerAppNotesHandlers()
   registerSessionHandlers(sessionManager, () => mainWindow)
   registerSpendStatusHandlers()

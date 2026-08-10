@@ -19,6 +19,7 @@ import DiffPanel from './components/panels/DiffPanel'
 import FilesPanel from './components/panels/FilesPanel'
 import AppNotesPanel from './components/panels/AppNotesPanel'
 import DailyNoteEditorPanel from './components/panels/DailyNoteEditorPanel'
+import WeeklyPlanWizardPanel from './components/panels/WeeklyPlanWizardPanel'
 import PortsPanel from './components/panels/PortsPanel'
 import TerminalPanel from './components/panels/TerminalPanel'
 import CompanionTerminalDrawer from './components/panels/CompanionTerminalDrawer'
@@ -30,6 +31,7 @@ import { useSessionWorkspace } from './hooks/useSessionWorkspace'
 import { truncateContextPath } from './utils/truncateContextPath'
 import { useAppNotes } from './hooks/useAppNotes'
 import type { DailyTask } from '../../shared/daily-note-types'
+import type { WeeklyPlanStatus, WeeklyPlanWizardContext, WeeklyPlanWizardData } from '../../shared/weekly-plan-types'
 import type {
   ImageAttachment,
   MessageSearchHit,
@@ -111,6 +113,12 @@ export default function App(): JSX.Element {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [activeAppNoteId, setActiveAppNoteId] = useState<string | null>(null)
   const [activeDailyNoteDate, setActiveDailyNoteDate] = useState<string | null>(null)
+  const [activeWeeklyPlanOpen, setActiveWeeklyPlanOpen] = useState(false)
+  const [weeklyPlanStatus, setWeeklyPlanStatus] = useState<WeeklyPlanStatus | null>(null)
+  const [weeklyPlanContext, setWeeklyPlanContext] = useState<
+    (WeeklyPlanWizardContext & { initialData: WeeklyPlanWizardData }) | null
+  >(null)
+  const [weeklyPlanExistsHint, setWeeklyPlanExistsHint] = useState<string | null>(null)
   const composerRefs = useRef<Map<string, ComposerHandle>>(new Map())
   /** Picker overrides until the next session-list refresh picks up persisted model columns. */
   const [modelSelectionBySession, setModelSelectionBySession] = useState<Record<string, ModelSelection>>({})
@@ -166,6 +174,15 @@ export default function App(): JSX.Element {
   useEffect(() => {
     window.atelier.getDefaultDate().then(setDate)
   }, [])
+
+  const refreshWeeklyPlanStatus = useCallback(async () => {
+    const status = await window.atelier.getWeeklyPlanStatus()
+    setWeeklyPlanStatus(status)
+  }, [])
+
+  useEffect(() => {
+    void refreshWeeklyPlanStatus()
+  }, [refreshWeeklyPlanStatus])
 
   useEffect(() => {
     return window.atelier.onPtyShellContext(({ id, remoteHost }) => {
@@ -365,6 +382,8 @@ export default function App(): JSX.Element {
     }
     setActiveAppNoteId(null)
     setActiveDailyNoteDate(null)
+    setActiveWeeklyPlanOpen(false)
+    setWeeklyPlanExistsHint(null)
     setActiveSessionId(session.id)
     setActiveTab('chat')
     setVisitedTabs(new Set(['chat']))
@@ -414,18 +433,42 @@ export default function App(): JSX.Element {
 
   const selectAppNote = useCallback((noteId: string) => {
     setActiveDailyNoteDate(null)
+    setActiveWeeklyPlanOpen(false)
+    setWeeklyPlanExistsHint(null)
     setActiveAppNoteId(noteId)
   }, [])
 
   const selectDailyNote = useCallback(async () => {
     setActiveAppNoteId(null)
+    setActiveWeeklyPlanOpen(false)
+    setWeeklyPlanExistsHint(null)
     const d = activeDailyNoteDate ?? (await window.atelier.getDefaultDate())
     setActiveDailyNoteDate(d)
   }, [activeDailyNoteDate])
 
+  const startWeeklyPlanWizard = useCallback(async () => {
+    if (weeklyPlanStatus?.fileExists) return
+    const ctx = await window.atelier.loadWeeklyPlanContext()
+    if (!ctx) return
+    setActiveAppNoteId(null)
+    setActiveDailyNoteDate(null)
+    setActiveSessionId(null)
+    setWeeklyPlanExistsHint(null)
+    setWeeklyPlanContext(ctx)
+    setActiveWeeklyPlanOpen(true)
+  }, [weeklyPlanStatus?.fileExists])
+
+  const onWeeklyPlanRowClick = useCallback(() => {
+    if (!weeklyPlanStatus?.fileExists) return
+    setWeeklyPlanExistsHint(
+      `${weeklyPlanStatus.isoWeek} weekly note exists — open/view in a later step`
+    )
+  }, [weeklyPlanStatus])
+
   const createAppNote = useCallback(async () => {
     const note = await appNotes.createNote()
     setActiveDailyNoteDate(null)
+    setActiveWeeklyPlanOpen(false)
     setActiveAppNoteId(note.id)
   }, [appNotes])
 
@@ -466,7 +509,7 @@ export default function App(): JSX.Element {
     ? appNotes.notes.find((n) => n.id === activeAppNoteId) ?? null
     : null
   const activeWorkspacePath =
-    activeSession && !activeAppNote && !activeDailyNoteDate
+    activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanOpen
       ? (activeSession.worktreePath ?? activeSession.projectPath)
       : null
   const activeWorkspaceLabel = truncateContextPath(activeWorkspacePath)
@@ -749,6 +792,7 @@ export default function App(): JSX.Element {
   const composerDockVisible = Boolean(
     !activeAppNote &&
     !activeDailyNoteDate &&
+    !activeWeeklyPlanOpen &&
     activeSession?.mode === 'claude-code' &&
     !activeSessionDisconnected &&
     activeTab === 'chat'
@@ -856,6 +900,11 @@ export default function App(): JSX.Element {
           appNotes={appNotes.notes}
           activeAppNoteId={activeAppNoteId}
           activeDailyNote={activeDailyNoteDate !== null}
+          weeklyPlanIsoWeek={weeklyPlanStatus?.isoWeek ?? null}
+          weeklyPlanFileExists={weeklyPlanStatus?.fileExists ?? true}
+          activeWeeklyPlan={activeWeeklyPlanOpen}
+          onSelectWeeklyPlanRow={onWeeklyPlanRowClick}
+          onStartWeeklyPlan={() => void startWeeklyPlanWizard()}
           onSelectAppNote={selectAppNote}
           onSelectDailyNote={() => void selectDailyNote()}
           onCreateAppNote={() => void createAppNote()}
@@ -867,7 +916,9 @@ export default function App(): JSX.Element {
           <div className="topbar">
             <div className="topbar-title-group">
               <span className="title" data-testid="main-title">
-                {activeDailyNoteDate ? (
+                {activeWeeklyPlanOpen ? (
+                  'Weekly review & plan'
+                ) : activeDailyNoteDate ? (
                   'Daily note'
                 ) : activeAppNote ? (
                   <input
@@ -902,7 +953,7 @@ export default function App(): JSX.Element {
                 </span>
               )}
             </div>
-            {activeSession && !activeAppNote && !activeDailyNoteDate && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
+            {activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanOpen && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
               <>
                 <TabBar activeTab={activeTab} onSelect={selectTab} showPorts={Boolean(activeSession.hostname)} />
                 <div className="topbar-spacer" />
@@ -958,7 +1009,22 @@ export default function App(): JSX.Element {
               </div>
             )}
 
-          {activeDailyNoteDate ? (
+          {weeklyPlanExistsHint ? (
+            <div className="weekly-plan-exists-hint" data-testid="weekly-plan-exists-hint">
+              {weeklyPlanExistsHint}
+            </div>
+          ) : null}
+
+          {activeWeeklyPlanOpen && weeklyPlanContext ? (
+            <WeeklyPlanWizardPanel
+              context={weeklyPlanContext}
+              onClose={() => {
+                setActiveWeeklyPlanOpen(false)
+                setWeeklyPlanContext(null)
+              }}
+              onCreated={() => void refreshWeeklyPlanStatus()}
+            />
+          ) : activeDailyNoteDate ? (
             <DailyNoteEditorPanel
               key={activeDailyNoteDate}
               initialDate={activeDailyNoteDate}

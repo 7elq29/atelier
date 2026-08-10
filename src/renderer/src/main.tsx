@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles/tokens.css'
 import './styles/global.css'
+import './styles/weekly-plan.css'
 import './components/daily-notes/daily-notes.css'
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
