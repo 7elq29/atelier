@@ -181,8 +181,22 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
+    if (!loaded) return
     void refreshWeeklyPlanStatus()
-  }, [refreshWeeklyPlanStatus, loaded, config.vault.root])
+  }, [loaded, refreshWeeklyPlanStatus])
+
+  const handleConfigUpdate = useCallback(
+    (partial: Partial<AtelierConfig>): Promise<AtelierConfig> => {
+      return updateConfig(partial).then((saved) => {
+        if (partial.vault !== undefined) {
+          setWeeklyPlanExistsHint(null)
+          void refreshWeeklyPlanStatus()
+        }
+        return saved
+      })
+    },
+    [updateConfig, refreshWeeklyPlanStatus]
+  )
 
   useEffect(() => {
     return window.atelier.onPtyShellContext(({ id, remoteHost }) => {
@@ -1336,9 +1350,12 @@ export default function App(): JSX.Element {
 
       <SettingsPanel
         isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => {
+          setSettingsOpen(false)
+          void refreshWeeklyPlanStatus()
+        }}
         config={config}
-        onUpdate={updateConfig}
+        onUpdate={handleConfigUpdate}
         authStatus={sessions.authStatus}
         onReplayOnboarding={() => {
           setSettingsOpen(false)

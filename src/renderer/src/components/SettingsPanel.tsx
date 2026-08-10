@@ -15,7 +15,7 @@ interface SettingsPanelProps {
   isOpen: boolean
   onClose: () => void
   config: AtelierConfig
-  onUpdate: (partial: Partial<AtelierConfig>) => void
+  onUpdate: (partial: Partial<AtelierConfig>) => Promise<AtelierConfig>
   onReplayOnboarding: () => void
   authStatus?: SessionAuthStatusEvent | null
 }
@@ -47,6 +47,7 @@ export default function SettingsPanel({
   const [defaultModelSaved, setDefaultModelSaved] = useState(false)
   const [worktreeRootEdit, setWorktreeRootEdit] = useState(() => worktreeRootFromConfig(config))
   const [worktreeRootSaved, setWorktreeRootSaved] = useState(false)
+  const [vaultRootFromEnv, setVaultRootFromEnv] = useState(false)
 
   useEffect(() => {
     setDefaultModelEdit(defaultClaudeModelFromConfig(config))
@@ -59,6 +60,18 @@ export default function SettingsPanel({
   useEffect(() => {
     setWorktreeRootEdit(worktreeRootFromConfig(config))
   }, [config.worktreeRoot])
+
+  /** Load saved vault fields when the modal opens — not on every config touch (avoids wiping unsaved edits). */
+  useEffect(() => {
+    if (!isOpen) return
+    setVaultEdit(config.vault)
+    setVaultSaved(false)
+  }, [isOpen, config.vault.root, config.vault.dailyNotesFolder, config.vault.notePathPattern, config.vault.templatePath])
+
+  useEffect(() => {
+    if (!isOpen || pane !== 'vault') return
+    void window.atelier.isVaultRootFromEnv().then(setVaultRootFromEnv)
+  }, [isOpen, pane])
 
   if (!isOpen) return null
 
@@ -79,8 +92,9 @@ export default function SettingsPanel({
     if (picked) setVaultEdit((prev) => ({ ...prev, root: picked }))
   }
 
-  function saveVault(): void {
-    onUpdate({ vault: vaultEdit })
+  async function saveVault(): Promise<void> {
+    const saved = await onUpdate({ vault: vaultEdit })
+    setVaultEdit(saved.vault)
     setVaultSaved(true)
     setTimeout(() => setVaultSaved(false), 2000)
   }
@@ -378,6 +392,12 @@ export default function SettingsPanel({
                   </button>
                 </div>
                 <div className="field-hint">Absolute path to your Obsidian vault.</div>
+                {vaultRootFromEnv ? (
+                  <div className="field-hint" data-testid="vault-env-override-hint" style={{ color: 'var(--warning)' }}>
+                    ATELIER_VAULT_ROOT is set in your shell and overrides this saved path for daily and weekly notes.
+                    Settings still stores the path below for when the env var is unset.
+                  </div>
+                ) : null}
               </div>
               <div>
                 <div className="field-label">Daily notes folder</div>

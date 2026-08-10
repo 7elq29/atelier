@@ -87,6 +87,7 @@ const api = {
 
   // ── Daily notes (Obsidian integration) ──────────────────────────
   getVaultRoot: (): Promise<string | null> => ipcRenderer.invoke('daily-note:getVaultRoot'),
+  isVaultRootFromEnv: (): Promise<boolean> => ipcRenderer.invoke('daily-note:isVaultRootFromEnv'),
   pickVaultRoot: (): Promise<string | null> => ipcRenderer.invoke('daily-note:pickVaultRoot'),
   getDefaultDate: (): Promise<string> => ipcRenderer.invoke('daily-note:getDefaultDate'),
   readDailyNote: (date: string): Promise<ReadDailyNoteResult> => ipcRenderer.invoke('daily-note:read', date),
