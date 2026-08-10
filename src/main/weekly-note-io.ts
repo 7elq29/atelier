@@ -93,15 +93,15 @@ export function resolveWeeklyNotePath(vaultRoot: string, isoWeek: string): strin
   return join(vaultRoot, WEEKLY_NOTES_FOLDER, `${isoWeek}.md`)
 }
 
-export function weeklyStatusForDate(vaultRoot: string, date: string): WeeklyPlanStatus {
+export function weeklyStatusForDate(vaultRoot: string | null, date: string): WeeklyPlanStatus {
   const isoWeek = formatIsoWeekKey(date)
   const relativePath = `${WEEKLY_NOTES_FOLDER}/${isoWeek}.md`
-  const path = resolveWeeklyNotePath(vaultRoot, isoWeek)
+  const fileExists = vaultRoot ? existsSync(resolveWeeklyNotePath(vaultRoot, isoWeek)) : false
   return {
     isoWeek,
     prevWeek: prevIsoWeekKey(isoWeek),
     relativePath,
-    fileExists: existsSync(path)
+    fileExists
   }
 }
 

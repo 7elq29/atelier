@@ -43,7 +43,7 @@ interface SidebarProps {
   appNotes: AppNoteRecord[]
   activeAppNoteId: string | null
   activeDailyNote: boolean
-  weeklyPlanIsoWeek: string | null
+  weeklyPlanIsoWeek: string
   weeklyPlanFileExists: boolean
   activeWeeklyPlan: boolean
   onSelectWeeklyPlanRow: () => void
@@ -1176,55 +1176,53 @@ export default function Sidebar({
                 </div>
               </div>
             </div>
-            {weeklyPlanIsoWeek ? (
-              <div
-                className={`session-row app-note-row app-note-row--weekly hide-on-collapse${activeWeeklyPlan ? ' active' : ''}`}
-                data-testid="weekly-plan-row"
-                role="button"
-                tabIndex={0}
-                onClick={onSelectWeeklyPlanRow}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    onSelectWeeklyPlanRow()
-                  }
-                }}
-              >
-                <span className="session-indicator" aria-hidden="true">
-                  <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-tertiary)' }}>
-                    <rect x="3" y="4" width="18" height="18" rx="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" />
-                    <line x1="8" y1="2" x2="8" y2="6" />
-                    <line x1="3" y1="10" x2="21" y2="10" />
-                  </svg>
-                </span>
-                <div className="session-main">
-                  <div className="session-name">Weekly plan</div>
-                  <div className="session-meta">
-                    <span
-                      className="row-tag"
-                      style={weeklyPlanFileExists ? undefined : { color: 'var(--warning)' }}
-                    >
-                      {weeklyPlanIsoWeek}
-                    </span>
-                  </div>
-                </div>
-                {!weeklyPlanFileExists ? (
-                  <button
-                    type="button"
-                    className="row-menu-btn hide-on-collapse weekly-plan-create-btn"
-                    data-testid="weekly-plan-create-button"
-                    title="Start weekly review & plan"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onStartWeeklyPlan()
-                    }}
+            <div
+              className={`session-row app-note-row app-note-row--weekly hide-on-collapse${activeWeeklyPlan ? ' active' : ''}`}
+              data-testid="weekly-plan-row"
+              role="button"
+              tabIndex={0}
+              onClick={onSelectWeeklyPlanRow}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelectWeeklyPlanRow()
+                }
+              }}
+            >
+              <span className="session-indicator" aria-hidden="true">
+                <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-tertiary)' }}>
+                  <rect x="3" y="4" width="18" height="18" rx="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              </span>
+              <div className="session-main">
+                <div className="session-name">Weekly plan</div>
+                <div className="session-meta">
+                  <span
+                    className="row-tag"
+                    style={weeklyPlanFileExists ? undefined : { color: 'var(--warning)' }}
                   >
-                    +
-                  </button>
-                ) : null}
+                    {weeklyPlanIsoWeek}
+                  </span>
+                </div>
               </div>
-            ) : null}
+              {!weeklyPlanFileExists ? (
+                <button
+                  type="button"
+                  className="row-menu-btn hide-on-collapse weekly-plan-create-btn"
+                  data-testid="weekly-plan-create-button"
+                  title="Start weekly review & plan"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onStartWeeklyPlan()
+                  }}
+                >
+                  +
+                </button>
+              ) : null}
+            </div>
             {appNotes.length === 0 && (
               <div className="history-empty-hint">Create a note with the icon above.</div>
             )}

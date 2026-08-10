@@ -114,7 +114,7 @@ const api = {
   ): Promise<{ sourceNote: DailyNote; targetNote: DailyNote }> =>
     ipcRenderer.invoke('daily-note:move-task', sourceDate, taskId, targetDate),
 
-  getWeeklyPlanStatus: (): Promise<WeeklyPlanStatus | null> => ipcRenderer.invoke('weekly-plan:getStatus'),
+  getWeeklyPlanStatus: (): Promise<WeeklyPlanStatus> => ipcRenderer.invoke('weekly-plan:getStatus'),
   loadWeeklyPlanContext: (): Promise<(WeeklyPlanWizardContext & { initialData: WeeklyPlanCreatePayload['data'] }) | null> =>
     ipcRenderer.invoke('weekly-plan:loadContext'),
   createWeeklyPlan: (payload: WeeklyPlanCreatePayload): Promise<{ path: string; relativePath: string }> =>
