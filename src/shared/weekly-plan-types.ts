@@ -48,6 +48,10 @@ export type WeeklyPlanWizardContext = WeeklyPlanStatus & {
   carrySuggestions: WeeklyPlanCarrySuggestion[]
   lastWeekCompleted: WeeklyPlanContextLine[]
   lastWeekOpen: WeeklyPlanContextLine[]
+  /** Lines from previous week's `## Weekly Big Three` section (suggestions for this week). */
+  lastWeekWeeklyBigThree: string[]
+  /** Week label for Big Three carry suggestions (prev week, or latest vault week with outcomes). */
+  bigThreeSuggestionWeek: string
 }
 
 export type WeeklyPlanCreatePayload = {
