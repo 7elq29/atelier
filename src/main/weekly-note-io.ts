@@ -16,6 +16,7 @@ import type {
   WeeklyPlanWizardContext,
   WeeklyPlanWizardData
 } from '../shared/weekly-plan-types'
+import { dedupeCarrySuggestions, dedupeContextLines } from '../shared/weekly-plan-dedupe'
 
 export const WEEKLY_NOTES_FOLDER = '02.weeklynotes'
 export const WEEKLY_TEMPLATE_REL = '92.templates/Weekly Notes Template.md'
@@ -285,9 +286,9 @@ export async function loadWeeklyPlanWizardContext(
 
   const context: WeeklyPlanWizardContext = {
     ...status,
-    carrySuggestions: carry,
-    lastWeekCompleted: completed,
-    lastWeekOpen: open
+    carrySuggestions: dedupeCarrySuggestions(carry),
+    lastWeekCompleted: dedupeContextLines(completed),
+    lastWeekOpen: dedupeContextLines(open)
   }
 
   return {
