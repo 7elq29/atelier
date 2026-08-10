@@ -2,6 +2,11 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AtelierConfig } from '../shared/config'
 import type { DailyNote, ReadDailyNoteResult, DailyNoteNotesSliceResult } from '../shared/daily-note-types'
 import type {
+  WeeklyPlanCreatePayload,
+  WeeklyPlanStatus,
+  WeeklyPlanWizardContext
+} from '../shared/weekly-plan-types'
+import type {
   CreateSessionOptions,
   ImageAttachment,
   MessageRecord,
@@ -108,6 +113,12 @@ const api = {
     targetDate: string
   ): Promise<{ sourceNote: DailyNote; targetNote: DailyNote }> =>
     ipcRenderer.invoke('daily-note:move-task', sourceDate, taskId, targetDate),
+
+  getWeeklyPlanStatus: (): Promise<WeeklyPlanStatus | null> => ipcRenderer.invoke('weekly-plan:getStatus'),
+  loadWeeklyPlanContext: (): Promise<(WeeklyPlanWizardContext & { initialData: WeeklyPlanCreatePayload['data'] }) | null> =>
+    ipcRenderer.invoke('weekly-plan:loadContext'),
+  createWeeklyPlan: (payload: WeeklyPlanCreatePayload): Promise<{ path: string; relativePath: string }> =>
+    ipcRenderer.invoke('weekly-plan:create', payload),
 
   // ── Sessions (02-session-lifecycle) ──────────────────────────────
   pickProjectFolder: (): Promise<string | null> => ipcRenderer.invoke('session:pickProjectFolder'),

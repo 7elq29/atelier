@@ -49,9 +49,9 @@ iterating.
 
 | | |
 |---|---|
-| **Spec files** | `session-organization.spec.ts` |
-| **Source paths** | `src/renderer/src/components/Sidebar.tsx`, `src/renderer/src/components/panels/AppNotesPanel.tsx`, `src/renderer/src/components/panels/DailyNoteEditorPanel.tsx`, `src/renderer/src/hooks/useDailyNoteNotesSlice.ts`, session store/manager (`src/main/sessions/store.ts`, `manager.ts`), `src/main/app-notes/*` |
-| **Catches** | Sidebar search, status filters (all/attention/waiting), session groups (create/rename/drag), session detail popover (notes, tags, color swatch), command palette entry point from the sidebar. |
+| **Spec files** | `session-organization.spec.ts`, `weekly-plan-wizard.spec.ts` |
+| **Source paths** | `src/renderer/src/components/Sidebar.tsx`, `src/renderer/src/components/panels/AppNotesPanel.tsx`, `src/renderer/src/components/panels/DailyNoteEditorPanel.tsx`, `src/renderer/src/components/panels/WeeklyPlanWizardPanel.tsx`, `src/main/weekly-note-io.ts`, `src/main/weekly-notes-handlers.ts`, `src/renderer/src/hooks/useDailyNoteNotesSlice.ts`, session store/manager (`src/main/sessions/store.ts`, `manager.ts`), `src/main/app-notes/*` |
+| **Catches** | Sidebar search, status filters (all/attention/waiting), session groups (create/rename/drag), session detail popover (notes, tags, color swatch), command palette entry point from the sidebar, weekly plan sidebar row + guided wizard creating `02.weeklynotes/YYYY-Wnn.md`. |
 
 ### 4. Chat Transcript & Composer Core
 
