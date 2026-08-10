@@ -30,6 +30,7 @@ function CalChip({
   return (
     <span
       className={`wp-cal-chip${q2 ? ' is-q2' : ''}${className ? ` ${className}` : ''}`}
+      data-entry-id={entry.id}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData('text/wp-entry', entry.id)
@@ -88,6 +89,7 @@ export function WeeklyPlanScheduleStep({
 }): JSX.Element {
   const dragId = useRef<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
+  const [dropPreviewSlot, setDropPreviewSlot] = useState<string | null>(null)
 
   const entries = useMemo(() => syncScheduleEntries(data), [data])
 
@@ -145,10 +147,14 @@ export function WeeklyPlanScheduleStep({
             e.preventDefault()
             setDragOver('pool')
           }}
-          onDragLeave={() => setDragOver(null)}
+          onDragLeave={() => {
+            setDragOver(null)
+            setDropPreviewSlot(null)
+          }}
           onDrop={(e) => {
             e.preventDefault()
             setDragOver(null)
+            setDropPreviewSlot(null)
             const id = e.dataTransfer.getData('text/wp-entry') || dragId.current
             if (id) placeEntry(id, '', '')
           }}
@@ -205,7 +211,7 @@ export function WeeklyPlanScheduleStep({
                 {label}
               </div>
             ))}
-            <div className="wp-cal-matrix-unsched-label">Unsched</div>
+            <div className="wp-cal-matrix-unsched-label">Unscheduled</div>
             {WP_WEEK_DAYS.map((day, dayIdx) => {
               const dayUnsched = entries.filter((e) => wpEntryDayUnsched(e) && e.day === day)
               const key = `unsched-${day}`
@@ -216,15 +222,26 @@ export function WeeklyPlanScheduleStep({
                   onDragOver={(e) => {
                     e.preventDefault()
                     setDragOver(key)
+                    setDropPreviewSlot(null)
                   }}
-                  onDragLeave={() => setDragOver(null)}
+                  onDragLeave={() => {
+                    setDragOver(null)
+                    setDropPreviewSlot(null)
+                  }}
                   onDrop={(e) => {
                     e.preventDefault()
                     setDragOver(null)
+                    setDropPreviewSlot(null)
                     const id = e.dataTransfer.getData('text/wp-entry') || dragId.current
                     if (id) placeEntry(id, day, '')
                   }}
                 >
+                  {dragOver === key ? (
+                    <div
+                      className="wp-cal-drop-preview wp-cal-drop-preview--unsched"
+                      data-testid="weekly-plan-cal-drop-preview-unsched"
+                    />
+                  ) : null}
                   <div className="wp-cal-day-unsched-chips">
                     {dayUnsched.map((e) => (
                       <CalChip key={e.id} entry={e} onDragStart={(id) => { dragId.current = id }} onDoubleClick={editEntry} />
@@ -246,17 +263,29 @@ export function WeeklyPlanScheduleStep({
                   onDragOver={(e) => {
                     e.preventDefault()
                     setDragOver(key)
+                    setDropPreviewSlot(wpSlotFromDropY(e.currentTarget, e.clientY))
                   }}
-                  onDragLeave={() => setDragOver(null)}
+                  onDragLeave={() => {
+                    setDragOver(null)
+                    setDropPreviewSlot(null)
+                  }}
                   onDrop={(e) => {
                     e.preventDefault()
                     setDragOver(null)
+                    setDropPreviewSlot(null)
                     const id = e.dataTransfer.getData('text/wp-entry') || dragId.current
                     if (!id) return
                     const slot = wpSlotFromDropY(e.currentTarget, e.clientY)
                     placeEntry(id, day, slot)
                   }}
                 >
+                  {dragOver === key && dropPreviewSlot ? (
+                    <div
+                      className="wp-cal-drop-preview"
+                      data-testid="weekly-plan-cal-drop-preview"
+                      style={wpTimelineBlockStyle(dropPreviewSlot)}
+                    />
+                  ) : null}
                   {timed.map((e) => (
                     <CalBlock
                       key={e.id}

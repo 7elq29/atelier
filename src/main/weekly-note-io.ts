@@ -17,6 +17,11 @@ import type {
   WeeklyPlanWizardData
 } from '../shared/weekly-plan-types'
 import { dedupeCarrySuggestions, dedupeContextLines } from '../shared/weekly-plan-dedupe'
+import {
+  isDailyNoteActionTask,
+  isDailyNoteNoteLine,
+  isWeeklyPlanInstructionLine
+} from '../shared/weekly-plan-filters'
 
 export const WEEKLY_NOTES_FOLDER = '02.weeklynotes'
 export const WEEKLY_TEMPLATE_REL = '92.templates/Weekly Notes Template.md'
@@ -123,8 +128,95 @@ export async function loadWeeklyTemplate(vaultRoot: string): Promise<string> {
   return readFile(path, 'utf-8')
 }
 
+const LAST_WEEK_BIG_THREE_HEADING = /^Last Week'?s Big Three|^Last week Big Three/i
+const WEEKLY_BIG_THREE_HEADING = /^WEEKLY BIG THREE|^Weekly Big Three/i
+
+function extractWeeklySectionByHeadingPattern(content: string, headingPattern: RegExp): string {
+  const lines = content.split('\n')
+  let start = -1
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i]!.match(/^##\s+(.+?)\s*(?:<|$)/)
+    if (!m) continue
+    const title = m[1]!.trim()
+    if (headingPattern.test(title)) {
+      start = i + 1
+      break
+    }
+  }
+  if (start < 0) return ''
+  const body: string[] = []
+  for (let i = start; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i]!)) break
+    body.push(lines[i]!)
+  }
+  return body.join('\n')
+}
+
+/** Strip callout markers, numbering, and task checkboxes from a weekly-note line. */
+function normalizeWeeklyNoteLine(raw: string): string {
+  let line = raw.trim()
+  if (!line || line.startsWith('%%')) return ''
+  while (line.startsWith('>')) {
+    line = line.replace(/^>\s*/, '').trim()
+  }
+  line = line.replace(/^\[!?\w+\]\s*/, '').trim()
+  const numbered = line.match(/^\d+\.\s*(.+)$/)
+  if (numbered) line = numbered[1]!.trim()
+  line = line.replace(/^\[\s*[ xX]?\s*\]\s*/, '').trim()
+  line = line.replace(/^-\s+/, '').trim()
+  return line
+}
+
+function parseRetroLine(line: string): WeeklyPlanWizardData['lastBigThree'][number] | null {
+  const normalized = normalizeWeeklyNoteLine(line)
+  if (!normalized) return null
+
+  const completionBracket = normalized.match(/^\[Completion:\s*(n\/a|\d+%?)\]\s*(.*)$/i)
+  if (completionBracket) {
+    const raw = completionBracket[1]!.toLowerCase()
+    if (raw === 'n/a') return null
+    const pct = String(parseInt(raw, 10) || 0)
+    let text = completionBracket[2]!.trim()
+    text = text.replace(/^[—–-]\s*/, '').trim()
+    if (!text || isWeeklyPlanInstructionLine(text)) return null
+    return { text, pct }
+  }
+
+  const pctMatch = normalized.match(/(?:—|–|-)\s*completion:\s*(n\/a|\d+%?)\s*$/i)
+  if (pctMatch) {
+    const text = normalized.slice(0, pctMatch.index).trim()
+    if (!text || isWeeklyPlanInstructionLine(text)) return null
+    const raw = pctMatch[1]!.toLowerCase()
+    const pct = raw === 'n/a' ? 'n/a' : String(parseInt(raw, 10) || 0)
+    return { text, pct }
+  }
+
+  if (isWeeklyPlanInstructionLine(normalized)) return null
+  return { text: normalized, pct: '0' }
+}
+
+function parseWeeklyBigThreeLines(section: string): string[] {
+  const lines: string[] = []
+  for (const raw of section.split('\n')) {
+    const text = normalizeWeeklyNoteLine(raw)
+    if (!text || isWeeklyPlanInstructionLine(text)) continue
+    lines.push(text)
+  }
+  while (lines.length < 3) lines.push('')
+  return lines.slice(0, 3)
+}
+
+function extractWeeklySectionBody(content: string, heading: string): string {
+  const re = new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*)`, 'im')
+  const m = content.match(re)
+  if (!m) return ''
+  const rest = m[1]!
+  const nextHeading = rest.search(/^## /m)
+  return nextHeading === -1 ? rest : rest.slice(0, nextHeading)
+}
+
 function replaceSection(body: string, heading: string, content: string): string {
-  const re = new RegExp(`(^## ${heading}\\s*\\n)([\\s\\S]*?)(?=^## |\\Z)`, 'm')
+  const re = new RegExp(`(^## ${heading}\\s*\\n)([\\s\\S]*?)(?=^## )`, 'm')
   if (re.test(body)) {
     return body.replace(re, `$1${content}\n`)
   }
@@ -183,19 +275,18 @@ export function buildWeeklyNoteMarkdown(template: string, isoWeek: string, data:
 }
 
 export function parseWeeklyBigThreeFromMarkdown(content: string): string[] {
-  const m = content.match(/^## Weekly Big Three\s*\n([\s\S]*?)(?=^## |\Z)/im)
-  if (!m) return ['', '', '']
-  const lines = m[1]!
-    .split('\n')
-    .map((l) => l.replace(/^-\s+/, '').trim())
-    .filter(Boolean)
-  while (lines.length < 3) lines.push('')
-  return lines.slice(0, 3)
+  const section =
+    extractWeeklySectionByHeadingPattern(content, WEEKLY_BIG_THREE_HEADING) ||
+    extractWeeklySectionBody(content, 'Weekly Big Three')
+  if (!section.trim()) return ['', '', '']
+  return parseWeeklyBigThreeLines(section)
 }
 
 export function parseLastBigThreeRetroFromMarkdown(content: string): WeeklyPlanWizardData['lastBigThree'] {
-  const m = content.match(/^## Last week Big Three\s*\n([\s\S]*?)(?=^## |\Z)/im)
-  if (!m) {
+  const section =
+    extractWeeklySectionByHeadingPattern(content, LAST_WEEK_BIG_THREE_HEADING) ||
+    extractWeeklySectionBody(content, 'Last week Big Three')
+  if (!section.trim()) {
     return [
       { text: '', pct: '0' },
       { text: '', pct: '0' },
@@ -203,18 +294,9 @@ export function parseLastBigThreeRetroFromMarkdown(content: string): WeeklyPlanW
     ]
   }
   const rows: WeeklyPlanWizardData['lastBigThree'] = []
-  for (const line of m[1]!.split('\n')) {
-    const trimmed = line.replace(/^-\s+/, '').trim()
-    if (!trimmed) continue
-    const pctMatch = trimmed.match(/—\s*completion:\s*(n\/a|\d+%?)\s*$/i)
-    if (pctMatch) {
-      const text = trimmed.slice(0, pctMatch.index).trim()
-      const raw = pctMatch[1]!.toLowerCase()
-      const pct = raw === 'n/a' ? 'n/a' : String(parseInt(raw, 10) || 0)
-      rows.push({ text, pct })
-    } else {
-      rows.push({ text: trimmed, pct: '0' })
-    }
+  for (const line of section.split('\n')) {
+    const row = parseRetroLine(line)
+    if (row) rows.push(row)
   }
   while (rows.length < 3) rows.push({ text: '', pct: '0' })
   return rows.slice(0, 3)
@@ -241,14 +323,16 @@ async function scanDailyNotesInWeek(
     const content = await readFile(path, 'utf-8')
     const { note } = parseDailyNote(content, date)
     for (const task of note.tasks) {
-      if (task.isNote || task.section === 'tracker') continue
       const text = task.text.trim()
       if (!text) continue
       const source = `${date} daily`
-      if (task.status === 'done') {
-        completed.push({ text, source })
-      } else if (task.status === 'open' || task.status === 'in-progress') {
-        open.push({ text, source })
+      if (isDailyNoteActionTask(task)) {
+        if (task.status === 'done') {
+          completed.push({ text, source })
+        } else if (task.status === 'open' || task.status === 'in-progress') {
+          open.push({ text, source })
+        }
+      } else if (isDailyNoteNoteLine(task)) {
         carry.push({
           id: `carry_${carryIdx++}`,
           text,
@@ -261,6 +345,27 @@ async function scanDailyNotesInWeek(
   return { completed, open, carry }
 }
 
+async function findLatestWeeklyBigThreeOutcomes(
+  vaultRoot: string,
+  startWeek: string
+): Promise<{ isoWeek: string; outcomes: string[] } | null> {
+  let week = startWeek
+  for (let i = 0; i < 52; i++) {
+    const path = resolveWeeklyNotePath(vaultRoot, week)
+    if (existsSync(path)) {
+      const content = await readFile(path, 'utf-8')
+      const parsed = parseWeeklyBigThreeFromMarkdown(content)
+      const outcomes = parsed.filter((t) => t.trim() && !isWeeklyPlanInstructionLine(t))
+      if (outcomes.length) {
+        while (outcomes.length < 3) outcomes.push('')
+        return { isoWeek: week, outcomes: outcomes.slice(0, 3) }
+      }
+    }
+    week = prevIsoWeekKey(week)
+  }
+  return null
+}
+
 export async function loadWeeklyPlanWizardContext(
   vaultRoot: string,
   date: string,
@@ -268,6 +373,8 @@ export async function loadWeeklyPlanWizardContext(
 ): Promise<WeeklyPlanWizardContext & { initialData: WeeklyPlanWizardData }> {
   const status = weeklyStatusForDate(vaultRoot, date)
   const prevPath = resolveWeeklyNotePath(vaultRoot, status.prevWeek)
+  let lastWeekWeeklyBigThree: string[] = ['', '', '']
+  let bigThreeSuggestionWeek = status.prevWeek
   let lastBigThree: WeeklyPlanWizardData['lastBigThree'] = [
     { text: '', pct: '0' },
     { text: '', pct: '0' },
@@ -276,11 +383,25 @@ export async function loadWeeklyPlanWizardContext(
 
   if (existsSync(prevPath)) {
     const prevContent = await readFile(prevPath, 'utf-8')
-    const prevThree = parseWeeklyBigThreeFromMarkdown(prevContent)
-    lastBigThree = prevThree.map((text) => ({ text, pct: '0' }))
-    const retro = parseLastBigThreeRetroFromMarkdown(prevContent)
+    lastWeekWeeklyBigThree = parseWeeklyBigThreeFromMarkdown(prevContent)
+    lastBigThree = lastWeekWeeklyBigThree.map((text) => ({ text, pct: '0' }))
+    const retro = parseLastBigThreeRetroFromMarkdown(prevContent).filter(
+      (r) => !isWeeklyPlanInstructionLine(r.text)
+    )
     if (retro.some((r) => r.text.trim())) lastBigThree = retro
   }
+
+  if (!lastWeekWeeklyBigThree.some((t) => t.trim())) {
+    const found = await findLatestWeeklyBigThreeOutcomes(vaultRoot, status.prevWeek)
+    if (found) {
+      lastWeekWeeklyBigThree = found.outcomes
+      bigThreeSuggestionWeek = found.isoWeek
+    }
+  }
+
+  lastBigThree = lastBigThree.filter((r) => !isWeeklyPlanInstructionLine(r.text))
+  while (lastBigThree.length < 3) lastBigThree.push({ text: '', pct: '0' })
+  if (lastBigThree.length > 3) lastBigThree = lastBigThree.slice(0, 3)
 
   const { completed, open, carry } = await scanDailyNotesInWeek(status.prevWeek, vaultScan)
 
@@ -288,7 +409,9 @@ export async function loadWeeklyPlanWizardContext(
     ...status,
     carrySuggestions: dedupeCarrySuggestions(carry),
     lastWeekCompleted: dedupeContextLines(completed),
-    lastWeekOpen: dedupeContextLines(open)
+    lastWeekOpen: dedupeContextLines(open),
+    lastWeekWeeklyBigThree,
+    bigThreeSuggestionWeek
   }
 
   return {
