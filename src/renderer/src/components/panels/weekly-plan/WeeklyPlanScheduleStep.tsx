@@ -60,6 +60,7 @@ function CalBlock({
   return (
     <div
       className={`wp-cal-block${q2 ? ' is-q2' : ''}`}
+      data-testid="weekly-plan-cal-block"
       data-entry-id={entry.id}
       draggable
       style={{ top: style.top, height: style.height }}

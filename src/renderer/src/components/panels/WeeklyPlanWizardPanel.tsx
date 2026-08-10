@@ -8,6 +8,7 @@ import type {
 } from '../../../../shared/weekly-plan-types'
 import { WeeklyPlanScheduleStep } from './weekly-plan/WeeklyPlanScheduleStep'
 import { syncScheduleEntries } from './weekly-plan/schedule-utils'
+import { dedupeContextLines } from '../../../../shared/weekly-plan-dedupe'
 
 const WP_STEPS = [
   {
@@ -89,27 +90,16 @@ function ContextPanel({
   )
 }
 
-function ContextLineEditor({
-  lines,
-  onChange,
-  done
-}: {
-  lines: WeeklyPlanContextLine[]
-  onChange: (index: number, text: string) => void
-  done?: boolean
-}): JSX.Element {
+function ContextLineEditor({ lines, done }: { lines: WeeklyPlanContextLine[]; done?: boolean }): JSX.Element {
   return (
     <>
       {lines.map((t, i) => (
-        <div key={`${t.source}-${i}`} className={`wp-context-item${done ? ' is-done' : ' is-open'}`}>
+        <div key={`${t.source}-${i}-${t.text.slice(0, 24)}`} className={`wp-context-item${done ? ' is-done' : ' is-open'}`}>
           <span className="wp-context-check">{done ? '✓' : ''}</span>
           <div className="wp-context-body">
-            <input
-              className={`input wp-context-edit${done ? ' is-done' : ''}`}
-              value={t.text}
-              onChange={(e) => onChange(i, e.target.value)}
-              aria-label={done ? 'Completed task' : 'Open task'}
-            />
+            <div className={`wp-context-text${done ? ' is-done' : ''}`}>
+              <ObsidianTagText text={t.text} />
+            </div>
             <div className="wp-context-src">{t.source}</div>
           </div>
         </div>
@@ -132,8 +122,8 @@ export default function WeeklyPlanWizardPanel({
   const [step, setStep] = useState(0)
   const [data, setData] = useState<WeeklyPlanWizardData>(context.initialData)
   const [carryAdded, setCarryAdded] = useState<Set<string>>(() => new Set())
-  const [completedLines, setCompletedLines] = useState(() => [...context.lastWeekCompleted])
-  const [openLines, setOpenLines] = useState(() => [...context.lastWeekOpen])
+  const [completedLines] = useState(() => dedupeContextLines([...context.lastWeekCompleted]))
+  const [openLines] = useState(() => dedupeContextLines([...context.lastWeekOpen]))
   const [creating, setCreating] = useState(false)
   const [done, setDone] = useState(false)
 
@@ -144,8 +134,6 @@ export default function WeeklyPlanWizardPanel({
   const incompleteLastBigThree = useMemo(
     () =>
       data.lastBigThree.filter((row) => {
-        const p = String(row.pct).trim().toLowerCase()
-        if (p === 'n/a') return false
         const n = parsePct(row.pct)
         return n === null || n < 100
       }),
@@ -246,23 +234,20 @@ export default function WeeklyPlanWizardPanel({
       )
       sideTitle = 'Completed last week'
       sideHint = `From ${prevWeek} dailies & weekly note.`
-      side = <ContextLineEditor lines={completedLines} done onChange={(i, text) => {
-        setCompletedLines((lines) => lines.map((l, j) => (j === i ? { ...l, text } : l)))
-      }} />
+      side = <ContextLineEditor lines={completedLines} done />
     } else if (step === 2) {
       main = (
         <>
           {data.lastBigThree.map((row, i) => {
-            const isNa = String(row.pct).trim().toLowerCase() === 'n/a'
-            const pct = parsePct(row.pct)
-            const sliderVal = isNa ? 0 : pct ?? 0
-            const low = !isNa && sliderVal < 40
+            const pct = parsePct(row.pct) ?? 0
+            const sliderVal = pct
+            const low = sliderVal < 40
             return (
               <div key={i} className="wp-big3-retro" data-idx={i}>
                 <div className="wp-big3-retro-head">
                   <span className="wp-big3-retro-num">#{i + 1}</span>
                   <input
-                    className="input"
+                    className="wp-plain-field"
                     value={row.text}
                     placeholder="Outcome from last week…"
                     onChange={(e) => {
@@ -282,44 +267,21 @@ export default function WeeklyPlanWizardPanel({
                       max={100}
                       step={5}
                       value={sliderVal}
-                      disabled={isNa}
                       style={{ ['--pct' as string]: `${sliderVal}%` }}
                       onChange={(e) => setPct(i, e.target.value)}
                       aria-label="Completion percent"
                     />
-                    {isNa ? (
-                      <span className="wp-completion-val is-na">n/a</span>
-                    ) : (
-                      <span className="wp-completion-pct-wrap">
-                        <input
-                          type="text"
-                          className="input wp-completion-pct-input"
-                          inputMode="numeric"
-                          value={sliderVal}
-                          onChange={(e) => setPct(i, e.target.value.replace(/\D/g, ''))}
-                          aria-label="Completion percent"
-                        />
-                        <span className="wp-completion-pct-suffix">%</span>
-                      </span>
-                    )}
-                  </div>
-                  <div className="wp-completion-na">
-                    <button
-                      type="button"
-                      className={isNa ? 'is-active' : ''}
-                      onClick={() => {
-                        const lastBigThree = [...data.lastBigThree]
-                        lastBigThree[i] = { ...lastBigThree[i]!, pct: 'n/a' }
-                        setData((d) => ({ ...d, lastBigThree }))
-                      }}
-                    >
-                      Not applicable
-                    </button>
-                    {isNa ? (
-                      <button type="button" onClick={() => setPct(i, '0')}>
-                        Set %
-                      </button>
-                    ) : null}
+                    <span className="wp-completion-pct-wrap">
+                      <input
+                        type="text"
+                        className="wp-completion-pct-input"
+                        inputMode="numeric"
+                        value={sliderVal}
+                        onChange={(e) => setPct(i, e.target.value.replace(/\D/g, ''))}
+                        aria-label="Completion percent"
+                      />
+                      <span className="wp-completion-pct-suffix">%</span>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -338,9 +300,7 @@ export default function WeeklyPlanWizardPanel({
       )
       sideTitle = 'Completed last week'
       sideHint = `Tasks marked done in ${prevWeek}.`
-      side = <ContextLineEditor lines={completedLines} done onChange={(i, text) => {
-        setCompletedLines((lines) => lines.map((l, j) => (j === i ? { ...l, text } : l)))
-      }} />
+      side = <ContextLineEditor lines={completedLines} done />
     } else if (step === 3) {
       main = (
         <div className="wp-field">
@@ -363,9 +323,7 @@ export default function WeeklyPlanWizardPanel({
       )
       sideTitle = 'Still open'
       sideHint = 'Unfinished lines from last week (deduped).'
-      side = <ContextLineEditor lines={openLines} onChange={(i, text) => {
-        setOpenLines((lines) => lines.map((l, j) => (j === i ? { ...l, text } : l)))
-      }} />
+      side = <ContextLineEditor lines={openLines} />
     } else if (step === 4) {
       main = (
         <>
@@ -421,9 +379,7 @@ export default function WeeklyPlanWizardPanel({
       )
       sideTitle = 'Still open'
       sideHint = 'Same pool as carry-over suggestions, deduped.'
-      side = <ContextLineEditor lines={openLines} onChange={(i, text) => {
-        setOpenLines((lines) => lines.map((l, j) => (j === i ? { ...l, text } : l)))
-      }} />
+      side = <ContextLineEditor lines={openLines} />
     } else if (step === 5) {
       main = (
         <>
@@ -486,7 +442,7 @@ export default function WeeklyPlanWizardPanel({
         </>
       )
       sideTitle = 'Carry into this week'
-      sideHint = 'Editable reference — incomplete Big Three + open tasks.'
+      sideHint = 'Incomplete Big Three + open tasks (deduped).'
       side = (
         <>
           {incompleteLastBigThree.map((row) => {
@@ -497,24 +453,16 @@ export default function WeeklyPlanWizardPanel({
               <div key={i} className={`wp-context-item${partial ? ' is-partial' : ' is-open'}`}>
                 <span className="wp-context-check">{partial ? `${p}%` : ''}</span>
                 <div className="wp-context-body">
-                  <input
-                    className="input wp-context-edit"
-                    value={row.text}
-                    onChange={(e) => {
-                      const lastBigThree = [...data.lastBigThree]
-                      lastBigThree[i] = { ...lastBigThree[i]!, text: e.target.value }
-                      setData((d) => ({ ...d, lastBigThree }))
-                    }}
-                  />
+                  <div className="wp-context-text">
+                    <ObsidianTagText text={row.text} />
+                  </div>
                   <div className="wp-context-src">Last week Big Three</div>
                 </div>
               </div>
             )
           })}
           <div className="wp-context-sub">Open from dailies &amp; notes (deduped)</div>
-          <ContextLineEditor lines={openLines} onChange={(i, text) => {
-            setOpenLines((lines) => lines.map((l, j) => (j === i ? { ...l, text } : l)))
-          }} />
+          <ContextLineEditor lines={openLines} />
         </>
       )
     } else {
