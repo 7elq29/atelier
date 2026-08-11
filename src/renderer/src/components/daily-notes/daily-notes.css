@@ -202,6 +202,37 @@
 .dn-task-edit-input {
   flex: 1;
   font-size: 15px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  color: inherit;
+  min-width: 0;
+}
+.dn-task-edit-input:focus {
+  border: none;
+  box-shadow: none;
+}
+.dn-tblock .dn-task-input-wrap,
+.dn-task-chip.editing .dn-task-input-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.dn-tblock .dn-task-edit-input,
+.dn-tblock .dn-draft-input,
+.dn-task-chip .dn-task-edit-input {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  color: inherit;
+  width: 100%;
+}
+.dn-tblock .dn-task-edit-input:focus,
+.dn-tblock .dn-draft-input:focus,
+.dn-task-chip .dn-task-edit-input:focus {
+  border: none;
+  box-shadow: none;
 }
 
 /* ---- Tags (UC-12/14) ---- */
@@ -252,12 +283,16 @@
 }
 
 .dn-tag-suggestion {
-  font-size: 11px;
-  padding: 1px 6px;
+  font-size: 12px;
+  padding: 3px 8px;
   border-radius: 10px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-panel-raised);
+  border: 1px solid color-mix(in srgb, var(--info) 45%, transparent);
+  background: color-mix(in srgb, var(--info) 14%, var(--bg-panel-raised));
+  color: var(--info);
   cursor: pointer;
+}
+.dn-tag-suggestion:hover {
+  background: color-mix(in srgb, var(--info) 24%, var(--bg-panel-raised));
 }
 
 
@@ -310,6 +345,16 @@
   color: var(--text-tertiary);
   transform: translateY(-6px);
 }
+/* Draft slot time label — same typography as .dn-hour-label (not .dn-tb-range). */
+.dn-draft-range {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.01em;
+  line-height: 1;
+  font-weight: 400;
+}
 .dn-hour-line {
   flex: 1;
   height: 1px;
@@ -336,6 +381,60 @@
   z-index: 5;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
 }
+.dn-tblock.renaming {
+  overflow: visible;
+  z-index: 8;
+}
+.dn-tblock-draft-wrap {
+  position: absolute;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+}
+.dn-tblock-draft-slot {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1.5px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel-raised));
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+}
+.dn-tblock-draft-slot.meeting {
+  border-color: var(--info);
+  border-left-color: var(--info);
+  background: color-mix(in srgb, var(--info) 10%, var(--bg-panel-raised));
+}
+.dn-tblock-draft-editor {
+  padding: 8px 10px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-popover);
+}
+.dn-tblock-draft-editor .dn-task-input-wrap {
+  width: 100%;
+  min-width: 0;
+}
+.dn-tblock-draft-editor .dn-draft-input,
+.dn-tblock-draft-editor .input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.dn-tblock-draft-editor .dn-draft-input:focus,
+.dn-tblock-draft-editor .input:focus {
+  border: none;
+  box-shadow: none;
+}
 .dn-tblock.done {
   opacity: 0.55;
   border-left-color: var(--border-strong);
@@ -356,8 +455,51 @@
   text-decoration: line-through;
   color: var(--text-tertiary);
 }
-.dn-tblock-draft {
-  border-left-color: var(--warning);
+.dn-tblock.meeting {
+  border-left-color: var(--info);
+}
+.dn-draft-popover {
+  position: absolute;
+  z-index: 10;
+  min-width: 200px;
+  max-width: min(320px, calc(100% - 48px));
+  padding: 8px 10px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+.dn-task-input-wrap {
+  position: relative;
+  width: 100%;
+}
+.dn-inline-tag-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 6px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-popover);
+  z-index: 20;
+}
+.dn-inline-tag-suggestions .dn-tag-suggestion {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--info) 45%, transparent);
+  background: color-mix(in srgb, var(--info) 14%, var(--bg-panel-raised));
+  color: var(--info);
+  cursor: pointer;
+}
+.dn-inline-tag-suggestions .dn-tag-suggestion:hover {
+  background: color-mix(in srgb, var(--info) 24%, var(--bg-panel-raised));
+}
+.dn-task-chip.editing {
+  flex-wrap: wrap;
+  align-items: flex-start;
 }
 .dn-draft-input {
   width: 100%;

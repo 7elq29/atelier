@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DailyTask } from '../../../../shared/daily-note-types'
+import { filterDailyNoteTagSuggestions, normalizeDailyNoteTag, formatTaskTextWithInlineTags } from '../../../../shared/daily-note-tags'
+import DailyNoteTaskInput from './DailyNoteTaskInput'
 import TaskMoveContextMenu from './TaskMoveContextMenu'
 import type { MoveDateOptions } from './move-date-options'
 
@@ -23,18 +25,6 @@ interface TaskItemProps {
   onMoveToDate?: (id: string, targetDate: string) => void
   onCreateSessionFromTask?: (task: DailyTask) => void
 }
-
-/** Fixed tag suggestion list (54b list affordances). */
-const TAG_SUGGESTIONS = [
-  '#p0',
-  '#p1',
-  '#delegated',
-  '#project/spark',
-  '#project/unstructured',
-  '#project/logging',
-  '#ktlo',
-  '#q2'
-]
 
 /** Structural tags managed by section semantics (see daily-note-io.ts's
  * `serializeTaskLine`/`parseBulletLine`) — never shown/removable as a chip,
@@ -61,15 +51,7 @@ export default function TaskItem({
   const [tagPickerOpen, setTagPickerOpen] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [moveMenu, setMoveMenu] = useState<{ x: number; y: number } | null>(null)
-  const editInputRef = useRef<HTMLInputElement>(null)
   const tagInputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (editing) {
-      editInputRef.current?.focus()
-      editInputRef.current?.select()
-    }
-  }, [editing])
 
   useEffect(() => {
     if (tagPickerOpen) tagInputRef.current?.focus()
@@ -77,17 +59,17 @@ export default function TaskItem({
 
   function commitEdit(): void {
     const trimmed = editText.trim()
-    if (trimmed && trimmed !== task.text) onUpdateText(task.id, trimmed)
+    if (trimmed) onUpdateText(task.id, trimmed)
     setEditing(false)
   }
 
   function cancelEdit(): void {
-    setEditText(task.text)
+    setEditText(formatTaskTextWithInlineTags(task.text, task.tags))
     setEditing(false)
   }
 
   function addTag(rawTag: string): void {
-    const normalized = rawTag.startsWith('#') ? rawTag : `#${rawTag}`
+    const normalized = normalizeDailyNoteTag(rawTag)
     if (normalized.length <= 1) return
     if (!task.tags.includes(normalized)) onUpdateTags(task.id, [...task.tags, normalized])
     setTagInput('')
@@ -102,13 +84,13 @@ export default function TaskItem({
   }
 
   const visibleTags = task.tags.filter((t) => !STRUCTURAL_TAGS.has(t))
-  const suggestions = TAG_SUGGESTIONS.filter(
-    (t) => !task.tags.includes(t) && t.toLowerCase().includes(tagInput.trim().toLowerCase())
-  ).slice(0, 4)
+  const suggestions = filterDailyNoteTagSuggestions(tagInput, task.tags).slice(0, 4)
 
   return (
     <div
-      className={`dn-task-chip${task.status === 'done' ? ' done' : ''}`}
+      className={`dn-task-chip${task.status === 'done' ? ' done' : ''}${task.isNote ? ' meeting' : ''}${
+        editing ? ' editing' : ''
+      }`}
       data-testid={testId}
       data-task-id={task.id}
       draggable={draggable}
@@ -119,30 +101,23 @@ export default function TaskItem({
         setMoveMenu({ x: e.clientX, y: e.clientY })
       }}
     >
-      <div className="dn-tbox" onClick={() => onToggle(task.id)} />
+      {!task.isNote && <div className="dn-tbox" onClick={() => onToggle(task.id)} />}
       {editing ? (
-        <input
-          ref={editInputRef}
-          className="dn-task-edit-input"
-          data-testid="task-edit-input"
+        <DailyNoteTaskInput
+          autoFocus
           value={editText}
-          onChange={(e) => setEditText(e.target.value)}
+          onChange={setEditText}
+          inputClassName="dn-task-edit-input"
+          testId="task-edit-input"
+          onSubmit={commitEdit}
+          onCancel={cancelEdit}
           onBlur={commitEdit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              commitEdit()
-            } else if (e.key === 'Escape') {
-              e.preventDefault()
-              cancelEdit()
-            }
-          }}
         />
       ) : (
         <span
           onDoubleClick={(e) => {
             e.stopPropagation()
-            setEditText(task.text)
+            setEditText(formatTaskTextWithInlineTags(task.text, task.tags))
             setEditing(true)
           }}
         >
@@ -181,6 +156,9 @@ export default function TaskItem({
               } else if (e.key === 'Escape') {
                 e.preventDefault()
                 setTagPickerOpen(false)
+              } else if (e.key === 'Tab' && suggestions.length > 0) {
+                e.preventDefault()
+                addTag(suggestions[0]!)
               }
             }}
           />
@@ -222,7 +200,10 @@ export default function TaskItem({
           y={moveMenu.y}
           options={moveDateOptions}
           onSelect={(targetDate) => onMoveToDate(task.id, targetDate)}
-          onRename={() => { setEditText(task.text); setEditing(true) }}
+          onRename={() => {
+            setEditText(formatTaskTextWithInlineTags(task.text, task.tags))
+            setEditing(true)
+          }}
           onCreateSession={onCreateSessionFromTask ? () => onCreateSessionFromTask(task) : undefined}
           onClose={() => setMoveMenu(null)}
         />

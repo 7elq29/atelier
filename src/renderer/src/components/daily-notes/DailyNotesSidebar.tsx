@@ -4,6 +4,8 @@ import { useDailyNote } from '../../hooks/useDailyNote'
 import { useSectionResize } from './section-resize'
 import Timeline from './Timeline'
 import TaskItem from './TaskItem'
+import DailyNoteTaskInput from './DailyNoteTaskInput'
+import { isDailyNoteBulletFromTags } from '../../../../shared/daily-note-tags'
 import { computeMoveDateOptions } from './move-date-options'
 
 export interface DailyNotesSidebarProps {
@@ -26,11 +28,6 @@ interface AddTaskInputProps {
 function AddTaskInput({ testId, buttonLabel = '+ New task', onAdd }: AddTaskInputProps): JSX.Element {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (open) inputRef.current?.focus()
-  }, [open])
 
   function commit(): void {
     const trimmed = text.trim()
@@ -53,23 +50,15 @@ function AddTaskInput({ testId, buttonLabel = '+ New task', onAdd }: AddTaskInpu
   }
 
   return (
-    <input
-      ref={inputRef}
-      className="dn-add-task-input"
-      data-testid={`${testId}-input`}
+    <DailyNoteTaskInput
+      autoFocus
       value={text}
-      placeholder="New task…"
-      onChange={(e) => setText(e.target.value)}
+      onChange={setText}
+      inputClassName="dn-add-task-input"
+      testId={`${testId}-input`}
+      onSubmit={commit}
+      onCancel={cancel}
       onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault()
-          commit()
-        } else if (e.key === 'Escape') {
-          e.preventDefault()
-          cancel()
-        }
-      }}
     />
   )
 }
@@ -95,12 +84,14 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
     moveTask,
     moveTaskToDate,
     moveError,
-    updateTask
+    updateTask,
+    updateTaskText
   } = useDailyNote(date, vaultRoot)
   const containerRef = useRef<HTMLDivElement>(null)
   const sectionsRef = useRef<HTMLDivElement>(null)
   const { weights, startResize } = useSectionResize(sectionsRef)
   const [addingUnscheduled, setAddingUnscheduled] = useState(false)
+  const [unscheduledDraft, setUnscheduledDraft] = useState('')
   // 16-task-move-to-date: "today" for the "Move to..." menu's relative
   // labels (tomorrow/weekday-name/next-week) is the date of the note
   // currently open — the app has no other-date navigation today, so this is
@@ -215,7 +206,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
           onCreate={(text, timeBlock) => addTask(text, 'day-plan', timeBlock)}
           onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
           onDelete={deleteTask}
-          onUpdateText={(id, text) => updateTask(id, { text })}
+          onUpdateText={updateTaskText}
           moveDateOptions={moveDateOptions}
           onMoveToDate={moveTaskToDate}
           onCreateSessionFromTask={onCreateSessionFromTask}
@@ -235,26 +226,37 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
             type="button"
             className="btn btn-icon btn-sm"
             data-testid="add-unscheduled-task-btn"
-            onClick={() => setAddingUnscheduled(true)}
+            onClick={() => {
+              setUnscheduledDraft('')
+              setAddingUnscheduled(true)
+            }}
           >
             +
           </button>
         </div>
         {addingUnscheduled && (
           <div className="dn-inline-add">
-            <input
+            <DailyNoteTaskInput
               autoFocus
-              className="input"
-              placeholder="New task…"
-              data-testid="add-unscheduled-task-input"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                  addTask(e.currentTarget.value.trim(), 'unscheduled')
-                  setAddingUnscheduled(false)
-                }
-                if (e.key === 'Escape') setAddingUnscheduled(false)
+              value={unscheduledDraft}
+              onChange={setUnscheduledDraft}
+              testId="add-unscheduled-task-input"
+              onSubmit={() => {
+                const trimmed = unscheduledDraft.trim()
+                if (trimmed) addTask(trimmed, 'unscheduled')
+                setUnscheduledDraft('')
+                setAddingUnscheduled(false)
               }}
-              onBlur={() => setAddingUnscheduled(false)}
+              onCancel={() => {
+                setUnscheduledDraft('')
+                setAddingUnscheduled(false)
+              }}
+              onBlur={() => {
+                const trimmed = unscheduledDraft.trim()
+                if (trimmed) addTask(trimmed, 'unscheduled')
+                setUnscheduledDraft('')
+                setAddingUnscheduled(false)
+              }}
             />
           </div>
         )}
@@ -274,8 +276,10 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
               task={task}
               onToggle={toggleTask}
               onDelete={deleteTask}
-              onUpdateText={(id, text) => updateTask(id, { text })}
-              onUpdateTags={(id, tags) => updateTask(id, { tags })}
+              onUpdateText={updateTaskText}
+              onUpdateTags={(id, tags) =>
+                updateTask(id, { tags, isNote: isDailyNoteBulletFromTags(tags) })
+              }
               moveDateOptions={moveDateOptions}
               onMoveToDate={moveTaskToDate}
               onCreateSessionFromTask={onCreateSessionFromTask}
@@ -301,8 +305,10 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
               draggable={false}
               onToggle={toggleTask}
               onDelete={deleteTask}
-              onUpdateText={(id, text) => updateTask(id, { text })}
-              onUpdateTags={(id, tags) => updateTask(id, { tags })}
+              onUpdateText={updateTaskText}
+              onUpdateTags={(id, tags) =>
+                updateTask(id, { tags, isNote: isDailyNoteBulletFromTags(tags) })
+              }
             />
           ))}
         </div>

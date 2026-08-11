@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { DailyTask, DailyNote, TaskSection } from '../../../shared/daily-note-types'
+import { isDailyNoteBulletFromTags, parseInlineTagsFromTaskText } from '../../../shared/daily-note-tags'
 
 const WRITE_DEBOUNCE_MS = 500
 
@@ -24,6 +25,8 @@ export interface UseDailyNoteResult {
   vaultConfigured: boolean
   createNote: () => void
   updateTask: (id: string, patch: Partial<DailyTask>) => void
+  /** Parse inline `#tags` from edited text and sync `tags` / `isNote`. */
+  updateTaskText: (id: string, rawText: string) => void
   toggleTask: (id: string) => void
   addTask: (text: string, section: TaskSection, timeBlock?: string) => void
   deleteTask: (id: string) => void
@@ -169,6 +172,27 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
     [mutate]
   )
 
+  const updateTaskText = useCallback(
+    (id: string, rawText: string) =>
+      mutate((prev) => ({
+        ...prev,
+        tasks: prev.tasks.map((t) => {
+          if (t.id !== id) return t
+          const parsed = parseInlineTagsFromTaskText(rawText)
+          const structural = t.tags.filter((tag) => tag === '#tracker' || tag === '#delegated')
+          const structuralSet = new Set<string>(structural)
+          const tags = [...structural, ...parsed.tags.filter((tag) => !structuralSet.has(tag))]
+          return {
+            ...t,
+            text: parsed.text,
+            tags,
+            isNote: isDailyNoteBulletFromTags(tags)
+          }
+        })
+      })),
+    [mutate]
+  )
+
   const toggleTask = useCallback(
     (id: string) =>
       mutate((prev) => ({
@@ -185,17 +209,23 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
   const addTask = useCallback(
     (text: string, section: TaskSection, timeBlock?: string) =>
       mutate((prev) => {
+        const parsed = parseInlineTagsFromTaskText(text)
         const gid = crypto.randomUUID()
+        const sectionTags = section === 'tracker' ? ['#tracker'] : []
+        const tags = [
+          ...sectionTags,
+          ...parsed.tags.filter((tag) => !sectionTags.includes(tag))
+        ]
         const newTask: DailyTask = {
           id: gid,
           gid,
-          text,
+          text: parsed.text,
           status: 'open',
           section,
-          tags: section === 'tracker' ? ['#tracker'] : [],
+          tags,
           externalLinks: [],
           isTracker: section === 'tracker',
-          isNote: false,
+          isNote: isDailyNoteBulletFromTags(tags),
           ...(timeBlock ? { timeBlock } : {})
         }
         const tasks = [...prev.tasks]
@@ -280,6 +310,7 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
     vaultConfigured,
     createNote,
     updateTask,
+    updateTaskText,
     toggleTask,
     addTask,
     deleteTask,
