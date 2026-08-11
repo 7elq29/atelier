@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { seedE2eConfig, seedSkipOnboarding } from './e2e-config'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -38,6 +38,7 @@ test.describe('fix-confirmed: daily-notes timeline right-click creates a task at
   let page: Page
   let userDataDir: string
   let vaultRoot: string
+  let notePath: string
 
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-dn-time-edit-'))
@@ -52,6 +53,7 @@ test.describe('fix-confirmed: daily-notes timeline right-click creates a task at
       `---\ndate: ${TEST_DATE}\nday: Friday\ntype: daily\n---\n\n## 📋 Tasks\n\n### ⚪ Backlog\n\n### 🤝 Delegated\n-\n`,
       'utf-8'
     )
+    notePath = join(noteDir, `${TEST_DATE}.md`)
 
     electronApp = await electron.launch({
       args: [mainEntry, `--user-data-dir=${userDataDir}`],
@@ -80,21 +82,19 @@ test.describe('fix-confirmed: daily-notes timeline right-click creates a task at
     const input = page.getByTestId('timeline-new-task-input')
     await expect(input).toBeVisible()
 
-    const draftRow = page.locator('.dn-tblock-draft')
-    await expect(draftRow).toBeVisible()
-    const rangeLabel = draftRow.locator('.dn-tb-range')
-    await expect(rangeLabel).toBeVisible()
-    const draftTimeText = (await rangeLabel.textContent())?.trim() ?? ''
-    // A real, plausible HH:MM–HH:MM range — not the always-"now" default the
-    // old bug produced regardless of click position.
-    expect(draftTimeText).toMatch(/^\d{1,2}:\d{2}[–-]\d{1,2}:\d{2}$/)
+    const draftBlock = page.getByTestId('timeline-draft-block')
+    await expect(draftBlock).toBeVisible()
+    const draftRange = page.getByTestId('timeline-draft-range')
+    await expect(draftRange).toBeVisible()
+    await expect(draftRange).toHaveCSS('font-size', '11px')
+    await expect(draftRange).toHaveCSS('font-family', /mono/i)
 
     await input.fill('Confirm time-edit fix')
     await input.press('Enter')
 
     const block = page.locator('[data-testid="timeline-task"]', { hasText: 'Confirm time-edit fix' })
     await expect(block).toBeVisible()
-    const beforeDrag = await block.textContent()
+    const beforeStart = await block.getAttribute('data-start')
 
     // The created block is draggable (mousedown-move on its body) to change
     // its time — the actual replacement for "no way to edit the time block".
@@ -105,9 +105,93 @@ test.describe('fix-confirmed: daily-notes timeline right-click creates a task at
     await page.mouse.move(blockBox.x + blockBox.width / 2, blockBox.y + blockBox.height / 2 + 120, { steps: 10 })
     await page.mouse.up()
 
-    const afterDrag = await block.textContent()
-    expect(afterDrag).not.toBe(beforeDrag)
+    await expect
+      .poll(async () => block.getAttribute('data-start'), { timeout: 5_000 })
+      .not.toBe(beforeStart)
 
     await page.screenshot({ path: join(artifactsDir, 'fix-daily-notes-time-editing-and-review.png') })
+  })
+
+  test('empty timeline draft block dismisses when clicking empty grid space', async () => {
+    const timelineBody = page.locator('[data-testid="timeline-body"]')
+    const box = await timelineBody.boundingBox()
+    if (!box) throw new Error('timeline body not visible')
+
+    const openY = Math.min(20, box.height - 2)
+    await timelineBody.click({ button: 'right', position: { x: 40, y: openY } })
+    await expect(page.getByTestId('timeline-draft-block')).toBeVisible()
+
+    await timelineBody.click({ position: { x: 40, y: openY + 80 } })
+    await expect(page.getByTestId('timeline-draft-block')).toHaveCount(0)
+  })
+
+  test('typing # in timeline draft shows #meeting among suggestions', async () => {
+    const timelineBody = page.locator('[data-testid="timeline-body"]')
+    const box = await timelineBody.boundingBox()
+    if (!box) throw new Error('timeline body not visible')
+
+    await timelineBody.click({ button: 'right', position: { x: 40, y: Math.min(40, box.height - 2) } })
+    const input = page.getByTestId('timeline-new-task-input')
+    await expect(input).toBeVisible()
+    await input.fill('#')
+    await expect(page.getByTestId('inline-tag-suggestion').filter({ hasText: '#meeting' })).toBeVisible()
+  })
+
+  test('Tab autocompletes the first inline tag suggestion', async () => {
+    const timelineBody = page.locator('[data-testid="timeline-body"]')
+    const box = await timelineBody.boundingBox()
+    if (!box) throw new Error('timeline body not visible')
+
+    await timelineBody.click({ button: 'right', position: { x: 40, y: Math.min(40, box.height - 2) } })
+    const input = page.getByTestId('timeline-new-task-input')
+    await expect(input).toBeVisible()
+    await input.fill('Sync #meet')
+    await expect(page.getByTestId('inline-tag-suggestions')).toBeVisible()
+    await input.press('Tab')
+    await expect(input).toHaveValue('Sync #meeting ')
+  })
+
+  test('editing a timeline task to add #meeting converts it to a note block without a checkbox', async () => {
+    const timelineBody = page.locator('[data-testid="timeline-body"]')
+    const box = await timelineBody.boundingBox()
+    if (!box) throw new Error('timeline body not visible')
+
+    await timelineBody.click({ button: 'right', position: { x: 40, y: Math.min(100, box.height - 2) } })
+    const input = page.getByTestId('timeline-new-task-input')
+    await input.fill('Standup notes')
+    await input.press('Enter')
+    const block = page.locator('[data-testid="timeline-task"]', { hasText: 'Standup notes' })
+    await expect(block).toBeVisible()
+    await block.click({ button: 'right' })
+    await page.getByTestId('task-rename-option').click()
+    const editInput = page.getByTestId('timeline-task-edit-input')
+    await editInput.fill('Standup notes #meeting')
+    await editInput.press('Enter')
+    await expect(block.locator('[data-testid="timeline-task-toggle"]')).toHaveCount(0)
+    await page.waitForTimeout(1200)
+    const content = readFileSync(notePath, 'utf-8')
+    const line = content.split('\n').find((l) => l.includes('Standup notes') && l.includes('#meeting'))
+    expect(line).toBeTruthy()
+    expect(line).not.toMatch(/^-\s+\[/)
+  })
+
+  test('timeline task with #meeting serializes as a plain bullet without a checkbox', async () => {
+    const timelineBody = page.locator('[data-testid="timeline-body"]')
+    const box = await timelineBody.boundingBox()
+    if (!box) throw new Error('timeline body not visible')
+
+    await timelineBody.click({ button: 'right', position: { x: 40, y: Math.min(60, box.height - 2) } })
+    const input = page.getByTestId('timeline-new-task-input')
+    await input.fill('Team sync #meeting')
+    await input.press('Enter')
+
+    await expect(page.locator('[data-testid="timeline-task"]', { hasText: 'Team sync' })).toBeVisible()
+    await page.waitForTimeout(1200)
+
+    const content = readFileSync(notePath, 'utf-8')
+    const line = content.split('\n').find((l) => l.includes('Team sync') && l.includes('#meeting'))
+    expect(line).toBeTruthy()
+    expect(line).toMatch(/^-\s+(?:\d{1,2}:\d{2}[^\s]+\s+)?Team sync #meeting/)
+    expect(line).not.toMatch(/^-\s+\[/)
   })
 })

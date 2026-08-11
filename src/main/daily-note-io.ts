@@ -36,6 +36,7 @@ import type {
   ExternalLink,
   RawSections
 } from '../shared/daily-note-types'
+import { isDailyNoteBulletFromTags } from '../shared/daily-note-tags'
 
 // ── id minting ───────────────────────────────────────────────────
 
@@ -149,6 +150,9 @@ function parseBulletLine(
 
   const text = remaining.trim()
   const isTracker = sectionHint === 'tracker' || tags.includes('#tracker')
+  if (isDailyNoteBulletFromTags(tags) && !isTracker) {
+    isNote = true
+  }
   // A task's section is determined solely by which markdown heading it
   // physically sits under (sectionHint), never by whether its text happens
   // to carry a time-block-shaped prefix. Bug #57: this used to force any

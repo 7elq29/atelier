@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DailyTask } from '../../../../shared/daily-note-types'
 import CurrentTimeMarker from './CurrentTimeLine'
+import DailyNoteTaskInput from './DailyNoteTaskInput'
 import TaskMoveContextMenu from './TaskMoveContextMenu'
 import type { MoveDateOptions } from './move-date-options'
 import {
@@ -14,8 +15,10 @@ import {
   minutesToPx,
   pxToMinutes,
   snapMinutes,
+  snapToHalfHour,
   computeColumns
 } from './timeline-scale'
+import { formatTaskTextWithInlineTags, extractInlineTagsFromText } from '../../../../shared/daily-note-tags'
 
 const DEFAULT_DURATION_MIN = 30
 const NOW_POLL_MS = 30_000
@@ -117,6 +120,19 @@ export default function Timeline({
     if (!tasks.some((t) => t.id === moveMenu.taskId)) setMoveMenu(null)
   }, [tasks, moveMenu])
 
+  // Dismiss an empty draft when the user clicks elsewhere on the timeline.
+  useEffect(() => {
+    if (!draft) return
+    const text = draft.text
+    function onMouseDown(e: MouseEvent): void {
+      const target = e.target as HTMLElement
+      if (target.closest('.dn-tblock-draft-wrap')) return
+      if (!text.trim()) setDraft(null)
+    }
+    window.addEventListener('mousedown', onMouseDown)
+    return () => window.removeEventListener('mousedown', onMouseDown)
+  }, [draft])
+
   // Drag state machine (UC-9/UC-10 move + resize): dragRef is the source of
   // truth read by the window-level mousemove/mouseup listeners (so they
   // never see a stale closure over the initial mousedown values); liveBlock
@@ -201,16 +217,28 @@ export default function Timeline({
   }
 
   const clampedStartForDefaultDuration = (clientY: number): number => {
-    const start = clamp(yToMinutes(clientY), GRID_START_MIN, GRID_END_MIN - DEFAULT_DURATION_MIN)
-    return start
+    const el = containerRef.current
+    if (!el) return GRID_START_MIN
+    const rect = el.getBoundingClientRect()
+    const relY = clientY - rect.top + el.scrollTop
+    const rawMin = GRID_START_MIN + pxToMinutes(relY)
+    const start = snapToHalfHour(rawMin)
+    return clamp(start, GRID_START_MIN, GRID_END_MIN - DEFAULT_DURATION_MIN)
   }
 
   const handleContextMenu = (e: React.MouseEvent): void => {
     e.preventDefault()
     if ((e.target as HTMLElement).closest('.dn-tblock')) return
+    if ((e.target as HTMLElement).closest('.dn-tblock-draft-wrap')) return
     const start = clampedStartForDefaultDuration(e.clientY)
     const end = start + DEFAULT_DURATION_MIN
-    setDraft({ timeBlock: `${minutesToTime(start)}-${minutesToTime(end)}`, text: '' })
+    if (draft?.text.trim()) {
+      onCreate(draft.text.trim(), draft.timeBlock)
+    }
+    setDraft({
+      timeBlock: `${minutesToTime(start)}-${minutesToTime(end)}`,
+      text: ''
+    })
   }
 
   const handleDrop = (e: React.DragEvent): void => {
@@ -228,6 +256,14 @@ export default function Timeline({
     }
     setDraft(null)
   }
+
+  const commitRename = (taskId: string): void => {
+    if (renameText.trim()) onUpdateText(taskId, renameText.trim())
+    setRenamingTaskId(null)
+  }
+
+  const draftBlock = draft ? parseTimeBlock(draft.timeBlock) : null
+  const draftIsMeeting = draft ? extractInlineTagsFromText(draft.text).includes('#meeting') : false
 
   // Build the effective (possibly live-dragged) start/end for every
   // scheduled task, then run the overlap-column layout (UC-10) over that
@@ -285,7 +321,7 @@ export default function Timeline({
               key={task.id}
               className={`dn-tblock${task.status === 'done' ? ' done' : ''}${
                 liveBlock && liveBlock.taskId === task.id ? ' dragging' : ''
-              }`}
+              }${task.isNote ? ' meeting' : ''}${renamingTaskId === task.id ? ' renaming' : ''}`}
               data-testid="timeline-task"
               data-task-id={task.id}
               data-start={minutesToTime(start)}
@@ -322,37 +358,29 @@ export default function Timeline({
                 ✕
               </button>
               <div className="dn-tb-body">
-                <div
-                  className="dn-tbox"
-                  data-testid="timeline-task-toggle"
-                  data-task-id={task.id}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onToggle(task.id)
-                  }}
-                />
-                {renamingTaskId === task.id ? (
-                  <input
-                    autoFocus
-                    className="dn-task-edit-input"
-                    value={renameText}
+                {!task.isNote && (
+                  <div
+                    className="dn-tbox"
+                    data-testid="timeline-task-toggle"
+                    data-task-id={task.id}
                     onMouseDown={(e) => e.stopPropagation()}
-                    onChange={(e) => setRenameText(e.target.value)}
-                    onBlur={() => {
-                      if (renameText.trim()) onUpdateText(task.id, renameText.trim())
-                      setRenamingTaskId(null)
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onToggle(task.id)
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        if (renameText.trim()) onUpdateText(task.id, renameText.trim())
-                        setRenamingTaskId(null)
-                      } else if (e.key === 'Escape') {
-                        e.preventDefault()
-                        setRenamingTaskId(null)
-                      }
-                    }}
+                  />
+                )}
+                {renamingTaskId === task.id ? (
+                  <DailyNoteTaskInput
+                    autoFocus
+                    value={renameText}
+                    onChange={setRenameText}
+                    inputClassName="dn-task-edit-input"
+                    testId="timeline-task-edit-input"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onSubmit={() => commitRename(task.id)}
+                    onCancel={() => setRenamingTaskId(null)}
+                    onBlur={() => commitRename(task.id)}
                   />
                 ) : (
                   <span className="dn-tb-label">{task.text}</span>
@@ -368,34 +396,39 @@ export default function Timeline({
           )
         })}
 
-        {draft &&
-          (() => {
-            const block = parseTimeBlock(draft.timeBlock)
-            const start = block ? block.start : GRID_START_MIN
-            const end = block ? block.end : GRID_START_MIN + DEFAULT_DURATION_MIN
-            const top = minutesToPx(start - GRID_START_MIN)
-            const height = Math.max(minutesToPx(end - start), 8)
-            return (
-              <div
-                className="dn-tblock dn-tblock-draft"
-                style={{ top: `${top}px`, height: `${height}px`, left: `${LABEL_WIDTH}px`, right: 0 }}
-              >
-                <input
-                  autoFocus
-                  className="input dn-draft-input"
-                  data-testid="timeline-new-task-input"
-                  placeholder="New task…"
-                  value={draft.text}
-                  onChange={(e) => setDraft({ ...draft, text: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') submitDraft()
-                    if (e.key === 'Escape') setDraft(null)
-                  }}
-                  onBlur={submitDraft}
-                />
-              </div>
-            )
-          })()}
+        {draft && draftBlock && (
+          <div
+            className="dn-tblock-draft-wrap"
+            data-testid="timeline-draft-block"
+            style={{
+              top: `${minutesToPx(draftBlock.start - GRID_START_MIN)}px`,
+              left: `${LABEL_WIDTH}px`,
+              width: `calc(100% - ${LABEL_WIDTH}px - 4px)`
+            }}
+          >
+            <div
+              className={`dn-tblock-draft-slot${draftIsMeeting ? ' meeting' : ''}`}
+              style={{ height: `${Math.max(minutesToPx(draftBlock.end - draftBlock.start), 8)}px` }}
+            >
+              <span className="dn-draft-range" data-testid="timeline-draft-range">
+                {draft.timeBlock.replace('-', '–')}
+              </span>
+            </div>
+            <div className="dn-tblock-draft-editor">
+              <DailyNoteTaskInput
+                autoFocus
+                value={draft.text}
+                onChange={(text) => setDraft({ ...draft, text })}
+                inputClassName="input dn-draft-input"
+                testId="timeline-new-task-input"
+                placeholder="New task…"
+                onSubmit={submitDraft}
+                onCancel={() => setDraft(null)}
+                onBlur={submitDraft}
+              />
+            </div>
+          </div>
+        )}
 
         <CurrentTimeMarker minutes={nowMinutes} />
       </div>
@@ -408,7 +441,10 @@ export default function Timeline({
           onSelect={(targetDate) => onMoveToDate(moveMenu.taskId, targetDate)}
           onRename={() => {
             const task = tasks.find((t) => t.id === moveMenu.taskId)
-            if (task) { setRenameText(task.text); setRenamingTaskId(task.id) }
+            if (task) {
+              setRenameText(formatTaskTextWithInlineTags(task.text, task.tags))
+              setRenamingTaskId(task.id)
+            }
           }}
           onCreateSession={
             onCreateSessionFromTask
