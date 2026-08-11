@@ -17,7 +17,7 @@ import { ipcMain, dialog, type BrowserWindow } from 'electron'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, watch, type FSWatcher } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, basename } from 'node:path'
-import type { DailyNote, DailyTask, RawSections, DailyNoteNotesSliceResult } from '../shared/daily-note-types'
+import type { DailyNote, DailyTask, RawSections, DailyNoteNotesSliceResult, DailyNotePasteImagePayload } from '../shared/daily-note-types'
 import {
   parseDailyNote,
   serializeDailyNote,
@@ -28,6 +28,7 @@ import {
   mergeNotesBodyIntoAfterTasks,
   DEFAULT_NOTES_SECTION_HEADING
 } from './daily-note-io'
+import { readDailyNoteAttachmentDataUrl, saveDailyNotePastedImage } from './daily-note-attachments'
 import { logger } from './logger'
 import { loadConfig } from './config'
 
@@ -426,6 +427,25 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
     recordKnownIds(path, getTaskIds(parsed.note))
     logger.info('daily-note write notes slice committed', { path, bodyLength: notesBody.length })
     return { ok: true as const }
+  })
+
+  ipcMain.handle('daily-note:paste-image', async (_event, date: string, payload: DailyNotePasteImagePayload) => {
+    const settings = resolveVaultSettings()
+    if (!settings) throw new Error('no vault root configured')
+
+    const { path } = await ensureNoteExists(date, settings, { carryOver: false })
+    const result = saveDailyNotePastedImage(path, settings.root, payload)
+    logger.info('daily-note pasted image saved', { date, path: result.vaultRelativePath })
+    return result
+  })
+
+  ipcMain.handle('daily-note:read-attachment-data-url', async (_event, date: string, fileName: string) => {
+    const settings = resolveVaultSettings()
+    if (!settings) return null
+
+    const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
+    if (!existsSync(path)) return null
+    return readDailyNoteAttachmentDataUrl(path, settings.root, fileName)
   })
 
   ipcMain.handle('daily-note:create', async (_event, date: string) => {

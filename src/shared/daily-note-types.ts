@@ -77,3 +77,18 @@ export interface DailyNoteNotesSliceResult {
   /** True when this call created the note from the vault template. */
   created: boolean
 }
+
+/** Payload for saving a clipboard/dropped image beside a daily note. */
+export interface DailyNotePasteImagePayload {
+  mimeType: string
+  /** Raw base64 bytes (no `data:` prefix). */
+  data: string
+}
+
+/** Result of saving a pasted image into the daily note's folder. */
+export interface DailyNotePasteImageResult {
+  /** Obsidian wiki embed, e.g. `![[Pasted image 20260811104500.png]]`. */
+  embedMarkdown: string
+  fileName: string
+  vaultRelativePath: string
+}

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AtelierConfig } from '../shared/config'
-import type { DailyNote, ReadDailyNoteResult, DailyNoteNotesSliceResult } from '../shared/daily-note-types'
+import type { DailyNote, ReadDailyNoteResult, DailyNoteNotesSliceResult, DailyNotePasteImagePayload, DailyNotePasteImageResult } from '../shared/daily-note-types'
 import type {
   WeeklyPlanCreatePayload,
   WeeklyPlanStatus,
@@ -95,6 +95,10 @@ const api = {
     ipcRenderer.invoke('daily-note:read-notes-slice', date, createIfMissing),
   writeDailyNoteNotesSlice: (date: string, notesBody: string): Promise<{ ok: true }> =>
     ipcRenderer.invoke('daily-note:write-notes-slice', date, notesBody),
+  pasteDailyNoteImage: (date: string, payload: DailyNotePasteImagePayload): Promise<DailyNotePasteImageResult> =>
+    ipcRenderer.invoke('daily-note:paste-image', date, payload),
+  readDailyNoteAttachmentDataUrl: (date: string, fileName: string): Promise<string | null> =>
+    ipcRenderer.invoke('daily-note:read-attachment-data-url', date, fileName),
   createDailyNote: (date: string): Promise<ReadDailyNoteResult> => ipcRenderer.invoke('daily-note:create', date),
   writeDailyNote: (date: string, note: DailyNote): Promise<{ note: DailyNote }> =>
     ipcRenderer.invoke('daily-note:write', date, note),

@@ -7,6 +7,10 @@ import '@atomic-editor/editor/styles.css'
 import { Prec } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
 import {
+  dailyNoteImagePasteExtension,
+  dailyNoteWikiEmbedImagePreview
+} from '../../editor/dailyNoteImagePaste'
+import {
   formatDailyNoteLabel,
   useDailyNoteNotesSlice
 } from '../../hooks/useDailyNoteNotesSlice'
@@ -23,6 +27,8 @@ export default function DailyNoteEditorPanel({
   const slice = useDailyNoteNotesSlice(initialDate)
   const editorHandleRef = useRef<AtomicCodeMirrorEditorHandle | null>(null)
   const saveRef = useRef<(() => void) | null>(null)
+  const viewDateRef = useRef(slice.viewDate)
+  viewDateRef.current = slice.viewDate
 
   useEffect(() => {
     onViewDateChange?.(slice.viewDate)
@@ -35,6 +41,13 @@ export default function DailyNoteEditorPanel({
 
   const extensions = useMemo(
     () => [
+      dailyNoteImagePasteExtension(async (payload) => {
+        const result = await window.atelier.pasteDailyNoteImage(viewDateRef.current, payload)
+        return result.embedMarkdown
+      }),
+      dailyNoteWikiEmbedImagePreview((fileName) =>
+        window.atelier.readDailyNoteAttachmentDataUrl(viewDateRef.current, fileName)
+      ),
       Prec.high(
         keymap.of([
           {
