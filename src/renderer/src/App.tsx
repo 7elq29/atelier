@@ -531,6 +531,8 @@ export default function App(): JSX.Element {
     activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanOpen
       ? (activeSession.worktreePath ?? activeSession.projectPath)
       : null
+  const sessionMainInForeground =
+    Boolean(activeSession) && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanOpen
   const activeWorkspaceLabel = truncateContextPath(activeWorkspacePath)
   activeSessionRef.current = activeSession
   activeAppNoteIdRef.current = activeAppNoteId
@@ -1005,7 +1007,10 @@ export default function App(): JSX.Element {
             {(aliveTerminals.size > 0 || aliveTabTerminals.size > 0) && (
               <div className="terminal-cache-layer">
                 {[...aliveTerminals.entries()].map(([ptyId, info]) => {
-                  const isActive = activeSession?.mode === 'terminal' && activeSession.id === ptyId
+                  const isActive =
+                    sessionMainInForeground &&
+                    activeSession?.mode === 'terminal' &&
+                    activeSession.id === ptyId
                   return (
                     <div key={ptyId} className={`terminal-cache-entry${isActive ? ' active' : ''}`}>
                       <TerminalPanel ptyId={ptyId} cwd={info.cwd} hostname={info.hostname} active={isActive} />
@@ -1015,6 +1020,7 @@ export default function App(): JSX.Element {
                 {[...aliveTabTerminals.entries()].map(([ptyId, info]) => {
                   const sessionId = ptyId.replace(/:tab-terminal$/, '')
                   const isActive =
+                    sessionMainInForeground &&
                     activeSession?.mode === 'claude-code' &&
                     activeSession.id === sessionId &&
                     activeTab === 'terminal' &&
