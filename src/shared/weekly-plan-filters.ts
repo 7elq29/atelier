@@ -24,3 +24,8 @@ export function isDailyNoteNoteLine(task: Pick<DailyTask, 'isNote' | 'section'>)
   if (task.section === 'tracker') return false
   return task.section === 'day-plan' || task.section === 'unscheduled'
 }
+
+/** Checkbox tasks and note bullets (e.g. #meeting) that belong on the weekly schedule. */
+export function isDailyNoteScheduleItem(task: Pick<DailyTask, 'isNote' | 'section'>): boolean {
+  return isDailyNoteActionTask(task) || isDailyNoteNoteLine(task)
+}

@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react'
+import ReviewPaneIconButton from './ReviewPaneIconButton'
 
 /**
  * Per-message hover actions (10d-enrichment-message-actions): Copy always,
@@ -9,7 +10,17 @@ import { Fragment, useState } from 'react'
  * handlers, adapted to the renderer's clipboard/speechSynthesis APIs instead
  * of the mock's static-page stand-ins.
  */
-export default function MessageActions({ text, speakable }: { text: string; speakable?: boolean }): JSX.Element {
+export default function MessageActions({
+  text,
+  speakable,
+  onReview,
+  reviewActive
+}: {
+  text: string
+  speakable?: boolean
+  onReview?: () => void
+  reviewActive?: boolean
+}): JSX.Element {
   const [speaking, setSpeaking] = useState(false)
 
   function handleCopy(): void {
@@ -38,6 +49,14 @@ export default function MessageActions({ text, speakable }: { text: string; spea
             <path d="M5 15V5a2 2 0 0 1 2-2h10" />
           </svg>
         </button>
+        {onReview ? (
+          <ReviewPaneIconButton
+            title="Review response"
+            testId="msg-review-button"
+            active={reviewActive}
+            onClick={onReview}
+          />
+        ) : null}
         {speakable && (
           <button title="Speak" data-testid="msg-speak-button" onClick={handleSpeak}>
             <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

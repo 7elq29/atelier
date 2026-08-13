@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
 import type { MessageRecord, SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
 import type { AppNoteRecord } from '../../../shared/app-note-types'
 import { parseStructuredContent } from '../../../shared/chat-content'
 import SpendStatusChip from './SpendStatusChip'
+import { handleEmacsTextareaKeyDown } from '../palette-input-keys'
 
 interface SidebarProps {
   collapsed: boolean
@@ -43,13 +44,15 @@ interface SidebarProps {
   appNotes: AppNoteRecord[]
   activeAppNoteId: string | null
   activeDailyNote: boolean
-  weeklyPlanIsoWeek: string
+  weeklyPlanWeekLabel: string
   weeklyPlanFileExists: boolean
   activeWeeklyPlan: boolean
   onSelectWeeklyPlanRow: () => void
   onStartWeeklyPlan: () => void
   onSelectAppNote: (noteId: string) => void
   onSelectDailyNote: () => void
+  dailyNotesPanelOpen: boolean
+  onToggleDailyNotesPanel: () => void
   onCreateAppNote: () => void
   onRenameAppNote: (noteId: string, title: string) => void
   onDeleteAppNote: (noteId: string) => void
@@ -69,6 +72,16 @@ function displayStatus(session: SessionRecord, closed: boolean, statuses: Record
   if (closed && session.mode === 'claude-code') return 'startup-idle'
   if (closed || session.mode === 'terminal') return 'disconnected'
   return statuses[session.id] ?? 'idle'
+}
+
+/** Harness is connected and between turns — not still reconnecting or offline. */
+function sessionLiveWaitingForInput(
+  session: SessionRecord,
+  closed: boolean,
+  statuses: Record<string, SessionStatus>
+): boolean {
+  if (closed || session.mode !== 'claude-code') return false
+  return displayStatus(session, closed, statuses) === 'waiting'
 }
 
 function sessionMetaLabel(session: SessionRecord, shellRemoteHost: string | null | undefined, dotStatus: string): string {
@@ -137,21 +150,26 @@ function groupSessions(
 }
 
 /** Detail popover (06-session-organization): tags, notes, and color — all in one place, anchored under the row's menu button. */
-function SessionDetailPopover({
-  session,
-  onAddTag,
-  onRemoveTag,
-  onSetNotes,
-  onSetColor,
-  onClose
-}: {
+type SessionDetailPopoverProps = {
   session: SessionRecord
   onAddTag: (tag: string) => void
   onRemoveTag: (tag: string) => void
   onSetNotes: (notes: string) => void
   onSetColor: (color: string) => void
   onClose: () => void
-}): JSX.Element {
+}
+
+const SessionDetailPopover = forwardRef<HTMLDivElement, SessionDetailPopoverProps>(function SessionDetailPopover(
+  {
+    session,
+    onAddTag,
+    onRemoveTag,
+    onSetNotes,
+    onSetColor,
+    onClose
+  },
+  ref
+): JSX.Element {
   const [tagDraft, setTagDraft] = useState('')
   const [notesDraft, setNotesDraft] = useState(session.notes ?? '')
 
@@ -162,7 +180,12 @@ function SessionDetailPopover({
   }
 
   return (
-    <div className="session-detail-popup" data-testid="session-detail-popover" onClick={(e) => e.stopPropagation()}>
+    <div
+      ref={ref}
+      className="session-detail-popup"
+      data-testid="session-detail-popover"
+      onClick={(e) => e.stopPropagation()}
+    >
       <div className="sdp-section">
         <div className="sdp-label">Color</div>
         <div className="sdp-colors">
@@ -219,6 +242,9 @@ function SessionDetailPopover({
           rows={3}
           value={notesDraft}
           onChange={(e) => setNotesDraft(e.target.value)}
+          onKeyDown={(e) => {
+            handleEmacsTextareaKeyDown(e, notesDraft, setNotesDraft)
+          }}
         />
         <button
           className="btn btn-sm btn-primary"
@@ -234,7 +260,7 @@ function SessionDetailPopover({
       </div>
     </div>
   )
-}
+})
 
 function AppNoteRow({
   note,
@@ -422,13 +448,18 @@ function SessionRow({
   const [draftName, setDraftName] = useState(session.name)
   const [menuOpen, setMenuOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const detailRef = useRef<HTMLDivElement>(null)
 
-  // Outside-click closes the row menu / detail popover (their own onClick
-  // already stopPropagation()s, so this only fires for genuine outside
-  // clicks — see SessionDetailPopover's/session-menu-popup's onClick).
+  // Outside-click closes the row menu / detail popover. Must check
+  // event.target with refs — React's stopPropagation does not suppress
+  // native document listeners registered here.
   useEffect(() => {
     if (!menuOpen && !detailOpen) return
-    function handleOutsideClick(): void {
+    function handleOutsideClick(e: MouseEvent): void {
+      const target = e.target as Node
+      if (menuOpen && menuRef.current?.contains(target)) return
+      if (detailOpen && detailRef.current?.contains(target)) return
       setMenuOpen(false)
       setDetailOpen(false)
     }
@@ -472,7 +503,7 @@ function SessionRow({
       {showWaitingInputAlert && (
         <span className="session-waiting-input-alert" data-testid="session-waiting-input-alert" aria-hidden />
       )}
-      <span className="session-indicator" title={`Status: ${status}`}>
+      <span className="session-indicator" title={`Status: ${status}${status === 'creating-worktree' && worktreeProgress !== undefined ? ` · ${worktreeProgress}%` : ''}`}>
         <SessionStatusIndicator dotStatus={dotStatus} />
       </span>
       <div className="session-main hide-on-collapse">
@@ -518,6 +549,14 @@ function SessionRow({
           </div>
         )}
       </div>
+      {status === 'creating-worktree' && (
+        <div className="session-worktree-progress" data-testid="session-worktree-progress" aria-hidden={worktreeProgress === undefined}>
+          <div
+            className="session-worktree-progress-fill"
+            style={{ width: `${worktreeProgress ?? 0}%` }}
+          />
+        </div>
+      )}
       {!closed && session.pinned && <span className="pin-icon hide-on-collapse">📌</span>}
       <button
         className="row-menu-btn hide-on-collapse"
@@ -531,11 +570,17 @@ function SessionRow({
         ⋯
       </button>
       {menuOpen && (
-        <div className="session-menu-popup" data-testid="session-menu" onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={menuRef}
+          className="session-menu-popup"
+          data-testid="session-menu"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div
             className="smi"
             data-testid="menu-rename"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation()
               setMenuOpen(false)
               setEditing(true)
             }}
@@ -546,7 +591,8 @@ function SessionRow({
             <div
               className="smi"
               data-testid="menu-pin"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation()
                 setMenuOpen(false)
                 onTogglePin()
               }}
@@ -558,7 +604,8 @@ function SessionRow({
             <div
               className="smi"
               data-testid="menu-details"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation()
                 setMenuOpen(false)
                 setDetailOpen(true)
               }}
@@ -570,7 +617,8 @@ function SessionRow({
             <div
               className="smi"
               data-testid="menu-fork"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation()
                 setMenuOpen(false)
                 onFork()
               }}
@@ -582,7 +630,8 @@ function SessionRow({
             <div
               className="smi"
               data-testid="menu-restart"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation()
                 setMenuOpen(false)
                 onRestart()
               }}
@@ -595,7 +644,8 @@ function SessionRow({
             <div
               className="smi"
               data-testid="menu-close"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation()
                 setMenuOpen(false)
                 onClose()
               }}
@@ -606,7 +656,8 @@ function SessionRow({
           <div
             className="smi danger"
             data-testid="menu-delete"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation()
               setMenuOpen(false)
               onDelete()
             }}
@@ -617,6 +668,7 @@ function SessionRow({
       )}
       {detailOpen && !isTerminal && (
         <SessionDetailPopover
+          ref={detailRef}
           session={session}
           onAddTag={onAddTag}
           onRemoveTag={onRemoveTag}
@@ -670,13 +722,15 @@ export default function Sidebar({
   appNotes,
   activeAppNoteId,
   activeDailyNote,
-  weeklyPlanIsoWeek,
+  weeklyPlanWeekLabel,
   weeklyPlanFileExists,
   activeWeeklyPlan,
   onSelectWeeklyPlanRow,
   onStartWeeklyPlan,
   onSelectAppNote,
   onSelectDailyNote,
+  dailyNotesPanelOpen,
+  onToggleDailyNotesPanel,
   onCreateAppNote,
   onRenameAppNote,
   onDeleteAppNote
@@ -722,6 +776,7 @@ export default function Sidebar({
         const prevStatus = prevDotStatusBySessionRef.current[session.id]
         if (
           dotStatus === 'waiting-input' &&
+          sessionLiveWaitingForInput(session, false, statuses) &&
           prevStatus !== undefined &&
           prevStatus !== 'waiting-input' &&
           session.id !== activeSessionId
@@ -729,6 +784,12 @@ export default function Sidebar({
           touch().add(session.id)
         }
         prevDotStatusBySessionRef.current[session.id] = dotStatus
+      }
+      for (const id of prev) {
+        const session = activeSessions.find((s) => s.id === id)
+        if (!session || !sessionLiveWaitingForInput(session, false, statuses)) {
+          touch().delete(id)
+        }
       }
       return next ?? prev
     })
@@ -836,7 +897,12 @@ export default function Sidebar({
         closed={closed}
         status={displayStatus(session, closed, statuses)}
         dotStatus={sessionDotStatus(session, closed, statuses, staleSessionIds, messagesBySession[session.id])}
-        showWaitingInputAlert={!closed && waitingInputAlertIds.has(session.id) && session.id !== activeSessionId}
+        showWaitingInputAlert={
+          !closed &&
+          waitingInputAlertIds.has(session.id) &&
+          session.id !== activeSessionId &&
+          sessionLiveWaitingForInput(session, closed, statuses)
+        }
         draggable={!closed}
         onSelect={() => {
           setWaitingInputAlertIds((prev) => {
@@ -1204,7 +1270,7 @@ export default function Sidebar({
                     className="row-tag"
                     style={weeklyPlanFileExists ? undefined : { color: 'var(--warning)' }}
                   >
-                    {weeklyPlanIsoWeek}
+                    {weeklyPlanWeekLabel}
                   </span>
                 </div>
               </div>
@@ -1253,6 +1319,18 @@ export default function Sidebar({
           style={{ marginLeft: 'auto' }}
         >
           {collapsed ? '⇥' : '⇤'}
+        </button>
+        <button
+          className={`btn btn-icon btn-sm hide-on-collapse${dailyNotesPanelOpen ? ' active' : ''}`}
+          title="Daily notes"
+          data-testid="toggle-daily-notes-panel"
+          aria-pressed={dailyNotesPanelOpen}
+          onClick={onToggleDailyNotesPanel}
+        >
+          <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+          </svg>
         </button>
         <button
           className="btn btn-icon btn-sm"

@@ -32,7 +32,10 @@ export function useConfig(): {
       ...partial,
       fontSizes: { ...prev.fontSizes, ...(partial.fontSizes ?? {}) },
       gitIdentity: { ...prev.gitIdentity, ...(partial.gitIdentity ?? {}) },
-      vault: { ...prev.vault, ...(partial.vault ?? {}) }
+      vault: { ...prev.vault, ...(partial.vault ?? {}) },
+      terminalToolbox: partial.terminalToolbox
+        ? { commands: partial.terminalToolbox.commands ?? prev.terminalToolbox.commands }
+        : prev.terminalToolbox
     }))
     return window.atelier.setConfig(partial).then((saved) => {
       setConfig(saved)

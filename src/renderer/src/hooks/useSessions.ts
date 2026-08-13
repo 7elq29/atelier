@@ -8,6 +8,7 @@ import type {
   PromptDecision,
   RemoteHostOption,
   SessionGroupRecord,
+  SessionInterruptResult,
   SessionRecord,
   SessionStatus,
   SlashCommandInfo
@@ -53,7 +54,7 @@ export interface UseSessionsResult {
   loadSessionMessages: (sessionId: string) => Promise<void>
   reconnectSession: (sessionId: string) => Promise<void>
   sendMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment) => Promise<void>
-  interrupt: (sessionId: string) => Promise<void>
+  interrupt: (sessionId: string) => Promise<SessionInterruptResult>
   /** Validates a `/model <id>` against the SDK's live acceptance logic, on demand (not cached) — see `ModelValidationResult`'s doc comment. */
   validateModel: (sessionId: string, model: string) => Promise<ModelValidationResult>
   /** Appends a renderer-only system message to a session's transcript without any SDK/IPC round-trip — used to surface local validation errors (e.g. an unknown `/model <id>`) inline in the chat panel. */
@@ -149,6 +150,15 @@ export function useSessions(): UseSessionsResult {
         return { ...prev, [sessionId]: next }
       })
     })
+    const offMessageRemoved = window.atelier.onSessionMessageRemoved(({ sessionId, messageId }) => {
+      setMessagesBySession((prev) => {
+        const list = prev[sessionId]
+        if (!list) return prev
+        const next = list.filter((m) => m.id !== messageId)
+        if (next.length === list.length) return prev
+        return { ...prev, [sessionId]: next }
+      })
+    })
     const offDelta = window.atelier.onSessionStreamDelta(({ sessionId, messageId, text }) => {
       // Token-level live render: patches the in-progress message's content
       // directly in renderer state on every delta, without a DB round-trip
@@ -201,6 +211,12 @@ export function useSessions(): UseSessionsResult {
           delete next[event.sessionId]
           return next
         })
+        setWorktreeProgressBySession((prev) => {
+          if (!(event.sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[event.sessionId]
+          return next
+        })
       }
       // Any lifecycle change (created/renamed/closed/resumed/forked/deleted/
       // updated) can move a session between active/pinned/history — simplest
@@ -212,6 +228,14 @@ export function useSessions(): UseSessionsResult {
     // patches statuses[sessionId] directly rather than refetching everything.
     const offStatus = window.atelier.onSessionStatus(({ sessionId, status }) => {
       setStatuses((prev) => ({ ...prev, [sessionId]: status }))
+      if (status !== 'creating-worktree') {
+        setWorktreeProgressBySession((prev) => {
+          if (!(sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[sessionId]
+          return next
+        })
+      }
     })
     const offGroup = window.atelier.onGroupChanged(() => {
       refreshGroups()
@@ -280,6 +304,7 @@ export function useSessions(): UseSessionsResult {
     })
     return () => {
       offMessage()
+      offMessageRemoved()
       offDelta()
       offLifecycle()
       offStatus()
@@ -336,8 +361,8 @@ export function useSessions(): UseSessionsResult {
     await window.atelier.sendSessionMessage(sessionId, text, modelSelection, image)
   }, [])
 
-  const interrupt = useCallback(async (sessionId: string): Promise<void> => {
-    await window.atelier.interruptSession(sessionId)
+  const interrupt = useCallback(async (sessionId: string): Promise<SessionInterruptResult> => {
+    return window.atelier.interruptSession(sessionId)
   }, [])
 
   const validateModel = useCallback(async (sessionId: string, model: string): Promise<ModelValidationResult> => {
@@ -397,9 +422,35 @@ export function useSessions(): UseSessionsResult {
     return forked
   }, [])
 
-  const closeSession = useCallback(async (sessionId: string): Promise<void> => {
-    await window.atelier.closeSession(sessionId)
-  }, [])
+  const closeSession = useCallback(
+    async (sessionId: string): Promise<void> => {
+      let closedSession: SessionRecord | undefined
+      setActiveSessions((prev) => {
+        const session = prev.find((s) => s.id === sessionId)
+        if (!session) return prev
+        closedSession = { ...session, closedAt: new Date().toISOString(), pinned: false }
+        return prev.filter((s) => s.id !== sessionId)
+      })
+      if (closedSession) {
+        setHistorySessions((prev) => {
+          if (prev.some((s) => s.id === sessionId)) return prev
+          return [closedSession!, ...prev]
+        })
+        setStatuses((prev) => {
+          if (!(sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[sessionId]
+          return next
+        })
+      }
+      try {
+        await window.atelier.closeSession(sessionId)
+      } catch {
+        await refresh()
+      }
+    },
+    [refresh]
+  )
 
   const linkDailyTask = useCallback(
     async (sessionId: string, noteDate: string, taskGid: string): Promise<SessionRecord> =>

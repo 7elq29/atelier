@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DailyTask } from '../../../../shared/daily-note-types'
 import { useDailyNote } from '../../hooks/useDailyNote'
+import { useCarrySuggestions } from '../../hooks/useCarrySuggestions'
 import { useSectionResize } from './section-resize'
 import Timeline from './Timeline'
 import TaskItem from './TaskItem'
+import CarrySuggestionItem from './CarrySuggestionItem'
 import DailyNoteTaskInput from './DailyNoteTaskInput'
 import { isDailyNoteBulletFromTags } from '../../../../shared/daily-note-tags'
 import { computeMoveDateOptions } from './move-date-options'
@@ -64,9 +66,10 @@ function AddTaskInput({ testId, buttonLabel = '+ New task', onAdd }: AddTaskInpu
 }
 
 /**
- * Daily Notes sidebar: three independently resizable/scrollable sections —
- * Timeline (time-blocked tasks), Unscheduled (backlog/delegated), Trackers
- * (habit trackers from the `> [!invisible] Trackers` callout). Mirrors
+ * Daily Notes sidebar: four independently resizable/scrollable sections —
+ * Timeline (time-blocked tasks), Unscheduled (backlog/delegated), Carry-over
+ * (incomplete todos from the prior daily note), Trackers (habit trackers from
+ * the `> [!invisible] Trackers` callout). Mirrors
  * `Features/UI-Design/mocks/index.html`'s `.daily-notes-panel` markup and
  * sizing (`.dn-head`, `.dn-section`, `.dn-section-head`, `.dn-resize-handle`,
  * `.dn-section-body`).
@@ -87,16 +90,24 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
     updateTask,
     updateTaskText
   } = useDailyNote(date, vaultRoot)
+  const carry = useCarrySuggestions(date, vaultConfigured)
   const containerRef = useRef<HTMLDivElement>(null)
   const sectionsRef = useRef<HTMLDivElement>(null)
   const { weights, startResize } = useSectionResize(sectionsRef)
   const [addingUnscheduled, setAddingUnscheduled] = useState(false)
   const [unscheduledDraft, setUnscheduledDraft] = useState('')
+  const [carryMoveError, setCarryMoveError] = useState<string | null>(null)
   // 16-task-move-to-date: "today" for the "Move to..." menu's relative
   // labels (tomorrow/weekday-name/next-week) is the date of the note
   // currently open — the app has no other-date navigation today, so this is
   // always the real "today" (or ATELIER_TEST_DATE in tests).
   const moveDateOptions = useMemo(() => computeMoveDateOptions(date), [date])
+
+  useEffect(() => {
+    if (vaultConfigured && note) void carry.refresh()
+  }, [vaultConfigured, note?.tasks.length, date])
+
+  const showCarrySection = Boolean(carry.sourceDate && !carry.loading && carry.tasks.length > 0)
 
   if (!vaultConfigured) {
     return (
@@ -183,6 +194,11 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
           {moveError}
         </div>
       )}
+      {carryMoveError && (
+        <div style={{ color: 'var(--danger)', fontSize: 13.5, padding: '8px 12px' }} data-testid="carry-move-error">
+          {carryMoveError}
+        </div>
+      )}
 
       {note.bigThree.length > 0 && (
         <div className="dn-focus-block" data-testid="dn-big-three">
@@ -205,8 +221,10 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
           onToggle={toggleTask}
           onCreate={(text, timeBlock) => addTask(text, 'day-plan', timeBlock)}
           onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
+          onMoveToUnscheduled={(id) => moveTask(id, 'unscheduled', undefined)}
           onDelete={deleteTask}
           onUpdateText={updateTaskText}
+          onUpdateTask={updateTask}
           moveDateOptions={moveDateOptions}
           onMoveToDate={moveTaskToDate}
           onCreateSessionFromTask={onCreateSessionFromTask}
@@ -277,6 +295,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
               onToggle={toggleTask}
               onDelete={deleteTask}
               onUpdateText={updateTaskText}
+              onUpdateTask={updateTask}
               onUpdateTags={(id, tags) =>
                 updateTask(id, { tags, isNote: isDailyNoteBulletFromTags(tags) })
               }
@@ -288,7 +307,46 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
         </div>
       </div>
 
-      <div className="dn-resize-handle" onMouseDown={startResize('unscheduled', 'trackers')} />
+      {showCarrySection ? (
+        <div className="dn-resize-handle" onMouseDown={startResize('unscheduled', 'carry')} />
+      ) : (
+        <div className="dn-resize-handle" onMouseDown={startResize('unscheduled', 'trackers')} />
+      )}
+
+      {showCarrySection && carry.sourceDate && (
+        <>
+          <div
+            className="dn-section"
+            style={{ flex: `${weights.carry} 1 0px` }}
+            data-testid="carry-section"
+          >
+            <div className="dn-section-head" data-testid="carry-section-head">From {carry.sourceDate}</div>
+            <div className="dn-section-body scroll-y" data-testid="carry-body">
+              {carry.tasks.map((task) => (
+                <CarrySuggestionItem
+                  key={task.id}
+                  task={task}
+                  sourceDate={carry.sourceDate!}
+                  moveDateOptions={moveDateOptions}
+                  onComplete={() => void carry.completeOnSource(carry.sourceDate!, task.id)}
+                  onMoveToToday={async () => {
+                    setCarryMoveError(null)
+                    const err = await carry.moveToDate(carry.sourceDate!, task.id, date)
+                    if (err) setCarryMoveError(err)
+                  }}
+                  onMoveToDate={async (targetDate) => {
+                    setCarryMoveError(null)
+                    const err = await carry.moveToDate(carry.sourceDate!, task.id, targetDate)
+                    if (err) setCarryMoveError(err)
+                  }}
+                  onDismiss={() => carry.dismiss(carry.sourceDate!, task.gid)}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="dn-resize-handle" onMouseDown={startResize('carry', 'trackers')} />
+        </>
+      )}
 
       <div
         className="dn-section"
@@ -306,6 +364,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
               onToggle={toggleTask}
               onDelete={deleteTask}
               onUpdateText={updateTaskText}
+              onUpdateTask={updateTask}
               onUpdateTags={(id, tags) =>
                 updateTask(id, { tags, isNote: isDailyNoteBulletFromTags(tags) })
               }

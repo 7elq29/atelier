@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { DailyTask, DailyNote, TaskSection } from '../../../shared/daily-note-types'
 import { isDailyNoteBulletFromTags, parseInlineTagsFromTaskText } from '../../../shared/daily-note-tags'
+import { parseTaskEditContent } from '../../../shared/task-priority'
 
 const WRITE_DEBOUNCE_MS = 500
 
@@ -95,6 +96,7 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
     window.atelier.watchDailyNote(date).catch(() => {})
     const unsub = window.atelier.onDailyNoteChanged((updatedNote) => {
       if (cancelled) return
+      if (updatedNote.date !== date) return
       if (writeTimerRef.current) {
         clearTimeout(writeTimerRef.current)
         writeTimerRef.current = null
@@ -209,7 +211,8 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
   const addTask = useCallback(
     (text: string, section: TaskSection, timeBlock?: string) =>
       mutate((prev) => {
-        const parsed = parseInlineTagsFromTaskText(text)
+        const contentParsed = parseTaskEditContent(text)
+        const parsed = parseInlineTagsFromTaskText(contentParsed.text)
         const gid = crypto.randomUUID()
         const sectionTags = section === 'tracker' ? ['#tracker'] : []
         const tags = [
@@ -223,9 +226,10 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
           status: 'open',
           section,
           tags,
-          externalLinks: [],
+          externalLinks: contentParsed.externalLinks,
           isTracker: section === 'tracker',
           isNote: isDailyNoteBulletFromTags(tags),
+          ...(contentParsed.priority ? { priority: contentParsed.priority } : {}),
           ...(timeBlock ? { timeBlock } : {})
         }
         const tasks = [...prev.tasks]

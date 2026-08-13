@@ -7,6 +7,8 @@ import '@atomic-editor/editor/styles.css'
 import { Prec } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
 import type { AppNoteRecord } from '../../../../shared/app-note-types'
+import { noteEditorLayoutExtensions } from '../../editor/noteEditorExtensions'
+import { openExternalLink } from './Linkify'
 
 type OpenNoteTab = { id: string; noteId: string; isDirty: boolean }
 
@@ -72,6 +74,7 @@ export default function AppNotesPanel({
 
   const noteEditorExtensions = useMemo(
     () => [
+      ...noteEditorLayoutExtensions,
       Prec.high(
         keymap.of([
           {
@@ -169,6 +172,7 @@ export default function AppNotesPanel({
               markdownSource={boundNoteContent}
               editorHandleRef={editorHandleRef}
               onMarkdownChange={handleMarkdownChange}
+              onLinkClick={openExternalLink}
               extensions={noteEditorExtensions}
               blurEditorOnMount
             />

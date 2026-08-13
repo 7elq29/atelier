@@ -215,7 +215,7 @@ test.describe('08-harness-sdk-events', () => {
     )
     let sawThinking = false
     try {
-      await expect(page.getByTestId('thinking-block-card')).toBeVisible({ timeout: 25_000 })
+      await expect(page.getByTestId('thinking-block-inline')).toBeVisible({ timeout: 25_000 })
       sawThinking = true
       await page.screenshot({ path: join(artifactsDir, '08-harness-sdk-thinking-block.png') })
     } catch {
@@ -362,9 +362,105 @@ test.describe('08-harness-sdk-events', () => {
 
   test('background_tasks + monitor toast: absent without SDK background/notification events', async () => {
     await expect(page.getByTestId('background-tasks-conversation-card')).toHaveCount(0)
+    await expect(page.getByTestId('subagent-tracker-card')).toHaveCount(0)
     await expect(page.getByTestId('background-monitors-card')).toHaveCount(0)
+    await expect(page.getByTestId('background-jobs-card')).toHaveCount(0)
     await expect(page.getByTestId('background-shell-card')).toHaveCount(0)
     await expect(page.getByTestId('sdk-toast-stack')).toHaveCount(0)
+  })
+
+  test('subagent SDK tasks: Subagents rail only — not Background jobs or transcript card', async () => {
+    const ts = new Date().toISOString()
+    await page.evaluate(
+      ({ sid, timestamp }) =>
+        window.atelier.debugApplyHarnessUiEvents(sid, [
+          {
+            type: 'background_tasks_changed',
+            sessionId: sid,
+            timestamp,
+            tasks: [
+              {
+                taskId: 'e2e-subagent',
+                taskType: 'subagent',
+                description: 'Read 4 Google Docs/Slides links',
+              },
+              {
+                taskId: 'e2e-workflow',
+                taskType: 'workflow',
+                description: 'Rebuild search index',
+              },
+              {
+                taskId: 'e2e-monitor',
+                taskType: 'monitor',
+                description: 'Watch CI until green',
+              },
+            ],
+          },
+          {
+            type: 'task_started',
+            sessionId: sid,
+            timestamp,
+            taskId: 'e2e-subagent',
+            description: 'Read 4 Google Docs/Slides links',
+            taskType: 'subagent',
+          },
+          {
+            type: 'task_progress',
+            sessionId: sid,
+            timestamp,
+            taskId: 'e2e-subagent',
+            description: 'Read 4 Google Docs/Slides links',
+            lastToolName: 'Read',
+            usage: { total_tokens: 1000, tool_uses: 14, duration_ms: 278_000 },
+          },
+          {
+            type: 'task_started',
+            sessionId: sid,
+            timestamp,
+            taskId: 'e2e-workflow',
+            description: 'Rebuild search index',
+            taskType: 'workflow',
+          },
+          {
+            type: 'task_started',
+            sessionId: sid,
+            timestamp,
+            taskId: 'e2e-monitor',
+            description: 'Watch CI until green',
+            taskType: 'monitor',
+          },
+        ]),
+      { sid: sessionId, timestamp: ts }
+    )
+
+    const subagentCard = page.getByTestId('subagent-tracker-card')
+    await expect(subagentCard).toBeVisible()
+    await expect(subagentCard).toContainText('Read 4 Google Docs/Slides links')
+    await expect(subagentCard.getByTestId('background-rail-sub')).toContainText('Read · 14 tool uses')
+
+    const jobsCard = page.getByTestId('background-jobs-card')
+    await expect(jobsCard).toBeVisible()
+    await expect(jobsCard.locator('.tracker-head')).toHaveClass(/tracker-head--long-label/)
+    await expect(jobsCard.locator('.tracker-head-title')).toHaveText('Background jobs')
+    const jobsHeadLines = await jobsCard.locator('.tracker-head-title').evaluate((el) => {
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 16
+      return Math.round(el.getBoundingClientRect().height / lineHeight)
+    })
+    expect(jobsHeadLines, 'Background jobs section title should stay on one line').toBe(1)
+    await expect(jobsCard).toContainText('Rebuild search index')
+    await expect(jobsCard).not.toContainText('Google Docs')
+
+    await expect(page.getByTestId('background-monitors-card')).toContainText('Watch CI until green')
+
+    const transcriptCard = page.getByTestId('background-tasks-conversation-card')
+    await expect(transcriptCard).toBeVisible()
+    await expect(transcriptCard).toContainText('Rebuild search index')
+    await expect(transcriptCard).toContainText('Watch CI until green')
+    await expect(transcriptCard).not.toContainText('Google Docs')
+    await expect(page.getByTestId('background-tasks-section-jobs')).toBeVisible()
+    await expect(page.getByTestId('background-tasks-section-monitors')).toBeVisible()
+
+    await page.screenshot({ path: join(artifactsDir, '08-subagent-vs-background-jobs-rail.png') })
   })
 
   test('hooks: main log may contain harness hook lines after real turns', async () => {

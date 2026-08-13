@@ -10,10 +10,12 @@ import {
   dailyNoteImagePasteExtension,
   dailyNoteWikiEmbedImagePreview
 } from '../../editor/dailyNoteImagePaste'
+import { noteEditorLayoutExtensions } from '../../editor/noteEditorExtensions'
 import {
   formatDailyNoteLabel,
   useDailyNoteNotesSlice
 } from '../../hooks/useDailyNoteNotesSlice'
+import { openExternalLink } from './Linkify'
 
 export default function DailyNoteEditorPanel({
   initialDate,
@@ -41,6 +43,7 @@ export default function DailyNoteEditorPanel({
 
   const extensions = useMemo(
     () => [
+      ...noteEditorLayoutExtensions,
       dailyNoteImagePasteExtension(async (payload) => {
         const result = await window.atelier.pasteDailyNoteImage(viewDateRef.current, payload)
         return result.embedMarkdown
@@ -143,6 +146,7 @@ export default function DailyNoteEditorPanel({
             documentId={`${slice.viewDate}:${slice.editorMountKey}`}
             markdownSource={slice.notesBody}
             onMarkdownChange={slice.onEditorChange}
+            onLinkClick={openExternalLink}
             editorHandleRef={editorHandleRef}
             extensions={extensions}
             blurEditorOnMount

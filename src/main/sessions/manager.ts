@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import { execFile } from 'node:child_process'
+import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import type { HarnessDriver, HarnessEvent, HarnessSession, HarnessStartOptions, PromptResponse, RemoteHost } from '../harness/types'
 import { logger } from '../logger'
@@ -14,15 +15,20 @@ import type {
   RemoteHostOption,
   SessionGroupEvent,
   SessionGroupRecord,
+  SessionInterruptResult,
   SessionLifecycleEvent,
   SessionRecord,
   SessionStatus,
   SlashCommandInfo
 } from '../../shared/session-types'
+import type { DiffFileChange, DiffFileContentPair } from '../../shared/panel-types'
 import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
+import type { SessionChangesCap } from '../../shared/session-changes-cap'
 import { TURN_INTERRUPTED_NOTICE } from '../../shared/session-types'
-import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig } from '../../shared/config'
+import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig, defaultClaudePermissionModeFromConfig } from '../../shared/config'
+import { expandTildePath } from '../../shared/project-path-autocomplete'
 import { loadConfig } from '../config'
+import { SSH_MUX_OPTS } from '../ssh-exec'
 import type {
   AskUserQuestionContent,
   CompactionContent,
@@ -36,11 +42,11 @@ import type {
 import { parseStructuredContent } from '../../shared/chat-content'
 import type { SessionStore } from './store'
 import { suggestProjectPaths as computeProjectPathSuggestions } from './project-path-suggest'
-import { worktreeRootFromConfig } from '../../shared/worktree-path'
+import { worktreeRootFromConfig, sessionWorktreePath } from '../../shared/worktree-path'
 import { homeDirForWorktreeHost } from './worktree-home'
 import { createWorktree, removeWorktree } from './worktree'
 import { warmRemoteGitHost } from '../panels/git'
-import { handleFileEditToolCompleted } from './session-changes-cap'
+import { handleFileEditToolCompleted, getSessionCapOutsideFileDiff, registerPlanFileInSessionChangesCap } from './session-changes-cap'
 import { WorkspaceService } from './workspace-service'
 import { applyBashCdCommands } from './harness-cwd'
 import { SessionHarnessUiState } from './session-harness-ui'
@@ -55,7 +61,22 @@ import type { LocalCommandOutputContent, TranscriptNoticeContent } from '../../s
 import { completeLinkedDailyTask, linkDailyTaskToSession } from '../daily-note-session-link'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
-const AUTO_NAME_PROMPT = 'Summarize this conversation topic in under 6 words. Reply with ONLY the title, no punctuation, no quotes.'
+const AUTO_NAME_MAX_WORDS = 3
+const AUTO_NAME_MAX_LEN = 25
+const AUTO_NAME_PROMPT = `Summarize this conversation topic in under ${AUTO_NAME_MAX_WORDS} words (max ${AUTO_NAME_MAX_LEN} characters). Reply with ONLY the title, no punctuation, no quotes.`
+
+/** Models sometimes ignore the word-count prompt — clamp to one line, ≤3 words, ≤25 chars. */
+function clampSessionTitle(raw: string): string {
+  const firstLine = raw.trim().split(/\r?\n/, 1)[0]?.trim() ?? ''
+  const cleaned = firstLine.replace(/^["'“”]+|["'“”]+$/g, '')
+  if (!cleaned) return ''
+  let title = cleaned.split(/\s+/).filter(Boolean).slice(0, AUTO_NAME_MAX_WORDS).join(' ')
+  if (title.length <= AUTO_NAME_MAX_LEN) return title
+  title = title.slice(0, AUTO_NAME_MAX_LEN).trimEnd()
+  const lastSpace = title.lastIndexOf(' ')
+  if (lastSpace > 0) title = title.slice(0, lastSpace)
+  return title
+}
 
 /** Skip auto harness reconnect on relaunch when last active is older than this (session-startup-idle). */
 export const SESSION_STARTUP_IDLE_MS = 60 * 60 * 1000
@@ -126,6 +147,10 @@ interface LiveStream {
   thinkingText: string
   thinkingParentToolUseId: string | null
   thinkingEstimatedTokens?: number
+  /** User message for the in-flight turn while ESC can still withdraw it pre-execution. */
+  pendingUserMessageId: number | null
+  /** True once the harness has started producing turn output for the pending user message. */
+  turnExecutionStarted: boolean
 }
 
 
@@ -173,7 +198,15 @@ function newLiveStream(turnCount = 0): LiveStream {
     thinkingMessageId: null,
     thinkingText: '',
     thinkingParentToolUseId: null,
+    pendingUserMessageId: null,
+    turnExecutionStarted: false,
   }
+}
+
+function userMessagePlainText(content: string): string {
+  const parsed = parseStructuredContent(content)
+  if (parsed?.kind === 'image_attachment') return parsed.text ?? ''
+  return content
 }
 
 export interface RemoteHostResolver {
@@ -249,6 +282,15 @@ export class SessionManager {
     return this.workspace
   }
 
+  private publishSessionChangesCap(sessionId: string, cap: SessionChangesCap): void {
+    if (!this.workspace) return
+    if (this.workspace.getCached(sessionId)) {
+      this.workspace.patchSessionChangesCap(sessionId, cap)
+    } else {
+      void this.refreshSessionWorkspace(sessionId, true)
+    }
+  }
+
   constructor(
     private readonly store: SessionStore,
     private readonly harness: HarnessDriver,
@@ -305,6 +347,55 @@ export class SessionManager {
     return this.workspace.refreshWorkspace(session, force)
   }
 
+  getCapOutsideFileDiff(
+    sessionId: string,
+    workspacePath: string,
+    capPath: string
+  ): Promise<{ file: DiffFileChange; pair: DiffFileContentPair } | null> {
+    const session = this.getSession(sessionId)
+    if (!session) return Promise.resolve(null)
+    return getSessionCapOutsideFileDiff(this.store, sessionId, workspacePath, capPath, session.hostname)
+  }
+
+  /** Test-only: feed harness UI events through the real apply/send path (e2e). */
+  debugApplyHarnessUiEvents(sessionId: string, events: HarnessEvent[]): void {
+    if (!this.getSession(sessionId)) return
+    for (const event of events) {
+      this.applyHarnessUiSideEffects(sessionId, { ...event, sessionId })
+    }
+  }
+
+  /** Test-only: mirror inline plan markdown into workspace + session changes cap (e2e). */
+  async debugRegisterPlanInCap(
+    sessionId: string,
+    args: { plan: string; planFilePath?: string; toolUseId: string }
+  ): Promise<SessionChangesCap | null> {
+    const session = this.getSession(sessionId)
+    if (!session) return null
+    this.store.addMessage({
+      sessionId,
+      role: 'assistant',
+      content: JSON.stringify({
+        kind: 'plan_proposed',
+        requestId: 'debug',
+        toolUseId: args.toolUseId,
+        plan: args.plan,
+        planFilePath: args.planFilePath,
+        status: 'pending'
+      })
+    })
+    const workspaceRoot = session.worktreePath ?? session.projectPath
+    const cap = await registerPlanFileInSessionChangesCap(
+      this.store,
+      sessionId,
+      workspaceRoot,
+      workspaceRoot,
+      session.hostname
+    )
+    this.publishSessionChangesCap(sessionId, cap)
+    return cap
+  }
+
   /** Cross-session content search (10b-enrichment-full-text-search), backing the command palette's extended "Session" results. */
   searchMessages(query: string): MessageSearchHit[] {
     return this.store.searchMessages(query)
@@ -338,6 +429,10 @@ export class SessionManager {
 
   private sendMessage(sessionId: string, message: MessageRecord): void {
     this.getWindow()?.webContents.send('session:message', { sessionId, message })
+  }
+
+  private sendMessageRemoved(sessionId: string, messageId: number): void {
+    this.getWindow()?.webContents.send('session:messageRemoved', { sessionId, messageId })
   }
 
   /** Live, unpersisted token-level push for the in-progress assistant text message `messageId` — see `SessionStreamDeltaEvent`. */
@@ -383,7 +478,7 @@ export class SessionManager {
     for (const session of this.store.listActiveSessions()) {
       if (session.mode !== 'claude-code') continue
       if (!this.sessionIsStartupIdleEligible(session)) continue
-      this.closeSession(session.id)
+      void this.closeSession(session.id)
     }
   }
 
@@ -442,7 +537,7 @@ export class SessionManager {
       return false
     }
     if (this.getStatus(sessionId) !== 'startup-idle') return false
-    this.closeSession(sessionId)
+    void this.closeSession(sessionId)
     return true
   }
 
@@ -463,6 +558,26 @@ export class SessionManager {
   private sendTurnState(sessionId: string, busy: boolean): void {
     this.getWindow()?.webContents.send('session:turnState', { sessionId, busy })
     if (!busy) this.clearInFlightSdkChrome(sessionId)
+  }
+
+  private beginPendingUserTurn(sessionId: string, userMessageId: number): void {
+    let live = this.live.get(sessionId)
+    if (!live) {
+      live = newLiveStream()
+      this.live.set(sessionId, live)
+    }
+    live.pendingUserMessageId = userMessageId
+    live.turnExecutionStarted = false
+  }
+
+  private markTurnExecutionStarted(live: LiveStream): void {
+    if (live.turnExecutionStarted) return
+    live.turnExecutionStarted = true
+  }
+
+  private clearPendingUserTurn(live: LiveStream): void {
+    live.pendingUserMessageId = null
+    live.turnExecutionStarted = false
   }
 
   /**
@@ -502,6 +617,8 @@ export class SessionManager {
       compactFailed: chrome?.compactFailed,
       compactError: chrome?.compactError,
       apiRetryText: chrome?.apiRetryText ?? null,
+      thinkingActive: chrome?.thinkingActive,
+      thinkingEstimatedTokens: chrome?.thinkingEstimatedTokens,
     }
     this.getWindow()?.webContents.send('session:sdkChrome', payload)
   }
@@ -581,6 +698,22 @@ export class SessionManager {
     this.getWindow()?.webContents.send('session:harnessCwd', { sessionId, cwd })
   }
 
+  /**
+   * Local `child_process.spawn()` requires a real filesystem cwd — a literal
+   * `~` makes spawn fail with ENOENT (surfacing as the SDK's misleading
+   * "native binary … failed to launch" error). Remote sessions keep `~` as
+   * typed; `remoteCdTarget()` expands it inside the SSH command.
+   */
+  private resolveHarnessCwd(
+    projectPath: string,
+    hostname: string | null | undefined,
+    worktreePath?: string | null,
+  ): string {
+    const raw = worktreePath ?? projectPath
+    if (hostname) return raw
+    return expandTildePath(raw, homedir())
+  }
+
   private resolveHost(hostId: string): RemoteHost | undefined {
     if (hostId === 'local') return undefined
     const host = this.hosts.resolve(hostId)
@@ -604,6 +737,38 @@ export class SessionManager {
     return { sshHost: hostname, remoteExecutablePath: host?.remoteExecutablePath }
   }
 
+  private homeDirForStoredSession(session: SessionRecord): string {
+    const host = session.hostname ? this.hosts.resolveByHostname(session.hostname) : undefined
+    return homeDirForWorktreeHost(host?.id ?? 'local')
+  }
+
+  /** Remove a session's git worktree (and branch) and clear `worktree_path` in SQLite. */
+  private async cleanupSessionWorktree(
+    session: SessionRecord,
+    opts?: { clearStoredPath?: boolean }
+  ): Promise<void> {
+    const hostname = session.hostname ? this.hosts.resolveByHostname(session.hostname)?.sshHost : undefined
+    const homeDir = this.homeDirForStoredSession(session)
+    const worktreeRoot = worktreeRootFromConfig(loadConfig())
+    const paths = new Set<string>()
+    if (session.worktreePath) paths.add(session.worktreePath)
+    paths.add(sessionWorktreePath(worktreeRoot, session.id, homeDir))
+    for (const worktreePath of paths) {
+      try {
+        await removeWorktree(worktreePath, session.id, session.projectPath, homeDir, hostname)
+      } catch (err) {
+        logger.warn('cleanupSessionWorktree: removal failed (ignored)', {
+          sessionId: session.id,
+          worktreePath,
+          error: err instanceof Error ? err.message : String(err)
+        })
+      }
+    }
+    if (opts?.clearStoredPath !== false && session.worktreePath) {
+      this.store.setWorktreePath(session.id, null)
+    }
+  }
+
   // ── Create ──────────────────────────────────────────────────────────
 
   private defaultModelSelection(): ModelSelection {
@@ -623,6 +788,21 @@ export class SessionManager {
     const selection = this.defaultModelSelection()
     this.modelSelections.set(sessionId, selection)
     this.store.setModelSelection(sessionId, selection)
+  }
+
+  private resolveInitialPermissionMode(opts: CreateSessionOptions): PermissionModeValue {
+    if (opts.planMode) return 'plan'
+    return defaultClaudePermissionModeFromConfig(loadConfig())
+  }
+
+  private seedInitialPermissionMode(sessionId: string, mode: PermissionModeValue): void {
+    if (mode === 'default') return
+    this.permissionModes.set(sessionId, mode)
+    this.store.setPermissionMode(sessionId, mode)
+  }
+
+  private permissionModeHarnessOpts(mode: PermissionModeValue): Pick<HarnessStartOptions, 'permissionMode'> {
+    return mode === 'default' ? {} : { permissionMode: mode }
   }
 
   async createSession(opts: CreateSessionOptions): Promise<SessionRecord> {
@@ -647,7 +827,8 @@ export class SessionManager {
         projectPath: opts.projectPath,
         mode: 'terminal',
         hostname: hostOption?.sshHost ?? null,
-        groupId: opts.groupId ?? null
+        groupId: opts.groupId ?? null,
+        profileId: opts.profileId ?? null
       })
       this.sendLifecycle({ type: 'session.created', session })
       if (session.hostname) void warmRemoteGitHost(session.hostname)
@@ -659,13 +840,14 @@ export class SessionManager {
     // session id (so the worktree path can embed it) and use harness.startWithId()
     // instead of harness.start(). Worktree creation runs asynchronously after
     // the session row is visible in the sidebar (creating-worktree state).
-    let effectiveCwd = opts.projectPath
+    let effectiveCwd = this.resolveHarnessCwd(opts.projectPath, hostOption?.sshHost ?? null)
     const wantWorktree = !!opts.useWorktree
     const hostname = hostOption?.sshHost
 
     if (wantWorktree) {
       const { randomUUID } = await import('node:crypto')
       const allocatedId = randomUUID()
+      const permissionMode = this.resolveInitialPermissionMode(opts)
 
       // Create the session record immediately (worktreePath will be filled in
       // once the async worktree creation succeeds) and broadcast
@@ -678,26 +860,29 @@ export class SessionManager {
           mode: 'claude-code',
           hostname: hostOption?.sshHost ?? null,
           groupId: opts.groupId ?? null,
-          worktreePath: null
+          worktreePath: null,
+          profileId: opts.profileId ?? null
         })
       )
-      this.sendLifecycle({ type: 'session.created', session })
-      if (session.hostname) void warmRemoteGitHost(session.hostname)
-
       this.seedDefaultModelSelection(allocatedId)
+      this.seedInitialPermissionMode(allocatedId, permissionMode)
 
-      // Mark as 'creating-worktree' so the sidebar row shows the pending
-      // state (50% opacity, pulsing grey dot, "Setting up worktree…" label).
+      // Mark as 'creating-worktree' BEFORE session:created so the renderer's
+      // first paint of the new row already has the pending status/progress UI.
       this.creatingWorktree.add(allocatedId)
       this.sendStatus(allocatedId)
 
+      this.sendLifecycle({ type: 'session.created', session })
+      if (session.hostname) void warmRemoteGitHost(session.hostname)
+
       // Fire worktree creation + harness start asynchronously so createSession
       // returns immediately (the modal closes, the row appears).
-      void this.setupWorktreeAsync(allocatedId, opts, host, hostOption, hostname)
+      void this.setupWorktreeAsync(allocatedId, opts, host, hostOption, hostname, permissionMode)
 
       return session
     }
 
+    const permissionMode = this.resolveInitialPermissionMode(opts)
     const harnessSession = await this.harness.start(opts.prompt ?? '', {
       cwd: effectiveCwd,
       host,
@@ -706,11 +891,10 @@ export class SessionManager {
       // instead of always reconnecting — see `HarnessStartOptions.keepAlive`.
       keepAlive: true,
       ...this.defaultHarnessModelOpts(),
-      ...(opts.planMode ? { permissionMode: 'plan' as const } : {})
+      ...this.permissionModeHarnessOpts(permissionMode)
     })
-    if (opts.planMode) {
-      this.permissionModes.set(harnessSession.sessionId, 'plan')
-      this.store.setPermissionMode(harnessSession.sessionId, 'plan')
+    if (permissionMode !== 'default') {
+      this.seedInitialPermissionMode(harnessSession.sessionId, permissionMode)
     }
 
     const session = this.decorate(
@@ -721,17 +905,17 @@ export class SessionManager {
         mode: 'claude-code',
         hostname: hostOption?.sshHost ?? null,
         groupId: opts.groupId ?? null,
-        worktreePath: null
+        worktreePath: null,
+        profileId: opts.profileId ?? null
       })
     )
 
     if (opts.prompt) {
       const userMessage = this.store.addMessage({ sessionId: session.id, role: 'user', content: opts.prompt })
       this.sendMessage(session.id, userMessage)
+      this.beginPendingUserTurn(session.id, userMessage.id)
     }
 
-    this.sendLifecycle({ type: 'session.created', session })
-    if (session.hostname) void warmRemoteGitHost(session.hostname)
     this.seedDefaultModelSelection(session.id)
     this.live.set(session.id, newLiveStream())
     this.resetHarnessUiForSession(session.id)
@@ -744,6 +928,11 @@ export class SessionManager {
       this.sendTurnState(session.id, true)
     }
     void this.consume(session.id, harnessSession.events)
+
+    // Broadcast only after live/consume are wired so a renderer resume/reconnect
+    // triggered by this event cannot race a second harness start for the same id.
+    this.sendLifecycle({ type: 'session.created', session })
+    if (session.hostname) void warmRemoteGitHost(session.hostname)
     return session
   }
 
@@ -755,15 +944,16 @@ export class SessionManager {
    * broadcast so the sidebar row is visible in the 'creating-worktree' state.
    * On success: persists the worktree path, removes the 'creating-worktree'
    * flag, starts the harness, and transitions the row to its live status.
-   * On failure: cleans up the creatingWorktree flag, deletes the session row,
-   * and broadcasts `session:deleted` so the row disappears from the sidebar.
+   * On failure: cleans up partial worktree state, keeps the session row, and
+   * surfaces a system error in the transcript (no silent delete).
    */
   private async setupWorktreeAsync(
     sessionId: string,
     opts: CreateSessionOptions,
     host: RemoteHost | undefined,
     hostOption: RemoteHostOption | undefined,
-    hostname: string | undefined
+    hostname: string | undefined,
+    permissionMode: PermissionModeValue
   ): Promise<void> {
     try {
       const cfg = loadConfig()
@@ -779,27 +969,41 @@ export class SessionManager {
           this.sendWorktreeProgress(sessionId, pct)
         }
       )
+      const afterCreate = this.store.getSession(sessionId)
+      if (!afterCreate || afterCreate.closedAt) {
+        logger.info('setupWorktreeAsync: session closed during worktree creation — cleaning up', { sessionId })
+        void removeWorktree(
+          worktreePath,
+          sessionId,
+          opts.projectPath,
+          homeDir,
+          hostname
+        ).catch(() => undefined)
+        if (afterCreate?.worktreePath) this.store.setWorktreePath(sessionId, null)
+        return
+      }
       logger.info('setupWorktreeAsync: worktree created', { sessionId, worktreePath })
 
       // Persist the worktree path now that we have it.
       this.store.setWorktreePath(sessionId, worktreePath)
+      const withWorktree = this.decorate(this.store.getSession(sessionId)!)
+      this.sendLifecycle({ type: 'session.updated', session: withWorktree })
+      this.sendHarnessCwd(sessionId, worktreePath)
+      if (this.workspace) void this.workspace.refreshWorkspace(withWorktree, true)
 
       const harnessOpts = {
         cwd: worktreePath,
         host,
         keepAlive: true as const,
         ...this.defaultHarnessModelOpts(),
-        ...(opts.planMode ? { permissionMode: 'plan' as const } : {})
+        ...this.permissionModeHarnessOpts(permissionMode)
       }
       const harnessSession = await this.harness.startWithId(sessionId, opts.prompt ?? '', harnessOpts)
-      if (opts.planMode) {
-        this.permissionModes.set(harnessSession.sessionId, 'plan')
-        this.store.setPermissionMode(harnessSession.sessionId, 'plan')
-      }
 
       if (opts.prompt) {
         const userMessage = this.store.addMessage({ sessionId, role: 'user', content: opts.prompt })
         this.sendMessage(sessionId, userMessage)
+        this.beginPendingUserTurn(sessionId, userMessage.id)
       }
 
       // Remove creating-worktree state and transition to live.
@@ -814,19 +1018,21 @@ export class SessionManager {
       if (opts.prompt) this.sendTurnState(sessionId, true)
       void this.consume(sessionId, harnessSession.events)
     } catch (err) {
-      logger.warn('setupWorktreeAsync: failed, removing session', {
+      logger.warn('setupWorktreeAsync: failed', {
         sessionId,
         error: err instanceof Error ? err.message : String(err)
       })
+      const wasCreatingWorktree = this.creatingWorktree.has(sessionId)
       this.creatingWorktree.delete(sessionId)
-      // Best-effort worktree cleanup — the path may not exist if createWorktree
-      // itself failed, so ignore errors here.
       const stored = this.store.getSession(sessionId)
-      if (stored?.worktreePath) {
-        void removeWorktree(stored.worktreePath, sessionId, stored.projectPath, hostname).catch(() => undefined)
+      if (stored && (stored.worktreePath || wasCreatingWorktree)) {
+        await this.cleanupSessionWorktree(stored, { clearStoredPath: !!stored.worktreePath })
       }
-      this.store.deleteSession(sessionId)
-      this.sendLifecycle({ type: 'session.deleted', sessionId })
+      this.reportHarnessFailure(sessionId, 'worktree setup', err)
+      const session = this.store.getSession(sessionId)
+      if (session) {
+        this.sendLifecycle({ type: 'session.updated', session: this.decorate(session) })
+      }
     }
   }
 
@@ -866,7 +1072,7 @@ export class SessionManager {
   ): Promise<HarnessSession> {
     const host = this.resolveHostFromSession(session.hostname)
     const startOpts = {
-      cwd: session.worktreePath ?? session.projectPath,
+      cwd: this.resolveHarnessCwd(session.projectPath, session.hostname, session.worktreePath),
       host,
       keepAlive: true,
       ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
@@ -1021,8 +1227,8 @@ export class SessionManager {
     // Don't race with setupWorktreeAsync — while the worktree is being created
     // the harness will be started by that path once creation completes.
     if (this.creatingWorktree.has(sessionId)) return
-    // Already live (e.g. connected by startupReconnect) — resync ephemeral UI.
-    if (this.live.has(sessionId)) {
+    // Already live (e.g. connected by createSession or startupReconnect) — resync ephemeral UI.
+    if (this.live.has(sessionId) || this.harness.isActive(sessionId)) {
       this.sendBackgroundTasks(sessionId)
       this.sendSdkChrome(sessionId)
       this.sendRateLimitChrome(sessionId)
@@ -1115,6 +1321,7 @@ export class SessionManager {
     this.sendMessage(sessionId, userMessage)
 
     if (session.mode !== 'claude-code') return
+    this.beginPendingUserTurn(sessionId, userMessage.id)
     this.sendTurnState(sessionId, true)
     try {
       // 10f-enrichment-model-effort-picker: a caller (the composer's model
@@ -1204,7 +1411,10 @@ export class SessionManager {
       this.finalizeStaleRunningToolCalls(sessionId, previousLive)
       this.live.set(sessionId, newLiveStream(previousTurnCount))
       this.resetHarnessUiForSession(sessionId)
-      this.live.get(sessionId)!.busy = true
+      const liveEntry = this.live.get(sessionId)!
+      liveEntry.busy = true
+      liveEntry.pendingUserMessageId = userMessage.id
+      liveEntry.turnExecutionStarted = false
       this.sendStatus(sessionId)
       void this.consume(sessionId, harnessSession.events)
     } catch (err) {
@@ -1214,8 +1424,37 @@ export class SessionManager {
     }
   }
 
-  async interrupt(sessionId: string): Promise<void> {
+  async interrupt(sessionId: string): Promise<SessionInterruptResult> {
+    const live = this.live.get(sessionId)
+    const canWithdraw =
+      live?.busy === true &&
+      !live.turnExecutionStarted &&
+      live.pendingUserMessageId != null
+
+    if (canWithdraw) {
+      const messageId = live!.pendingUserMessageId!
+      const removed = this.store.deleteMessage(messageId)
+      if (removed) this.sendMessageRemoved(sessionId, messageId)
+      this.clearPendingUserTurn(live!)
+      live!.busy = false
+      this.sendTurnState(sessionId, false)
+      if (this.connecting.has(sessionId)) {
+        this.connecting.delete(sessionId)
+      }
+      this.sendStatus(sessionId)
+      await this.harness.interrupt(sessionId)
+      return { action: 'withdrawn', restoredText: removed ? userMessagePlainText(removed.content) : '' }
+    }
+
+    if (live?.busy) {
+      this.expirePendingPrompts(sessionId, live)
+      this.clearPendingUserTurn(live)
+      live.busy = false
+      this.sendTurnState(sessionId, false)
+      this.sendStatus(sessionId)
+    }
     await this.harness.interrupt(sessionId)
+    return { action: 'interrupted' }
   }
 
   /** `/model <id>` validation against the live SDK — see `HarnessDriver.validateModel`. */
@@ -1287,6 +1526,24 @@ export class SessionManager {
     this.sendTurnState(sessionId, true)
 
     logger.info('respondToPrompt: dispatching to harness', { sessionId, requestId, kind: decision.kind })
+
+    if (pending.content.kind === 'plan_proposed') {
+      const planContent = pending.content
+      const session = this.getSession(sessionId)
+      if (session) {
+        const workspaceRoot = session.worktreePath ?? session.projectPath
+        void registerPlanFileInSessionChangesCap(
+          this.store,
+          sessionId,
+          workspaceRoot,
+          workspaceRoot,
+          session.hostname
+        ).then((cap) => {
+          this.publishSessionChangesCap(sessionId, cap)
+        })
+      }
+    }
+
     await this.harness.respondToPrompt(sessionId, requestId, toHarnessPromptResponse(decision))
   }
 
@@ -1379,14 +1636,21 @@ export class SessionManager {
 
   restartSession(sourceId: string): SessionRecord {
     const forked = this.forkSession(sourceId)
-    this.closeSession(sourceId)
+    void this.closeSession(sourceId)
     return forked
   }
 
   // ── Close / Delete / Rename / Pin ────────────────────────────────────
 
-  closeSession(sessionId: string): SessionRecord {
+  async closeSession(sessionId: string): Promise<SessionRecord> {
+    logger.info('closeSession invoked', { sessionId })
     this.markInterruptedTurnNoticeIfBusy(sessionId)
+    const beforeClose = this.store.getSession(sessionId)
+    if (!beforeClose) throw new Error(`Unknown session: ${sessionId}`)
+    const hadWorktreeSetup =
+      !!beforeClose.worktreePath || this.creatingWorktree.has(sessionId)
+    // Never block Close on harness teardown — same fire-and-forget pattern as
+    // the pre-async closeSession; interrupt can hang on mid-stream turns.
     void this.harness.interrupt(sessionId).catch(() => undefined)
     const live = this.live.get(sessionId)
     this.finalizeStaleRunningToolCalls(sessionId, live)
@@ -1402,7 +1666,13 @@ export class SessionManager {
     this.resetHarnessUiForSession(sessionId)
     const session = this.store.closeSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
+    this.sendStatus(sessionId)
     this.sendLifecycle({ type: 'session.closed', session })
+    // Worktree removal can take minutes on large remote repos — never block
+    // Close on it (same fire-and-forget pattern as deleteSession).
+    if (hadWorktreeSetup) {
+      void this.cleanupSessionWorktree(beforeClose).catch(() => undefined)
+    }
     return session
   }
 
@@ -1425,18 +1695,8 @@ export class SessionManager {
 
   deleteSession(sessionId: string): void {
     const session = this.store.getSession(sessionId)
-    // use-worktree: remove the session's isolated git worktree and its branch
-    // before deleting the DB row (which is where the path is stored). Errors
-    // are caught and logged — a failed cleanup must never block deletion.
     if (session?.worktreePath) {
-      const hostname = session.hostname ? this.hosts.resolveByHostname(session.hostname)?.sshHost : undefined
-      void removeWorktree(session.worktreePath, sessionId, session.projectPath, hostname).catch((err) => {
-        logger.warn('deleteSession: worktree removal failed (ignored)', {
-          sessionId,
-          worktreePath: session.worktreePath,
-          error: err instanceof Error ? err.message : String(err)
-        })
-      })
+      void this.cleanupSessionWorktree(session, { clearStoredPath: false })
     }
     this.live.delete(sessionId)
     this.connecting.delete(sessionId)
@@ -1619,6 +1879,7 @@ export class SessionManager {
 
     switch (event.type) {
       case 'thinking_block_start': {
+        this.markTurnExecutionStarted(live)
         this.finishThinkingBlock(sessionId, live, 'completed')
         const content: ThinkingBlockContent = {
           kind: 'thinking_block',
@@ -1635,6 +1896,8 @@ export class SessionManager {
         live.thinkingMessageId = message.id
         live.thinkingText = ''
         live.thinkingParentToolUseId = event.parentToolUseId
+        this.harnessUi.setThinkingChrome(sessionId)
+        this.sendSdkChrome(sessionId)
         this.sendMessage(sessionId, message)
         return
       }
@@ -1672,6 +1935,8 @@ export class SessionManager {
           parentToolUseId: live.thinkingParentToolUseId,
         }
         live.thinkingEstimatedTokens = event.estimatedTokens
+        this.harnessUi.setThinkingChrome(sessionId, event.estimatedTokens)
+        this.sendSdkChrome(sessionId)
         const updated = this.store.updateMessage(live.thinkingMessageId, {
           content: JSON.stringify(content),
           rawEvent: event,
@@ -1697,6 +1962,7 @@ export class SessionManager {
       }
 
       case 'text_delta': {
+        this.markTurnExecutionStarted(live)
         this.finishThinkingBlock(sessionId, live, 'completed')
         // First delta of a segment: persist an (initially empty) placeholder
         // row immediately so the renderer has a stable message id to attach
@@ -1716,6 +1982,7 @@ export class SessionManager {
       }
 
       case 'tool_call_start': {
+        this.markTurnExecutionStarted(live)
         this.flushBuffer(sessionId, live)
         this.finishThinkingBlock(sessionId, live, 'completed')
         const existing = live.pendingTools.get(event.toolUseId)
@@ -1805,7 +2072,7 @@ export class SessionManager {
               pending.content.name,
               pending.content.input
             ).then((cap) => {
-              this.workspace?.patchSessionChangesCap(sessionId, cap)
+              this.publishSessionChangesCap(sessionId, cap)
             })
           }
         }
@@ -1881,6 +2148,7 @@ export class SessionManager {
         return
 
       case 'permission_request': {
+        this.markTurnExecutionStarted(live)
         this.flushBuffer(sessionId, live)
         const content: PermissionRequestContent = {
           kind: 'permission_request',
@@ -1900,6 +2168,7 @@ export class SessionManager {
       }
 
       case 'ask_user_question': {
+        this.markTurnExecutionStarted(live)
         this.flushBuffer(sessionId, live)
         const content: AskUserQuestionContent = {
           kind: 'ask_user_question',
@@ -1915,6 +2184,7 @@ export class SessionManager {
       }
 
       case 'plan_proposed': {
+        this.markTurnExecutionStarted(live)
         this.flushBuffer(sessionId, live)
         const content: PlanProposedContent = {
           kind: 'plan_proposed',
@@ -1927,6 +2197,21 @@ export class SessionManager {
         const message = this.store.addMessage({ sessionId, role: 'assistant', content: JSON.stringify(content), rawEvent: event })
         live.pendingPrompts.set(event.requestId, { messageId: message.id, content })
         this.sendMessage(sessionId, message)
+        {
+          const session = this.getSession(sessionId)
+          if (session) {
+            const workspaceRoot = session.worktreePath ?? session.projectPath
+            void registerPlanFileInSessionChangesCap(
+              this.store,
+              sessionId,
+              workspaceRoot,
+              workspaceRoot,
+              session.hostname
+            ).then((cap) => {
+              this.publishSessionChangesCap(sessionId, cap)
+            })
+          }
+        }
         return
       }
 
@@ -1940,6 +2225,7 @@ export class SessionManager {
         })
         this.sendMessage(sessionId, message)
         live.busy = false
+        this.clearPendingUserTurn(live)
         this.sendStatus(sessionId)
         this.sendTurnState(sessionId, false)
         return
@@ -1948,7 +2234,9 @@ export class SessionManager {
       case 'interrupted':
         this.flushBuffer(sessionId, live)
         this.finalizeStaleRunningToolCalls(sessionId, live)
+        this.expirePendingPrompts(sessionId, live)
         live.busy = false
+        this.clearPendingUserTurn(live)
         this.sendStatus(sessionId)
         logger.info('harness event: interrupted (terminal)', { sessionId })
         this.sendTurnState(sessionId, false)
@@ -1958,9 +2246,31 @@ export class SessionManager {
         this.flushBuffer(sessionId, live)
         live.turnCount += 1
         live.busy = false
+        this.clearPendingUserTurn(live)
         this.sendPromptSuggestion(sessionId, null)
         this.sendStatus(sessionId)
-        logger.info('harness event: result (turn complete)', { sessionId, turnCount: live.turnCount, isError: event.isError })
+        logger.info('harness event: result (turn complete)', {
+          sessionId,
+          turnCount: live.turnCount,
+          isError: event.isError,
+          subtype: event.subtype,
+          errors: event.errors
+        })
+        if (event.isError) {
+          const content: TranscriptNoticeContent = {
+            kind: 'transcript_notice',
+            level: 'danger',
+            label: 'Error',
+            text: this.formatTurnErrorMessage(event)
+          }
+          const errorMessage = this.store.addMessage({
+            sessionId,
+            role: 'system',
+            content: JSON.stringify(content),
+            rawEvent: event
+          })
+          this.sendMessage(sessionId, errorMessage)
+        }
         // `event.totalCostUsd` is cumulative for the whole live connection
         // (verified for real — see `LiveStream.connectionCostUsd` doc), so
         // only the delta since this connection's last reported value is new
@@ -1981,25 +2291,16 @@ export class SessionManager {
           this.sendLifecycle({ type: 'session.updated', session: costUpdated })
         }
         this.sendTurnState(sessionId, false)
+        void this.refreshSessionWorkspace(sessionId, false).catch(() => undefined)
         // token-usage-indicator: pull context usage directly from the SDK's
-        // own query — gives us `totalTokens` (all categories: user message,
-        // system prompt, MCP tools, cache reads, etc.) and `autoCompactThreshold`
-        // (the real cap before auto-compaction fires, which is smaller than
-        // the model's full context window). Falls back to modelUsage math if
-        // the session is no longer live.
+        // own query — `totalTokens` is full in-context usage; cap is when
+        // auto-compaction fires (`autoCompactThreshold ?? maxTokens`), not
+        // modelUsage's raw `contextWindow`. Do not fall back to modelUsage —
+        // it tracks API input totals against the model max, which mismatches
+        // what Claude Code shows in /context.
         void this.harness.getContextUsage(sessionId).then((ctx) => {
-          if (ctx && ctx.autoCompactThreshold) {
-            this.sendTokenUsage(sessionId, ctx.totalTokens, ctx.autoCompactThreshold)
-          } else if (event.modelUsage) {
-            const entries = Object.values(event.modelUsage)
-            if (entries.length > 0) {
-              const inputTokens = entries.reduce(
-                (sum, m) => sum + m.inputTokens + (m.cacheReadInputTokens ?? 0) + (m.cacheCreationInputTokens ?? 0),
-                0
-              )
-              const contextWindow = Math.max(...entries.map((m) => m.contextWindow))
-              if (contextWindow > 0) this.sendTokenUsage(sessionId, inputTokens, contextWindow)
-            }
+          if (ctx && ctx.compactThreshold > 0) {
+            this.sendTokenUsage(sessionId, ctx.totalTokens, ctx.compactThreshold)
           }
         })
         if (event.isError) this.expirePendingPrompts(sessionId, live)
@@ -2094,6 +2395,23 @@ export class SessionManager {
    * renderer). Mark each abandoned prompt `expired` so the card reflects
    * reality and stops offering dead buttons.
    */
+  private formatTurnErrorMessage(event: Extract<HarnessEvent, { type: 'result' }>): string {
+    if (event.errors && event.errors.length > 0) return event.errors.join('\n')
+    if (event.result) return event.result
+    switch (event.subtype) {
+      case 'error_max_turns':
+        return 'Turn stopped: maximum turn limit reached.'
+      case 'error_max_budget_usd':
+        return 'Turn stopped: session budget limit reached.'
+      case 'error_max_structured_output_retries':
+        return 'Turn stopped: structured output could not be produced.'
+      case 'error_during_execution':
+        return 'Turn failed during execution.'
+      default:
+        return `Turn failed (${event.subtype || 'unknown'}).`
+    }
+  }
+
   private expirePendingPrompts(sessionId: string, live: LiveStream): void {
     if (live.pendingPrompts.size === 0) return
     for (const [requestId, pending] of live.pendingPrompts) {
@@ -2138,6 +2456,8 @@ export class SessionManager {
     }
     const updated = this.store.updateMessage(live.thinkingMessageId, { content: JSON.stringify(content) })
     if (updated) this.sendMessage(sessionId, updated)
+    this.harnessUi.clearThinkingChrome(sessionId)
+    this.sendSdkChrome(sessionId)
     live.thinkingMessageId = null
     live.thinkingText = ''
     live.thinkingParentToolUseId = null
@@ -2174,14 +2494,14 @@ export class SessionManager {
 
     const host = this.resolveHostFromSession(session.hostname)
     const namingSession = await this.harness.start(`${AUTO_NAME_PROMPT}\n\nConversation:\n${transcript}`, {
-      cwd: session.projectPath,
+      cwd: this.resolveHarnessCwd(session.projectPath, session.hostname, session.worktreePath),
       host
     })
 
     let title = ''
     for await (const event of namingSession.events) {
       if (event.type === 'result' && !event.isError && event.result) {
-        title = event.result.trim().replace(/^["'“”]+|["'“”]+$/g, '')
+        title = clampSessionTitle(event.result)
       }
     }
 
@@ -2238,7 +2558,6 @@ export class SessionManager {
    */
   startupReconnect(): void {
     const execFileAsync = promisify(execFile)
-    const SSH_MUX_OPTS = ['-o', 'ControlMaster=auto', '-o', 'ControlPath=/tmp/atelier-ssh-%C', '-o', 'ControlPersist=300']
     const TMUX_TIMEOUT_MS = 8000
 
     const markStale = (sessionId: string): void => {
@@ -2262,7 +2581,7 @@ export class SessionManager {
       // claude-code: attempt startup reconnect for recently-active sessions only.
       if (this.sessionIsStartupIdleEligible(session)) {
         if (!session.closedAt) {
-          this.closeSession(session.id)
+          void this.closeSession(session.id)
         }
         logger.info('startupReconnect: skipping auto reconnect (session startup-idle)', {
           sessionId: session.id,
@@ -2272,6 +2591,9 @@ export class SessionManager {
       }
 
       const sessionId = session.id
+      if (this.live.has(sessionId) || this.harness.isActive(sessionId)) {
+        continue
+      }
       this.startupAutoReconnect.add(sessionId)
       this.pendingPanelPreload.add(sessionId)
       this.connecting.add(sessionId)

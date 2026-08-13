@@ -29,6 +29,13 @@ test('window title is Atelier', async () => {
   await expect.poll(() => page.title()).toBe('Atelier')
 })
 
+test('integrated title bar on macOS (hiddenInset chrome)', async () => {
+  const platform = await page.evaluate(() => window.atelier.platform)
+  test.skip(platform !== 'darwin', 'custom title bar is macOS-only')
+  await expect(page.getByTestId('window-title-bar')).toBeVisible()
+  await expect(page.getByTestId('window-title-bar')).toContainText('Atelier')
+})
+
 test('#root has rendered children', async () => {
   const childCount = await page.locator('#root').evaluate((el) => el.children.length)
   expect(childCount).toBeGreaterThan(0)
@@ -83,4 +90,35 @@ test('main-process log file contains "app ready" and IPC entries', async () => {
   // default "system-ui"/"Times New Roman" fallback.
   expect(fontFamily.startsWith('-apple-system')).toBe(true)
   expect(fontFamily).not.toBe('system-ui')
+})
+
+test('keyboard hints: Ctrl+C does not filter badges while ⌘ is held', async () => {
+  await page.locator('#app').click()
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', bubbles: true }))
+  })
+  await page.waitForTimeout(300)
+  await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
+  const before = await page.locator('[data-testid^="keyboard-hint-badge-"]').count()
+  expect(before).toBeGreaterThan(0)
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'c',
+        ctrlKey: true,
+        metaKey: true,
+        bubbles: true,
+        cancelable: true
+      })
+    )
+  })
+
+  await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible()
+  await expect(page.locator('[data-testid^="keyboard-hint-badge-"]')).toHaveCount(before)
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', bubbles: true }))
+  })
+  await expect(page.getByTestId('keyboard-hints-overlay')).toHaveCount(0)
 })

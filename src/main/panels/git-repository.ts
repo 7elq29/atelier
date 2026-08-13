@@ -5,10 +5,14 @@
  */
 import type { CommitInfo, DiffFileChange, DiffFileContentPair, DiffFileStatus, DiffSummary, WorktreeInfo } from '../../shared/panel-types'
 import { readFileForPreview } from './files'
-import { join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { warmSshMux } from '../ssh-exec'
 import {
   clearGitRepoRootCache,
+  GIT_NO_EXTERNAL_DIFF,
+  GIT_PATCH_CONFIG_ARGS,
   gitPatchOutputUsable,
   numstatPathForGit,
   parseNumstatLines,
@@ -618,12 +622,95 @@ export async function resolveHead(projectPath: string, sshHost?: string | null):
   return hash || null
 }
 
+/** Diff for session cap paths outside the workspace / git repo (baseline from first session edit). */
+export async function getOutsideWorkspaceCapFileDiff(
+  absPath: string,
+  baseline: string,
+  sshHost?: string | null
+): Promise<{ file: DiffFileChange; pair: DiffFileContentPair } | null> {
+  const read = await readFileForPreview(absPath, sshHost)
+  if (read.kind !== 'text' && read.kind !== 'html') return null
+  const modified = read.content
+  const pair: DiffFileContentPair = { original: baseline, modified }
+
+  if (sshHost) {
+    const file: DiffFileChange = {
+      path: absPath,
+      status: baseline.length === 0 ? 'added' : 'modified',
+      additions: 0,
+      deletions: 0,
+      hunks: []
+    }
+    for (const line of modified.split('\n')) {
+      if (baseline.split('\n').includes(line)) continue
+      file.additions += 1
+    }
+    return { file, pair }
+  }
+
+  const dir = await mkdtemp(join(tmpdir(), 'atelier-outside-diff-'))
+  const baseFile = join(dir, 'baseline')
+  try {
+    await writeFile(baseFile, baseline, 'utf8')
+    const patch = await runGit(
+      dir,
+      [
+        ...GIT_PATCH_CONFIG_ARGS,
+        'diff',
+        ...GIT_NO_EXTERNAL_DIFF,
+        '--no-color',
+        '-U3',
+        '--no-index',
+        baseFile,
+        absPath
+      ],
+      sshHost
+    )
+
+    let file: DiffFileChange
+    if (gitPatchOutputUsable(patch.code, patch.stdout)) {
+      const parsed = parseUnifiedDiff(patch.stdout)[0]
+      file = parsed ?? {
+        path: absPath,
+        status: baseline.length === 0 ? 'added' : 'modified',
+        additions: 0,
+        deletions: 0,
+        hunks: []
+      }
+    } else {
+      file = {
+        path: absPath,
+        status: baseline.length === 0 ? 'added' : 'modified',
+        additions: 0,
+        deletions: 0,
+        hunks: []
+      }
+    }
+    file.path = absPath
+    let additions = 0
+    let deletions = 0
+    for (const hunk of file.hunks) {
+      for (const line of hunk.lines) {
+        if (line.kind === 'add') additions += 1
+        if (line.kind === 'del') deletions += 1
+      }
+    }
+    file.additions = additions
+    file.deletions = deletions
+    return { file, pair }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
 /** Working tree + staged numstat for one path vs HEAD (or empty tree when no HEAD). */
 export async function getPathWorkingTreeNumstat(
   projectPath: string,
   filePath: string,
   sshHost?: string | null
 ): Promise<{ additions: number; deletions: number } | null> {
+  if (isAbsolute(filePath)) return null
+
   const hasHead = (await runGit(projectPath, ['rev-parse', '--verify', 'HEAD'], sshHost)).code === 0
   const target = hasHead ? 'HEAD' : EMPTY_TREE
   let additions = 0
@@ -637,6 +724,44 @@ export async function getPathWorkingTreeNumstat(
     for (const f of parseNumstatLines(r.stdout.split('\n'))) {
       additions += f.additions
       deletions += f.deletions
+    }
+  }
+  if (additions === 0 && deletions === 0) {
+    const absFile = join(resolve(projectPath), filePath)
+    let onDisk = false
+    try {
+      await access(absFile)
+      onDisk = true
+    } catch {
+      /* file not present at workspace-relative path */
+    }
+    const untracked = await runGit(projectPath, ['ls-files', '--others', '--exclude-standard', '--', filePath], sshHost)
+    const listed = untracked.code === 0 && untracked.stdout.trim().length > 0
+    // Plans live under `.claude/plans/` which is often gitignored — still show cap stats when the file exists on disk.
+    if (onDisk || listed) {
+      const diffPath = onDisk ? absFile : filePath
+      const diff = await runGit(
+        projectPath,
+        [
+          '-c',
+          'diff.external=',
+          '-c',
+          'core.quotepath=false',
+          'diff',
+          '--no-color',
+          '--numstat',
+          '--no-index',
+          '/dev/null',
+          diffPath
+        ],
+        sshHost
+      )
+      if (diff.code <= 1 && diff.stdout.trim()) {
+        for (const f of parseNumstatLines(diff.stdout.split('\n'))) {
+          additions += f.additions
+          deletions += f.deletions
+        }
+      }
     }
   }
   if (additions === 0 && deletions === 0) return null

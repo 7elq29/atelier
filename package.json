@@ -7,7 +7,7 @@
   "main": "./out/main/index.js",
   "author": "qingqin",
   "scripts": {
-    "postinstall": "electron-rebuild -f -w better-sqlite3,node-pty && bash scripts/ensure-atelier-electron-mac.sh || true",
+    "postinstall": "electron-rebuild -f -w better-sqlite3,node-pty && node scripts/patch-node-pty.js && bash scripts/ensure-atelier-electron-mac.sh || true",
     "dev": "bash scripts/dev-electron.sh",
     "dev:full": "bash scripts/dev-full.sh",
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build && tsc -p tsconfig.e2e.json",

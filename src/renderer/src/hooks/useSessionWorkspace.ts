@@ -21,7 +21,7 @@ export function useSessionWorkspace(): {
   }, [])
 
   const hydrateSnapshot = useCallback((sessionId: string) => {
-    void window.atelier.getSessionWorkspaceSnapshot(sessionId).then((workspace) => {
+    void window.atelier.refreshSessionWorkspace(sessionId, true).then((workspace) => {
       if (workspace) mergeWorkspace(sessionId, workspace)
     })
   }, [mergeWorkspace])

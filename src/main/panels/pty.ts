@@ -22,11 +22,14 @@
 import * as pty from 'node-pty'
 import { execFileSync, execFile } from 'child_process'
 import { promisify } from 'util'
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { logger } from '../logger'
 import { SSH_MUX_OPTS } from '../ssh-exec'
+import { ensureUssh } from '../uber-auth'
 import { ShellPoolManager } from './shell-pool'
-import { shQuote } from '../shell-quote'
 import { hostname as osHostname } from 'node:os'
 import { parseSshConnectionClosed, parseSshHostFromShellLine, inferShellHostFromPtyTail, localMachineHostLabels } from '../../shared/terminal-shell-context'
 
@@ -54,19 +57,17 @@ function tmuxSessionName(id: string): string {
   return `atelier-${sanitized}`.slice(0, 50)
 }
 
-/** node-pty must spawn a login shell that exec's tmux — direct tmux exec fails on macOS (posix_spawnp). */
-function localShellForTmuxAttach(tmuxBin: string, tmuxName: string): { shell: string; args: string[] } {
-  const shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh')
-  const cmd = `exec ${shQuote(tmuxBin)} attach-session -t ${shQuote(tmuxName)}`
-  return { shell, args: ['-l', '-c', cmd] }
-}
-
-function ptyEnvWithoutTmux(): Record<string, string> {
-  const env = { ...process.env } as Record<string, string>
-  delete env.TMUX
-  delete env.TMUX_PANE
-  delete env.TMUX_WIN
-  return env
+/** posix_spawn requires an existing directory for the spawn-helper cwd argument. */
+function resolveLocalPtyCwd(cwd: string): string {
+  const expanded = cwd.trim().replace(/^~(?=\/|$)/, homedir())
+  const abs = resolve(expanded || homedir())
+  if (existsSync(abs)) return abs
+  const fallback = resolve(process.cwd())
+  if (existsSync(fallback)) {
+    logger.warn('pty cwd missing, using fallback', { requested: cwd, abs, fallback })
+    return fallback
+  }
+  return homedir()
 }
 
 interface PtyEntry {
@@ -140,6 +141,7 @@ export class PtyManager {
 
     const isRemote = Boolean(opts.hostname)
     const useTmux = !isRemote && tmuxBin !== null
+    const localCwd = isRemote ? opts.cwd : resolveLocalPtyCwd(opts.cwd)
 
     let shell: string
     let args: string[]
@@ -150,6 +152,10 @@ export class PtyManager {
     let claimedFromPool = false
 
     logger.info('pty spawn: start', { id, isRemote, useTmux, cwd: opts.cwd })
+
+    if (isRemote) {
+      await ensureUssh()
+    }
 
     if (useTmux) {
       const name = tmuxSessionName(id)
@@ -178,7 +184,7 @@ export class PtyManager {
             'new-session', '-d', '-s', name,
             '-x', String(Math.max(opts.cols || 80, 2)),
             '-y', String(Math.max(opts.rows || 24, 2)),
-            '-c', opts.cwd
+            '-c', localCwd
           ])
           logger.info('pty spawn: tmux session created', { id, name, elapsedMs: elapsed() })
         }
@@ -186,9 +192,8 @@ export class PtyManager {
       // Attach to the (now-guaranteed) existing session. When this client
       // exits (node-pty closes), tmux simply detaches — no SIGHUP to the
       // shell, so the session and its processes survive.
-      const attach = localShellForTmuxAttach(tmuxBin!, name)
-      shell = attach.shell
-      args = attach.args
+      shell = tmuxBin!
+      args = ['attach-session', '-t', name]
       entryTmuxName = name
     } else if (isRemote) {
       const hostname = opts.hostname as string
@@ -238,56 +243,13 @@ export class PtyManager {
     const gen = ++this.genCounter
     logger.info('pty spawn: node-pty.spawn starting', { id, shell, elapsedMs: elapsed() })
 
-    const spawnEnv = useTmux || entryTmuxName ? ptyEnvWithoutTmux() : (process.env as Record<string, string>)
-    const spawnOpts = {
-      name: 'xterm-color' as const,
+    const proc = pty.spawn(shell, args, {
+      name: 'xterm-color',
       cols: opts.cols || 80,
       rows: opts.rows || 24,
-      cwd: isRemote ? undefined : opts.cwd,
-      env: spawnEnv
-    }
-
-    let proc: pty.IPty
-    try {
-      proc = pty.spawn(shell, args, spawnOpts)
-    } catch (firstErr) {
-      if (!useTmux || !entryTmuxName || !tmuxBin) throw firstErr
-      logger.warn('pty tmux client spawn failed, recreating tmux session', {
-        id,
-        name: entryTmuxName,
-        error: String(firstErr)
-      })
-      try {
-        execFileSync(tmuxBin, ['kill-session', '-t', entryTmuxName], { stdio: 'ignore' })
-      } catch {
-        /* session may already be gone */
-      }
-      await execFileAsync(tmuxBin, [
-        'new-session', '-d', '-s', entryTmuxName,
-        '-x', String(Math.max(opts.cols || 80, 2)),
-        '-y', String(Math.max(opts.rows || 24, 2)),
-        '-c', opts.cwd
-      ])
-      const attach = localShellForTmuxAttach(tmuxBin, entryTmuxName)
-      try {
-        proc = pty.spawn(attach.shell, attach.args, spawnOpts)
-      } catch (secondErr) {
-        logger.error('pty tmux attach failed after recreate, using plain shell', {
-          id,
-          name: entryTmuxName,
-          error: String(secondErr)
-        })
-        entryTmuxName = undefined
-        claimedFromPool = false
-        shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh')
-        args = []
-        proc = pty.spawn(shell, args, {
-          ...spawnOpts,
-          env: process.env as Record<string, string>
-        })
-        proc.write(`cd ${JSON.stringify(opts.cwd)} && clear\r`)
-      }
-    }
+      cwd: isRemote ? undefined : localCwd,
+      env: process.env as Record<string, string>
+    })
 
     const initialShellHost = isRemote ? (opts.hostname as string) : null
     const entry: PtyEntry = {
@@ -338,9 +300,9 @@ export class PtyManager {
     // Pool claim exception: the pool session starts in $HOME, so we cd to the
     // real project cwd after attach just like the plain shell path does.
     if (!isRemote && !useTmux) {
-      proc.write(`cd ${JSON.stringify(opts.cwd)} && clear\r`)
+      proc.write(`cd ${JSON.stringify(localCwd)} && clear\r`)
     } else if (claimedFromPool) {
-      proc.write(`cd ${JSON.stringify(opts.cwd)} && clear\r`)
+      proc.write(`cd ${JSON.stringify(localCwd)} && clear\r`)
     }
 
     logger.info('pty spawned', { id, shell, remote: isRemote, tmux: Boolean(entryTmuxName), cwd: opts.cwd, gen, totalElapsedMs: elapsed() })

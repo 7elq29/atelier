@@ -57,6 +57,25 @@ function buildSolidRedPng(width: number, height: number): Buffer {
   ])
 }
 
+async function clickAtomicEditorLinkIcon(page: Page, editor: ReturnType<Page['getByTestId']>): Promise<void> {
+  const link = editor.locator('.cm-atomic-link').first()
+  await expect(link).toBeVisible({ timeout: 10_000 })
+  const handle = await link.elementHandle()
+  if (!handle) throw new Error('atomic editor link missing')
+  await page.evaluate((el) => {
+    const rects = Array.from(el.getClientRects())
+    const lastRect = rects[rects.length - 1]
+    if (!lastRect) throw new Error('atomic editor link rect missing')
+    const emSize = parseFloat(window.getComputedStyle(el).fontSize)
+    const iconZone = emSize * 1.25
+    const x = lastRect.right - iconZone / 2
+    const y = lastRect.top + lastRect.height / 2
+    const target = document.elementFromPoint(x, y)
+    if (!(target instanceof Element)) throw new Error('atomic editor link icon target missing')
+    target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }))
+  }, handle)
+}
+
 async function dispatchEditorPaste(page: Page, pngBytes: Buffer, fileName: string): Promise<void> {
   const editor = page.getByTestId('daily-note-editor')
   await editor.click()
@@ -140,6 +159,7 @@ test.describe('Daily note Notes slice editor (sidebar main panel)', () => {
 
     const editor = page.getByTestId('daily-note-editor')
     await expect(editor).toBeVisible()
+    await expect(editor.locator('.cm-content').first()).toHaveCSS('font-size', '15.5px')
     await editor.click()
     await page.keyboard.press('End')
     await page.keyboard.type(`\n\n${UNIQUE_LINE}`)
@@ -234,5 +254,51 @@ test.describe('Daily note Notes slice editor (sidebar main panel)', () => {
     await expect(previewImg).toHaveAttribute('src', /^data:image\/png;base64,/)
 
     await page.screenshot({ path: join(artifactsDir, 'daily-note-notes-editor-pasted-image.png') })
+  })
+
+  test('markdown link icon opens in the external browser via shell.openExternal', async () => {
+    const targetUrl = 'https://example.com/daily-note-editor-link-test'
+    writeFileSync(
+      notePath,
+      fixtureWithNotesBody(`Seed body before edit.\n\n[Example Site](${targetUrl})`),
+      'utf-8'
+    )
+
+    await electronApp.evaluate(({ shell }) => {
+      shell.openExternal = async (url: string) => {
+        // @ts-expect-error test-only bookkeeping read back below
+        globalThis.__lastOpenedExternalUrl = url
+        return undefined
+      }
+    })
+
+    await page.getByTestId('daily-note-row').click()
+    const editor = page.getByTestId('daily-note-editor')
+    await expect(editor).toBeVisible({ timeout: 10_000 })
+    await expect(editor.getByText('Example Site')).toBeVisible({ timeout: 10_000 })
+
+    await clickAtomicEditorLinkIcon(page, editor)
+
+    const openedUrl = await electronApp.evaluate(() => {
+      // @ts-expect-error test-only bookkeeping
+      return globalThis.__lastOpenedExternalUrl ?? null
+    })
+    expect(openedUrl).toBe(targetUrl)
+    expect(page.url()).not.toContain('example.com')
+  })
+
+  test('Emacs Opt+F forward word works in daily note markdown editor', async () => {
+    await page.getByTestId('daily-note-row').click()
+    const editor = page.getByTestId('daily-note-editor')
+    await expect(editor).toBeVisible({ timeout: 10_000 })
+    await editor.locator('.cm-content').click()
+    await page.keyboard.press('Meta+a')
+    await page.keyboard.type('hello world')
+    await page.keyboard.press('Home')
+    await page.keyboard.down('Alt')
+    await page.keyboard.press('KeyF')
+    await page.keyboard.up('Alt')
+    await page.keyboard.type('!')
+    await expect(editor.getByText('hello! world')).toBeVisible({ timeout: 5_000 })
   })
 })

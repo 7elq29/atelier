@@ -15,6 +15,8 @@ import { resolveGitRepoRoot } from '../panels/git-core'
 import { walkFileTree, listWorkspaceFiles } from '../panels/files'
 import type { PtyManager } from '../panels/pty'
 import { logger } from '../logger'
+import { warmSshMux } from '../ssh-exec'
+import { ensureUssh } from '../uber-auth'
 
 export const DEVPOD_GIT_POLL_MS = 15_000
 const LOCAL_GIT_DEBOUNCE_MS = 400
@@ -95,6 +97,11 @@ export class WorkspaceService {
           error: err instanceof Error ? err.message : String(err)
         })
       }
+    }
+
+    if (hostname) {
+      await ensureUssh()
+      await warmSshMux(hostname)
     }
 
     const [diff, filesTree, filesList, sessionChangesCap] = await Promise.all([

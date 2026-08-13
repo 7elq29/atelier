@@ -95,6 +95,8 @@ export interface SessionRecord {
    * deleted.
    */
   worktreePath: string | null
+  /** Saved session profile id from New Session, or null for a plain project path. */
+  profileId: string | null
   /**
    * ISO timestamp of the last time the user actively used this session
    * (session-startup-idle): updated on select, send, reconnect, and create.
@@ -219,6 +221,8 @@ export interface CreateSessionOptions {
   useWorktree?: boolean
   /** Override the default derived session name (e.g. quick local terminal rows). */
   suggestedName?: string
+  /** Saved session profile id — cwd comes from the profile workspace. */
+  profileId?: string
 }
 
 /**
@@ -329,6 +333,17 @@ export interface SessionTurnStateEvent {
   busy: boolean
 }
 
+/** Result of stopping an in-flight turn — either fully withdrawn (pre-execution) or interrupted mid-run. */
+export type SessionInterruptResult =
+  | { action: 'withdrawn'; restoredText: string }
+  | { action: 'interrupted' }
+
+/** Notifies the renderer that a persisted transcript row was removed (e.g. ESC-withdraw before execution). */
+export interface SessionMessageRemovedEvent {
+  sessionId: string
+  messageId: number
+}
+
 /**
  * The renderer's answer to a `permission_request` / `ask_user_question` /
  * `plan_proposed` card (05-interactive-prompts), sent over
@@ -385,16 +400,16 @@ export interface SessionHarnessCwdEvent {
 
 /**
  * Context-window token usage push (token-usage-indicator). Fired after every
- * completed turn's `result` harness event — the numbers are the SDK's own
- * cumulative per-model totals for the current connection (same connection-
- * scoped semantics as `totalCostUsd`, i.e. resets on every new `start()`/
- * `resume()` reconnect). `inputTokens` is the sum of all models' `inputTokens`
- * for this connection; `contextWindow` is the maximum reported context window
- * across all models (typically a single model per session).
+ * completed turn's `result` harness event from the SDK's `getContextUsage()`.
+ * `inputTokens` is total in-context tokens (`totalTokens` from the SDK);
+ * `contextWindow` is the compaction threshold (`autoCompactThreshold ??
+ * maxTokens`), not the model's full raw context size.
  */
 export interface SessionTokenUsageEvent {
   sessionId: string
+  /** Total tokens currently occupying the context window. */
   inputTokens: number
+  /** Token count at which auto-compaction is expected to run. */
   contextWindow: number
 }
 

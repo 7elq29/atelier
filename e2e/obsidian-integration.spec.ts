@@ -21,6 +21,7 @@ const syncLogPath = join(artifactsDir, '09-vault-sync.log')
 // Fixed test date so the fixture path (`01.dailynotes/2026/Jul/31/...`) is
 // deterministic regardless of when this suite runs.
 const TEST_DATE = '2026-07-31'
+const PRIOR_DATE = '2026-07-30'
 
 const GID_STANDUP = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const GID_ONE_ON_ONE = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
@@ -34,6 +35,32 @@ const GID_EXERCISE = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
 const GID_DEEP_WORK = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
 const GID_ONCALL_HANDOFF = '99999999-9999-4999-8999-999999999999'
 const GID_READING_TRACKER = '88888888-8888-4888-8888-888888888888'
+const GID_CARRY_API = '11111111-1111-4111-8111-111111111111'
+const GID_CARRY_SYNC = '22222222-2222-4222-8222-222222222222'
+const GID_CARRY_DISMISS = '33333333-3333-4333-8333-333333333333'
+
+function seedPriorDayCarryContent(): string {
+  return `---
+date: ${PRIOR_DATE}
+day: Thursday
+type: daily
+---
+
+## 📋 Tasks
+
+- [ ] 14:00–14:30 Finish API draft [gid:: ${GID_CARRY_API}]
+
+### ⚪ Backlog
+- [ ] Review Obsidian sync spec [gid:: ${GID_CARRY_SYNC}]
+- [ ] Triage inbox [gid:: ${GID_CARRY_DISMISS}]
+
+### 🤝 Delegated
+-
+
+> [!invisible] Trackers
+> - [x] Exercise #tracker [gid:: ffffffff-ffff-4fff-8fff-ffffffffffff]
+`
+}
 
 function seedFixtureContent(): string {
   return `---
@@ -85,6 +112,10 @@ test.beforeAll(async () => {
   mkdirSync(noteDir, { recursive: true })
   notePath = join(noteDir, `${TEST_DATE}.md`)
   writeFileSync(notePath, seedFixtureContent(), 'utf-8')
+
+  const priorDir = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31')
+  mkdirSync(priorDir, { recursive: true })
+  writeFileSync(join(priorDir, `${PRIOR_DATE}.md`), seedPriorDayCarryContent(), 'utf-8')
 
   mkdirSync(artifactsDir, { recursive: true })
   writeFileSync(syncLogPath, `09-vault-sync.log — obsidian-integration e2e run\nvaultRoot=${vaultRoot}\nnotePath=${notePath}\n`)
@@ -151,6 +182,67 @@ test('seeded tasks render correctly in Timeline/Unscheduled/Trackers', async () 
   await expect(page.locator('[data-testid="tracker-task"]', { hasText: 'Read 20 pages' })).toBeVisible()
 
   await page.screenshot({ path: join(artifactsDir, '09-timeline.png') })
+})
+
+test.describe('carry-over suggestions from prior daily note', () => {
+  test.beforeEach(async () => {
+    const priorPath = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31', `${PRIOR_DATE}.md`)
+    writeFileSync(priorPath, seedPriorDayCarryContent(), 'utf-8')
+    await page.reload()
+    await expect(page.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+  })
+
+  test('lists incomplete timeline and unscheduled todos after Unscheduled section', async () => {
+    await expect(page.locator('[data-testid="carry-section"]')).toBeVisible()
+    await expect(page.locator('[data-testid="carry-suggestion-item"]')).toHaveCount(3)
+    await expect(page.locator('[data-testid="carry-section-head"]')).toHaveText(`From ${PRIOR_DATE}`)
+    await expect(
+      page.locator('[data-testid="carry-suggestion-item"]', { hasText: 'Finish API draft' })
+    ).toBeVisible()
+    await page.screenshot({ path: join(artifactsDir, 'carry-suggestions-panel.png') })
+  })
+
+  test('add (+) moves a todo into today Unscheduled', async () => {
+    const priorPath = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31', `${PRIOR_DATE}.md`)
+    const item = page.locator('[data-testid="carry-suggestion-item"]', { hasText: 'Finish API draft' })
+    await item.locator('[data-testid="carry-add-today"]').click()
+    await expect(item).toHaveCount(0)
+    await expect(page.locator('[data-testid="unscheduled-task"]', { hasText: 'Finish API draft' })).toBeVisible()
+    expect(readFileSync(priorPath, 'utf-8')).not.toContain(GID_CARRY_API)
+    expect(readFileSync(notePath, 'utf-8')).toContain(GID_CARRY_API)
+  })
+
+  test('complete marks the todo done on the source note', async () => {
+    const priorPath = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31', `${PRIOR_DATE}.md`)
+    const item = page.locator('[data-testid="carry-suggestion-item"]', { hasText: 'Review Obsidian sync spec' })
+    await item.locator('[data-testid="carry-suggestion-toggle"]').click()
+    await expect(item).toHaveCount(0)
+    expect(readFileSync(priorPath, 'utf-8')).toMatch(/- \[x\] Review Obsidian sync spec/)
+  })
+
+  test('right-click move sends todo to another day unscheduled', async () => {
+    const priorPath = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31', `${PRIOR_DATE}.md`)
+    const item = page.locator('[data-testid="carry-suggestion-item"]', { hasText: 'Triage inbox' })
+    await item.click({ button: 'right' })
+    await expect(page.locator('[data-testid="task-move-context-menu"]')).toBeVisible()
+    await page.locator('[data-testid="task-move-to-parent"]').hover()
+    await page.locator('[data-testid="task-move-option"][data-date="2026-08-01"]').click()
+    await expect(item).toHaveCount(0)
+    expect(readFileSync(priorPath, 'utf-8')).not.toContain(GID_CARRY_DISMISS)
+    const tomorrowPath = join(vaultRoot, '01.dailynotes', '2026', 'Aug', '31', '2026-08-01.md')
+    expect(existsSync(tomorrowPath)).toBe(true)
+    expect(readFileSync(tomorrowPath, 'utf-8')).toContain('Triage inbox')
+  })
+
+  test('dismiss hides the todo without changing the source note', async () => {
+    const priorPath = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31', `${PRIOR_DATE}.md`)
+    const item = page.locator('[data-testid="carry-suggestion-item"]', { hasText: 'Triage inbox' })
+    await item.locator('[data-testid="carry-dismiss"]').click()
+    await expect(item).toHaveCount(0)
+    expect(readFileSync(priorPath, 'utf-8')).toContain('Triage inbox')
+    await page.reload()
+    await expect(page.locator('[data-testid="carry-suggestion-item"]', { hasText: 'Triage inbox' })).toHaveCount(0)
+  })
 })
 
 test('current-time indicator is an absolutely-positioned overlay line on the hour grid (54a rewrite)', async () => {
@@ -490,7 +582,7 @@ type: daily
 
 ## 📋 Tasks
 
-- [ ] 09:00–09:15 Standup [gid:: aaaa0000-0000-4000-8000-000000000000]
+- [ ] 09:00–09:15 Standup [SAW-7068](https://t3.uberinternal.com/browse/SAW-7068) [gid:: aaaa0000-0000-4000-8000-000000000000]
 
 ### ⚪ Backlog
 - [ ] Logging Failover Runbook ( / ) [SAW-7068](https://t3.uberinternal.com/browse/SAW-7068) [LOG-1167](https://linear.app/uber/issue/LOG-1167) [gid:: ${GID_PLACEHOLDER_MULTI_LINK}]
@@ -550,6 +642,46 @@ type: daily
 
     // Plain task with no bracketed links at all.
     await expect(unscheduled.filter({ hasText: 'Smooth logcollector -> Terrablob traffic' })).toBeVisible()
+  })
+
+  test('Timeline and Unscheduled render markdown external links as clickable chips', async () => {
+    const unscheduled = shapesPage
+      .locator('[data-testid="unscheduled-task"]')
+      .filter({ hasText: 'Logging Failover Runbook' })
+    await expect(unscheduled.getByTestId('task-external-link').filter({ hasText: 'LOG-1167' })).toBeVisible()
+    await expect(unscheduled.getByTestId('task-external-link').filter({ hasText: 'SAW-7068' })).toBeVisible()
+
+    const timelineBlock = shapesPage
+      .locator('[data-testid="timeline-task"]')
+      .filter({ hasText: 'Standup' })
+    await expect(timelineBlock.getByTestId('task-external-link').filter({ hasText: 'SAW-7068' })).toBeVisible()
+
+    await shapesApp.evaluate(({ shell }) => {
+      shell.openExternal = async (url: string) => {
+        // @ts-expect-error test-only bookkeeping read back below
+        globalThis.__lastOpenedExternalUrl = url
+        return undefined
+      }
+    })
+
+    await unscheduled.getByTestId('task-external-link').filter({ hasText: 'LOG-1167' }).click()
+    const openedUrl = await shapesApp.evaluate(() => {
+      // @ts-expect-error test-only bookkeeping
+      return globalThis.__lastOpenedExternalUrl ?? null
+    })
+    expect(openedUrl).toBe('https://linear.app/uber/issue/LOG-1167')
+  })
+
+  test('edit buffer includes markdown external links from parsed vault tasks', async () => {
+    const unscheduled = shapesPage
+      .locator('[data-testid="unscheduled-task"]')
+      .filter({ hasText: 'Logging Failover Runbook' })
+    await unscheduled.locator('.dn-task-chip-text').dblclick()
+
+    const editInput = shapesPage.getByTestId('task-edit-input')
+    await expect(editInput).toHaveValue(/Logging Failover Runbook.*\[LOG-1167\]\(https:\/\/linear\.app\/uber\/issue\/LOG-1167/)
+    await editInput.blur()
+    await expect(unscheduled.getByTestId('task-external-link').filter({ hasText: 'LOG-1167' })).toBeVisible()
   })
 
   test('Trackers renders correctly with only a single tracker item', async () => {
@@ -784,19 +916,32 @@ type: daily
     expect(line).toMatch(/07:00[–-]07:30/)
   })
 
-  test('drag-moving a scheduled block via real mouse events shifts its on-disk time-block, duration preserved', async () => {
+  test('drag-moving a scheduled block via HTML5 drop on the timeline shifts its on-disk time-block, duration preserved', async () => {
     const block = gridPage.locator('[data-testid="timeline-task"][data-task-id="' + GID_MOVE + '"]')
-    const box = await block.boundingBox()
-    if (!box) throw new Error('move-target block not visible')
+    await expect(block).toBeVisible()
+    const taskId = await block.getAttribute('data-task-id')
+    expect(taskId).toBeTruthy()
 
-    const startX = box.x + box.width / 2
-    const startY = box.y + box.height / 2
-    const deltaY = 120 // 120px == 120 minutes at HOUR_HEIGHT_PX=60 (1px/min); 09:00+120min = 11:00
-
-    await gridPage.mouse.move(startX, startY)
-    await gridPage.mouse.down()
-    await gridPage.mouse.move(startX, startY + deltaY, { steps: 10 })
-    await gridPage.mouse.up()
+    // Native HTML5 DnD doesn't fire real drag events under Playwright's
+    // synthetic mouse driver reliably (and a real mouse drag downward can
+    // accidentally drop onto the Unscheduled panel below). Dispatch the
+    // drag/drop sequence on timeline-body at a Y that maps to 11:00
+    // (original 09:00 + 120min); duration stays 15min -> 11:00-11:15.
+    await gridPage.evaluate((id) => {
+      const target = document.querySelector('[data-testid="timeline-body"]') as HTMLElement | null
+      if (!target) throw new Error('timeline body not found')
+      const rect = target.getBoundingClientRect()
+      // 11:00 is 300 minutes after grid start (06:00) -> 300px at 1px/min.
+      const dropClientY = rect.top + 300 - target.scrollTop
+      const dt = new DataTransfer()
+      dt.setData('text/task-id', id as string)
+      target.dispatchEvent(
+        new DragEvent('dragover', { bubbles: true, cancelable: true, clientY: dropClientY, dataTransfer: dt })
+      )
+      target.dispatchEvent(
+        new DragEvent('drop', { bubbles: true, cancelable: true, clientY: dropClientY, dataTransfer: dt })
+      )
+    }, taskId)
 
     await gridPage.waitForTimeout(1200)
     const content = readFileSync(gridNotePath, 'utf-8')
@@ -1068,6 +1213,91 @@ type: daily
     expect(content).not.toMatch(/Existing backlog task(?! \(edited\))/)
   })
 
+  test('priority: typing [ in task edit offers Dataview priority and round-trips as badge + vault field', async () => {
+    const chip = affPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Task to tag' })
+    await chip.locator('span').first().dblclick()
+
+    const editInput = affPage.locator('[data-testid="task-edit-input"]')
+    await expect(editInput).toBeVisible()
+    await editInput.press('[')
+    await expect(affPage.locator('[data-testid="task-priority-picker"]')).toBeVisible()
+    await affPage.locator('[data-testid="task-priority-suggestion"][data-priority-value="high"]').click()
+
+    await editInput.blur()
+
+    await expect(chip.locator('[data-testid="task-priority-badge"]')).toHaveText('high')
+    await expect(chip).not.toContainText('[priority:: high]')
+
+    await affPage.waitForTimeout(1200)
+    const content = readFileSync(affNotePath, 'utf-8')
+    expect(content).toMatch(/Task to tag.*\[priority:: high\]/)
+
+    await chip.locator('.dn-task-chip-text').dblclick()
+    await expect(editInput).toHaveValue(/Task to tag.*\[priority:: high\]/)
+    await editInput.blur()
+  })
+
+  test('raw http(s) URLs in task text are clickable in Unscheduled and Timeline', async () => {
+    const rawUrl = 'https://example.com/atelier-raw-task-url'
+
+    await affApp.evaluate(({ shell }) => {
+      shell.openExternal = async (url: string) => {
+        // @ts-expect-error test-only bookkeeping read back below
+        globalThis.__lastOpenedExternalUrl = url
+        return undefined
+      }
+    })
+
+    const unscheduled = affPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Task to tag' })
+    await unscheduled.locator('.dn-task-chip-text').dblclick()
+    const unscheduledEdit = affPage.locator('[data-testid="task-edit-input"]')
+    await expect(unscheduledEdit).toBeVisible()
+    await unscheduledEdit.fill(`Task to tag see ${rawUrl}`)
+    await unscheduledEdit.blur()
+    await expect(unscheduled.getByTestId('external-link')).toHaveText(rawUrl)
+
+    await unscheduled.getByTestId('external-link').click()
+    let openedUrl = await affApp.evaluate(() => {
+      // @ts-expect-error test-only bookkeeping
+      return globalThis.__lastOpenedExternalUrl ?? null
+    })
+    expect(openedUrl).toBe(rawUrl)
+
+    const timelineBlock = affPage.locator('[data-testid="timeline-task"]', { hasText: 'Focus block' })
+    await timelineBlock.locator('.dn-tb-body').dblclick()
+    const timelineEdit = affPage.getByTestId('timeline-task-edit-input')
+    await expect(timelineEdit).toBeVisible()
+    await timelineEdit.fill(`Focus block docs ${rawUrl}`)
+    await timelineEdit.blur()
+    await expect(timelineBlock.getByTestId('external-link')).toHaveText(rawUrl)
+
+    await timelineBlock.getByTestId('external-link').click()
+    openedUrl = await affApp.evaluate(() => {
+      // @ts-expect-error test-only bookkeeping
+      return globalThis.__lastOpenedExternalUrl ?? null
+    })
+    expect(openedUrl).toBe(rawUrl)
+  })
+
+  test('edit buffer: markdown links round-trip as clickable chips', async () => {
+    const chip = affPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Existing backlog task' })
+    await chip.locator('.dn-task-chip-text').dblclick()
+
+    const editInput = affPage.locator('[data-testid="task-edit-input"]')
+    await expect(editInput).toBeVisible()
+    const slackUrl =
+      'https://uber.slack.com/archives/C08BUA15KM2/p1786518996972249?thread_ts=1782750241.154839&cid=C08BUA15KM2'
+    await editInput.fill(`Existing backlog task [slack](${slackUrl})`)
+    await editInput.blur()
+
+    await expect(chip.getByTestId('task-external-link').filter({ hasText: 'slack' })).toBeVisible()
+    await expect(chip).not.toContainText('[slack](')
+
+    await chip.locator('.dn-task-chip-text').dblclick()
+    await expect(editInput).toHaveValue(new RegExp(`Existing backlog task \\[slack\\]\\(${slackUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`))
+    await editInput.blur()
+  })
+
   test('tag UI: adding a tag round-trips to disk as #tagname, removing it clears it from disk', async () => {
     const chip = affPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Task to tag' })
     await chip.hover()
@@ -1142,7 +1372,7 @@ type: daily
     // resolving once the text row is replaced by the edit input — same
     // reason the pre-existing Unscheduled double-click-edit test above
     // queries `affPage.locator('[data-testid="task-edit-input"]')` directly.
-    await tracker.locator('span', { hasText: 'Water plants' }).dblclick()
+    await tracker.locator('.dn-task-chip-text').dblclick()
     const editInput = affPage.locator('[data-testid="task-edit-input"]')
     await expect(editInput).toBeVisible()
     await editInput.fill('Water plants (edited)')
@@ -1166,5 +1396,11 @@ type: daily
   test('close panel: clicking the close button hides the daily-notes panel', async () => {
     await affPage.locator('[data-testid="daily-notes-close"]').click()
     await expect(affPage.locator('[data-testid="daily-notes-panel"]')).toHaveCount(0)
+  })
+
+  test('reopen panel: sidebar toggle brings the daily-notes panel back after close', async () => {
+    await affPage.getByTestId('toggle-daily-notes-panel').click()
+    await expect(affPage.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+    await expect(affPage.locator('[data-testid="timeline-section"]')).toBeVisible()
   })
 })

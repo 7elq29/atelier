@@ -25,6 +25,10 @@ export interface SessionSdkChromeEvent {
   compactFailed?: boolean
   compactError?: string
   apiRetryText?: string | null
+  /** True while an extended-thinking block is streaming for the in-flight turn. */
+  thinkingActive?: boolean
+  /** Latest SDK `thinking_tokens` estimate for the open thinking block. */
+  thinkingEstimatedTokens?: number
 }
 
 export interface SessionRateLimitEvent {

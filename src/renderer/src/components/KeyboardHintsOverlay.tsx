@@ -10,7 +10,8 @@ import {
   layoutHintBadge,
   matchHintEntries,
   normalizeHintKeyChar,
-  setHintLabelAttributes
+  setHintLabelAttributes,
+  shouldBypassHintKeydown
 } from '../keyboard-hints/keyboard-hints'
 
 /** Hold ⌘ this long before badges appear — quick ⌘K / other chords stay unaffected. */
@@ -162,6 +163,8 @@ export default function KeyboardHintsOverlay({ disabled, scanRootId = 'app' }: P
         teardown()
         return
       }
+
+      if (shouldBypassHintKeydown(e)) return
 
       if (tryConsumeHintKey(e.key)) {
         e.preventDefault()

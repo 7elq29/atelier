@@ -22,7 +22,11 @@ function mergeConfig(base: AtelierConfig, partial: Partial<AtelierConfig>): Atel
     ...partial,
     fontSizes: { ...base.fontSizes, ...(partial.fontSizes ?? {}) },
     gitIdentity: { ...base.gitIdentity, ...(partial.gitIdentity ?? {}) },
-    vault: { ...base.vault, ...(partial.vault ?? {}) }
+    vault: { ...base.vault, ...(partial.vault ?? {}) },
+    terminalToolbox: partial.terminalToolbox
+      ? { commands: partial.terminalToolbox.commands ?? base.terminalToolbox.commands }
+      : base.terminalToolbox,
+    sessionProfiles: partial.sessionProfiles ?? base.sessionProfiles
   }
 }
 

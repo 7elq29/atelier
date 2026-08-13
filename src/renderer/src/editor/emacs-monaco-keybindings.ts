@@ -47,6 +47,8 @@ export function registerEmacsMonacoKeybindings(editor: monaco.editor.IStandalone
     editor.addCommand(key, handler)
   }
 
+  bind(M | monaco.KeyCode.KeyF, () => runAction(editor, 'cursorWordEndRight'))
+  bind(M | monaco.KeyCode.KeyB, () => runAction(editor, 'cursorWordStartLeft'))
   bind(C | monaco.KeyCode.KeyV, () => runAction(editor, 'scrollPageDown'))
   bind(M | monaco.KeyCode.KeyV, () => runAction(editor, 'scrollPageUp'))
 
@@ -59,6 +61,8 @@ export function registerEmacsMonacoKeybindings(editor: monaco.editor.IStandalone
   bind(C | monaco.KeyCode.KeyP, () => runAction(editor, 'cursorUp'))
   bind(C | monaco.KeyCode.KeyF, () => runAction(editor, 'cursorRight'))
   bind(C | monaco.KeyCode.KeyB, () => runAction(editor, 'cursorLeft'))
+  bind(C | monaco.KeyCode.KeyU, () => runAction(editor, 'deleteAllLeft'))
+  bind(C | monaco.KeyCode.KeyW, () => runAction(editor, 'deleteWordLeft'))
   bind(C | monaco.KeyCode.KeyK, () => killLine(editor))
   bind(C | monaco.KeyMod.Shift | monaco.KeyCode.Minus, () => runAction(editor, 'undo'))
 }

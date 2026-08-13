@@ -98,7 +98,8 @@
         <span class="sdk-review-badge approved">Approved</span>
       </div>
       <p class="sdk-event-surface">
-        <code>background_tasks_changed</code> → REPLACE membership; one <code>.tracker-card</code> per family (Monitors, Subagents, Shell).
+        <code>background_tasks_changed</code> → REPLACE membership; one <code>.tracker-card</code> per family (Monitors, Subagents, Background jobs, Shell).
+        Subagents (<code>task_type: subagent</code>) render only in the tracker rail with SDK status — never in the transcript background card.
         Row detail (status, MCP subtitle, errors, progress) merges from <code>task_started</code>, <code>task_updated</code>,
         <code>task_progress</code>, <code>task_notification</code> by <code>task_id</code> — not from the changed payload alone.
         Honor <code>skip_transcript</code> on started events.
@@ -111,21 +112,40 @@
           <div class="tracker-card">
             <div class="tracker-head">Monitors <span class="count">1 running</span></div>
             <div class="tracker-body">
-              <div class="subagent-item">
-                <span class="spinner"></span>
-                <span>Watch CI until green</span>
+              <div class="background-rail-entry">
+                <div class="subagent-item background-rail-head">
+                  <span class="spinner"></span>
+                  <span class="background-rail-title">Watch CI until green</span>
+                </div>
+                <div class="background-rail-detail">MCP · build-status · task_8f2…</div>
               </div>
-              <div class="subagent-item" style="font-size:13px;color:var(--text-tertiary);padding-left:22px">MCP · build-status · task_8f2…</div>
             </div>
           </div>
           <div class="tracker-card">
             <div class="tracker-head">Subagents <span class="count">1 running</span></div>
             <div class="tracker-body">
-              <div class="subagent-item">
-                <span class="spinner"></span>
-                <span>Explore token refresh call sites</span>
+              <div class="background-rail-entry">
+                <div class="subagent-item background-rail-head">
+                  <span class="spinner"></span>
+                  <span class="background-rail-title">Explore token refresh call sites across auth and session bootstrap</span>
+                </div>
+                <div class="background-rail-detail">Read → Grep · 42s</div>
               </div>
-              <div class="subagent-item" style="font-size:13px;color:var(--text-tertiary);padding-left:22px">Read → Grep · 42s</div>
+            </div>
+          </div>
+          <div class="tracker-card">
+            <div class="tracker-head tracker-head--long-label">
+              <span class="tracker-head-title">Background jobs</span>
+              <span class="count">1 running</span>
+            </div>
+            <div class="tracker-body">
+              <div class="background-rail-entry">
+                <div class="subagent-item background-rail-head">
+                  <span class="spinner"></span>
+                  <span class="background-rail-title">Rebuild search index for vault sync</span>
+                </div>
+                <div class="background-rail-detail">workflow · 12s</div>
+              </div>
             </div>
           </div>
           <div class="tracker-card">

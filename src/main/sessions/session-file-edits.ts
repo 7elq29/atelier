@@ -1,29 +1,40 @@
+import { homedir } from 'node:os'
 import { isAbsolute, relative, resolve } from 'node:path'
+import { expandTildePath } from '../../shared/project-path-autocomplete'
 
+export function resolveSessionTouchedAbsolutePath(
+  capPath: string,
+  workspaceRoot: string,
+  homeDir: string = homedir()
+): string {
+  const root = resolve(expandTildePath(workspaceRoot, homeDir))
+  const trimmed = capPath.trim().replace(/\\/g, '/')
+  if (isAbsolute(trimmed)) return resolve(trimmed)
+  if (trimmed.startsWith('~')) return resolve(expandTildePath(trimmed, homeDir))
+  return resolve(root, trimmed.replace(/^\.\//, ''))
+}
+
+/** Repo-relative when under workspace; absolute normalized path when outside. */
 export function normalizeToRepoRelativePath(filePath: string, workspaceRoot: string): string | null {
-  const root = resolve(workspaceRoot)
-  const normalized = filePath.replace(/\\/g, '/')
+  const homeDir = homedir()
+  const root = resolve(expandTildePath(workspaceRoot, homeDir))
+  const trimmed = filePath.trim().replace(/\\/g, '/')
+  if (!trimmed) return null
 
-  if (!isAbsolute(normalized)) {
-    const rel = normalized.replace(/^\.\//, '')
-    const abs = resolve(root, rel)
-    const fromRoot = relative(root, abs)
-    if (fromRoot.startsWith('..') || fromRoot === '') return null
-    return fromRoot.split(/\\/g).join('/')
+  let abs: string
+  if (trimmed.startsWith('~')) {
+    abs = resolve(expandTildePath(trimmed, homeDir))
+  } else if (isAbsolute(trimmed)) {
+    abs = resolve(trimmed)
+  } else {
+    abs = resolve(root, trimmed.replace(/^\.\//, ''))
   }
 
-  const abs = resolve(normalized)
-  if (abs === root || abs.startsWith(root + '/')) {
-    return relative(root, abs).split(/\\/g).join('/')
+  if (abs === root || abs.startsWith(`${root}/`)) {
+    const rel = relative(root, abs).split(/\\/g).join('/')
+    if (!rel || rel.startsWith('..')) return null
+    return rel
   }
 
-  const stripLead = normalized.replace(/^\//, '')
-  if (stripLead && !stripLead.includes('..')) {
-    const underRoot = resolve(root, stripLead)
-    if (underRoot === root || underRoot.startsWith(root + '/')) {
-      return relative(root, underRoot).split(/\\/g).join('/')
-    }
-  }
-
-  return null
+  return abs.split(/\\/g).join('/')
 }

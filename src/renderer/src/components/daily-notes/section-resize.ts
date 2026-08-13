@@ -1,6 +1,6 @@
 /**
- * Resizable-section weights for the Daily Notes sidebar's three stacked
- * sections (Timeline / Unscheduled / Trackers). Each section gets a
+ * Resizable-section weights for the Daily Notes sidebar's four stacked
+ * sections (Timeline / Unscheduled / Carry-over / Trackers). Each section gets a
  * `flex-grow` weight; dragging a handle between two sections transfers
  * weight between them proportional to the pixel delta. Weights persist to
  * localStorage (mirroring Playground's persistence pattern) so a resize
@@ -11,11 +11,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const STORAGE_KEY = 'atelier.dailyNotes.sectionWeights'
 const MIN_WEIGHT = 0.4
 
-export type SectionKey = 'timeline' | 'unscheduled' | 'trackers'
+export type SectionKey = 'timeline' | 'unscheduled' | 'carry' | 'trackers'
 
 export type SectionWeights = Record<SectionKey, number>
 
-const DEFAULT_WEIGHTS: SectionWeights = { timeline: 2, unscheduled: 2, trackers: 1 }
+const DEFAULT_WEIGHTS: SectionWeights = { timeline: 2, unscheduled: 2, carry: 1, trackers: 1 }
 
 function loadWeights(): SectionWeights {
   try {
@@ -25,6 +25,7 @@ function loadWeights(): SectionWeights {
     return {
       timeline: parsed.timeline ?? DEFAULT_WEIGHTS.timeline,
       unscheduled: parsed.unscheduled ?? DEFAULT_WEIGHTS.unscheduled,
+      carry: parsed.carry ?? DEFAULT_WEIGHTS.carry,
       trackers: parsed.trackers ?? DEFAULT_WEIGHTS.trackers
     }
   } catch {
@@ -69,7 +70,7 @@ export function useSectionResize(containerRef: React.RefObject<HTMLElement>): Us
           startY: e.clientY,
           startUpper: weights[upper],
           startLower: weights[lower],
-          totalAllWeights: weights.timeline + weights.unscheduled + weights.trackers,
+          totalAllWeights: weights.timeline + weights.unscheduled + weights.carry + weights.trackers,
           containerHeight
         }
         document.body.style.userSelect = 'none'

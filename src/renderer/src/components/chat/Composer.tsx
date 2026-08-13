@@ -3,11 +3,62 @@ import ChatUncommittedChanges from './ChatUncommittedChanges'
 import type { DiffSummary } from '../../../../shared/panel-types'
 import type { SessionChangesCap } from '../../../../shared/session-changes-cap'
 import { truncateContextPath } from '../../utils/truncateContextPath'
+import { sessionWorktreeBranch } from '../../../../shared/worktree-path'
 import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 import type { SessionRateLimitEvent, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
+import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
 const MAX_TEXTAREA_HEIGHT = 160
+
+/** Pastes longer than this show a one-line summary in the composer; full text is sent on submit. */
+const LARGE_PASTE_THRESHOLD = 50
+
+interface LargePasteEntry {
+  display: string
+  full: string
+}
+
+function largePasteDisplayLabel(charCount: number): string {
+  return `[copied ${charCount} charactors]`
+}
+
+function isExternalClipboardSummary(text: string): boolean {
+  return /^\[copied\s+\d+\s+char/i.test(text.trim())
+}
+
+function insertTextAtSelection(
+  current: string,
+  insertion: string,
+  selectionStart: number,
+  selectionEnd: number
+): { next: string; cursor: number } {
+  const before = current.slice(0, selectionStart)
+  const after = current.slice(selectionEnd)
+  const next = before + insertion + after
+  return { next, cursor: before.length + insertion.length }
+}
+
+function resolveSendText(display: string, largePastes: readonly LargePasteEntry[]): string {
+  let result = display
+  for (const { display: token, full } of largePastes) {
+    result = result.split(token).join(full)
+  }
+  return result
+}
+
+async function resolvePasteText(clipboardData: DataTransfer): Promise<string> {
+  const sync = clipboardData.getData('text/plain')
+  if (sync && !isExternalClipboardSummary(sync)) return sync
+  try {
+    const asyncText = await navigator.clipboard.readText()
+    if (asyncText && !isExternalClipboardSummary(asyncText)) return asyncText
+    if (asyncText) return asyncText
+  } catch {
+    // Fall back to whatever the paste event provided.
+  }
+  return sync
+}
 
 /**
  * Formats a token count as a short human-readable string.
@@ -17,6 +68,23 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
   if (n >= 1_000) return `${Math.round(n / 1_000)}k`
   return String(n)
+}
+
+function formatThinkingTokens(n: number): string {
+  if (n >= 1000) return `~${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  return `~${n}`
+}
+
+function composerTurnStatusText(sdkChrome?: SessionSdkChromeEvent | null): string {
+  if (sdkChrome?.apiRetryText) return sdkChrome.apiRetryText
+  if (sdkChrome?.thinkingActive) {
+    const tokens = sdkChrome.thinkingEstimatedTokens
+    if (tokens != null && tokens > 0) {
+      return `Extended reasoning… · ${formatThinkingTokens(tokens)} tokens`
+    }
+    return 'Extended reasoning…'
+  }
+  return 'Waiting for model…'
 }
 
 /**
@@ -38,6 +106,10 @@ const CONTEXT_FOLDER_ICON = (
 
 const CONTEXT_BRANCH_ICON = (
   <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 7.2V16.8M6 9.5a6 6 0 0 0 6 6h4"/></svg>
+)
+
+const CONTEXT_WORKTREE_ICON = (
+  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M20 4C10 4 4 10 4 18v2h2c8 0 14-6 14-16z"/><path d="M9 19c3-5 6-8 11-11"/></svg>
 )
 
 /**
@@ -255,6 +327,8 @@ interface ComposerProps {
   onInterrupt: () => void
   /** True while a turn is in flight for the active session — shows Stop alongside Send, per e2e-test-plan.md/spec.md. */
   busy: boolean
+  /** Active session id — used for worktree branch label before git/harness events arrive. */
+  sessionId?: string
   /** Active session's project root — `@file` mentions are resolved (real, live `fs` walk via the existing Files-panel IPC) against this. Undefined/empty just disables the mention popover. */
   projectPath?: string
   /** Worktree path if the session runs inside a git worktree, else null. */
@@ -273,7 +347,7 @@ interface ComposerProps {
   /** Preloaded workspace file paths for @-mentions (relative paths). */
   mentionFilePaths?: string[]
   /** Chat changes cap: open Diff › Changes for this repo-relative path. */
-  onOpenChangedFile?: (path: string) => void
+  onOpenChangedFile?: (path: string, opensInFilesTab: boolean) => void
   /** `/fork` slash command's real action: forks the active session (same as the sidebar's fork action). */
   onFork: () => void
   /** Current model/effort override (10f-enrichment-model-effort-picker); `null` until the user picks something, in which case no override is sent at all (harness default). */
@@ -301,9 +375,9 @@ interface ComposerProps {
   onCancelQueued?: (index: number) => void
   /**
    * Current context-window token usage for this session (token-usage-indicator).
-   * Undefined until the session's first turn completes (no display until data is
-   * available). `inputTokens` is cumulative for the live connection; `contextWindow`
-   * is the model's declared context size.
+   * Undefined until the session's first turn completes. Values come from the
+   * SDK's `getContextUsage()`: usage is total in-context tokens; cap is the
+   * auto-compaction threshold, not the model's full context window.
    */
   tokenUsage?: { inputTokens: number; contextWindow: number }
   /** SDK `prompt_suggestion` — placeholder in the empty composer; Tab accepts. */
@@ -477,6 +551,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   onSend,
   onInterrupt,
   busy,
+  sessionId,
   projectPath,
   worktreePath,
   harnessCwd,
@@ -504,6 +579,9 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   harnessDisconnected = false
 }: ComposerProps, ref): JSX.Element {
   const [value, setValue] = useState('')
+  const valueRef = useRef(value)
+  valueRef.current = value
+  const largePastesRef = useRef<LargePasteEntry[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [popover, setPopover] = useState<PopoverState>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -529,10 +607,36 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     setCursorPos({ top: coords.top + ta.offsetTop, left: coords.left + ta.offsetLeft })
   }, [])
 
+  /** Recomputes trigger state from the token immediately before the cursor. */
+  const updatePopoverFromCursor = useCallback((text: string, cursor: number): void => {
+    const before = text.slice(0, cursor)
+    const tokenStart = Math.max(before.lastIndexOf(' '), before.lastIndexOf('\n')) + 1
+    const token = before.slice(tokenStart)
+
+    if (token.startsWith('@')) {
+      setPopover({ kind: 'mention', query: token.slice(1), tokenStart })
+      setSelectedIndex(0)
+      return
+    }
+    if (token.startsWith('/') && tokenStart === 0) {
+      setPopover({ kind: 'slash', query: token.slice(1), tokenStart })
+      setSelectedIndex(0)
+      return
+    }
+    setPopover(null)
+  }, [])
+
+  const syncPopoverFromTextarea = useCallback((): void => {
+    const ta = textareaRef.current
+    if (!ta) return
+    updatePopoverFromCursor(ta.value, ta.selectionStart ?? ta.value.length)
+  }, [updatePopoverFromCursor])
+
   const onTextareaFocus = useCallback(() => {
     setCursorPhase('idle')
     updateCursorPos()
-  }, [updateCursorPos])
+    syncPopoverFromTextarea()
+  }, [syncPopoverFromTextarea, updateCursorPos])
 
   const onTextareaBlur = useCallback(() => {
     if (typingTimer.current) clearTimeout(typingTimer.current)
@@ -553,9 +657,17 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   }, [value, updateCursorPos])
 
   useImperativeHandle(ref, () => ({
-    setValue,
+    setValue: (text: string) => {
+      largePastesRef.current = []
+      setValue(text)
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current
+        if (!ta) return
+        updatePopoverFromCursor(text, ta.selectionStart ?? text.length)
+      })
+    },
     getValue: () => value,
-  }), [value])
+  }), [updatePopoverFromCursor, value])
 
   // Git branch at Claude's current path — refreshed when cwd or workspace diff changes.
   useEffect(() => {
@@ -598,7 +710,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   // dropped rather than shown twice.
   const slashCommands: SlashCommand[] = useMemo(() => {
     const local: SlashCommand[] = [
-      { cmd: '/clear', desc: 'Clear the composer', run: () => setValue('') },
+      { cmd: '/clear', desc: 'Clear the composer', run: () => { largePastesRef.current = []; setValue('') } },
       { cmd: '/interrupt', desc: 'Stop the current in-flight turn', run: () => onInterrupt() },
       { cmd: '/fork', desc: 'Fork this session into a new one', run: () => onFork() },
       { cmd: '/model', desc: 'Open the model/effort picker', run: () => setModelPickerOpen(true) }
@@ -667,7 +779,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     popover?.kind === 'mention' ? mentionMatches : popover?.kind === 'slash' ? slashMatches : []
 
   async function handleSend(): Promise<void> {
-    const text = value.trim()
+    const text = resolveSendText(value, largePastesRef.current).trim()
     if (!text && !attachedImage) return
     // `/model <model-id>` validates against the SDK's own live acceptance
     // logic (calls `Query.setModel()` on the connected session and checks
@@ -681,6 +793,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       const arg = text.slice('/model '.length).trim()
       if (arg) {
         setValue('')
+        largePastesRef.current = []
         const result = await onValidateModel(arg)
         if (!result.ok) {
           onAddLocalMessage(`Unknown model "${arg}": ${result.error}`)
@@ -692,6 +805,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     }
     onSend(text, attachedImage ? { mimeType: attachedImage.mimeType, data: attachedImage.data } : undefined)
     setValue('')
+    largePastesRef.current = []
     setAttachedImage(null)
   }
 
@@ -718,38 +832,54 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     void attachFile(e.dataTransfer.files[0])
   }
 
+  function applyTextPaste(pasted: string, selectionStart: number, selectionEnd: number): void {
+    const insert =
+      pasted.length > LARGE_PASTE_THRESHOLD ? largePasteDisplayLabel(pasted.length) : pasted
+    const { next, cursor } = insertTextAtSelection(valueRef.current, insert, selectionStart, selectionEnd)
+    if (pasted.length > LARGE_PASTE_THRESHOLD) {
+      largePastesRef.current = [...largePastesRef.current, { display: insert, full: pasted }]
+    }
+    setValue(next)
+    updatePopoverFromCursor(next, cursor)
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current
+      if (!ta) return
+      ta.focus()
+      ta.setSelectionRange(cursor, cursor)
+    })
+  }
+
   function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>): void {
     const items = Array.from(e.clipboardData.items)
     const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
-    if (!imageItem) return // ordinary text paste — let the default handler run
+    if (imageItem) {
+      e.preventDefault()
+      void attachFile(imageItem.getAsFile())
+      return
+    }
+
+    const hasText =
+      items.some((item) => item.kind === 'string' && item.type === 'text/plain') ||
+      e.clipboardData.types.includes('text/plain')
+    if (!hasText) return
+
     e.preventDefault()
-    void attachFile(imageItem.getAsFile())
+    const ta = textareaRef.current
+    if (!ta) return
+    const selectionStart = ta.selectionStart ?? valueRef.current.length
+    const selectionEnd = ta.selectionEnd ?? valueRef.current.length
+
+    void (async () => {
+      const pasted = await resolvePasteText(e.clipboardData)
+      if (!pasted) return
+      applyTextPaste(pasted, selectionStart, selectionEnd)
+    })()
   }
 
   /** Recomputes trigger state from the token immediately before the cursor — re-run on every keystroke, mirroring the mock's `onComposerInput`, but cursor-anchored rather than end-of-value-anchored so it still works if the user edits mid-string. */
-  function updatePopoverFromCursor(text: string, cursor: number): void {
-    const before = text.slice(0, cursor)
-    const tokenStart = Math.max(before.lastIndexOf(' '), before.lastIndexOf('\n')) + 1
-    const token = before.slice(tokenStart)
-
-    if (token.startsWith('@')) {
-      setPopover({ kind: 'mention', query: token.slice(1), tokenStart })
-      setSelectedIndex(0)
-      return
-    }
-    // Slash commands only trigger as the very first token of the composer
-    // (mock's `val.trim() === lastWord` guard) — a `/` mid-sentence is just
-    // a character, not a command.
-    if (token.startsWith('/') && tokenStart === 0) {
-      setPopover({ kind: 'slash', query: token.slice(1), tokenStart })
-      setSelectedIndex(0)
-      return
-    }
-    setPopover(null)
-  }
-
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>): void {
     const text = e.target.value
+    largePastesRef.current = largePastesRef.current.filter((entry) => text.includes(entry.display))
     setValue(text)
     updatePopoverFromCursor(text, e.target.selectionStart ?? text.length)
   }
@@ -782,7 +912,8 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       // exactly like typing it out in full and pressing Enter without ever
       // opening this popover (that's how the CLI/SDK's own local slash
       // commands / custom project commands execute server-side).
-      const text = (before + command.cmd + after).trim()
+      const text = resolveSendText(before + command.cmd + after, largePastesRef.current).trim()
+      largePastesRef.current = []
       setValue('')
       setPopover(null)
       onSend(text)
@@ -851,13 +982,17 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       }
       if (e.key === 'Escape') {
         e.preventDefault()
-        // Stop propagation so the global App-level ESC handler doesn't
-        // simultaneously trigger an interrupt while we're just closing
-        // the popover — the two actions shouldn't fire together.
         e.stopPropagation()
         setPopover(null)
         return
       }
+    }
+
+    if (e.key === 'Escape' && busy) {
+      e.preventDefault()
+      e.stopPropagation()
+      onInterrupt()
+      return
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -866,54 +1001,22 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       return
     }
 
-    // Readline/Emacs word-navigation and kill-line bindings.
+    // Readline/Emacs navigation and kill-line bindings.
     // These fire regardless of popover state (they're editing bindings, not
     // popover-navigation bindings) — the popover guard above only intercepts
     // ArrowUp/Down, Enter, Tab, and Escape.
-
-    // opt+f: move cursor forward one word (skip non-\w, then skip \w)
-    // Uses e.code (physical key) not e.key — macOS Option+F sends 'ƒ', not 'f'.
-    if (e.altKey && e.code === 'KeyF') {
-      e.preventDefault()
-      const ta = e.target as HTMLTextAreaElement
-      const cursor = ta.selectionStart
-      let pos = cursor
-      while (pos < value.length && !/\w/.test(value[pos])) pos++
-      while (pos < value.length && /\w/.test(value[pos])) pos++
-      requestAnimationFrame(() => ta.setSelectionRange(pos, pos))
-      return
-    }
-
-    // opt+b: move cursor backward one word (skip non-\w backwards, then skip \w backwards)
-    // Uses e.code (physical key) not e.key — macOS Option+B sends '∫', not 'b'.
-    if (e.altKey && e.code === 'KeyB') {
-      e.preventDefault()
-      const ta = e.target as HTMLTextAreaElement
-      const cursor = ta.selectionStart
-      let pos = cursor
-      while (pos > 0 && !/\w/.test(value[pos - 1])) pos--
-      while (pos > 0 && /\w/.test(value[pos - 1])) pos--
-      requestAnimationFrame(() => ta.setSelectionRange(pos, pos))
-      return
-    }
-
-    // ctrl+k: kill from cursor to end of line (delete text from cursor to next
-    // newline, or to end of value if there is no following newline)
-    if (e.ctrlKey && e.key === 'k') {
-      e.preventDefault()
-      const ta = e.target as HTMLTextAreaElement
-      const cursor = ta.selectionStart
-      const nextNewline = value.indexOf('\n', cursor)
-      const killEnd = nextNewline === -1 ? value.length : nextNewline
-      setValue(value.slice(0, cursor) + value.slice(killEnd))
-      requestAnimationFrame(() => ta.setSelectionRange(cursor, cursor))
-      return
-    }
+    if (handleEmacsTextareaKeyDown(e, value, setValue)) return
   }
 
   const workspacePath = worktreePath ?? projectPath ?? null
   const claudePath = harnessCwd ?? workspacePath
   const displayClaudePath = truncateContextPath(claudePath)
+  const displayBranch =
+    branch ?? (worktreePath && sessionId ? sessionWorktreeBranch(sessionId) : null)
+  const worktreeTitle =
+    worktreePath && displayBranch
+      ? `Worktree: ${worktreePath}\nBranch: ${displayBranch}`
+      : worktreePath ?? undefined
 
   return (
     <div className="composer-wrap">
@@ -946,12 +1049,26 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
                   <span className="context-bar-value">{displayClaudePath}</span>
                 </span>
               )}
-              {branch && (
+              {displayBranch && (
                 <>
                   {displayClaudePath && <span className="context-bar-sep">›</span>}
-                  <span className="context-bar-item" data-testid="composer-context-branch" title={branch}>
+                  <span className="context-bar-item" data-testid="composer-context-branch" title={displayBranch}>
                     {CONTEXT_BRANCH_ICON}
-                    <span className="context-bar-value">{branch}</span>
+                    <span className="context-bar-value">{displayBranch}</span>
+                  </span>
+                </>
+              )}
+              {worktreePath && (
+                <>
+                  <span className="context-bar-spacer" aria-hidden="true" />
+                  <span
+                    className="context-bar-item context-bar-item--icon-only"
+                    data-testid="composer-worktree-indicator"
+                    title={worktreeTitle}
+                    role="img"
+                    aria-label="Worktree"
+                  >
+                    {CONTEXT_WORKTREE_ICON}
                   </span>
                 </>
               )}
@@ -1007,7 +1124,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         {busy && !harnessDisconnected && (
           <div className="composer-turn-status" data-testid="composer-turn-status">
             <span className="spinner" data-testid="composer-working-spinner" aria-hidden="true" />
-            <span>{sdkChrome?.apiRetryText ?? 'Waiting for model…'}</span>
+            <span data-testid="composer-turn-status-text">{composerTurnStatusText(sdkChrome)}</span>
           </div>
         )}
         {attachedImage && (
@@ -1041,7 +1158,11 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onKeyUp={onTextareaKeyActivity}
-          onClick={updateCursorPos}
+          onSelect={syncPopoverFromTextarea}
+          onClick={() => {
+            updateCursorPos()
+            syncPopoverFromTextarea()
+          }}
           onFocus={onTextareaFocus}
           onBlur={onTextareaBlur}
           onPaste={handlePaste}
@@ -1105,7 +1226,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
               <span
                 className={`token-usage${pct >= 70 ? ' token-usage-high' : ''}`}
                 data-testid="token-usage"
-                title={`${tokenUsage.inputTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} context tokens used`}
+                title={`${tokenUsage.inputTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} context tokens (compacts near cap)`}
               >
                 {formatTokens(tokenUsage.inputTokens)} [{tokenBar(pct)} {pct}%/{formatTokens(tokenUsage.contextWindow)}]
               </span>

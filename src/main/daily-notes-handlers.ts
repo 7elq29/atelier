@@ -17,7 +17,7 @@ import { ipcMain, dialog, type BrowserWindow } from 'electron'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, watch, type FSWatcher } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, basename } from 'node:path'
-import type { DailyNote, DailyTask, RawSections, DailyNoteNotesSliceResult, DailyNotePasteImagePayload } from '../shared/daily-note-types'
+import type { DailyNote, DailyTask, RawSections, DailyNoteNotesSliceResult, DailyNotePasteImagePayload, DailyNoteCarrySuggestionsResult } from '../shared/daily-note-types'
 import {
   parseDailyNote,
   serializeDailyNote,
@@ -77,6 +77,92 @@ function collectCarryOverTasks(note: DailyNote): DailyTask[] {
   return note.tasks
     .filter((t) => (t.status === 'open' || t.status === 'in-progress') && !t.isTracker && t.section !== 'tracker')
     .map((t) => ({ ...t, status: 'open' as const, completion: undefined }))
+}
+
+/** Incomplete timeline/unscheduled todos from a prior note — for the carry-over panel. */
+function collectCarrySuggestionTasks(note: DailyNote): DailyTask[] {
+  return note.tasks.filter(
+    (t) =>
+      !t.isTracker &&
+      !t.isNote &&
+      (t.section === 'day-plan' || t.section === 'unscheduled') &&
+      (t.status === 'open' || t.status === 'in-progress')
+  )
+}
+
+function carrySuggestionKey(sourceDate: string, gid: string): string {
+  return `${sourceDate}:${gid}`
+}
+
+async function readDailyNoteFromDisk(
+  date: string,
+  settings: VaultSettings
+): Promise<{ note: DailyNote; raw: RawSections } | null> {
+  const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
+  if (!existsSync(path)) return null
+  const content = await readFile(path, 'utf-8')
+  const parsed = parseDailyNote(content, date)
+  persistMintedGids(path, parsed.note, parsed.raw, parsed.mintedIds)
+  recordKnownIds(path, getTaskIds(parsed.note))
+  return { note: parsed.note, raw: parsed.raw }
+}
+
+async function getCarrySuggestions(
+  date: string,
+  settings: VaultSettings,
+  dismissedKeys: string[]
+): Promise<DailyNoteCarrySuggestionsResult> {
+  const sourceDate = findMostRecentNoteDate(date, settings)
+  if (!sourceDate) return { sourceDate: null, tasks: [] }
+
+  const source = await readDailyNoteFromDisk(sourceDate, settings)
+  if (!source) return { sourceDate: null, tasks: [] }
+
+  const today = await readDailyNoteFromDisk(date, settings)
+  const todayGids = new Set((today?.note.tasks ?? []).map((t) => t.gid))
+  const dismissed = new Set(dismissedKeys)
+
+  const tasks = collectCarrySuggestionTasks(source.note).filter((t) => {
+    if (todayGids.has(t.gid)) return false
+    return !dismissed.has(carrySuggestionKey(sourceDate, t.gid))
+  })
+
+  return { sourceDate, tasks }
+}
+
+async function toggleCarrySuggestionTask(
+  sourceDate: string,
+  taskId: string,
+  settings: VaultSettings,
+  notify: (note: DailyNote) => void
+): Promise<DailyNote> {
+  const path = resolveNotePath(sourceDate, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
+  if (!existsSync(path)) throw new Error(`source note not found: ${sourceDate}`)
+
+  const content = await readFile(path, 'utf-8')
+  const { note, raw, mintedIds } = parseDailyNote(content, sourceDate)
+  persistMintedGids(path, note, raw, mintedIds)
+  const task = note.tasks.find((t) => t.id === taskId)
+  if (!task) throw new Error(`task not found in source note: ${taskId}`)
+
+  const nextStatus = task.status === 'done' ? ('open' as const) : ('done' as const)
+  const updated: DailyNote = {
+    ...note,
+    tasks: note.tasks.map((t) =>
+      t.id === taskId
+        ? { ...t, status: nextStatus, completion: nextStatus === 'done' ? sourceDate : undefined }
+        : t
+    )
+  }
+  const serialized = serializeDailyNote(updated, raw)
+  const tmpPath = `${path}.tmp`
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(tmpPath, serialized, 'utf-8')
+  renameSync(tmpPath, path)
+  recordWrittenContent(path, serialized)
+  recordKnownIds(path, getTaskIds(updated))
+  notify(updated)
+  return updated
 }
 
 /**
@@ -455,6 +541,26 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
     return { note, raw, exists: true }
   })
 
+  ipcMain.handle(
+    'daily-note:carry-suggestions',
+    async (_event, date: string, dismissedKeys: string[]): Promise<DailyNoteCarrySuggestionsResult> => {
+      const settings = resolveVaultSettings()
+      if (!settings) return { sourceDate: null, tasks: [] }
+      return getCarrySuggestions(date, settings, dismissedKeys ?? [])
+    }
+  )
+
+  ipcMain.handle(
+    'daily-note:carry-toggle-task',
+    async (_event, sourceDate: string, taskId: string) => {
+      const settings = resolveVaultSettings()
+      if (!settings) throw new Error('no vault root configured')
+      return toggleCarrySuggestionTask(sourceDate, taskId, settings, (note) => {
+        notifyDailyNoteChanged(getMainWindow, note)
+      })
+    }
+  )
+
   // 16-task-move-to-date: moves a single task from `sourceDate`'s note to
   // `targetDate`'s note's Backlog section, creating the target note from the
   // template first if needed (via the shared ensureNoteExists path above).
@@ -568,6 +674,9 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
         sourceDate,
         targetDate
       })
+
+      notifyDailyNoteChanged(getMainWindow, updatedSourceNote)
+      notifyDailyNoteChanged(getMainWindow, updatedTargetNote)
 
       return { sourceNote: updatedSourceNote, targetNote: updatedTargetNote }
     }

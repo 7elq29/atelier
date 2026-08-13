@@ -18,9 +18,14 @@ export const DAILY_NOTE_TAG_SUGGESTIONS = [
 
 const STRUCTURAL_DAILY_NOTE_TAGS = new Set(['#tracker', '#delegated'])
 
+/** Tags shown in task labels (excludes section-managed tags like #tracker). */
+export function visibleDailyNoteTagsForDisplay(tags: readonly string[]): string[] {
+  return tags.filter((tag) => !STRUCTURAL_DAILY_NOTE_TAGS.has(tag))
+}
+
 /** Task text plus inline `#tags` for edit fields (excludes section-managed tags). */
 export function formatTaskTextWithInlineTags(text: string, tags: readonly string[]): string {
-  const visible = tags.filter((tag) => !STRUCTURAL_DAILY_NOTE_TAGS.has(tag))
+  const visible = visibleDailyNoteTagsForDisplay(tags)
   if (visible.length === 0) return text
   return `${text} ${visible.join(' ')}`.trim()
 }

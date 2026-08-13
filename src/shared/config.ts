@@ -4,7 +4,12 @@
  * of the three processes without pulling in unwanted runtime deps.
  */
 
-import type { EffortLevel } from './session-types'
+import type { EffortLevel, PermissionModeValue } from './session-types'
+import type { SessionProfile } from './session-profile-types'
+import type { TerminalToolboxConfig } from './terminal-toolbox-types'
+import { DEFAULT_TERMINAL_TOOLBOX_COMMANDS } from './terminal-toolbox-types'
+
+export type { SessionProfile } from './session-profile-types'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 
@@ -57,6 +62,23 @@ export const DEFAULT_CLAUDE_EFFORT_OPTIONS: { id: EffortLevel; label: string }[]
   { id: 'high', label: 'High' }
 ]
 
+/** Composer / SDK permission mode for new agent sessions when config does not override. */
+export const DEFAULT_CLAUDE_PERMISSION_MODE: PermissionModeValue = 'default'
+
+export function defaultClaudePermissionModeFromConfig(
+  config: Pick<AtelierConfig, 'defaultClaudePermissionMode'>
+): PermissionModeValue {
+  return config.defaultClaudePermissionMode ?? DEFAULT_CLAUDE_PERMISSION_MODE
+}
+
+/** Curated permission modes for Settings (matches composer mode pill labels). */
+export const DEFAULT_CLAUDE_PERMISSION_MODE_OPTIONS: { id: PermissionModeValue; label: string }[] = [
+  { id: 'default', label: 'Default' },
+  { id: 'plan', label: 'Plan mode' },
+  { id: 'acceptEdits', label: 'Accept edits' },
+  { id: 'auto', label: 'Auto' }
+]
+
 export interface AtelierConfig {
   /** First-run wizard has been completed — never show it again once true. */
   onboardingCompleted: boolean
@@ -69,6 +91,8 @@ export interface AtelierConfig {
   defaultClaudeModel: string
   /** Global default reasoning effort for new agent sessions (SDK `effort`). */
   defaultClaudeEffort: EffortLevel
+  /** Global default SDK permission mode for new Claude Code sessions. */
+  defaultClaudePermissionMode: PermissionModeValue
   /**
    * Three independent font-size scales. Deliberately three separate numbers
    * (not one shared scale) — terminal, general interface chrome, and
@@ -82,6 +106,10 @@ export interface AtelierConfig {
    * gets `<worktreeRoot>/<session-id>`. Supports `~` on local and remote hosts.
    */
   worktreeRoot: string
+  /** Saved shell snippets — double-click in toolbox pastes into the active terminal. */
+  terminalToolbox: TerminalToolboxConfig
+  /** Named workspace + file-directory bundles for New Session and Files tab. */
+  sessionProfiles: SessionProfile[]
 }
 
 export const DEFAULT_CONFIG: AtelierConfig = {
@@ -90,6 +118,7 @@ export const DEFAULT_CONFIG: AtelierConfig = {
   sidebarCollapsed: false,
   defaultClaudeModel: DEFAULT_CLAUDE_MODEL,
   defaultClaudeEffort: DEFAULT_CLAUDE_EFFORT,
+  defaultClaudePermissionMode: DEFAULT_CLAUDE_PERMISSION_MODE,
   fontSizes: {
     terminal: 14,
     interface: 14,
@@ -105,5 +134,9 @@ export const DEFAULT_CONFIG: AtelierConfig = {
     notePathPattern: '{yyyy}/{MMM}/{ww}/{date}.md',
     templatePath: '92.templates/Daily Note Template.md'
   },
-  worktreeRoot: '~/.atelier/worktrees'
+  worktreeRoot: '~/.atelier/worktrees',
+  terminalToolbox: {
+    commands: [...DEFAULT_TERMINAL_TOOLBOX_COMMANDS]
+  },
+  sessionProfiles: []
 }

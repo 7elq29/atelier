@@ -2,7 +2,8 @@
  * Shared SSH invocation for every main-process path that talks to devpod hosts
  * (terminal mux, files panel, git panel, worktree setup). ControlMaster reuse
  * matches pty.ts: first connect pays full handshake; later calls on the same
- * host reuse /tmp/atelier-ssh-%C (~5ms).
+ * host reuse /tmp/atelier-ssh-%C (~5ms). ControlPersist=yes keeps the master
+ * open for background files/diff/git refresh for the app lifetime.
  */
 import { execFile } from 'node:child_process'
 import { logger } from './logger'
@@ -14,7 +15,7 @@ export const SSH_MUX_OPTS = [
   '-o',
   'ControlPath=/tmp/atelier-ssh-%C',
   '-o',
-  'ControlPersist=300'
+  'ControlPersist=yes'
 ]
 
 /** Non-interactive remote exec (git, files, worktree): fail fast, accept-new host keys. */
@@ -28,7 +29,12 @@ export const SSH_REMOTE_OPTS = [
 
 export type ExecResult = { stdout: string; stderr: string; code: number }
 
-export function sshExec(sshHost: string, remoteCmd: string, maxBuffer = 1024 * 1024 * 32): Promise<ExecResult> {
+/** Hosts with an established ControlMaster socket — skip redundant warm probes. */
+const muxReadyHosts = new Set<string>()
+/** Dedupes concurrent warm attempts so a burst of parallel ssh calls shares one handshake. */
+const muxWarmInFlight = new Map<string, Promise<void>>()
+
+function sshExecRaw(sshHost: string, remoteCmd: string, maxBuffer = 1024 * 1024 * 32): Promise<ExecResult> {
   return new Promise((resolve) => {
     execFile('ssh', [...SSH_REMOTE_OPTS, sshHost, '--', remoteCmd], { maxBuffer }, (err, stdout, stderr) => {
       const code = (err as NodeJS.ErrnoException & { code?: number })?.code
@@ -37,10 +43,33 @@ export function sshExec(sshHost: string, remoteCmd: string, maxBuffer = 1024 * 1
   })
 }
 
-/** Establishes (or reuses) the ControlMaster socket for a host without running user commands. */
+export async function sshExec(sshHost: string, remoteCmd: string, maxBuffer = 1024 * 1024 * 32): Promise<ExecResult> {
+  await warmSshMux(sshHost)
+  return sshExecRaw(sshHost, remoteCmd, maxBuffer)
+}
+
+/**
+ * Establishes (or reuses) the ControlMaster socket for a host without running user commands.
+ * Concurrent callers for the same host share one in-flight warm — without this, opening a
+ * remote session fans out dozens of parallel ssh connections, each spawning a ussh proxy.
+ */
 export async function warmSshMux(sshHost: string): Promise<void> {
-  const res = await sshExec(sshHost, 'true')
-  if (res.code !== 0) {
-    logger.warn('ssh mux warm failed', { sshHost, stderr: res.stderr.trim().slice(0, 200) })
+  if (muxReadyHosts.has(sshHost)) return
+
+  let inflight = muxWarmInFlight.get(sshHost)
+  if (!inflight) {
+    inflight = (async () => {
+      const res = await sshExecRaw(sshHost, 'true')
+      if (res.code === 0) {
+        muxReadyHosts.add(sshHost)
+      } else {
+        logger.warn('ssh mux warm failed', { sshHost, stderr: res.stderr.trim().slice(0, 200) })
+      }
+    })().finally(() => {
+      muxWarmInFlight.delete(sshHost)
+    })
+    muxWarmInFlight.set(sshHost, inflight)
   }
+
+  return inflight
 }

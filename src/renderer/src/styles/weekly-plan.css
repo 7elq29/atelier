@@ -4,6 +4,8 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  --wp-cal-timeline-height: 560px;
+  --wp-cal-unsched-collapsed-height: 52px;
 }
 .weekly-plan-scope-bar {
   padding: 10px 20px;
@@ -388,7 +390,7 @@
   border-radius: var(--r-lg);
   background: var(--bg-sidebar);
   padding: 14px 16px;
-  min-height: 520px;
+  min-height: calc(var(--wp-cal-timeline-height) + 120px);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -396,7 +398,7 @@
 .wp-cal-matrix {
   display: grid;
   grid-template-columns: 72px repeat(7, minmax(0, 1fr));
-  grid-template-rows: auto auto minmax(400px, 1fr);
+  grid-template-rows: auto auto minmax(var(--wp-cal-timeline-height), 1fr);
   gap: 8px 6px;
   flex: 1;
 }
@@ -425,12 +427,46 @@
 }
 .wp-cal-matrix-unsched {
   position: relative;
-  min-height: 44px;
-  padding: 4px;
+  min-height: var(--wp-cal-unsched-collapsed-height);
+  padding: 4px 4px 22px;
   box-sizing: border-box;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-sm);
   background: var(--bg-panel);
+}
+.wp-cal-matrix-unsched.is-collapsed {
+  max-height: var(--wp-cal-unsched-collapsed-height);
+  overflow: hidden;
+}
+.wp-cal-matrix-unsched.is-expanded {
+  max-height: none;
+}
+.wp-cal-matrix-unsched.empty-hint {
+  padding-bottom: 4px;
+}
+.wp-cal-unsched-toggle {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--bg-panel-raised) 88%, transparent);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.wp-cal-unsched-toggle:hover {
+  color: var(--text-secondary);
+  background: var(--bg-panel-raised);
+}
+.wp-cal-unsched-toggle-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 .wp-cal-matrix-unsched.drag-over {
   outline: 2px dashed var(--accent);
@@ -445,12 +481,31 @@
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 600;
+}
+.wp-schedule-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 10px;
+}
+.wp-schedule-preview-head .wp-sched-pool-toolbar {
+  margin: 0;
+}
+.wp-sched-pool-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 8px;
+}
+.wp-sched-add-btn {
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 500;
 }
 .wp-cal-matrix-timeline {
   position: relative;
-  height: 400px;
-  min-height: 400px;
+  height: var(--wp-cal-timeline-height);
+  min-height: var(--wp-cal-timeline-height);
   box-sizing: border-box;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-sm);
@@ -504,6 +559,19 @@
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   pointer-events: none;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+}
+.wp-cal-drop-preview-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  text-align: center;
+  line-height: 1.2;
+  text-shadow: 0 0 8px var(--bg-panel);
 }
 .wp-cal-drop-preview--unsched {
   top: 4px;
@@ -523,10 +591,24 @@
 .wp-cal-chip.is-q2 {
   border-left-color: var(--warning);
 }
+.wp-cal-chip.is-meeting,
+.wp-cal-block.is-meeting {
+  border-left-color: var(--info);
+}
+.wp-cal-chip.is-done,
+.wp-cal-block.is-done {
+  border-left-color: var(--text-tertiary);
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+  opacity: 0.72;
+}
+.wp-cal-block.is-done.is-q2 {
+  border-left-color: var(--text-tertiary);
+}
 .wp-cal-time-axis {
   position: relative;
-  height: 400px;
-  min-height: 400px;
+  height: var(--wp-cal-timeline-height);
+  min-height: var(--wp-cal-timeline-height);
   font-family: var(--font-mono);
   font-size: 10px;
   border-right: 1px solid var(--border-subtle);
@@ -543,4 +625,101 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-md);
   background: var(--bg-panel);
+}
+.wp-cal-unsched-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.wp-cal-chip-edit,
+.wp-cal-block-edit {
+  min-width: 120px;
+  font-size: 12.5px;
+  padding: 4px 8px;
+}
+.wp-cal-block .wp-cal-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 3;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.65;
+}
+.wp-cal-block .wp-cal-remove:hover {
+  opacity: 1;
+}
+.wp-sched-pool-row .wp-cal-remove {
+  flex-shrink: 0;
+}
+
+/* Weekly plan view (existing note — Big Three, Rejuvenation, timeline) */
+.weekly-plan-view-panel .weekly-plan-view-main {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.weekly-plan-view-panel .wp-view-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.weekly-plan-view-panel .wp-view-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  margin: 0 0 10px;
+}
+.weekly-plan-view-panel .wp-view-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.weekly-plan-view-panel .wp-view-list li {
+  margin-bottom: 6px;
+}
+.weekly-plan-view-panel .wp-view-list li::marker {
+  color: var(--accent);
+  font-weight: 600;
+}
+.weekly-plan-view-panel .wp-view-empty {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+.weekly-plan-view-panel .wp-view-schedule-hint {
+  margin: -4px 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.weekly-plan-view-panel .weekly-plan-iso-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+.weekly-plan-view-panel .wp-view-schedule .wp-split.is-embedded {
+  display: block;
+  margin-top: 4px;
+}
+.weekly-plan-view-panel .wp-view-schedule .wp-split.is-embedded .wp-schedule-preview {
+  width: 100%;
+}
+.weekly-plan-view-panel .wp-view-schedule .wp-schedule-preview.is-read-only .wp-cal-block,
+.weekly-plan-view-panel .wp-view-schedule .wp-cal-block,
+.weekly-plan-view-panel .wp-view-schedule .wp-cal-chip {
+  cursor: grab;
+}
+.weekly-plan-view-panel .wp-view-schedule .wp-schedule-preview {
+  min-height: calc(var(--wp-cal-timeline-height) + 48px);
 }

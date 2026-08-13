@@ -3,16 +3,19 @@ import type { MessageRecord } from '../../../../shared/session-types'
 import type { PromptDecision } from '../../../../shared/session-types'
 import { parseStructuredContent, type ToolCallContent, type ThinkingBlockContent, type TranscriptNoticeContent, type LocalCommandOutputContent } from '../../../../shared/chat-content'
 import ToolCallCard, { toolHeadline } from './ToolCallCard'
-import ThinkingBlockCard from './ThinkingBlockCard'
-import ToolCallSequence from './ToolCallSequence'
+import ThinkingBlockInline from './ThinkingBlockInline'
+import ToolCallSequence, { type SidecarSequenceEntry, type ToolCallSequenceEntry } from './ToolCallSequence'
 import AskUserQuestionCard from './AskUserQuestionCard'
 import PermissionRequestCard from './PermissionRequestCard'
 import PlanProposedCard from './PlanProposedCard'
+import { promptFoldSummary } from './resolved-prompt-fold'
 import MarkdownMessage from './MarkdownMessage'
+import Linkify from '../panels/Linkify'
 import MessageActions from './MessageActions'
 import ConversationStatusCard from './ConversationStatusCard'
 import BackgroundTasksConversationCard from './BackgroundTasksConversationCard'
 import type { BackgroundTaskRow, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
+import type { ReviewPaneTarget } from '../../../../shared/review-pane-types'
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
@@ -102,13 +105,14 @@ interface TopRow {
  * Plain assistant text (12-markdown-message-rendering — the final `else`
  * branch below, reached only when `parseStructuredContent` returns falsy)
  * renders through `MarkdownMessage` when no transcript search is active.
- * When a search query IS active, this intentionally keeps showing the plain
- * `highlightMatches(...)` text instead of Markdown — merging search
- * highlighting into rendered Markdown nodes is out of scope, an accepted
- * limitation, not a bug. Scope is otherwise unchanged: user messages
- * (`.msg-user`) and every structured-content card (`ToolCallCard`,
- * `PlanProposedCard`, `AskUserQuestionCard`, `PermissionRequestCard`, todo
- * updates, image attachments) are never Markdown-rendered.
+ * Plain user text uses `Linkify` for http(s) URLs (opens externally via
+ * `shell.openExternal`). When a search query IS active, this intentionally
+ * keeps showing the plain `highlightMatches(...)` text instead of Markdown/
+ * Linkify — merging search highlighting into rendered nodes is out of scope,
+ * an accepted limitation, not a bug. Scope is otherwise unchanged: structured
+ * cards (`ToolCallCard`, `PlanProposedCard`, `AskUserQuestionCard`,
+ * `PermissionRequestCard`, todo updates, image attachments) are never
+ * Markdown-rendered.
  */
 export default function ChatTranscript({
   messages,
@@ -122,6 +126,9 @@ export default function ChatTranscript({
   onMatchCount,
   sdkChrome,
   backgroundTasks = [],
+  onReviewMessage,
+  onReviewPlan,
+  reviewTarget = null,
 }: {
   messages: MessageRecord[]
   /** Resolves a permission/AskUserQuestion/plan card by requestId (05-interactive-prompts). */
@@ -142,7 +149,23 @@ export default function ChatTranscript({
   sdkChrome?: SessionSdkChromeEvent | null
   /** SDK background monitors / jobs / shell (merged task_* state). */
   backgroundTasks?: BackgroundTaskRow[]
+  /** Opens the selected assistant response in the review split pane. */
+  onReviewMessage?: (message: MessageRecord) => void
+  /** Opens a proposed plan in the review split pane. */
+  onReviewPlan?: (message: MessageRecord, planMarkdown: string, previousPlanMarkdown?: string) => void
+  /** Active review pane target (highlights source row/card). */
+  reviewTarget?: ReviewPaneTarget | null
 }): JSX.Element {
+  function findPreviousPlanMarkdown(currentMessageId: number): string | undefined {
+    const idx = messages.findIndex((m) => m.id === currentMessageId)
+    if (idx <= 0) return undefined
+    for (let i = idx - 1; i >= 0; i--) {
+      const parsed = parseStructuredContent(messages[i].content)
+      if (parsed?.kind === 'plan_proposed') return parsed.plan
+    }
+    return undefined
+  }
+
   const childrenByParent = new Map<string, TopRow[]>()
   const topRows: TopRow[] = []
 
@@ -214,11 +237,13 @@ export default function ChatTranscript({
     )
   }
 
-  // Group consecutive top-level tool-call rows into sequences
-  // (14-tool-call-sequence-collapse): a run of adjacent tool-call rows (any
-  // non-tool row — user/assistant text/etc. — breaks a run) is handed to
-  // `ToolCallSequence`, which decides whether it renders as standalone
-  // card(s) or collapses finished calls into one aggregate.
+  // Group consecutive top-level tool/thinking rows into sequences
+  // (14-tool-call-sequence-collapse): a run of adjacent tool-call and
+  // thinking-block rows (any non-activity row — user/assistant text/etc. —
+  // breaks a run) is handed to `ToolCallSequence`, which decides whether
+  // it renders as standalone card(s) or collapses finished steps into one
+  // aggregate. Thinking blocks interleaved between tool calls stay in the
+  // same run so past reasoning steps fold with the tools they surround.
   //
   // A permission/AskUserQuestion/plan-proposed card (05-interactive-prompts)
   // can land *between* two tool calls of what is otherwise one contiguous
@@ -227,16 +252,17 @@ export default function ChatTranscript({
   // two separate aggregates either. Such cards are pulled out as "sidecars"
   // (kept in their original relative order) and rendered right after the
   // run's own ToolCallSequence, instead of breaking the run.
-  type RenderUnit = TopRow | { toolRun: TopRow[]; sidecars: TopRow[] }
+  type RenderUnit = TopRow | { activityRun: TopRow[]; sidecars: TopRow[] }
   const renderUnits: RenderUnit[] = []
   let currentRun: TopRow[] = []
   let currentSidecars: TopRow[] = []
+  const isActivityRow = (row: TopRow): boolean => Boolean(row.tool || row.thinking)
   const isSidecarRow = (row: TopRow): boolean => {
     const kind = parseStructuredContent(row.message.content)?.kind
     return kind === 'permission_request' || kind === 'ask_user_question' || kind === 'plan_proposed'
   }
   for (const row of topRows) {
-    if (row.tool) {
+    if (isActivityRow(row)) {
       currentRun.push(row)
       continue
     }
@@ -245,13 +271,60 @@ export default function ChatTranscript({
       continue
     }
     if (currentRun.length > 0) {
-      renderUnits.push({ toolRun: currentRun, sidecars: currentSidecars })
+      renderUnits.push({ activityRun: currentRun, sidecars: currentSidecars })
       currentRun = []
       currentSidecars = []
     }
     renderUnits.push(row)
   }
-  if (currentRun.length > 0) renderUnits.push({ toolRun: currentRun, sidecars: currentSidecars })
+  if (currentRun.length > 0) renderUnits.push({ activityRun: currentRun, sidecars: currentSidecars })
+
+  // Permission/plan/question cards can arrive *after* the tool/thinking rows they
+  // gate (canUseTool runs after the tool_use announcement is already persisted).
+  // A non-sidecar row in between — commonly a streamed assistant-text chunk —
+  // flushes the activity run first, leaving the resolved cards as orphan top-level
+  // rows that render as full cards below the collapsed summary. Reattach those
+  // orphan sidecars to the nearest adjacent activity run so they fold into the
+  // same summary line.
+  function mergeOrphanSidecars(units: RenderUnit[]): RenderUnit[] {
+    const out: RenderUnit[] = []
+    let pendingSidecarRows: TopRow[] = []
+
+    function attachPendingSidecarsToPreviousActivityRun(): void {
+      if (pendingSidecarRows.length === 0) return
+      for (let i = out.length - 1; i >= 0; i--) {
+        const unit = out[i]!
+        if ('activityRun' in unit) {
+          unit.sidecars.push(...pendingSidecarRows)
+          pendingSidecarRows = []
+          return
+        }
+      }
+      for (const row of pendingSidecarRows) out.push(row)
+      pendingSidecarRows = []
+    }
+
+    for (const unit of units) {
+      if (!('activityRun' in unit)) {
+        if (isSidecarRow(unit)) {
+          pendingSidecarRows.push(unit)
+          continue
+        }
+        attachPendingSidecarsToPreviousActivityRun()
+        out.push(unit)
+        continue
+      }
+
+      unit.sidecars = [...pendingSidecarRows, ...unit.sidecars]
+      pendingSidecarRows = []
+      out.push(unit)
+    }
+
+    attachPendingSidecarsToPreviousActivityRun()
+    return out
+  }
+
+  const mergedRenderUnits = mergeOrphanSidecars(renderUnits)
 
   let lastTimestamp: string | null = null
   let sawFirstUser = false
@@ -266,19 +339,27 @@ export default function ChatTranscript({
    * null for any other message kind (defensive; callers only pass rows
    * `isSidecarRow` already accepted).
    */
-  function renderSidecar(message: MessageRecord): JSX.Element | null {
+  function renderSidecar(message: MessageRecord, embedded = false): JSX.Element | null {
     const parsed = parseStructuredContent(message.content)
     if (parsed?.kind === 'permission_request') {
       return (
         <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
-          <PermissionRequestCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+          <PermissionRequestCard
+            content={parsed}
+            embedded={embedded}
+            onRespond={(decision) => onRespond(parsed.requestId, decision)}
+          />
         </div>
       )
     }
     if (parsed?.kind === 'ask_user_question') {
       return (
         <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
-          <AskUserQuestionCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+          <AskUserQuestionCard
+            content={parsed}
+            embedded={embedded}
+            onRespond={(decision) => onRespond(parsed.requestId, decision)}
+          />
         </div>
       )
     }
@@ -287,8 +368,17 @@ export default function ChatTranscript({
         <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
           <PlanProposedCard
             content={parsed}
+            embedded={embedded}
             onRespond={(decision) => onRespond(parsed.requestId, decision)}
             onOpenPlanFile={onOpenPlanFile}
+            onReviewPlan={
+              onReviewPlan
+                ? () => onReviewPlan(message, parsed.plan, findPreviousPlanMarkdown(message.id))
+                : undefined
+            }
+            reviewActive={
+              reviewTarget?.kind === 'plan' && reviewTarget.sourceId === message.id
+            }
             workspaceRoot={workspaceRoot}
             projectRoot={projectRoot}
           />
@@ -298,20 +388,78 @@ export default function ChatTranscript({
     return null
   }
 
-  const rows = renderUnits.map((unit) => {
-    if ('toolRun' in unit) {
-      const run = unit.toolRun
+  function isPromptSidecarContent(
+    parsed: ReturnType<typeof parseStructuredContent>
+  ): parsed is Extract<
+    NonNullable<ReturnType<typeof parseStructuredContent>>,
+    { kind: 'permission_request' | 'ask_user_question' | 'plan_proposed' }
+  > {
+    return (
+      parsed?.kind === 'permission_request' ||
+      parsed?.kind === 'ask_user_question' ||
+      parsed?.kind === 'plan_proposed'
+    )
+  }
+
+  function sidecarSequenceEntry(row: TopRow): SidecarSequenceEntry | null {
+    const parsed = parseStructuredContent(row.message.content)
+    if (!isPromptSidecarContent(parsed)) return null
+    const foldSummary = promptFoldSummary(parsed)
+    if (!foldSummary) return null
+    return {
+      key: String(row.message.id),
+      foldSummary,
+      render: () => renderSidecar(row.message, true)!
+    }
+  }
+
+  /** Resolved interactive prompt as a lone collapsed summary row (no adjacent activity run). */
+  function renderFoldedPromptRow(message: MessageRecord): JSX.Element | null {
+    const entry = sidecarSequenceEntry({ message })
+    if (!entry) return null
+    return <ToolCallSequence key={message.id} entries={[]} sidecars={[entry]} />
+  }
+
+  function renderActivityEntry(row: TopRow): ToolCallSequenceEntry {
+    if (row.thinking) {
+      return {
+        key: String(row.message.id),
+        thinking: row.thinking,
+        render: () => (
+          <div
+            className="msg-wrap"
+            data-testid="transcript-message"
+            data-role={row.message.role}
+            data-message-id={row.message.id}
+            key={row.message.id}
+          >
+            <ThinkingBlockInline content={row.thinking!} />
+          </div>
+        )
+      }
+    }
+    return {
+      key: String(row.message.id),
+      tool: row.tool!,
+      render: () => renderToolRow(row.message, row.tool!)
+    }
+  }
+
+  const rows = mergedRenderUnits.map((unit) => {
+    if ('activityRun' in unit) {
+      const run = unit.activityRun
       lastTimestamp = run[run.length - 1].message.createdAt
+      const mergedSidecars = unit.sidecars
+        .map((row) => sidecarSequenceEntry(row))
+        .filter((entry): entry is SidecarSequenceEntry => entry !== null)
+      const pendingSidecars = unit.sidecars.filter((row) => {
+        const parsed = parseStructuredContent(row.message.content)
+        return isPromptSidecarContent(parsed) && parsed.status === 'pending'
+      })
       return (
         <Fragment key={`seq-${run[0].message.id}`}>
-          <ToolCallSequence
-            entries={run.map((row) => ({
-              key: String(row.message.id),
-              tool: row.tool!,
-              render: () => renderToolRow(row.message, row.tool!)
-            }))}
-          />
-          {unit.sidecars.map((row) => renderSidecar(row.message))}
+          {pendingSidecars.map((row) => renderSidecar(row.message))}
+          <ToolCallSequence entries={run.map(renderActivityEntry)} sidecars={mergedSidecars} />
         </Fragment>
       )
     }
@@ -340,7 +488,12 @@ export default function ChatTranscript({
                   <img src={`data:${parsed.mimeType};base64,${parsed.data}`} alt="Attached" />
                 </div>
               </div>
-              {parsed.text && <div>{query ? highlightMatches(parsed.text, query, matchCounter, activeMatchIndex) : parsed.text}</div>}
+              {parsed.text &&
+                (query ? (
+                  highlightMatches(parsed.text, query, matchCounter, activeMatchIndex)
+                ) : (
+                  <Linkify text={parsed.text} />
+                ))}
             </div>
           </div>
         )
@@ -349,7 +502,7 @@ export default function ChatTranscript({
           <div className="msg-wrap msg-wrap-user" key={message.id}>
             <MessageActions text={message.content} />
             <div className="msg-user" data-testid="transcript-message" data-role="user" data-message-id={message.id}>
-              {query ? highlightMatches(message.content, query, matchCounter, activeMatchIndex) : message.content}
+              {query ? highlightMatches(message.content, query, matchCounter, activeMatchIndex) : <Linkify text={message.content} />}
             </div>
           </div>
         )
@@ -362,35 +515,68 @@ export default function ChatTranscript({
         </div>
       )
     } else if (thinking) {
-      nodes.push(
-        <div className="msg-wrap" key={message.id} data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
-          <ThinkingBlockCard content={thinking} />
-        </div>
-      )
+      // Standalone thinking between user/assistant messages — inline while
+      // streaming, folded summary row once complete.
+      if (thinking.status === 'running') {
+        nodes.push(
+          <div className="msg-wrap" key={message.id} data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
+            <ThinkingBlockInline content={thinking} />
+          </div>
+        )
+      } else {
+        nodes.push(
+          <div className="msg-wrap" key={message.id} data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
+            <ThinkingBlockInline content={thinking} />
+          </div>
+        )
+      }
     } else if (parsed?.kind === 'permission_request') {
-      nodes.push(
-        <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
-          <PermissionRequestCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
-        </div>
-      )
+      if (parsed.status === 'pending') {
+        nodes.push(
+          <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
+            <PermissionRequestCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+          </div>
+        )
+      } else {
+        const folded = renderFoldedPromptRow(message)
+        if (folded) nodes.push(folded)
+      }
     } else if (parsed?.kind === 'ask_user_question') {
-      nodes.push(
-        <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
-          <AskUserQuestionCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
-        </div>
-      )
+      if (parsed.status === 'pending') {
+        nodes.push(
+          <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
+            <AskUserQuestionCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+          </div>
+        )
+      } else {
+        const folded = renderFoldedPromptRow(message)
+        if (folded) nodes.push(folded)
+      }
     } else if (parsed?.kind === 'plan_proposed') {
-      nodes.push(
-        <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
-          <PlanProposedCard
-            content={parsed}
-            onRespond={(decision) => onRespond(parsed.requestId, decision)}
-            onOpenPlanFile={onOpenPlanFile}
-            workspaceRoot={workspaceRoot}
-            projectRoot={projectRoot}
-          />
-        </div>
-      )
+      if (parsed.status === 'pending') {
+        nodes.push(
+          <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
+            <PlanProposedCard
+              content={parsed}
+              onRespond={(decision) => onRespond(parsed.requestId, decision)}
+              onOpenPlanFile={onOpenPlanFile}
+              onReviewPlan={
+                onReviewPlan
+                  ? () => onReviewPlan(message, parsed.plan, findPreviousPlanMarkdown(message.id))
+                  : undefined
+              }
+              reviewActive={
+                reviewTarget?.kind === 'plan' && reviewTarget.sourceId === message.id
+              }
+              workspaceRoot={workspaceRoot}
+              projectRoot={projectRoot}
+            />
+          </div>
+        )
+      } else {
+        const folded = renderFoldedPromptRow(message)
+        if (folded) nodes.push(folded)
+      }
     } else if (parsed?.kind === 'transcript_notice') {
       const notice = parsed as TranscriptNoticeContent
       nodes.push(
@@ -421,8 +607,22 @@ export default function ChatTranscript({
       )
     } else {
       nodes.push(
-        <div className="msg-wrap" key={message.id}>
-          <MessageActions text={message.content} speakable />
+        <div
+          className={`msg-wrap${
+            reviewTarget?.kind === 'response' && reviewTarget.sourceId === message.id
+              ? ' response-review-selected'
+              : ''
+          }`}
+          key={message.id}
+        >
+          <MessageActions
+            text={message.content}
+            speakable
+            onReview={onReviewMessage ? () => onReviewMessage(message) : undefined}
+            reviewActive={
+              reviewTarget?.kind === 'response' && reviewTarget.sourceId === message.id
+            }
+          />
           <div className="msg-assistant" data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
             {query ? (
               highlightMatches(message.content, query, matchCounter, activeMatchIndex)
@@ -485,7 +685,14 @@ export default function ChatTranscript({
   const NEAR_BOTTOM_THRESHOLD_PX = 48
 
   function getScrollContainer(): HTMLElement | null {
-    return containerRef.current?.closest<HTMLElement>('.chat-body-row') ?? null
+    const transcript = containerRef.current
+    if (!transcript) return null
+    // When the review split is open, `.chat-body-row` stops scrolling so the
+    // right pane stays pinned; transcript scroll moves to `.chat-main-col`.
+    if (reviewTarget) {
+      return transcript.closest<HTMLElement>('.chat-main-col') ?? transcript.closest<HTMLElement>('.chat-body-row')
+    }
+    return transcript.closest<HTMLElement>('.chat-body-row')
   }
 
   useLayoutEffect(() => {
@@ -494,7 +701,7 @@ export default function ChatTranscript({
     if (isNearBottomRef.current) {
       el.scrollTop = el.scrollHeight
     }
-  }, [messages])
+  }, [messages, reviewTarget])
 
   function handleScroll(): void {
     const el = getScrollContainer()
@@ -512,7 +719,7 @@ export default function ChatTranscript({
     el.addEventListener('scroll', handleScroll)
     return () => el.removeEventListener('scroll', handleScroll)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [reviewTarget])
 
   return (
     <div className="transcript" data-testid="transcript" ref={containerRef}>

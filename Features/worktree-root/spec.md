@@ -2,8 +2,9 @@
 
 ## User flow
 
-1. User enables **Use worktree** in New Session; worktree is created at `<worktreeRoot>/<session-id>` (default `~/.atelier/worktrees/<session-id>`), not under the project repo.
+1. User enables **Use worktree** in New Session; worktree is created at `<worktreeRoot>/<session-id>` (default `~/.atelier/worktrees/<session-id>`), not under the project repo. Creation has **no timeout** — large remote repos may take many minutes.
 2. User changes **Worktree directory** in Settings → Agent; new sessions use the updated root (existing sessions keep their stored `worktree_path`).
+3. Closing a session removes its git worktree and branch and clears `worktree_path`. Deleting a closed session also cleans up if any worktree remained.
 
 ## UI
 

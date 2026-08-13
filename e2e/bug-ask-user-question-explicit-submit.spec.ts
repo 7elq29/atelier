@@ -100,7 +100,10 @@ test.describe('bug-repro: AskUserQuestionCard submits instantly on first click, 
     await expect(submitButton).toBeEnabled()
     await submitButton.click()
 
-    await expect(card).toHaveAttribute('data-status', 'answered', { timeout: 15_000 })
+    const askSummary = page.locator('[data-testid="tool-sequence-summary"]').filter({ hasText: /question answered/i }).last()
+    await expect(askSummary).toBeVisible({ timeout: 15_000 })
+    await askSummary.click()
+    await expect(page.getByTestId('ask-user-question-card').first()).toHaveAttribute('data-status', 'answered')
     await page.screenshot({ path: join(artifactsDir, 'fix-ask-user-question-explicit-submit-after-submit.png') })
 
     const logAfterSubmit = readFileSync(logPath, 'utf-8')

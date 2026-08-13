@@ -9,6 +9,7 @@ import SettingsPanel from './components/SettingsPanel'
 import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
 import { DeleteSessionLinkedTaskDialog, TaskSessionReplaceDialog } from './components/daily-notes/TaskSessionLinkDialogs'
 import ChatTranscript from './components/chat/ChatTranscript'
+import ResponseReviewPanel from './components/chat/ResponseReviewPanel'
 import TranscriptSearchBar from './components/chat/TranscriptSearchBar'
 import Composer, { type ComposerHandle } from './components/chat/Composer'
 import TrackerRail from './components/chat/TrackerRail'
@@ -20,9 +21,11 @@ import FilesPanel from './components/panels/FilesPanel'
 import AppNotesPanel from './components/panels/AppNotesPanel'
 import DailyNoteEditorPanel from './components/panels/DailyNoteEditorPanel'
 import WeeklyPlanWizardPanel from './components/panels/WeeklyPlanWizardPanel'
+import WeeklyPlanViewPanel from './components/panels/WeeklyPlanViewPanel'
 import PortsPanel from './components/panels/PortsPanel'
-import TerminalPanel from './components/panels/TerminalPanel'
+import TerminalWithToolbox from './components/panels/TerminalWithToolbox'
 import CompanionTerminalDrawer from './components/panels/CompanionTerminalDrawer'
+import TitleBar from './components/TitleBar'
 import SessionDisconnectedPanel from './components/SessionDisconnectedPanel'
 import { useConfig } from './hooks/useConfig'
 import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig, type AtelierConfig } from '../../shared/config'
@@ -31,7 +34,13 @@ import { useSessionWorkspace } from './hooks/useSessionWorkspace'
 import { truncateContextPath } from './utils/truncateContextPath'
 import { useAppNotes } from './hooks/useAppNotes'
 import type { DailyTask } from '../../shared/daily-note-types'
-import type { WeeklyPlanStatus, WeeklyPlanWizardContext, WeeklyPlanWizardData } from '../../shared/weekly-plan-types'
+import type { ReviewPaneTarget } from '../../shared/review-pane-types'
+import type {
+  WeeklyPlanStatus,
+  WeeklyPlanViewResult,
+  WeeklyPlanWizardContext,
+  WeeklyPlanWizardData
+} from '../../shared/weekly-plan-types'
 import type {
   ImageAttachment,
   MessageSearchHit,
@@ -39,16 +48,43 @@ import type {
   SessionRecord,
   SessionStatus
 } from '../../shared/session-types'
-import { FTS_SNIPPET_START, FTS_SNIPPET_END } from '../../shared/chat-content'
+import { FTS_SNIPPET_START, FTS_SNIPPET_END, parseStructuredContent } from '../../shared/chat-content'
+import { isClaudePlanPath } from '../../shared/claude-plan-path'
+import { resolveSessionProfileFileTree } from '../../shared/session-profile-resolve'
+import { resolveSessionFilePath } from './components/chat/file-path-links'
 
-function nextTerminalSuggestedName(sessions: SessionRecord[]): string {
+function resolveOpenFilePath(rawPath: string, session: SessionRecord | null | undefined): string {
+  const trimmed = rawPath.trim()
+  if (!trimmed || trimmed.startsWith('/') || trimmed.startsWith('~')) return trimmed
+  const workspaceRoot = session?.worktreePath ?? session?.projectPath ?? ''
+  const projectRoot = session?.projectPath ?? workspaceRoot
+  if (!workspaceRoot) return trimmed
+  return resolveSessionFilePath(trimmed, workspaceRoot, projectRoot) ?? trimmed
+}
+
+function findPreviousPlanMarkdown(messages: { content: string }[]): string | undefined {
+  const plans = messages
+    .map((m) => parseStructuredContent(m.content))
+    .filter((p) => p?.kind === 'plan_proposed')
+  if (plans.length < 2) return undefined
+  const prev = plans[plans.length - 2]
+  return prev?.kind === 'plan_proposed' ? prev.plan : undefined
+}
+
+function nextTerminalSuggestedName(sessions: SessionRecord[], projectPath: string): string {
+  const base = truncateContextPath(projectPath) ?? 'Terminal'
   const names = new Set(sessions.filter((s) => s.mode === 'terminal').map((s) => s.name))
-  if (!names.has('Terminal')) return 'Terminal'
+  if (!names.has(base)) return base
   for (let i = 2; i < 1000; i++) {
-    const candidate = `Terminal ${i}`
+    const candidate = `${base} ${i}`
     if (!names.has(candidate)) return candidate
   }
-  return 'Terminal'
+  return base
+}
+
+function shellHostForPty(ptyId: string, hosts: Record<string, string | null>): string | null {
+  const sessionId = ptyId.replace(/:tab-terminal$/, '').replace(/:companion$/, '')
+  return hosts[sessionId] ?? null
 }
 
 function resolveEffectiveTheme(theme: 'system' | 'light' | 'dark'): 'light' | 'dark' {
@@ -102,6 +138,9 @@ export default function App(): JSX.Element {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [fileQuickOpenOpen, setFileQuickOpenOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsInitialPane, setSettingsInitialPane] = useState<
+    'theme' | 'fonts' | 'notifications' | 'vault' | 'agent' | 'sessions' | 'profiles'
+  >('theme')
   const [newSessionOpen, setNewSessionOpen] = useState(false)
   const [pendingTaskSessionLink, setPendingTaskSessionLink] = useState<{
     noteDate: string
@@ -119,6 +158,7 @@ export default function App(): JSX.Element {
     (WeeklyPlanWizardContext & { initialData: WeeklyPlanWizardData }) | null
   >(null)
   const [weeklyPlanExistsHint, setWeeklyPlanExistsHint] = useState<string | null>(null)
+  const [weeklyPlanViewDoc, setWeeklyPlanViewDoc] = useState<WeeklyPlanViewResult | null>(null)
   const composerRefs = useRef<Map<string, ComposerHandle>>(new Map())
   /** Picker overrides until the next session-list refresh picks up persisted model columns. */
   const [modelSelectionBySession, setModelSelectionBySession] = useState<Record<string, ModelSelection>>({})
@@ -130,6 +170,8 @@ export default function App(): JSX.Element {
   const [revealCommitSeq, setRevealCommitSeq] = useState(0)
   const [revealFilePath, setRevealFilePath] = useState<string | undefined>()
   const [revealFileSeq, setRevealFileSeq] = useState(0)
+  const [revealFileDiffPath, setRevealFileDiffPath] = useState<string | undefined>()
+  const [revealFileDiffSeq, setRevealFileDiffSeq] = useState(0)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerHeight, setDrawerHeight] = useState(240)
   /** Per-session FIFO queue while that session is busy (message-queue). */
@@ -144,6 +186,7 @@ export default function App(): JSX.Element {
 
   const fileQuickOpenChordAtRef = useRef<number | null>(null)
   const fileQuickOpenOpenRef = useRef(false)
+  const handleInterruptRef = useRef<(sessionId: string) => Promise<void>>(async () => {})
   const activeSessionRef = useRef<SessionRecord | null>(null)
   const activeAppNoteIdRef = useRef<string | null>(null)
 
@@ -164,12 +207,36 @@ export default function App(): JSX.Element {
   const [transcriptSearchQuery, setTranscriptSearchQuery] = useState('')
   const [activeMatchIndex, setActiveMatchIndex] = useState(0)
   const [matchCount, setMatchCount] = useState(0)
+  const [reviewTarget, setReviewTarget] = useState<ReviewPaneTarget | null>(null)
   // Cross-session content-search palette jump target (10b-enrichment-full-
   // text-search): set when a content-match palette item runs, consumed by
   // the effect below once that message's row actually exists in the DOM
   // (which may be a render or two after `selectSession` resolves).
   const [pendingJumpMessageId, setPendingJumpMessageId] = useState<number | null>(null)
   const [terminalShellHostBySessionId, setTerminalShellHostBySessionId] = useState<Record<string, string | null>>({})
+
+  useEffect(() => {
+    setReviewTarget(null)
+  }, [activeSessionId])
+
+  useEffect(() => {
+    if (!reviewTarget) return
+    requestAnimationFrame(() => {
+      if (reviewTarget.capFilePath) {
+        document
+          .querySelector<HTMLElement>(
+            `[data-testid="chat-changes-file"][data-path="${CSS.escape(reviewTarget.capFilePath)}"]`
+          )
+          ?.scrollIntoView({ block: 'nearest' })
+        return
+      }
+      const highlighted =
+        reviewTarget.kind === 'plan'
+          ? document.querySelector<HTMLElement>('.plan-card.response-review-selected')
+          : document.querySelector<HTMLElement>('.msg-wrap.response-review-selected')
+      highlighted?.scrollIntoView({ block: 'nearest' })
+    })
+  }, [reviewTarget])
 
   useEffect(() => {
     window.atelier.getDefaultDate().then(setDate)
@@ -269,25 +336,12 @@ export default function App(): JSX.Element {
           setFileQuickOpenOpen(false)
           return
         }
-        // Modal-close always takes priority over interrupt — if any overlay
-        // is open, close it and don't also fire the interrupt path.
+        // Modal-close always takes priority — if any overlay is open, close it.
         if (anyModalOpenRef.current) {
           setPaletteOpen(false)
           setSettingsOpen(false)
           setNewSessionOpen(false)
           setFileQuickOpenOpen(false)
-          return
-        }
-        // No overlay open: if the active session is busy, ESC interrupts it
-        // (same action as clicking Stop) and restores the last-submitted text
-        // back to the composer — matching Claude Code CLI's ESC behaviour.
-        const sid = activeSessionIdRef.current
-        if (sid && busyBySessionRef.current[sid]) {
-          void sessions.interrupt(sid)
-          const restore = lastSubmittedTextBySessionRef.current[sid]
-          if (restore) {
-            composerRefs.current.get(sid)?.setValue(restore)
-          }
           return
         }
         // Idle session or no session: still close any modals that happen to
@@ -313,6 +367,36 @@ export default function App(): JSX.Element {
     (id: string) => {
       if (activeSessionId === id) setActiveSessionId(null)
       sessionWorkspace.evictSession(id)
+      setTerminalShellHostBySessionId((prev) => {
+        if (!(id in prev)) return prev
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      setAliveTerminals((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Map(prev)
+        next.delete(id)
+        return next
+      })
+      setAliveTabTerminals((prev) => {
+        const ptyId = `${id}:tab-terminal`
+        if (!prev.has(ptyId)) return prev
+        const next = new Map(prev)
+        next.delete(ptyId)
+        return next
+      })
+      void window.atelier.ptyKill(id)
+      void window.atelier.ptyKillTmuxSession(id)
+      void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`)
+      void window.atelier.ptyKillTmuxSession(`${id}:companion`)
+      setAliveChatComposers((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      composerRefs.current.delete(id)
       void sessions.closeSession(id)
     },
     [activeSessionId, sessions, sessionWorkspace]
@@ -397,6 +481,7 @@ export default function App(): JSX.Element {
     setActiveAppNoteId(null)
     setActiveDailyNoteDate(null)
     setActiveWeeklyPlanOpen(false)
+    setWeeklyPlanViewDoc(null)
     setWeeklyPlanExistsHint(null)
     setActiveSessionId(session.id)
     setActiveTab('chat')
@@ -440,7 +525,7 @@ export default function App(): JSX.Element {
       mode: 'terminal',
       hostId: 'local',
       projectPath: home,
-      suggestedName: nextTerminalSuggestedName(allSessions)
+      suggestedName: nextTerminalSuggestedName(allSessions, home)
     })
     await selectSession(created)
   }, [allSessions, sessions])
@@ -448,6 +533,7 @@ export default function App(): JSX.Element {
   const selectAppNote = useCallback((noteId: string) => {
     setActiveDailyNoteDate(null)
     setActiveWeeklyPlanOpen(false)
+    setWeeklyPlanViewDoc(null)
     setWeeklyPlanExistsHint(null)
     setActiveAppNoteId(noteId)
   }, [])
@@ -455,10 +541,20 @@ export default function App(): JSX.Element {
   const selectDailyNote = useCallback(async () => {
     setActiveAppNoteId(null)
     setActiveWeeklyPlanOpen(false)
+    setWeeklyPlanViewDoc(null)
     setWeeklyPlanExistsHint(null)
     const d = activeDailyNoteDate ?? (await window.atelier.getDefaultDate())
     setActiveDailyNoteDate(d)
   }, [activeDailyNoteDate])
+
+  const toggleDailyNotesPanel = useCallback(async () => {
+    if (date) {
+      setDate(null)
+      return
+    }
+    const d = await window.atelier.getDefaultDate()
+    setDate(d)
+  }, [date])
 
   const startWeeklyPlanWizard = useCallback(async () => {
     if (weeklyPlanStatus?.fileExists) return
@@ -473,21 +569,34 @@ export default function App(): JSX.Element {
     setActiveDailyNoteDate(null)
     setActiveSessionId(null)
     setWeeklyPlanExistsHint(null)
+    setWeeklyPlanViewDoc(null)
     setWeeklyPlanContext(ctx)
     setActiveWeeklyPlanOpen(true)
   }, [weeklyPlanStatus?.fileExists])
 
-  const onWeeklyPlanRowClick = useCallback(() => {
+  const onWeeklyPlanRowClick = useCallback(async () => {
     if (!weeklyPlanStatus?.fileExists) return
-    setWeeklyPlanExistsHint(
-      `${weeklyPlanStatus.isoWeek} weekly note exists — open/view in a later step`
-    )
+    try {
+      const doc = await window.atelier.readWeeklyPlanNote(weeklyPlanStatus.isoWeek)
+      setActiveAppNoteId(null)
+      setActiveDailyNoteDate(null)
+      setActiveSessionId(null)
+      setActiveWeeklyPlanOpen(false)
+      setWeeklyPlanContext(null)
+      setWeeklyPlanExistsHint(null)
+      setWeeklyPlanViewDoc(doc)
+    } catch (err) {
+      setWeeklyPlanExistsHint(
+        `Could not open weekly plan: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
   }, [weeklyPlanStatus])
 
   const createAppNote = useCallback(async () => {
     const note = await appNotes.createNote()
     setActiveDailyNoteDate(null)
     setActiveWeeklyPlanOpen(false)
+    setWeeklyPlanViewDoc(null)
     setActiveAppNoteId(note.id)
   }, [appNotes])
 
@@ -527,8 +636,9 @@ export default function App(): JSX.Element {
   const activeAppNote = activeAppNoteId
     ? appNotes.notes.find((n) => n.id === activeAppNoteId) ?? null
     : null
+  const activeWeeklyPlanSurface = activeWeeklyPlanOpen || weeklyPlanViewDoc !== null
   const activeWorkspacePath =
-    activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanOpen
+    activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanSurface
       ? (activeSession.worktreePath ?? activeSession.projectPath)
       : null
   const sessionMainInForeground =
@@ -549,6 +659,19 @@ export default function App(): JSX.Element {
     [activeSessionId, allSessions, sessions.statuses]
   )
 
+  const openChangedFileInFilesWithDiff = useCallback(
+    (path: string) => {
+      const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
+      if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
+      const absolutePath = resolveOpenFilePath(path, session)
+      setRevealFileDiffPath(absolutePath)
+      setRevealFileDiffSeq((n) => n + 1)
+      setActiveTab('files')
+      setVisitedTabs((prev) => (prev.has('files') ? prev : new Set(prev).add('files')))
+    },
+    [activeSessionId, allSessions, sessions.statuses]
+  )
+
   const openCommitInDiff = useCallback(
     (hash: string) => {
       const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
@@ -562,9 +685,10 @@ export default function App(): JSX.Element {
   )
 
   const openFileInFiles = useCallback(
-    (absolutePath: string) => {
+    (rawPath: string) => {
       const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
       if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
+      const absolutePath = resolveOpenFilePath(rawPath, session)
       setRevealFilePath(absolutePath)
       setRevealFileSeq((n) => n + 1)
       setActiveTab('files')
@@ -675,13 +799,22 @@ export default function App(): JSX.Element {
         id: 'open-settings',
         label: 'Open Settings',
         category: 'Action',
-        run: () => setSettingsOpen(true)
+        run: () => {
+          setSettingsInitialPane('theme')
+          setSettingsOpen(true)
+        }
       },
       {
         id: 'toggle-sidebar-collapse',
         label: 'Toggle sidebar collapse',
         category: 'Action',
         run: () => updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })
+      },
+      {
+        id: 'toggle-daily-notes-panel',
+        label: 'Toggle daily notes tracker panel',
+        category: 'Action',
+        run: () => void toggleDailyNotesPanel()
       },
       {
         id: 'new-session',
@@ -696,7 +829,7 @@ export default function App(): JSX.Element {
         run: () => void selectSession(session)
       }))
     ],
-    [config.theme, config.sidebarCollapsed, allSessions]
+    [config.theme, config.sidebarCollapsed, allSessions, toggleDailyNotesPanel]
   )
 
   // Cross-session content search (10b-enrichment-full-text-search): the
@@ -735,15 +868,18 @@ export default function App(): JSX.Element {
   async function handleSend(sessionId: string, text: string, image?: ImageAttachment): Promise<void> {
     if (!text.trim() && !image) return
     if (sessions.rateLimitBySession[sessionId]?.sendBlocked) return
-    lastSubmittedTextBySessionRef.current[sessionId] = text.trim()
     const session = allSessions.find((s) => s.id === sessionId)
     const model = modelSelectionForSession(sessionId, session, modelSelectionBySession, config)
     await sessions.sendMessage(sessionId, text.trim(), model, image)
   }
 
   async function handleInterrupt(sessionId: string): Promise<void> {
-    await sessions.interrupt(sessionId)
+    const result = await sessions.interrupt(sessionId)
+    if (result.action === 'withdrawn') {
+      composerRefs.current.get(sessionId)?.setValue(result.restoredText)
+    }
   }
+  handleInterruptRef.current = handleInterrupt
 
   // Drain per-session queues when that session transitions busy → idle (message-queue).
   useEffect(() => {
@@ -766,11 +902,58 @@ export default function App(): JSX.Element {
   }
 
   const activeMessages = activeSessionId ? sessions.messagesBySession[activeSessionId] ?? [] : []
+
+  const openChangedFileFromCap = useCallback(
+    async (path: string, opensInFilesTab: boolean) => {
+      const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
+      if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
+      if (isClaudePlanPath(path)) {
+        const absPath = resolveOpenFilePath(path, session)
+        const result = await window.atelier.filesRead(absPath, session?.hostname ?? null)
+        if (result.kind !== 'text' && result.kind !== 'html') return
+        const planMessages = activeMessages.filter(
+          (m) => parseStructuredContent(m.content)?.kind === 'plan_proposed'
+        )
+        setActiveTab('chat')
+        setReviewTarget({
+          sourceId: planMessages[planMessages.length - 1]?.id ?? -1,
+          kind: 'plan',
+          content: result.content,
+          previousContent: findPreviousPlanMarkdown(activeMessages),
+          capFilePath: path
+        })
+        return
+      }
+      if (opensInFilesTab) {
+        openChangedFileInFilesWithDiff(path)
+        return
+      }
+      openChangedFileInDiff(path)
+    },
+    [activeSessionId, allSessions, sessions.statuses, activeMessages, openChangedFileInDiff, openChangedFileInFilesWithDiff]
+  )
+
   const activeSessionDisconnected = claudeCodeSessionDisconnected(
     activeSession,
     activeSessionId,
     sessions.statuses
   )
+
+  // If the user stays on a session through its connect/reconnect gap,
+  // `selectSession()` skips transcript hydration while the disconnected gate
+  // is up — reload from SQLite the moment the session becomes interactive.
+  useEffect(() => {
+    if (!activeSessionId || !activeSession || activeSession.mode !== 'claude-code') return
+    if (activeSessionDisconnected) return
+    if (sessions.messagesBySession[activeSessionId]) return
+    void sessions.loadSessionMessages(activeSessionId)
+  }, [
+    activeSessionId,
+    activeSession,
+    activeSessionDisconnected,
+    sessions.messagesBySession,
+    sessions.loadSessionMessages
+  ])
 
   const workspacePanelSessionIds = useMemo(() => {
     const ids = new Set<string>()
@@ -810,10 +993,19 @@ export default function App(): JSX.Element {
     composer?.setValue(prev ? `${prev}\n\n${note}` : note)
   }, [])
 
+  const replaceInActiveComposer = useCallback((oldNote: string, newNote: string) => {
+    const sid = activeSessionIdRef.current
+    if (!sid) return
+    const composer = composerRefs.current.get(sid)
+    const prev = composer?.getValue() ?? ''
+    if (!prev.includes(oldNote)) return
+    composer?.setValue(prev.replace(oldNote, newNote))
+  }, [])
+
   const composerDockVisible = Boolean(
     !activeAppNote &&
     !activeDailyNoteDate &&
-    !activeWeeklyPlanOpen &&
+    !activeWeeklyPlanSurface &&
     activeSession?.mode === 'claude-code' &&
     !activeSessionDisconnected &&
     activeTab === 'chat'
@@ -858,15 +1050,42 @@ export default function App(): JSX.Element {
   anyModalOpenRef.current = anyModalOpen
   fileQuickOpenOpenRef.current = fileQuickOpenOpen
   /**
-   * Text of the most recently submitted message — saved in `handleSend`
-   * before `composerText` is cleared, so an ESC press during a busy turn
-   * can restore it to the composer (matching Claude Code CLI's behaviour:
-   * ESC while the turn is running both interrupts AND returns the prompt).
-   * Only meaningful while the session is busy; the value doesn't need to
-   * be cleared on turn completion because the interrupt branch only runs
-   * when `busyBySession[sid]` is true.
+   * ESC / Stop while busy delegates to `handleInterrupt`, which withdraws a
+   * not-yet-executed prompt (restores composer text + removes the user row) or
+   * interrupts a running turn without restoring the prompt.
    */
-  const lastSubmittedTextBySessionRef = useRef<Record<string, string>>({})
+  const chatSessionInterruptEnabledRef = useRef(false)
+  // ESC interrupts the active chat session's in-flight turn (same as Stop),
+  // but only while the chat tab is foreground — not from sidebar, daily
+  // notes, other tabs, or modals.
+  const chatSessionInterruptEnabled = Boolean(
+    activeSessionId &&
+      activeSession?.mode === 'claude-code' &&
+      !activeAppNote &&
+      !activeDailyNoteDate &&
+      !activeWeeklyPlanSurface &&
+      !activeSessionDisconnected &&
+      activeTab === 'chat'
+  )
+  chatSessionInterruptEnabledRef.current = chatSessionInterruptEnabled
+  const transcriptSearchOpenRef = useRef(false)
+  transcriptSearchOpenRef.current = transcriptSearchOpen
+
+  useEffect(() => {
+    function handleChatEscape(e: KeyboardEvent): void {
+      if (e.key !== 'Escape') return
+      if (anyModalOpenRef.current) return
+      if (!chatSessionInterruptEnabledRef.current) return
+      if (transcriptSearchOpenRef.current) return
+      const sid = activeSessionIdRef.current
+      if (!sid || !busyBySessionRef.current[sid]) return
+      e.preventDefault()
+      void handleInterruptRef.current(sid)
+    }
+    window.addEventListener('keydown', handleChatEscape)
+    return () => window.removeEventListener('keydown', handleChatEscape)
+  }, [])
+
   // A layout effect, not a plain effect: it must remove `inert` *before* the
   // "focus jumped to that session" effect below (declared earlier, but a
   // passive effect) tries to call `.focus()` on a session row — a `.focus()`
@@ -883,8 +1102,11 @@ export default function App(): JSX.Element {
     }
   }, [anyModalOpen])
 
+  const showIntegratedTitleBar = window.atelier.platform === 'darwin'
+
   return (
     <div className="app-root">
+      {showIntegratedTitleBar ? <TitleBar /> : null}
       <div id="app" className="app-body" ref={appBodyRef}>
         <Sidebar
           collapsed={config.sidebarCollapsed}
@@ -893,7 +1115,10 @@ export default function App(): JSX.Element {
           historySessions={sessions.historySessions}
           activeSessionId={activeSessionId}
           onSelectSession={(s) => void selectSession(s)}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => {
+            setSettingsInitialPane('theme')
+            setSettingsOpen(true)
+          }}
           onNewSession={() => setNewSessionOpen(true)}
           onRename={(id, name) => void sessions.renameSession(id, name)}
           onTogglePin={(id, pinned) => void sessions.setPinned(id, pinned)}
@@ -921,42 +1146,51 @@ export default function App(): JSX.Element {
           appNotes={appNotes.notes}
           activeAppNoteId={activeAppNoteId}
           activeDailyNote={activeDailyNoteDate !== null}
-          weeklyPlanIsoWeek={weeklyPlanStatus?.isoWeek ?? '…'}
+          weeklyPlanWeekLabel={weeklyPlanStatus?.weekDateRange ?? '…'}
           weeklyPlanFileExists={weeklyPlanStatus?.fileExists ?? false}
-          activeWeeklyPlan={activeWeeklyPlanOpen}
-          onSelectWeeklyPlanRow={onWeeklyPlanRowClick}
+          activeWeeklyPlan={activeWeeklyPlanSurface}
+          onSelectWeeklyPlanRow={() => void onWeeklyPlanRowClick()}
           onStartWeeklyPlan={() => void startWeeklyPlanWizard()}
           onSelectAppNote={selectAppNote}
           onSelectDailyNote={() => void selectDailyNote()}
+          dailyNotesPanelOpen={date !== null}
+          onToggleDailyNotesPanel={() => void toggleDailyNotesPanel()}
           onCreateAppNote={() => void createAppNote()}
           onRenameAppNote={(id, title) => void appNotes.updateNote(id, { title })}
           onDeleteAppNote={(id) => void deleteAppNote(id)}
         />
 
         <div className="main-area">
-          <div className="topbar">
+          <div
+            className={`topbar${activeAppNote || activeDailyNoteDate ? ' topbar--note-editor' : ''}`}
+          >
             <div className="topbar-title-group">
-              <span className="title" data-testid="main-title">
+              <span
+                className="title"
+                data-testid="main-title"
+                title={
+                  activeSession &&
+                  !activeAppNote &&
+                  !activeDailyNoteDate &&
+                  !activeWeeklyPlanOpen &&
+                  !weeklyPlanViewDoc
+                    ? activeSession.name
+                    : undefined
+                }
+              >
                 {activeWeeklyPlanOpen ? (
                   'Weekly review & plan'
+                ) : weeklyPlanViewDoc ? (
+                  'Weekly plan'
                 ) : activeDailyNoteDate ? (
                   'Daily note'
                 ) : activeAppNote ? (
                   <input
-                    className="input app-note-title-input"
+                    className="app-note-title-input"
                     data-testid="app-note-title-input"
                     value={activeAppNote.title}
                     placeholder="Untitled note"
                     onChange={(e) => void appNotes.updateNote(activeAppNote.id, { title: e.target.value })}
-                    style={{
-                      fontSize: 'inherit',
-                      fontWeight: 'inherit',
-                      border: 'none',
-                      background: 'transparent',
-                      padding: '2px 4px',
-                      minWidth: 120,
-                      maxWidth: 'min(480px, 50vw)'
-                    }}
                   />
                 ) : activeSession ? (
                   activeSession.name
@@ -974,7 +1208,7 @@ export default function App(): JSX.Element {
                 </span>
               )}
             </div>
-            {activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanOpen && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
+            {activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanSurface && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
               <>
                 <TabBar activeTab={activeTab} onSelect={selectTab} showPorts={Boolean(activeSession.hostname)} />
                 <div className="topbar-spacer" />
@@ -1013,7 +1247,13 @@ export default function App(): JSX.Element {
                     activeSession.id === ptyId
                   return (
                     <div key={ptyId} className={`terminal-cache-entry${isActive ? ' active' : ''}`}>
-                      <TerminalPanel ptyId={ptyId} cwd={info.cwd} hostname={info.hostname} active={isActive} />
+                      <TerminalWithToolbox
+                        ptyId={ptyId}
+                        cwd={info.cwd}
+                        hostname={info.hostname}
+                        shellRemoteHost={shellHostForPty(ptyId, terminalShellHostBySessionId)}
+                        active={isActive}
+                      />
                     </div>
                   )
                 })}
@@ -1027,7 +1267,13 @@ export default function App(): JSX.Element {
                     !activeSessionDisconnected
                   return (
                     <div key={ptyId} className={`terminal-cache-entry${isActive ? ' active' : ''}`}>
-                      <TerminalPanel ptyId={ptyId} cwd={info.cwd} hostname={info.hostname} active={isActive} />
+                      <TerminalWithToolbox
+                        ptyId={ptyId}
+                        cwd={info.cwd}
+                        hostname={info.hostname}
+                        shellRemoteHost={shellHostForPty(ptyId, terminalShellHostBySessionId)}
+                        active={isActive}
+                      />
                     </div>
                   )
                 })}
@@ -1048,6 +1294,12 @@ export default function App(): JSX.Element {
                 setWeeklyPlanContext(null)
               }}
               onCreated={() => void refreshWeeklyPlanStatus()}
+            />
+          ) : weeklyPlanViewDoc ? (
+            <WeeklyPlanViewPanel
+              doc={weeklyPlanViewDoc}
+              effectiveTheme={effectiveTheme}
+              onClose={() => setWeeklyPlanViewDoc(null)}
             />
           ) : activeDailyNoteDate ? (
             <DailyNoteEditorPanel
@@ -1082,7 +1334,7 @@ export default function App(): JSX.Element {
                   <div className={`tab-content${activeTab === 'chat' ? '' : ' hidden'}`} data-tab="chat">
                     <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
                       <SdkToastStack toasts={sessions.sdkToastsBySession[activeSession.id] ?? []} />
-                      <div className="chat-body-row">
+                      <div className={`chat-body-row${reviewTarget ? ' response-review-open' : ''}`}>
                         <div className="chat-main-col">
                           <ChatTranscript
                             messages={activeMessages}
@@ -1091,14 +1343,44 @@ export default function App(): JSX.Element {
                             activeMatchIndex={activeMatchIndex}
                             onMatchCount={setMatchCount}
                             onOpenPlanFile={openFileInFiles}
+                            workspaceRoot={activeSession.worktreePath ?? activeSession.projectPath}
+                            projectRoot={activeSession.projectPath}
+                            onOpenFileInFiles={openFileInFiles}
                             sdkChrome={sessions.sdkChromeBySession[activeSession.id] ?? null}
                             backgroundTasks={sessions.backgroundTasksBySession[activeSession.id] ?? []}
+                            onReviewMessage={(message) =>
+                              setReviewTarget({
+                                sourceId: message.id,
+                                kind: 'response',
+                                content: message.content
+                              })
+                            }
+                            onReviewPlan={(message, planMarkdown, previousPlanMarkdown) =>
+                              setReviewTarget({
+                                sourceId: message.id,
+                                kind: 'plan',
+                                content: planMarkdown,
+                                previousContent: previousPlanMarkdown
+                              })
+                            }
+                            reviewTarget={reviewTarget}
                           />
                         </div>
                         <TrackerRail
                           messages={activeMessages}
                           backgroundTasks={sessions.backgroundTasksBySession[activeSession.id] ?? []}
                         />
+                        {reviewTarget ? (
+                          <ResponseReviewPanel
+                            target={reviewTarget}
+                            onClose={() => setReviewTarget(null)}
+                            onAddComment={appendToActiveComposer}
+                            onUpdateComment={replaceInActiveComposer}
+                            workspaceRoot={activeSession.worktreePath ?? activeSession.projectPath}
+                            projectRoot={activeSession.projectPath}
+                            onOpenFileInFiles={openFileInFiles}
+                          />
+                        ) : null}
                       </div>
                       <div className="composer-cache">
                         {[...aliveChatComposers].map((sessionId) => {
@@ -1122,6 +1404,7 @@ export default function App(): JSX.Element {
                                 onSend={(text, image) => void handleSend(sessionId, text, image)}
                                 onInterrupt={() => void handleInterrupt(sessionId)}
                                 busy={sessions.busyBySession[sessionId] ?? false}
+                                sessionId={sessionId}
                                 projectPath={session.projectPath}
                                 worktreePath={session.worktreePath}
                                 harnessCwd={sessions.harnessCwdBySession[sessionId] ?? null}
@@ -1130,7 +1413,7 @@ export default function App(): JSX.Element {
                                 diffSummary={ws?.diff}
                                 sessionChangesCap={ws?.sessionChangesCap}
                                 mentionFilePaths={mentionPaths}
-                                onOpenChangedFile={openChangedFileInDiff}
+                                onOpenChangedFile={openChangedFileFromCap}
                                 onOpenCommitInDiff={openCommitInDiff}
                                 onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}
                                 modelSelection={modelSelectionForSession(sessionId, session, modelSelectionBySession, config)}
@@ -1177,6 +1460,7 @@ export default function App(): JSX.Element {
                     if (!session || session.mode !== 'claude-code') return null
                     const panelsVisible = activeSessionId === sessionId && !activeSessionDisconnected
                     const workspacePath = session.worktreePath ?? session.projectPath
+                    const profileFileTree = resolveSessionProfileFileTree(session, config.sessionProfiles ?? [])
                     return (
                       <div
                         key={`workspace-panels-${sessionId}`}
@@ -1205,13 +1489,27 @@ export default function App(): JSX.Element {
                         <div className={`tab-content${activeTab === 'files' ? '' : ' hidden'}`} data-tab="files">
                           <FilesPanel
                             projectPath={workspacePath}
+                            sessionId={sessionId}
                             hostname={session.hostname}
                             effectiveTheme={effectiveTheme}
                             active={panelsVisible && activeTab === 'files'}
-                            initialFilesTree={ws?.filesTree}
+                            initialFilesTree={profileFileTree ? null : ws?.filesTree}
+                            profileBar={
+                              profileFileTree
+                                ? {
+                                    name: profileFileTree.profileName,
+                                    workspacePath: profileFileTree.workspacePath,
+                                    dirCount: profileFileTree.roots.length
+                                  }
+                                : null
+                            }
+                            fileTreeRoots={profileFileTree?.roots ?? null}
                             revealFilePath={panelsVisible ? revealFilePath : undefined}
                             revealFileSeq={panelsVisible ? revealFileSeq : 0}
                             onRevealFileHandled={() => setRevealFilePath(undefined)}
+                            revealFileDiffPath={panelsVisible ? revealFileDiffPath : undefined}
+                            revealFileDiffSeq={panelsVisible ? revealFileDiffSeq : 0}
+                            onRevealFileDiffHandled={() => setRevealFileDiffPath(undefined)}
                             onAddComment={appendToActiveComposer}
                           />
                         </div>
@@ -1238,6 +1536,7 @@ export default function App(): JSX.Element {
                     sessionId={activeSession.id}
                     cwd={activeSession.worktreePath ?? activeSession.projectPath}
                     hostname={activeSession.hostname}
+                    shellRemoteHost={terminalShellHostBySessionId[activeSession.id] ?? null}
                     height={drawerHeight}
                     onHeightChange={setDrawerHeight}
                     onClose={() => setDrawerOpen(false)}
@@ -1267,7 +1566,7 @@ export default function App(): JSX.Element {
         {date && (
           <DailyNotesSidebar
             date={date}
-            onClose={() => setDate(null)}
+            onClose={() => void toggleDailyNotesPanel()}
             vaultRoot={config.vault.root || undefined}
             onCreateSessionFromTask={handleCreateSessionFromTask}
           />
@@ -1303,6 +1602,11 @@ export default function App(): JSX.Element {
         onClose={() => {
           setNewSessionOpen(false)
           setPendingTaskSessionLink(null)
+        }}
+        onManageProfiles={() => {
+          setNewSessionOpen(false)
+          setSettingsInitialPane('profiles')
+          setSettingsOpen(true)
         }}
         onCreate={async (opts) => {
           const created = await sessions.createSession({
@@ -1363,6 +1667,7 @@ export default function App(): JSX.Element {
         config={config}
         onUpdate={handleConfigUpdate}
         authStatus={sessions.authStatus}
+        initialPane={settingsInitialPane}
         onReplayOnboarding={() => {
           setSettingsOpen(false)
           updateConfig({ onboardingCompleted: false })

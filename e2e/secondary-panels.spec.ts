@@ -1,8 +1,9 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, symlinkSync } from 'node:fs'
+import { commentOnReviewSelection, e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding, selectReviewPaneText } from './e2e-config'
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, symlinkSync, unlinkSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { tmpdir } from 'node:os'
+import { dirname } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { connect } from 'node:net'
 
@@ -92,6 +93,7 @@ function buildFixtureRepo(): string {
   git(dir, ['config', 'user.email', 'e2e@example.com'])
   git(dir, ['config', 'user.name', 'E2E Test'])
   writeFileSync(join(dir, 'README.md'), '# fixture repo\n')
+  writeFileSync(join(dir, '.gitignore'), '.claude/\n')
   mkdirSync(join(dir, 'config'), { recursive: true })
   writeFileSync(join(dir, 'config', 'example.star'), 'version = 1\n')
   mkdirSync(join(dir, 'nested', 'session'), { recursive: true })
@@ -190,6 +192,116 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('tab-strip')).toBeVisible()
   })
 
+  test('chat: untracked plan file appears in session changes cap', async () => {
+    test.setTimeout(60_000)
+    await page.getByTestId('tab-chat').click()
+    await waitForTurnIdle(page, 60_000)
+    const planRel = '.claude/plans/e2e-plan.md'
+    const planAbs = join(sessionProjectPath, planRel)
+    mkdirSync(dirname(planAbs), { recursive: true })
+    writeFileSync(planAbs, '# E2E plan\n\n1. First step\n2. Second step\n')
+    await page.evaluate(
+      ({ id, path }) =>
+        window.atelier.debugExecDb(
+          `INSERT OR REPLACE INTO session_touched_paths (session_id, path, first_touched_at, last_pending_at)
+           VALUES (?, ?, datetime('now'), datetime('now'))`,
+          [id, path]
+        ),
+      { id: sessionId, path: planRel }
+    )
+    await page.evaluate((id) => window.atelier.refreshSessionWorkspace(id, true), sessionId)
+    await expect
+      .poll(async () => {
+        const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
+        return snap?.sessionChangesCap?.items.some((i) => i.kind === 'file' && i.path === planRel) ?? false
+      }, { timeout: 15_000 })
+      .toBe(true)
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect(cap).toBeVisible()
+    await expandCap(page)
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'e2e-plan.md' })).toBeVisible()
+    log('untracked plan file in session changes cap OK')
+  })
+
+  test('chat: inline ExitPlanMode plan mirrors to .claude/plans and appears in cap', async () => {
+    test.setTimeout(60_000)
+    await page.getByTestId('tab-chat').click()
+    await waitForTurnIdle(page, 60_000)
+    const planRel = '.claude/plans/plan-logging-failover-runbook-log-1167.md'
+    const planBody = '# Plan: Logging Failover Runbook — LOG-1167\n\n1. First step\n'
+    await page.evaluate(
+      ({ id, plan, toolUseId }) => window.atelier.debugRegisterPlanInCap(id, { plan, toolUseId }),
+      { id: sessionId, plan: planBody, toolUseId: 'e2e-exit-plan-mode' }
+    )
+    await page.evaluate((id) => window.atelier.refreshSessionWorkspace(id, true), sessionId)
+    await expect
+      .poll(async () => {
+        const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
+        return snap?.sessionChangesCap?.items.some((i) => i.kind === 'file' && i.path === planRel) ?? false
+      }, { timeout: 15_000 })
+      .toBe(true)
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect(cap).toBeVisible()
+    await expandCap(page)
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'plan-logging-failover-runbook-log-1167.md' })).toBeVisible()
+    log('inline plan mirrored into session changes cap OK')
+  })
+
+  test('chat: plan file in cap shows Plan tag and opens review pane', async () => {
+    test.setTimeout(60_000)
+    await page.getByTestId('tab-chat').click()
+    await waitForTurnIdle(page, 60_000)
+    const planRel = '.claude/plans/plan-e2e-review-from-cap.md'
+    const planBody = [
+      '# Plan: E2E review from cap',
+      '',
+      '## Tasks',
+      '',
+      '- Alpha bullet',
+      '- Beta bullet',
+      '  - Nested bullet',
+      '',
+      '| Step | Owner |',
+      '| --- | --- |',
+      '| One | Alice |',
+      '| Two | Bob |'
+    ].join('\n')
+    await page.evaluate(
+      ({ id, plan, toolUseId }) => window.atelier.debugRegisterPlanInCap(id, { plan, toolUseId }),
+      { id: sessionId, plan: planBody, toolUseId: 'e2e-cap-plan-review' }
+    )
+    await page.evaluate((id) => window.atelier.refreshSessionWorkspace(id, true), sessionId)
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect(cap).toBeVisible({ timeout: 15_000 })
+    await expandCap(page)
+    const planRow = cap.locator('[data-testid="chat-changes-file"][data-path="' + planRel + '"]')
+    await expect(planRow).toHaveAttribute('data-is-plan', 'true')
+    await expect(planRow.getByTestId('chat-changes-plan-tag')).toHaveText('Plan')
+    await planRow.click()
+    const reviewPane = page.getByTestId('response-review-pane')
+    await expect(reviewPane).toBeVisible()
+    await expect(reviewPane).toHaveAttribute('data-review-kind', 'plan')
+    await expect(reviewPane).toHaveAttribute('data-cap-file-path', planRel)
+    await expect(page.getByTestId('response-review-title')).toHaveText('Plan review')
+    await expect(reviewPane.getByTestId('response-review-content')).toBeVisible()
+    await expect(reviewPane.locator('table')).toBeVisible()
+    await expect(reviewPane.locator('table th')).toHaveCount(2)
+    await expect(reviewPane.locator('ul li')).toHaveCount(3)
+    await page.screenshot({ path: join(artifactsDir, 'plan-review-markdown-format.png') })
+    await selectReviewPaneText(reviewPane, 'Two')
+    await commentOnReviewSelection(reviewPane, 'Update owner name')
+    await expect(reviewPane.locator('table')).toBeVisible()
+    await expect(reviewPane.locator('table th')).toHaveCount(2)
+    await expect(reviewPane.locator('ul li')).toHaveCount(3)
+    await expect(reviewPane.locator('table tbody tr')).toHaveCount(2)
+    await expect(reviewPane.getByTestId('response-review-comment-highlight').first()).toBeVisible()
+    await expect(page.getByTestId('composer-input')).toContainText(/Re plan \(line \d+\):/)
+    await expect(page.getByTestId('composer-input')).toContainText('Two')
+    await expect(page.getByTestId('tab-diff')).not.toHaveClass(/active/)
+    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    log('plan cap row opens plan review pane OK')
+  })
+
   test('chat: session changes cap — file row, git stats, diff navigation', async () => {
     test.setTimeout(120_000)
     await page.getByTestId('tab-chat').click()
@@ -208,8 +320,10 @@ test.describe('07-secondary-panels', () => {
     await cap.getByRole('button', { name: /\d+ change/i }).click()
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toBeVisible()
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)
-    await cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' }).click()
-    await expect(page.getByTestId('tab-diff')).toHaveClass(/active/)
+    const aRow = cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })
+    await expect(aRow).toHaveAttribute('data-opens-in-files-tab', 'false')
+    await aRow.click()
+    await expect(page.getByTestId('tab-diff')).toHaveClass(/active/, { timeout: 15_000 })
     const diff = page.getByTestId('diff-panel-active')
     await diff.getByTestId('diff-sub-changes').click()
     await expect(diff.getByTestId('diff-file-row').filter({ hasText: 'a.txt' })).toHaveClass(/active/, {
@@ -225,6 +339,65 @@ test.describe('07-secondary-panels', () => {
 
     await page.screenshot({ path: join(artifactsDir, '07-chat-uncommitted-changes.png') })
     log('chat session changes cap -> diff OK')
+    await page.getByTestId('tab-chat').click()
+  })
+
+  test('chat: outside-workspace cap file opens Files tab with inline diff', async () => {
+    test.setTimeout(60_000)
+    const outsidePath = join(tmpdir(), `atelier-e2e-outside-cap-${Date.now()}.json`)
+    writeFileSync(outsidePath, '{"after":true}\n')
+    await page.getByTestId('tab-chat').click()
+    await waitForTurnIdle(page, 60_000)
+
+    const toolContent = JSON.stringify({
+      kind: 'tool_call',
+      requestId: 'e2e-outside-cap',
+      toolUseId: 'e2e-outside-cap-edit',
+      name: 'Edit',
+      status: 'completed',
+      input: {
+        file_path: outsidePath,
+        old_string: '{"before":true}\n',
+        new_string: '{"after":true}\n'
+      }
+    })
+    await page.evaluate(
+      ({ id, path, content }) =>
+        window.atelier
+          .debugExecDb(
+            `INSERT INTO messages (session_id, role, content, created_at) VALUES (?, 'assistant', ?, datetime('now'))`,
+            [id, content]
+          )
+          .then(() =>
+            window.atelier.debugExecDb(
+              `INSERT OR REPLACE INTO session_touched_paths (session_id, path, first_touched_at, last_pending_at)
+               VALUES (?, ?, datetime('now'), datetime('now'))`,
+              [id, path]
+            )
+          )
+          .then(() => window.atelier.refreshSessionWorkspace(id, true)),
+      { id: sessionId, path: outsidePath, content: toolContent }
+    )
+
+    await expect
+      .poll(async () => {
+        const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
+        const item = snap?.sessionChangesCap?.items.find((i) => i.kind === 'file' && i.path === outsidePath)
+        return item?.kind === 'file' && item.opensInFilesTab === true
+      }, { timeout: 15_000 })
+      .toBe(true)
+
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect(cap).toBeVisible()
+    await expandCap(page)
+    const row = cap.getByTestId('chat-changes-file').filter({ hasText: 'atelier-e2e-outside-cap' })
+    await expect(row).toBeVisible()
+    await row.click()
+    await expect(page.getByTestId('tab-files')).toHaveClass(/active/)
+    await expect(page.getByTestId('tab-diff')).not.toHaveClass(/active/)
+    await expect(page.getByTestId('files-cap-diff')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('diff-full-file-ready')).toBeVisible({ timeout: 15_000 })
+    log('outside-workspace cap -> Files inline diff OK')
     await page.getByTestId('tab-chat').click()
   })
 
@@ -398,6 +571,91 @@ test.describe('07-secondary-panels', () => {
   })
 
   // ── 3. Files panel: real tree, syntax highlighting, image + html preview
+  test('files panel: tilde project path lists home directory entries', async () => {
+    const markerName = `.atelier-e2e-tilde-files-${process.pid}`
+    const markerPath = join(homedir(), markerName)
+    writeFileSync(markerPath, 'marker\n')
+    try {
+      const tree = await page.evaluate(() => window.atelier.filesTree('~', null))
+      expect(Array.isArray(tree)).toBe(true)
+      expect(tree.length).toBeGreaterThan(0)
+      expect(tree.some((n: { name: string }) => n.name === markerName)).toBe(true)
+    } finally {
+      try {
+        unlinkSync(markerPath)
+      } catch {
+        // ignore cleanup failures
+      }
+    }
+    log('files panel: tilde workspace path OK')
+  })
+
+  test('files panel: devpod filesRead expands tilde in remote path', async () => {
+    const hosts = await page.evaluate(() => window.atelier.listHosts())
+    const envTarget = process.env.ATELIER_TEST_DEVPOD
+    const devpodHost = envTarget
+      ? hosts.find((h) => h.sshHost === envTarget || h.id === envTarget)
+      : hosts.find((h) => h.sshHost === 'qingqin-go.devpod-us-or') ?? hosts[0]
+    test.skip(!devpodHost, 'No devpod configured — set ATELIER_TEST_DEVPOD or configure a devpod host')
+    if (!devpodHost) return
+
+    const result = await page.evaluate(
+      ({ path, host }) => window.atelier.filesRead(path, host),
+      { path: '~/go-code/.git/HEAD', host: devpodHost.sshHost }
+    )
+    expect(result.kind).toBe('text')
+    expect(result.content.trim().length).toBeGreaterThan(0)
+    log(`files panel: devpod tilde path read OK via ${devpodHost.sshHost}`)
+  })
+
+  test('files panel: opening a directory shows clickable listing in content pane', async () => {
+    await page.getByTestId('tab-files').click()
+    const files = page.getByTestId('files-panel-active')
+    const location = files.getByTestId('files-location-input')
+    await location.click()
+    await location.fill('src/')
+    await location.press('Enter')
+    await expect(files.getByTestId('files-dir-listing')).toBeVisible({ timeout: 10_000 })
+    await expect(files.locator('[data-testid="file-tree-dir"][data-path="src"]')).toHaveClass(/active/)
+    await expect(files.getByTestId('files-dir-listing-file').filter({ hasText: 'index.js' })).toBeVisible()
+    await files.getByTestId('files-dir-listing-file').filter({ hasText: 'index.js' }).click()
+    await expect(files.getByTestId('files-editor-tab')).toHaveCount(1)
+    await expect(files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')).toHaveClass(/active/)
+    await expect(files.getByTestId('files-dir-listing')).toHaveCount(0)
+    log('files panel: directory listing in content pane OK')
+  })
+
+  test('files panel: location bar opens nested file by absolute path', async () => {
+    await page.getByTestId('tab-files').click()
+    const files = page.getByTestId('files-panel-active')
+    const location = files.getByTestId('files-location-input')
+    const workspaceRoot = await location.inputValue()
+    await location.click()
+    await location.fill(`${workspaceRoot}/src/index.js`)
+    await location.press('Enter')
+    await expect(files.getByTestId('files-editor-tab')).toHaveCount(1)
+    await expect(location).toHaveValue(`${workspaceRoot}/src/index.js`)
+    await expect(files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')).toHaveClass(/active/)
+    log('files panel: absolute path location bar open OK')
+  })
+
+  test('files panel: devpod pathIsDirectory for tilde-prefixed paths', async () => {
+    const hosts = await page.evaluate(() => window.atelier.listHosts())
+    const envTarget = process.env.ATELIER_TEST_DEVPOD
+    const devpodHost = envTarget
+      ? hosts.find((h) => h.sshHost === envTarget || h.id === envTarget)
+      : hosts.find((h) => h.sshHost === 'qingqin-go.devpod-us-or') ?? hosts[0]
+    test.skip(!devpodHost, 'No devpod configured — set ATELIER_TEST_DEVPOD or configure a devpod host')
+    if (!devpodHost) return
+
+    const isDir = await page.evaluate(
+      ({ path, host }) => window.atelier.filesIsDirectory(path, host),
+      { path: '~/go-code/src/code.uber.internal/infra/logging/pkg/sawmill/loggingmcpconformance', host: devpodHost.sshHost }
+    )
+    expect(isDir).toBe(true)
+    log(`files panel: devpod pathIsDirectory OK via ${devpodHost.sshHost}`)
+  })
+
   test('files panel: real file tree from disk, text highlighting, image preview', async () => {
     await page.getByTestId('tab-files').click()
     const files = page.getByTestId('files-panel-active')
@@ -405,8 +663,11 @@ test.describe('07-secondary-panels', () => {
     await expect(files.getByTestId('files-tree')).toContainText('logo.png')
     await expect(files.getByTestId('files-tree')).toContainText('page.html')
 
-    await files.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
-    await files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]').click()
+    const indexJs = files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')
+    if (!(await indexJs.isVisible())) {
+      await files.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
+    }
+    await indexJs.click()
     await expect(files.getByTestId('files-editor-tab')).toHaveCount(1)
     await expect(files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')).toHaveClass(/active/)
 
@@ -419,7 +680,11 @@ test.describe('07-secondary-panels', () => {
     await expect(files.getByTestId('files-editor-tab')).toHaveCount(2)
     await expect(files.locator('[data-testid="files-editor-tab"][data-path="logo.png"]')).toHaveCount(2)
 
-    await files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]').click()
+    const indexJsTree = files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')
+    if (!(await indexJsTree.isVisible())) {
+      await files.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
+    }
+    await indexJsTree.click()
     await expect(files.getByTestId('files-editor-tab')).toHaveCount(2)
     await expect(files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')).toHaveClass(/active/)
     await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
@@ -451,6 +716,8 @@ test.describe('07-secondary-panels', () => {
     await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
     await expect.poll(monacoBg).toBe('rgb(23, 21, 15)')
 
+    await files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]').click()
+    await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
     await files.locator('.monaco-editor .margin').hover({ position: { x: 12, y: 40 } })
     await expect(files.getByTestId('files-line-comment-btn')).toBeVisible({ timeout: 5_000 })
     await files.getByTestId('files-line-comment-btn').click()
@@ -581,6 +848,27 @@ test.describe('07-secondary-panels', () => {
     await row.getByTestId('menu-delete').click()
     await expect(page.locator(`[data-session-id="${sessionId}"]`)).toHaveCount(0)
     log('open local terminal: delete terminal row OK')
+  })
+
+  test('terminal toolbox: toggle panel and double-click pastes command into shell', async () => {
+    await page.getByTestId('open-local-terminal-button').click()
+    await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 10_000 })
+    const term = page.getByTestId('terminal-body')
+    await term.click()
+
+    await page.getByTestId('terminal-toolbox-toggle').click()
+    await expect(page.getByTestId('terminal-toolbox-panel')).toBeVisible()
+
+    const marker = `toolbox-paste-${Date.now()}`
+    await page.getByTestId('terminal-toolbox-add').click()
+    await page.getByTestId('terminal-toolbox-add-label').fill('echo marker')
+    await page.getByTestId('terminal-toolbox-add-command').fill(`echo ${marker}`)
+    await page.getByTestId('terminal-toolbox-add-save').click()
+    await page.locator('.term-toolbox-row').filter({ hasText: 'echo marker' }).dblclick()
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => term.textContent(), { timeout: 15_000 }).toContain(marker)
+    await page.screenshot({ path: join(artifactsDir, '07-terminal-toolbox.png') })
+    log('terminal toolbox: paste + run OK')
   })
 
   // ── 5b. Companion terminal drawer: independent shell, open/close ───────
@@ -1049,6 +1337,108 @@ test.describe('07-secondary-panels', () => {
     log(`SSH ControlMaster: reconnect showed tmux content in ${Date.now() - tReconnect}ms`)
 
     await page.screenshot({ path: join(artifactsDir, '07-ssh-controlmaster.png') })
+  })
+})
+
+test.describe('07-secondary-panels (session profile files tree)', () => {
+  let electronApp: ElectronApplication
+  let page: Page
+  let userDataDir: string
+  let projectDir: string
+  const profileId = 'e2e-profile-multi-root'
+
+  test.beforeAll(async () => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-profile-files-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-profile-project-'))
+    for (const sub of ['src', 'Features', 'docs', 'e2e']) {
+      mkdirSync(join(projectDir, sub), { recursive: true })
+      writeFileSync(join(projectDir, sub, 'marker.txt'), `${sub}\n`)
+    }
+    seedSkipOnboarding(userDataDir)
+    seedE2eConfig(userDataDir, {
+      sessionProfiles: [
+        {
+          id: profileId,
+          name: 'Multi-root profile',
+          workspace: projectDir,
+          fileDirectories: ['src', 'Features', 'docs', 'e2e']
+        }
+      ]
+    })
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+  })
+
+  test.afterAll(async () => {
+    await electronApp.close().catch(() => undefined)
+  })
+
+  test('Files tab lists profile file directories as multi-root tree', async () => {
+    test.setTimeout(120_000)
+    await expect
+      .poll(async () => {
+        const profiles = await page.evaluate(async () => {
+          const c = await window.atelier.getConfig()
+          return c.sessionProfiles ?? []
+        })
+        return profiles.some((p: { id: string }) => p.id === profileId)
+      })
+      .toBe(true)
+
+    await page.getByTestId('new-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toBeVisible()
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('project-path').focus()
+    const profileRow = page.locator(`[data-testid="project-path-suggestion-profile-${profileId}"]`)
+    await expect(profileRow).toBeVisible({ timeout: 10_000 })
+    await profileRow.click()
+    await expect(page.getByTestId('project-path')).toHaveClass(/profile-selected/)
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    const sessionRow = page.locator('[data-testid="session-row"]').first()
+    await expect(sessionRow).toBeVisible({ timeout: 15_000 })
+    const sessionId = (await sessionRow.getAttribute('data-session-id')) as string
+    expect(sessionId).toBeTruthy()
+
+    await expect
+      .poll(async () => {
+        const rows = await page.evaluate(
+          async ({ id }) => window.atelier.debugQueryDb<{ profile_id: string | null }>(
+            'SELECT profile_id FROM sessions WHERE id = ?',
+            [id]
+          ),
+          { id: sessionId }
+        )
+        return rows[0]?.profile_id
+      })
+      .toBe(profileId)
+
+    await expect
+      .poll(async () => sessionRow.getAttribute('data-status'), { timeout: 90_000 })
+      .not.toMatch(/connecting|creating-worktree/)
+
+    await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 10_000 })
+    await page.getByTestId('tab-files').click()
+    await expect(page.getByTestId('files-tree')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('files-profile-bar')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('files-profile-bar')).toContainText('Multi-root profile')
+    await expect(page.locator('[data-testid="files-tree-root"]')).toHaveCount(4)
+    const tree = page.getByTestId('files-tree')
+    await expect(tree).toContainText('src')
+    await expect(tree).toContainText('Features')
+    await expect(tree).toContainText('docs')
+    await expect(tree).toContainText('e2e')
+    await expect(tree).toContainText('marker.txt')
+    await page.screenshot({ path: join(artifactsDir, '07-profile-files-multi-root.png') })
+
+    const location = page.getByTestId('files-location-input')
+    const workspaceRoot = await location.inputValue()
+    await location.click()
+    await location.fill(`${workspaceRoot}/src/marker.txt`)
+    await location.press('Enter')
+    await expect(page.getByTestId('files-editor-tab')).toHaveCount(1)
+    await expect(location).toHaveValue(`${workspaceRoot}/src/marker.txt`)
+    await expect(page.locator('[data-testid="file-tree-file"][data-path="src/marker.txt"]')).toHaveClass(/active/)
+    log('files panel: profile session location bar opens file by absolute path OK')
   })
 })
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, type ForwardedRef } from 'react'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { useConfig } from '../../hooks/useConfig'
@@ -41,17 +41,24 @@ function readTheme(): ITheme {
  * the companion terminal drawer — the two never share a pty id, so they're
  * genuinely independent shells.
  */
-export default function TerminalPanel({
-  ptyId,
-  cwd,
-  hostname,
-  active = true
-}: {
-  ptyId: string
-  cwd: string
-  hostname?: string | null
-  active?: boolean
-}): JSX.Element {
+export interface TerminalPanelHandle {
+  injectCommand: (command: string) => void
+}
+
+const TerminalPanel = forwardRef(function TerminalPanel(
+  {
+    ptyId,
+    cwd,
+    hostname,
+    active = true
+  }: {
+    ptyId: string
+    cwd: string
+    hostname?: string | null
+    active?: boolean
+  },
+  ref: ForwardedRef<TerminalPanelHandle>
+): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -148,6 +155,15 @@ export default function TerminalPanel({
     void window.atelier.ptyResize(ptyId, term.cols, term.rows)
   }, [config.theme, config.fontSizes.terminal, ptyId])
 
+  useImperativeHandle(ref, () => ({
+    injectCommand(command: string) {
+      const term = termRef.current
+      if (!term) return
+      term.paste(command)
+      term.focus()
+    }
+  }))
+
   return (
     <div
       ref={containerRef}
@@ -156,4 +172,6 @@ export default function TerminalPanel({
       data-testid={active ? 'terminal-body' : undefined}
     />
   )
-}
+})
+
+export default TerminalPanel

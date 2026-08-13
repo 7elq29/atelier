@@ -195,3 +195,13 @@ export function normalizeHintKeyChar(key: string): string | null {
   if (/^[a-zA-Z]$/.test(key)) return key.toLowerCase()
   return null
 }
+
+/** Don't treat editing chords as hint letters (Ctrl+C/V on macOS, ⌘C/V while hints are up). */
+export function shouldBypassHintKeydown(
+  e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey'>
+): boolean {
+  if (e.ctrlKey) return true
+  const k = e.key.toLowerCase()
+  if (e.metaKey && !e.altKey && (k === 'c' || k === 'v' || k === 'x' || k === 'a')) return true
+  return false
+}

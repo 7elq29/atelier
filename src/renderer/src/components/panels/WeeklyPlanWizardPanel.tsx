@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   WeeklyPlanCarrySuggestion,
   WeeklyPlanContextLine,
@@ -10,6 +10,7 @@ import { WeeklyPlanScheduleStep } from './weekly-plan/WeeklyPlanScheduleStep'
 import { syncScheduleEntries } from './weekly-plan/schedule-utils'
 import { dedupeContextLines } from '../../../../shared/weekly-plan-dedupe'
 import { isWeeklyPlanInstructionLine } from '../../../../shared/weekly-plan-filters'
+import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
 
 const WP_STEPS = [
   {
@@ -29,6 +30,11 @@ const WP_STEPS = [
   },
   {
     phase: 'Plan',
+    title: 'Weekly Big Three',
+    lead: 'Three outcomes — not vague tasks. At least one should be #q2 (important, not urgent).'
+  },
+  {
+    phase: 'Plan',
     title: 'Rejuvenation',
     lead: 'Three recovery commitments for the week (## REJUVENATION).'
   },
@@ -38,14 +44,9 @@ const WP_STEPS = [
     lead: "Backlog candidates for the week (## Ideas). Add carry-overs from last week's daily notes."
   },
   {
-    phase: 'Plan',
-    title: 'Weekly Big Three',
-    lead: 'Three outcomes — not vague tasks. At least one should be #q2 (important, not urgent).'
-  },
-  {
     phase: 'Schedule',
     title: 'Schedule the week',
-    lead: 'Drag items from Rejuvenation, Big Three, and Ideas onto the week board. #q2 timed blocks also populate Q2 Blocks.'
+    lead: 'Drag items from Big Three, Rejuvenation, and Ideas onto the week board. #q2 timed blocks also populate Q2 Blocks.'
   }
 ] as const
 
@@ -174,7 +175,7 @@ export default function WeeklyPlanWizardPanel({
   onClose,
   onCreated
 }: WeeklyPlanWizardPanelProps): JSX.Element {
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(() => Math.min(context.draftStep ?? 0, WP_STEPS.length - 1))
   const [data, setData] = useState<WeeklyPlanWizardData>(context.initialData)
   const [completedLines] = useState(() => dedupeContextLines([...context.lastWeekCompleted]))
   const [openLines] = useState(() => dedupeContextLines([...context.lastWeekOpen]))
@@ -185,6 +186,27 @@ export default function WeeklyPlanWizardPanel({
   const bigThreeSuggestionWeek = context.bigThreeSuggestionWeek
   const isoWeek = context.isoWeek
   const isWide = step >= 1 && step <= 6
+  const doneRef = useRef(done)
+  doneRef.current = done
+
+  const persistDraft = useCallback(async () => {
+    if (doneRef.current) return
+    const payload = { ...data, scheduleEntries: syncScheduleEntries(data) }
+    await window.atelier.saveWeeklyPlanDraft({ isoWeek, step, data: payload })
+  }, [data, isoWeek, step])
+
+  useEffect(() => {
+    if (done) return
+    const t = window.setTimeout(() => {
+      void persistDraft()
+    }, 400)
+    return () => window.clearTimeout(t)
+  }, [data, step, done, persistDraft])
+
+  const handleClose = useCallback(() => {
+    void persistDraft()
+    onClose()
+  }, [onClose, persistDraft])
 
   const incompleteLastBigThree = useMemo(
     () =>
@@ -266,6 +288,7 @@ export default function WeeklyPlanWizardPanel({
     try {
       const payload = { ...data, scheduleEntries: syncScheduleEntries(data) }
       await window.atelier.createWeeklyPlan({ isoWeek, data: payload })
+      await window.atelier.clearWeeklyPlanDraft(isoWeek)
       setDone(true)
       setStep(WP_STEPS.length)
       onCreated()
@@ -285,7 +308,7 @@ export default function WeeklyPlanWizardPanel({
 
   async function onNext(): Promise<void> {
     if (step >= WP_STEPS.length) {
-      onClose()
+      handleClose()
       return
     }
     if (step === WP_STEPS.length - 1) {
@@ -311,8 +334,9 @@ export default function WeeklyPlanWizardPanel({
       return (
         <WeeklyPlanScheduleStep
           isoWeek={isoWeek}
+          weekLabel={context.weekDateRange}
           data={data}
-          onChange={(scheduleEntries) => setData((d) => ({ ...d, scheduleEntries }))}
+          onDataChange={setData}
         />
       )
     }
@@ -404,6 +428,11 @@ export default function WeeklyPlanWizardPanel({
               value={data.retroReflect}
               placeholder="Reflection…"
               onChange={(e) => setData((d) => ({ ...d, retroReflect: e.target.value }))}
+              onKeyDown={(e) => {
+                handleEmacsTextareaKeyDown(e, data.retroReflect, (next) =>
+                  setData((d) => ({ ...d, retroReflect: next }))
+                )
+              }}
             />
           </div>
         </>
@@ -412,96 +441,6 @@ export default function WeeklyPlanWizardPanel({
       sideHint = `Tasks marked done in ${prevWeek}.`
       side = <ContextLineEditor lines={completedLines} done />
     } else if (step === 3) {
-      main = (
-        <div className="wp-field">
-          <label>Rejuvenation</label>
-          {data.rejuvenation.map((r, i) => (
-            <input
-              key={i}
-              className="input"
-              style={{ marginBottom: 8 }}
-              value={r}
-              placeholder={`Rest / recovery ${i + 1}`}
-              onChange={(e) => {
-                const rejuvenation = [...data.rejuvenation]
-                rejuvenation[i] = e.target.value
-                setData((d) => ({ ...d, rejuvenation }))
-              }}
-            />
-          ))}
-        </div>
-      )
-      sideTitle = 'Still open'
-      sideHint = 'Reference only — use Add to copy into Rejuvenation.'
-      side = (
-        <OpenTaskContextPanel
-          lines={openLines}
-          targetValues={mergedRejuvenationAndIdeas(data)}
-          onAdd={(line) => addOpenLineToList(line, 'rejuvenation')}
-        />
-      )
-    } else if (step === 4) {
-      main = (
-        <>
-          <div className="wp-carry">
-            <div className="wp-carry-head">Suggested carry-overs</div>
-            <div className="wp-carry-hint">From daily note bullets (notes only) in {prevWeek} — Add puts the line into Ideas.</div>
-            {context.carrySuggestions.map((c) => (
-              <CarryRow
-                key={c.id}
-                item={c}
-                added={listContainsTaskText(mergedRejuvenationAndIdeas(data), c.text)}
-                onAdd={() => {
-                  if (listContainsTaskText(mergedRejuvenationAndIdeas(data), c.text)) return
-                  setData((d) => {
-                    const ideas = [...d.ideas]
-                    const slot = ideas.findIndex((x) => !x.trim())
-                    const idx = slot >= 0 ? slot : ideas.length
-                    if (idx >= ideas.length) ideas.push(c.text)
-                    else ideas[idx] = c.text
-                    return { ...d, ideas }
-                  })
-                }}
-              />
-            ))}
-          </div>
-          <ul className="wp-idea-list">
-            {data.ideas.map((idea, i) => (
-              <li key={i}>
-                <span className="wp-idea-num">{i + 1}.</span>
-                <input
-                  className="input"
-                  value={idea}
-                  placeholder="Idea or candidate task…"
-                  onChange={(e) => {
-                    const ideas = [...data.ideas]
-                    ideas[i] = e.target.value
-                    setData((d) => ({ ...d, ideas }))
-                  }}
-                />
-              </li>
-            ))}
-          </ul>
-          <div className="wp-idea-actions">
-            <button type="button" className="btn btn-sm" onClick={() => setData((d) => ({ ...d, ideas: [...d.ideas, ''] }))}>
-              + Add idea
-            </button>
-            <span className="wp-tag-hint">
-              Obsidian tags inline: <code>#q2</code>, <code>#project/name</code>
-            </span>
-          </div>
-        </>
-      )
-      sideTitle = 'Still open'
-      sideHint = 'Open tasks & backlog — Add copies into Ideas (notes use Suggested carry-overs above).'
-      side = (
-        <OpenTaskContextPanel
-          lines={openLines}
-          targetValues={mergedRejuvenationAndIdeas(data)}
-          onAdd={(line) => addOpenLineToList(line, 'ideas')}
-        />
-      )
-    } else if (step === 5) {
       main = (
         <>
           <div className="wp-carry" data-testid="weekly-plan-big3-carry">
@@ -585,6 +524,96 @@ export default function WeeklyPlanWizardPanel({
           <ContextLineEditor lines={openLines} />
         </>
       )
+    } else if (step === 4) {
+      main = (
+        <div className="wp-field">
+          <label>Rejuvenation</label>
+          {data.rejuvenation.map((r, i) => (
+            <input
+              key={i}
+              className="input"
+              style={{ marginBottom: 8 }}
+              value={r}
+              placeholder={`Rest / recovery ${i + 1}`}
+              onChange={(e) => {
+                const rejuvenation = [...data.rejuvenation]
+                rejuvenation[i] = e.target.value
+                setData((d) => ({ ...d, rejuvenation }))
+              }}
+            />
+          ))}
+        </div>
+      )
+      sideTitle = 'Still open'
+      sideHint = 'Reference only — use Add to copy into Rejuvenation.'
+      side = (
+        <OpenTaskContextPanel
+          lines={openLines}
+          targetValues={mergedRejuvenationAndIdeas(data)}
+          onAdd={(line) => addOpenLineToList(line, 'rejuvenation')}
+        />
+      )
+    } else if (step === 5) {
+      main = (
+        <>
+          <div className="wp-carry">
+            <div className="wp-carry-head">Suggested carry-overs</div>
+            <div className="wp-carry-hint">From daily note bullets (notes only) in {prevWeek} — Add puts the line into Ideas.</div>
+            {context.carrySuggestions.map((c) => (
+              <CarryRow
+                key={c.id}
+                item={c}
+                added={listContainsTaskText(mergedRejuvenationAndIdeas(data), c.text)}
+                onAdd={() => {
+                  if (listContainsTaskText(mergedRejuvenationAndIdeas(data), c.text)) return
+                  setData((d) => {
+                    const ideas = [...d.ideas]
+                    const slot = ideas.findIndex((x) => !x.trim())
+                    const idx = slot >= 0 ? slot : ideas.length
+                    if (idx >= ideas.length) ideas.push(c.text)
+                    else ideas[idx] = c.text
+                    return { ...d, ideas }
+                  })
+                }}
+              />
+            ))}
+          </div>
+          <ul className="wp-idea-list">
+            {data.ideas.map((idea, i) => (
+              <li key={i}>
+                <span className="wp-idea-num">{i + 1}.</span>
+                <input
+                  className="input"
+                  value={idea}
+                  placeholder="Idea or candidate task…"
+                  onChange={(e) => {
+                    const ideas = [...data.ideas]
+                    ideas[i] = e.target.value
+                    setData((d) => ({ ...d, ideas }))
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+          <div className="wp-idea-actions">
+            <button type="button" className="btn btn-sm" onClick={() => setData((d) => ({ ...d, ideas: [...d.ideas, ''] }))}>
+              + Add idea
+            </button>
+            <span className="wp-tag-hint">
+              Obsidian tags inline: <code>#q2</code>, <code>#project/name</code>
+            </span>
+          </div>
+        </>
+      )
+      sideTitle = 'Still open'
+      sideHint = 'Open tasks & backlog — Add copies into Ideas (notes use Suggested carry-overs above).'
+      side = (
+        <OpenTaskContextPanel
+          lines={openLines}
+          targetValues={mergedRejuvenationAndIdeas(data)}
+          onAdd={(line) => addOpenLineToList(line, 'ideas')}
+        />
+      )
     } else {
       main = <p className="wp-lead">{s.lead}</p>
     }
@@ -652,7 +681,7 @@ export default function WeeklyPlanWizardPanel({
             className="btn btn-icon btn-sm"
             title="Close"
             data-testid="weekly-plan-close"
-            onClick={onClose}
+            onClick={handleClose}
           >
             ✕
           </button>

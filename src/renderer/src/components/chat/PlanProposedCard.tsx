@@ -1,37 +1,38 @@
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { PlanProposedContent } from '../../../../shared/chat-content'
 import type { PromptDecision } from '../../../../shared/session-types'
 import { createMarkdownComponents } from './MarkdownMessage'
+import ReviewPaneIconButton from './ReviewPaneIconButton'
+import ResolvedPromptFold from './ResolvedPromptFold'
+import { planFoldSummary } from './resolved-prompt-fold'
 
 /**
  * Plan card (05-interactive-prompts) — dedicated card for the SDK's
- * `ExitPlanMode` tool call, with Accept/Reject/Keep-planning actions that
- * resolve the REAL SDK-side plan approval: accepting calls
- * `query.setPermissionMode('default')` inside the harness (verified live —
- * `canUseTool` allowing the tool call alone does not exit plan mode),
- * rejecting/keep-planning deny the tool call with feedback text so Claude
- * stays in planning.
- *
- * Markup/classes copied verbatim from mocks/index.html's `.plan-card` block
- * (lines ~810-824): `.plan-head`, `.plan-body`, `.plan-actions` with
- * `.btn-allow`="Accept plan"/`.btn-deny`="Reject"/`.btn-keep-planning`, and
- * `.plan-resolved-note`.
+ * ExitPlanMode tool call. Resolved cards merge into the tool-sequence summary
+ * when embedded in an activity run; standalone cards keep their own fold row.
  */
 export default function PlanProposedCard({
   content,
   onRespond,
   onOpenPlanFile,
+  onReviewPlan,
+  reviewActive,
   workspaceRoot,
-  projectRoot
+  projectRoot,
+  embedded = false
 }: {
   content: PlanProposedContent
   onRespond: (decision: PromptDecision) => void
-  /** Opens `planFilePath` in the Files tab (07-secondary-panels). */
   onOpenPlanFile?: (planFilePath: string) => void
+  onReviewPlan?: () => void
+  reviewActive?: boolean
   workspaceRoot?: string
   projectRoot?: string
+  embedded?: boolean
 }): JSX.Element {
+  const [open, setOpen] = useState(false)
   const resolved = content.status !== 'pending'
   const planMarkdownComponents = createMarkdownComponents({
     workspaceRoot,
@@ -39,23 +40,8 @@ export default function PlanProposedCard({
     onOpenFileInFiles: onOpenPlanFile
   })
 
-  return (
-    <div className={`plan-card${resolved ? ' resolved' : ''}`} data-testid="plan-card" data-status={content.status}>
-      <div className="plan-head">
-        <span className="plan-head-title">
-          <span aria-hidden="true">▤</span> Proposed plan
-        </span>
-        {content.planFilePath && onOpenPlanFile && (
-          <button
-            type="button"
-            className="btn btn-sm plan-open-in-files"
-            data-testid="plan-open-in-files"
-            onClick={() => onOpenPlanFile(content.planFilePath!)}
-          >
-            Open in Files
-          </button>
-        )}
-      </div>
+  const planBody = (
+    <>
       <div className="plan-body" data-testid="plan-body">
         <div className="md-body">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={planMarkdownComponents}>
@@ -63,6 +49,86 @@ export default function PlanProposedCard({
           </ReactMarkdown>
         </div>
       </div>
+      <div className="plan-resolved-note" data-testid="plan-resolved-note">
+        {content.status === 'accepted' && 'Plan accepted — Claude is proceeding.'}
+        {content.status === 'rejected' && 'Plan rejected.'}
+        {content.status === 'keep_planning' && 'Asked Claude to keep planning.'}
+        {content.status === 'expired' && 'This request expired — the turn ended before you could respond.'}
+      </div>
+    </>
+  )
+
+  const resolvedBody = (
+    <div
+      className={`plan-card resolved open${reviewActive ? ' response-review-selected' : ''}`}
+      data-testid="plan-card"
+      data-status={content.status}
+    >
+      <div className="plan-head">
+        <span className="plan-head-title">
+          <span aria-hidden="true">▤</span> Proposed plan
+        </span>
+        {onReviewPlan ? (
+          <ReviewPaneIconButton
+            title="Review plan"
+            testId="plan-review-button"
+            active={reviewActive}
+            onClick={onReviewPlan}
+          />
+        ) : null}
+      </div>
+      {planBody}
+    </div>
+  )
+
+  if (resolved) {
+    if (embedded) return resolvedBody
+    return (
+      <ResolvedPromptFold
+        testId="plan-card"
+        summaryTestId="plan-resolved-summary"
+        summary={planFoldSummary(content)}
+        open={open}
+        onToggle={() => setOpen((v) => !v)}
+        status={content.status}
+        headExtra={
+          onReviewPlan ? (
+            <span className="prompt-fold-head-extra" onClick={(e) => e.stopPropagation()}>
+              <ReviewPaneIconButton
+                title="Review plan"
+                testId="plan-review-button"
+                active={reviewActive}
+                onClick={onReviewPlan}
+              />
+            </span>
+          ) : null
+        }
+      >
+        {resolvedBody}
+      </ResolvedPromptFold>
+    )
+  }
+
+  return (
+    <div
+      className={`plan-card${reviewActive ? ' response-review-selected' : ''}`}
+      data-testid="plan-card"
+      data-status={content.status}
+    >
+      <div className="plan-head">
+        <span className="plan-head-title">
+          <span aria-hidden="true">▤</span> Proposed plan
+        </span>
+        {onReviewPlan ? (
+          <ReviewPaneIconButton
+            title="Review plan"
+            testId="plan-review-button"
+            active={reviewActive}
+            onClick={onReviewPlan}
+          />
+        ) : null}
+      </div>
+      {planBody}
       <div className="plan-actions" data-testid="plan-actions">
         <button
           type="button"
@@ -88,12 +154,6 @@ export default function PlanProposedCard({
         >
           Keep planning
         </button>
-      </div>
-      <div className="plan-resolved-note" data-testid="plan-resolved-note">
-        {content.status === 'accepted' && 'Plan accepted — Claude is proceeding.'}
-        {content.status === 'rejected' && 'Plan rejected.'}
-        {content.status === 'keep_planning' && 'Asked Claude to keep planning.'}
-        {content.status === 'expired' && 'This request expired — the turn ended before you could respond.'}
       </div>
     </div>
   )

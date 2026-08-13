@@ -48,3 +48,8 @@ export function remoteCdTarget(cwd: string): string {
   }
   return shQuote(cwd)
 }
+
+/** Remote path for cat/base64/redirection — same ~ handling as {@link remoteCdTarget}. */
+export function remoteFilePath(path: string): string {
+  return remoteCdTarget(path)
+}

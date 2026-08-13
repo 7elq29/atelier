@@ -5,10 +5,11 @@
  * worktree at `<worktreeRoot>/<sessionId>` (default `~/.atelier/worktrees/<id>`)
  * on a fresh branch `atelier-<sessionId-prefix>`. Claude Code runs inside
  * that path instead of the main project root. The worktree and its branch
- * are cleaned up when the session is deleted.
+ * are cleaned up when the session is closed or deleted.
  *
- * For remote (devpod) sessions, git commands are prefixed with
- * `ssh <hostname>` so they run on the remote host.
+ * For remote (devpod) sessions, git commands run over SSH using the same
+ * `cd $HOME/... && git …` shell pattern as git-core (tilde paths must not
+ * be passed raw to `git -C`).
  */
 
 import { execFile as _execFile, spawn } from 'node:child_process'
@@ -17,6 +18,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { logger } from '../logger'
 import { SSH_REMOTE_OPTS } from '../ssh-exec'
+import { remoteCdTarget, shQuote } from '../shell-quote'
 import { sessionWorktreePath } from '../../shared/worktree-path'
 import { expandTildePath } from '../../shared/project-path-autocomplete'
 
@@ -32,13 +34,17 @@ export class WorktreeError extends Error {
 
 const SSH_GIT_OPTS = SSH_REMOTE_OPTS
 
-/** 5 min timeout for all SSH git calls — worktree add on large repos can take several minutes. */
-const SSH_EXEC_TIMEOUT_MS = 5 * 60_000
+/** Short timeout for quick SSH git helpers (mkdir, remove, realpath). Worktree creation has no timeout. */
+const SSH_QUICK_TIMEOUT_MS = 5 * 60_000
 
 /** Parse an integer percentage from a `git worktree add` progress line (stderr). */
 function parseGitProgress(text: string): number | null {
   const m = text.match(/(?:Updating|Checking out) files:\s+(\d+)%/)
   return m ? parseInt(m[1], 10) : null
+}
+
+function resolveRepoPath(projectPath: string, homeDir: string): string {
+  return expandTildePath(projectPath, homeDir)
 }
 
 /**
@@ -50,7 +56,7 @@ function spawnWithProgress(
   cmd: string,
   args: string[],
   onProgress: ((pct: number) => void) | undefined,
-  timeoutMs: number
+  timeoutMs?: number
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] })
@@ -74,19 +80,22 @@ function spawnWithProgress(
     child.stdout?.on('data', handleChunk)
     child.stderr?.on('data', handleChunk)
 
-    const timer = setTimeout(() => {
-      child.kill()
-      reject(new Error(`Command timed out after ${timeoutMs}ms: ${cmd} ${args.join(' ')}`))
-    }, timeoutMs)
+    const timer =
+      timeoutMs != null && timeoutMs > 0
+        ? setTimeout(() => {
+            child.kill()
+            reject(new Error(`Command timed out after ${timeoutMs}ms: ${cmd} ${args.join(' ')}`))
+          }, timeoutMs)
+        : undefined
 
     child.on('close', (code) => {
-      clearTimeout(timer)
+      if (timer) clearTimeout(timer)
       if (code === 0) resolve()
       else reject(new Error(`Command failed (exit ${code}): ${cmd} ${args.slice(-6).join(' ')}\n${output.slice(-500)}`))
     })
 
     child.on('error', (err) => {
-      clearTimeout(timer)
+      if (timer) clearTimeout(timer)
       reject(err)
     })
   })
@@ -95,9 +104,10 @@ function spawnWithProgress(
 async function ensureWorktreeRootExists(worktreeRoot: string, homeDir: string, hostname?: string): Promise<void> {
   const absRoot = expandTildePath(worktreeRoot, homeDir)
   if (hostname) {
-    await execFile('ssh', [...SSH_GIT_OPTS, hostname, 'mkdir', '-p', absRoot], {
+    const remoteCmd = `mkdir -p ${remoteCdTarget(absRoot)}`
+    await execFile('ssh', [...SSH_GIT_OPTS, hostname, '--', remoteCmd], {
       encoding: 'utf8',
-      timeout: SSH_EXEC_TIMEOUT_MS
+      timeout: SSH_QUICK_TIMEOUT_MS
     })
   } else {
     mkdirSync(absRoot, { recursive: true })
@@ -108,7 +118,7 @@ async function ensureWorktreeRootExists(worktreeRoot: string, homeDir: string, h
  * Creates a git worktree for a session.
  *
  * For local sessions: runs `git -C <projectPath> worktree add <worktreePath> -b <branch>`.
- * For remote sessions: runs `ssh <hostname> git -C <projectPath> worktree add <worktreePath> -b <branch>`.
+ * For remote sessions: runs `ssh <hostname> 'cd … && git worktree add …'`.
  * Returns the absolute worktree path on success.
  * Throws `WorktreeError` if `git worktree add` fails — callers should surface
  * this as a user-visible error.
@@ -124,20 +134,17 @@ export async function createWorktree(
   await ensureWorktreeRootExists(worktreeRoot, homeDir, hostname)
   const worktreePath = sessionWorktreePath(worktreeRoot, sessionId, homeDir)
   const branch = `atelier-${sessionId.slice(0, 8)}`
+  const repoPath = resolveRepoPath(projectPath, homeDir)
 
-  logger.info('worktree: creating', { projectPath, worktreePath, branch, worktreeRoot, hostname })
+  logger.info('worktree: creating', { projectPath, repoPath, worktreePath, branch, worktreeRoot, hostname })
 
   if (hostname) {
-    await spawnWithProgress(
-      'ssh',
-      [...SSH_GIT_OPTS, hostname, 'git', '-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch],
-      onProgress,
-      SSH_EXEC_TIMEOUT_MS
-    )
+    const remoteCmd = `cd ${remoteCdTarget(repoPath)} && git worktree add ${shQuote(worktreePath)} -b ${shQuote(branch)}`
+    await spawnWithProgress('ssh', [...SSH_GIT_OPTS, hostname, '--', remoteCmd], onProgress)
     const { stdout } = await execFile(
       'ssh',
-      [...SSH_GIT_OPTS, hostname, 'realpath', worktreePath],
-      { encoding: 'utf8', timeout: SSH_EXEC_TIMEOUT_MS }
+      [...SSH_GIT_OPTS, hostname, '--', `realpath ${shQuote(worktreePath)}`],
+      { encoding: 'utf8', timeout: SSH_QUICK_TIMEOUT_MS }
     )
     const resolved = stdout.trim()
     logger.info('worktree: created', { worktreePath: resolved, branch })
@@ -146,9 +153,8 @@ export async function createWorktree(
     mkdirSync(dirname(worktreePath), { recursive: true })
     await spawnWithProgress(
       'git',
-      ['-C', projectPath, 'worktree', 'add', worktreePath, '-b', branch],
-      onProgress,
-      SSH_EXEC_TIMEOUT_MS
+      ['-C', repoPath, 'worktree', 'add', worktreePath, '-b', branch],
+      onProgress
     )
     logger.info('worktree: created', { worktreePath, branch })
     return worktreePath
@@ -166,6 +172,7 @@ export async function removeWorktree(
   worktreePath: string,
   sessionId: string,
   projectPath: string,
+  homeDir: string,
   hostname?: string
 ): Promise<void> {
   if (!hostname && !existsSync(worktreePath)) {
@@ -174,14 +181,16 @@ export async function removeWorktree(
   }
 
   const branch = `atelier-${sessionId.slice(0, 8)}`
+  const repoPath = resolveRepoPath(projectPath, homeDir)
 
-  logger.info('worktree: removing', { worktreePath, projectPath, branch, hostname })
+  logger.info('worktree: removing', { worktreePath, projectPath, repoPath, branch, hostname })
 
   if (hostname) {
     try {
-      await execFile('ssh', [...SSH_GIT_OPTS, hostname, 'git', 'worktree', 'remove', worktreePath, '--force'], {
+      const remoteCmd = `git worktree remove ${shQuote(worktreePath)} --force`
+      await execFile('ssh', [...SSH_GIT_OPTS, hostname, '--', remoteCmd], {
         encoding: 'utf8',
-        timeout: SSH_EXEC_TIMEOUT_MS
+        timeout: SSH_QUICK_TIMEOUT_MS
       })
     } catch (err) {
       logger.warn('worktree: remote git worktree remove failed (ignored)', {
@@ -190,9 +199,10 @@ export async function removeWorktree(
       })
     }
     try {
-      await execFile('ssh', [...SSH_GIT_OPTS, hostname, 'git', '-C', projectPath, 'branch', '-D', branch], {
+      const remoteCmd = `cd ${remoteCdTarget(repoPath)} && git branch -D ${shQuote(branch)}`
+      await execFile('ssh', [...SSH_GIT_OPTS, hostname, '--', remoteCmd], {
         encoding: 'utf8',
-        timeout: SSH_EXEC_TIMEOUT_MS
+        timeout: SSH_QUICK_TIMEOUT_MS
       })
     } catch (err) {
       logger.warn('worktree: remote git branch -D failed (ignored)', {
@@ -203,7 +213,7 @@ export async function removeWorktree(
     }
   } else {
     try {
-      await execFile('git', ['worktree', 'remove', worktreePath, '--force'], { encoding: 'utf8' })
+      await execFile('git', ['-C', repoPath, 'worktree', 'remove', worktreePath, '--force'], { encoding: 'utf8' })
     } catch (err) {
       logger.warn('worktree: git worktree remove failed (ignored)', {
         worktreePath,
@@ -211,7 +221,7 @@ export async function removeWorktree(
       })
     }
     try {
-      await execFile('git', ['-C', projectPath, 'branch', '-D', branch], { encoding: 'utf8' })
+      await execFile('git', ['-C', repoPath, 'branch', '-D', branch], { encoding: 'utf8' })
     } catch (err) {
       logger.warn('worktree: git branch -D failed (ignored)', {
         branch,

@@ -2,6 +2,9 @@ import { app, BrowserWindow, ipcMain, Notification, nativeImage } from 'electron
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import './bootstrap-branding'
+import { augmentProcessPathForGuiLaunch } from './shell-path'
+
+augmentProcessPathForGuiLaunch()
 import { applyDockIconWhenReady, resolveAppIconPath } from './app-branding'
 import { loadConfig, saveConfig } from './config'
 import { closeDatabase, openDatabase } from './db'
@@ -35,13 +38,25 @@ let appQuitHarnessShutdownDone = false
 function createWindow(): BrowserWindow {
   const iconPath = resolveAppIconPath()
   const icon = iconPath ? nativeImage.createFromPath(iconPath) : undefined
+  const isMac = process.platform === 'darwin'
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
     title: 'Atelier',
     icon: icon && !icon.isEmpty() ? icon : undefined,
-    // Native title bar — desktop-only, no custom chrome.
-    titleBarStyle: 'default',
+    // Match --bg-app so the window is not pure black while the renderer loads.
+    backgroundColor: '#1c1a16',
+    ...(isMac
+      ? {
+          // Obsidian-style integrated title bar — renderer supplies drag region;
+          // macOS draws traffic lights in the inset (see TitleBar.tsx).
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 14, y: 12 }
+        }
+      : {
+          // Native title bar on Windows/Linux until custom overlay is specced.
+          titleBarStyle: 'default' as const
+        }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -54,10 +69,24 @@ function createWindow(): BrowserWindow {
     win.show()
   })
 
-  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return
+    logger.error('renderer failed to load', { errorCode, errorDescription, validatedURL })
+  })
+
+  const rendererDevUrl = process.env['ELECTRON_RENDERER_URL']
+  if (isDev && rendererDevUrl) {
+    logger.info('loading dev renderer', { url: rendererDevUrl })
+    void win.loadURL(rendererDevUrl)
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
+    const rendererFile = join(__dirname, '../renderer/index.html')
+    if (isDev) {
+      logger.warn(
+        'ELECTRON_RENDERER_URL unset in dev; loading built renderer from disk — use npm run dev (electron-vite) so Vite serves the UI',
+        { path: rendererFile }
+      )
+    }
+    void win.loadFile(rendererFile)
   }
 
   win.on('closed', () => {
@@ -177,8 +206,13 @@ app.on('window-all-closed', () => {
   // keep the app process alive indefinitely after the last window closes.
   ptyManager?.killAll()
   portManager?.killAll()
-  closeDatabase()
+  // On macOS the app keeps running with zero windows (standard Electron
+  // behavior). SessionStore still holds the Database handle from startup;
+  // closing it here leaves session:create hitting "connection is not open"
+  // when the user opens a new window from the dock. Close the DB only on
+  // actual quit (before-quit below).
   if (process.platform !== 'darwin') {
+    closeDatabase()
     app.quit()
   }
 })
@@ -187,11 +221,13 @@ app.on('before-quit', (event) => {
   if (appQuitHarnessShutdownDone) {
     ptyManager?.killAll()
     portManager?.killAll()
+    closeDatabase()
     return
   }
   if (!sessionManager) {
     ptyManager?.killAll()
     portManager?.killAll()
+    closeDatabase()
     return
   }
   event.preventDefault()
@@ -206,6 +242,7 @@ app.on('before-quit', (event) => {
       appQuitHarnessShutdownDone = true
       ptyManager?.killAll()
       portManager?.killAll()
+      closeDatabase()
       app.quit()
     })
 })

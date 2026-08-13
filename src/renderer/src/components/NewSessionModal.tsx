@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CreateSessionOptions, RemoteHostOption, SessionMode } from '../../../shared/session-types'
 import type { ProjectPathSuggestion } from '../../../shared/project-path-autocomplete'
+import { historyMatchesQuery } from '../../../shared/project-path-autocomplete'
+import { filterSessionProfiles } from '../../../shared/session-profile-resolve'
+import type { SessionProfile } from '../../../shared/session-profile-types'
 import { worktreeRootFromConfig } from '../../../shared/worktree-path'
 import type { AtelierConfig } from '../../../shared/config'
+import { handleEmacsTextareaKeyDown } from '../palette-input-keys'
 
 interface NewSessionModalProps {
   isOpen: boolean
@@ -10,60 +14,80 @@ interface NewSessionModalProps {
   config: AtelierConfig
   onClose: () => void
   onCreate: (opts: CreateSessionOptions) => Promise<void>
+  onManageProfiles?: () => void
 }
 
+type ProjectSelection =
+  | { kind: 'path'; value: string }
+  | { kind: 'profile'; profileId: string }
+
+type PickerItem =
+  | { kind: 'path'; value: string; label: string }
+  | { kind: 'profile'; profile: SessionProfile }
+  | { kind: 'directory'; suggestion: ProjectPathSuggestion }
+
 /**
- * New Session dialog (02-session-lifecycle): free-text project path (local or
- * remote), Terminal/Claude Code segmented mode, host picker (Local +
- * devpod-us-or, verified running via `devpod ps`), optional initial prompt
- * for Claude Code mode. Matches mocks/index.html's #modal-new-session.
+ * New Session dialog (02-session-lifecycle): free-text project path or saved
+ * profile (local or remote), Terminal/Claude Code segmented mode, host picker.
  */
-export default function NewSessionModal({ isOpen, hosts, config, onClose, onCreate }: NewSessionModalProps): JSX.Element | null {
-  const [projectPath, setProjectPath] = useState('')
+export default function NewSessionModal({
+  isOpen,
+  hosts,
+  config,
+  onClose,
+  onCreate,
+  onManageProfiles
+}: NewSessionModalProps): JSX.Element | null {
+  const [selection, setSelection] = useState<ProjectSelection>({ kind: 'path', value: '' })
   const [mode, setMode] = useState<SessionMode>('claude-code')
   const [hostId, setHostId] = useState<string>('local')
   const [prompt, setPrompt] = useState('')
-  const [planMode, setPlanMode] = useState(false)
   const [useWorktree, setUseWorktree] = useState(false)
   const [creating, setCreating] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [recentPaths, setRecentPaths] = useState<string[]>([])
-  const [suggestions, setSuggestions] = useState<ProjectPathSuggestion[]>([])
-  const [suggestionIdx, setSuggestionIdx] = useState(0)
+  const [directorySuggestions, setDirectorySuggestions] = useState<ProjectPathSuggestion[]>([])
+  const [pickerIdx, setPickerIdx] = useState(0)
   const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const suggestGenRef = useRef(0)
+
+  const profiles = config.sessionProfiles ?? []
+  const selectedProfile =
+    selection.kind === 'profile' ? profiles.find((profile) => profile.id === selection.profileId) ?? null : null
+  const pathQuery = selection.kind === 'path' ? selection.value : ''
+  const isRemote = hostId !== 'local'
+  const worktreeRootLabel = worktreeRootFromConfig(config)
 
   useEffect(() => {
     if (isOpen) {
       setMode('claude-code')
       setHostId('local')
       setPrompt('')
-      setPlanMode(false)
       setUseWorktree(false)
       setCreating(false)
       setErrorMessage(null)
-      setSuggestions([])
-      setSuggestionIdx(0)
+      setDirectorySuggestions([])
+      setPickerIdx(0)
     }
   }, [isOpen])
 
   useEffect(() => {
     if (!isOpen) return
     let cancelled = false
-    setProjectPath('')
+    setSelection({ kind: 'path', value: '' })
     setRecentPaths([])
     window.atelier
       .listRecentProjectPaths(hostId)
       .then((paths) => {
         if (!cancelled) {
           setRecentPaths(paths)
-          setProjectPath(paths[0] ?? '')
+          setSelection({ kind: 'path', value: paths[0] ?? '' })
         }
       })
       .catch(() => {
         if (!cancelled) {
           setRecentPaths([])
-          setProjectPath('')
+          setSelection({ kind: 'path', value: '' })
         }
       })
     return () => {
@@ -71,50 +95,90 @@ export default function NewSessionModal({ isOpen, hosts, config, onClose, onCrea
     }
   }, [isOpen, hostId])
 
-  function scheduleSuggestions(query: string): void {
+  function scheduleDirectorySuggestions(query: string): void {
+    if (selection.kind === 'profile') {
+      setDirectorySuggestions([])
+      return
+    }
     if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current)
     suggestTimerRef.current = setTimeout(() => {
       const gen = ++suggestGenRef.current
       void window.atelier.suggestProjectPaths(hostId, query).then((items) => {
         if (gen !== suggestGenRef.current) return
-        setSuggestions(items)
-        setSuggestionIdx(0)
+        setDirectorySuggestions(items.filter((item) => item.kind === 'directory'))
+        setPickerIdx(0)
       })
     }, 120)
   }
 
   useEffect(() => {
     if (!isOpen) return
-    scheduleSuggestions(projectPath)
+    scheduleDirectorySuggestions(pathQuery)
     return () => {
       if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current)
     }
-  }, [isOpen, hostId, projectPath])
+  }, [isOpen, hostId, pathQuery, selection.kind])
 
-  function acceptSuggestion(item: ProjectPathSuggestion): void {
-    setProjectPath(item.value)
-    setSuggestions([])
-    scheduleSuggestions(item.value)
-  }
+  const filteredRecentPaths = useMemo(
+    () => recentPaths.filter((path) => historyMatchesQuery(path, pathQuery)),
+    [recentPaths, pathQuery]
+  )
+  const filteredProfiles = useMemo(
+    () => filterSessionProfiles(profiles, pathQuery),
+    [profiles, pathQuery]
+  )
+
+  const pickerItems = useMemo((): PickerItem[] => {
+    const items: PickerItem[] = []
+    for (const path of filteredRecentPaths) {
+      items.push({ kind: 'path', value: path, label: path })
+    }
+    for (const suggestion of directorySuggestions) {
+      items.push({ kind: 'directory', suggestion })
+    }
+    for (const profile of filteredProfiles) {
+      items.push({ kind: 'profile', profile })
+    }
+    return items
+  }, [filteredRecentPaths, directorySuggestions, filteredProfiles])
+
+  useEffect(() => {
+    if (pickerIdx >= pickerItems.length) setPickerIdx(0)
+  }, [pickerIdx, pickerItems.length])
 
   if (!isOpen) return null
 
-  const trimmedProjectPath = projectPath.trim()
-  const isRemote = hostId !== 'local'
-  const worktreeRootLabel = worktreeRootFromConfig(config)
-  const showSuggestions = suggestions.length > 0
+  const resolvedProjectPath = selectedProfile?.workspace ?? pathQuery.trim()
+  const showPicker = pickerItems.length > 0 || profiles.length > 0 || onManageProfiles != null
+
+  function selectPath(path: string): void {
+    setSelection({ kind: 'path', value: path })
+    setDirectorySuggestions([])
+    scheduleDirectorySuggestions(path)
+  }
+
+  function selectProfile(profileId: string): void {
+    setSelection({ kind: 'profile', profileId })
+    setDirectorySuggestions([])
+  }
+
+  function acceptPickerItem(item: PickerItem): void {
+    if (item.kind === 'path') selectPath(item.value)
+    else if (item.kind === 'directory') selectPath(item.suggestion.value)
+    else selectProfile(item.profile.id)
+  }
 
   async function handleCreate(): Promise<void> {
-    if (!trimmedProjectPath || creating) return
+    if (!resolvedProjectPath || creating) return
     setCreating(true)
     setErrorMessage(null)
     try {
       await onCreate({
-        projectPath: trimmedProjectPath,
+        projectPath: resolvedProjectPath,
+        profileId: selectedProfile?.id,
         mode,
         hostId,
         prompt: mode === 'claude-code' && prompt.trim() ? prompt.trim() : undefined,
-        planMode: mode === 'claude-code' ? planMode : undefined,
         useWorktree: mode === 'claude-code' ? useWorktree : undefined
       })
       onClose()
@@ -126,13 +190,7 @@ export default function NewSessionModal({ isOpen, hosts, config, onClose, onCrea
   }
 
   return (
-    <div
-      className="modal-backdrop"
-      data-testid="new-session-modal"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
+    <div className="modal-backdrop" data-testid="new-session-modal">
       <div className="modal-dialog" style={{ width: 560 }}>
         <div className="modal-header">
           <h2>New Session</h2>
@@ -142,60 +200,124 @@ export default function NewSessionModal({ isOpen, hosts, config, onClose, onCrea
         </div>
         <div className="modal-body">
           <div className="project-path-field">
-            <div className="field-label">Project path</div>
+            <div className="field-label">Project</div>
             <input
-              className="input"
+              className={'input project-path-input' + (selectedProfile ? ' profile-selected' : '')}
               style={{ width: '100%' }}
               data-testid="project-path"
               placeholder={isRemote ? '/home/user/code/my-project' : '/Users/you/code/my-project'}
-              value={projectPath}
-              onChange={(e) => setProjectPath(e.target.value)}
+              value={selectedProfile ? selectedProfile.name : pathQuery}
+              onChange={(e) => {
+                setSelection({ kind: 'path', value: e.target.value })
+                scheduleDirectorySuggestions(e.target.value)
+              }}
               onKeyDown={(e) => {
-                if (showSuggestions) {
+                if (showPicker && pickerItems.length > 0) {
                   if (e.key === 'ArrowDown') {
                     e.preventDefault()
-                    setSuggestionIdx((i) => Math.min(i + 1, suggestions.length - 1))
+                    setPickerIdx((i) => Math.min(i + 1, pickerItems.length - 1))
                     return
                   }
                   if (e.key === 'ArrowUp') {
                     e.preventDefault()
-                    setSuggestionIdx((i) => Math.max(i - 1, 0))
+                    setPickerIdx((i) => Math.max(i - 1, 0))
                     return
                   }
-                  if (e.key === 'Tab' || (e.key === 'Enter' && suggestions.length > 0)) {
+                  if (e.key === 'Tab' || (e.key === 'Enter' && pickerItems.length > 0)) {
                     e.preventDefault()
-                    const item = suggestions[suggestionIdx]
-                    if (item) acceptSuggestion(item)
+                    const item = pickerItems[pickerIdx]
+                    if (item) acceptPickerItem(item)
                     return
                   }
-                }
-                if (e.key === 'Escape') {
-                  setSuggestions([])
                 }
               }}
             />
-            <datalist id="project-path-history" data-testid="project-path-history">
-              {recentPaths.map((path) => (
-                <option key={path} value={path} />
-              ))}
-            </datalist>
-            {showSuggestions && (
+            {showPicker && (
               <div className="project-path-suggestions" data-testid="project-path-suggestions">
-                {suggestions.map((item, i) => (
-                  <div
-                    key={`${item.kind}:${item.value}`}
-                    className={`mention-item${i === suggestionIdx ? ' selected' : ''}`}
-                    data-testid={item.kind === 'history' ? 'project-path-suggestion-history' : 'project-path-suggestion-dir'}
-                    onMouseDown={(ev) => {
-                      ev.preventDefault()
-                      acceptSuggestion(item)
-                    }}
-                    onMouseEnter={() => setSuggestionIdx(i)}
-                  >
-                    <span className="project-path-suggestion-label">{item.label}</span>
-                    {item.kind === 'history' && <span className="project-path-suggestion-tag">Recent</span>}
+                {filteredRecentPaths.length > 0 && (
+                  <div className="project-picker-section">Recent paths</div>
+                )}
+                {filteredRecentPaths.map((path) => {
+                  const idx = pickerItems.findIndex((item) => item.kind === 'path' && item.value === path)
+                  const selected =
+                    selection.kind === 'path' && selection.value === path ? ' selected' : ''
+                  return (
+                    <div
+                      key={`path:${path}`}
+                      className={`mention-item project-picker-item${selected}${idx === pickerIdx ? ' selected' : ''}`}
+                      data-testid="project-path-suggestion-history"
+                      onMouseDown={(ev) => {
+                        ev.preventDefault()
+                        selectPath(path)
+                      }}
+                      onMouseEnter={() => setPickerIdx(idx)}
+                    >
+                      <span className="project-path-suggestion-label">{path}</span>
+                      <span className="project-path-suggestion-tag">Recent</span>
+                    </div>
+                  )
+                })}
+                {directorySuggestions.map((suggestion) => {
+                  const idx = pickerItems.findIndex(
+                    (item) => item.kind === 'directory' && item.suggestion.value === suggestion.value
+                  )
+                  return (
+                    <div
+                      key={`dir:${suggestion.value}`}
+                      className={`mention-item project-picker-item${idx === pickerIdx ? ' selected' : ''}`}
+                      data-testid="project-path-suggestion-dir"
+                      onMouseDown={(ev) => {
+                        ev.preventDefault()
+                        selectPath(suggestion.value)
+                      }}
+                      onMouseEnter={() => setPickerIdx(idx)}
+                    >
+                      <span className="project-path-suggestion-label">{suggestion.label}</span>
+                    </div>
+                  )
+                })}
+                {profiles.length > 0 && <div className="project-picker-section">Profiles</div>}
+                {filteredProfiles.map((profile) => {
+                  const idx = pickerItems.findIndex(
+                    (item) => item.kind === 'profile' && item.profile.id === profile.id
+                  )
+                  const selected =
+                    selection.kind === 'profile' && selection.profileId === profile.id ? ' selected' : ''
+                  return (
+                    <div
+                      key={`profile:${profile.id}`}
+                      className={`mention-item project-picker-item${selected}${idx === pickerIdx ? ' selected' : ''}`}
+                      data-testid={`project-path-suggestion-profile-${profile.id}`}
+                      onMouseDown={(ev) => {
+                        ev.preventDefault()
+                        selectProfile(profile.id)
+                      }}
+                      onMouseEnter={() => setPickerIdx(idx)}
+                    >
+                      <span className="project-path-suggestion-label">{profile.name}</span>
+                      <span className="project-path-suggestion-sub">{profile.workspace}</span>
+                      <span className="project-path-suggestion-tag profile">Profile</span>
+                    </div>
+                  )
+                })}
+                {filteredProfiles.length === 0 && profiles.length > 0 && pathQuery.trim() && (
+                  <div className="project-picker-empty">No matching profiles</div>
+                )}
+                {onManageProfiles && (
+                  <div className="project-picker-footer">
+                    <button
+                      type="button"
+                      className="project-picker-manage"
+                      data-testid="project-path-manage-profiles"
+                      onMouseDown={(ev) => {
+                        ev.preventDefault()
+                        onManageProfiles()
+                      }}
+                    >
+                      Manage profiles…
+                    </button>
                   </div>
-                ))}
+                )}
               </div>
             )}
           </div>
@@ -258,6 +380,9 @@ export default function NewSessionModal({ isOpen, hosts, config, onClose, onCrea
                   placeholder="What should Claude do first?"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    handleEmacsTextareaKeyDown(e, prompt, setPrompt)
+                  }}
                 />
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 14.5, color: 'var(--text-secondary)' }}>
@@ -287,7 +412,7 @@ export default function NewSessionModal({ isOpen, hosts, config, onClose, onCrea
           <button
             className="btn btn-primary"
             data-testid="start-session-button"
-            disabled={!trimmedProjectPath || creating}
+            disabled={!resolvedProjectPath || creating}
             onClick={handleCreate}
           >
             {creating ? 'Starting…' : 'Start Session'}

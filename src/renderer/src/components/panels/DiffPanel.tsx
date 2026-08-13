@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CommitInfo, DiffFileChange, DiffSummary, WorktreeInfo } from '../../../../shared/panel-types'
 import Linkify, { openExternalLink } from './Linkify'
 import DiffFullFileEditor from './DiffFullFileEditor'
+import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
 
 type DiffSubTab = 'changes' | 'commits' | 'worktrees'
 type DiffFileViewMode = 'hunks' | 'full'
@@ -111,6 +112,9 @@ function DiffFileCard({
                       placeholder="Comment on this line…"
                       value={commentText}
                       onChange={(e) => onCommentTextChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        handleEmacsTextareaKeyDown(e, commentText, onCommentTextChange)
+                      }}
                       data-testid="diff-comment-input"
                     />
                     <div className="inline-comment-actions">

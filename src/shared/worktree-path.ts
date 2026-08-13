@@ -14,6 +14,11 @@ export function sessionWorktreePath(worktreeRoot: string, sessionId: string, hom
   return `${root}/${sessionId}`
 }
 
+/** Branch name created for a session worktree (`git worktree add -b …`). */
+export function sessionWorktreeBranch(sessionId: string): string {
+  return `atelier-${sessionId.slice(0, 8)}`
+}
+
 /** Display string for UI hints (keeps `~` when under user home). */
 export function formatWorktreeRootForDisplay(worktreeRoot: string, homeDir: string): string {
   const root = expandTildePath(worktreeRoot, homeDir)

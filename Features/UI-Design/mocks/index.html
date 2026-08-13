@@ -143,7 +143,7 @@
   }
   .daily-note-live-body {
     flex: 1; min-height: 0; overflow: auto; padding: 18px 24px 40vh; max-width: 70ch; margin: 0 auto; width: 100%;
-    font-family: var(--font-ui); font-size: var(--text-base); line-height: 1.65; color: var(--text-primary);
+    font-family: var(--font-ui); font-size: var(--font-agent-message-size, 15.5px); line-height: 1.65; color: var(--text-primary);
     outline: none; white-space: pre-wrap;
   }
   .daily-note-live-body:empty::before { content: attr(data-placeholder); color: var(--text-disabled); }
@@ -167,6 +167,45 @@
   .daily-vault-body .vault-ro { opacity: .55; }
   .daily-vault-body .vault-synced { color: var(--text-primary); background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 4px; margin: 0 -4px; padding: 0 4px; }
   #panel-daily-note .tab-content[data-tab="editor"] { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+  /* Weekly plan wizard + view (mirrors weekly-plan.css / WeeklyPlanViewPanel) */
+  .app-note-row--weekly .session-name { font-weight: 600; }
+  .app-note-row--weekly.active { background: var(--bg-active); }
+  #panel-weekly-plan, #panel-weekly-plan-view {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    --wp-cal-timeline-height: 420px;
+  }
+  .weekly-plan-scope-bar {
+    padding: 10px 20px; border-bottom: 1px solid var(--border-subtle);
+    font-size: 13px; color: var(--text-secondary); background: var(--bg-panel);
+  }
+  .weekly-plan-main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 20px 12px; box-sizing: border-box; }
+  .wp-progress { display: flex; gap: 5px; padding: 10px 0 0; }
+  .wp-progress-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-default); }
+  .wp-progress-dot.done { background: var(--accent); opacity: .45; }
+  .wp-progress-dot.active { background: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+  .wp-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 0 10px; }
+  .wp-split.is-schedule-step { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 24px; }
+  .wp-phase-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); font-weight: 600; margin-bottom: 6px; }
+  .wp-title { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+  .wp-schedule-preview { border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: var(--bg-sidebar); padding: 14px 16px; }
+  .wp-cal-matrix { display: grid; grid-template-columns: 72px repeat(7, minmax(0, 1fr)); grid-template-rows: auto auto minmax(var(--wp-cal-timeline-height), 1fr); gap: 8px 6px; }
+  .wp-cal-matrix-day-head, .wp-cal-matrix-unsched-label, .wp-cal-time-axis { font-size: 12px; text-align: center; color: var(--text-secondary); font-weight: 600; }
+  .wp-cal-matrix-unsched-label { font-size: 10px; text-transform: uppercase; align-self: start; padding-top: 8px; }
+  .wp-cal-matrix-unsched, .wp-cal-matrix-timeline { border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-panel); min-height: 44px; padding: 4px; box-sizing: border-box; }
+  .wp-cal-matrix-timeline { position: relative; height: var(--wp-cal-timeline-height); }
+  .wp-cal-time-axis { position: relative; height: var(--wp-cal-timeline-height); font-family: var(--font-mono); font-size: 10px; border-right: 1px solid var(--border-subtle); }
+  .wp-cal-time-axis span { position: absolute; right: 4px; transform: translateY(-50%); }
+  .wp-cal-block { position: absolute; left: 4px; right: 4px; padding: 4px 6px; border-radius: var(--r-sm); font-size: 11.5px; border: 1px solid var(--border-default); border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel-raised)); }
+  .wp-cal-block.is-q2 { border-left-color: var(--warning); }
+  .wp-cal-chip { display: inline-flex; padding: 6px 10px; border-radius: var(--r-sm); font-size: 12.5px; background: var(--bg-panel-raised); border: 1px solid var(--border-subtle); border-left: 3px solid var(--accent); }
+  .wp-footer { padding: 12px 0 16px; border-top: 1px solid var(--border-subtle); display: flex; gap: 8px; align-items: center; }
+  .wp-footer .wp-step-label { flex: 1; font-size: 12px; color: var(--text-tertiary); }
+  .wp-view-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 0 24px; display: flex; flex-direction: column; gap: 20px; }
+  .wp-view-section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-tertiary); margin: 0 0 10px; }
+  .wp-view-list { margin: 0; padding-left: 1.25rem; font-size: 15px; line-height: 1.5; }
+  .wp-view-list li::marker { color: var(--accent); font-weight: 600; }
+
   .sidebar-pane-label {
     font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
     color: var(--text-disabled);
@@ -270,6 +309,15 @@
   .turn-divider::before, .turn-divider::after { content: ""; flex: 1; height: 1px; background: var(--border-subtle); }
   .msg-user { align-self: flex-end; max-width: 72%; background: var(--accent-dim); border-radius: var(--r-lg) var(--r-lg) 4px var(--r-lg); padding: 11px 16px; font-size: 15.5px; }
   .msg-assistant { max-width: 84%; font-size: 15.5px; line-height: 1.55; }
+  .msg-assistant .md-body, .plan-body .md-body { white-space: normal; }
+  .msg-assistant .md-body :where(p), .plan-body .md-body :where(p) { margin: 0 0 6px; }
+  .msg-assistant .md-body :where(p:empty), .plan-body .md-body :where(p:empty) { display: none; }
+  .msg-assistant .md-body :where(h1, h2, h3, h4), .plan-body .md-body :where(h1, h2, h3, h4) { font-weight: 700; line-height: 1.3; margin: 10px 0 4px; }
+  .msg-assistant .md-body :where(ul, ol), .plan-body .md-body :where(ul, ol) { margin: 0 0 6px; padding-left: 22px; }
+  .msg-assistant .md-body :where(li), .plan-body .md-body :where(li) { margin: 0; }
+  .msg-assistant .md-body :where(li > p), .plan-body .md-body :where(li > p) { margin: 0; }
+  .msg-assistant .md-body :where(li + li), .plan-body .md-body :where(li + li) { margin-top: 2px; }
+  .msg-assistant .md-body :where(hr), .plan-body .md-body :where(hr) { border: none; border-top: 1px solid var(--border-subtle); margin: 8px 0; }
   .compaction-banner { align-self: center; font-size: 12.5px; color: var(--text-tertiary); background: var(--bg-panel-raised); border: 1px solid var(--border-subtle); border-radius: 100px; padding: 4px 12px; }
 
   /* Tool call ("code card"): a tinted strip with a colored left accent rule, no border box and
@@ -289,6 +337,21 @@
   .tool-body { display: none; }
   .tool-card.open .tool-body { display: block; }
   .tool-body pre { margin: 0; padding: 0 12px 12px; font-size: 14.5px; background: transparent; color: var(--text-secondary); max-height: 220px; overflow: auto; white-space: pre-wrap; line-height: 1.55; }
+
+  /* Aggregate row a finished tool-call sequence collapses into — plain expandable text. */
+  .tool-sequence-summary { max-width: 84%; cursor: pointer; user-select: none; }
+  .tool-sequence-summary-head { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; }
+  .tool-sequence-summary-text { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.45; }
+  .tool-sequence-summary:hover .tool-sequence-summary-text { color: var(--text-secondary); }
+  .tool-sequence-summary .tool-chev { font-size: 10px; color: var(--text-disabled); transition: transform .12s; }
+  .tool-sequence-summary.open .tool-chev { transform: rotate(90deg); }
+  .tool-sequence-summary-body { display: flex; flex-direction: column; gap: 8px; padding: 6px 0 4px 14px; }
+  .tool-sequence-summary-body .tool-card.thinking-block { background: transparent; border-left: none; border-radius: 0; max-width: 100%; }
+  .thinking-inline { max-width: 84%; display: inline-flex; align-items: center; padding: 2px 0; }
+  .thinking-inline-text { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.45; }
+  .thinking-inline-cursor { display: inline-block; width: 7px; height: 14px; background: var(--text-tertiary); vertical-align: middle; margin-left: 2px; animation: thinking-cursor-blink 1s steps(1) infinite; }
+  @keyframes thinking-cursor-blink { 50% { opacity: 0; } }
+
   .diff-view { font-family: var(--font-mono); font-size: 14.5px; }
   .diff-file-header { display: flex; align-items: center; gap: 8px; padding: 7px 11px; background: var(--bg-hover); font-family: var(--font-ui); font-size: 13.5px; }
   .diff-file-header .diff-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -344,7 +407,7 @@
      stand out consistently, not blend into the page the way a routine callout can. */
   .perm-card { border: 1px solid var(--warning); background: var(--bg-panel); border-radius: var(--r-lg); overflow: hidden; max-width: 84%; }
   .perm-head { display: flex; align-items: center; gap: 8px; padding: 13px 16px 8px; font-size: 13.5px; font-weight: 600; color: var(--warning); }
-  .perm-body { padding: 0 16px 15px; display: flex; flex-direction: column; gap: 9px; color: var(--text-primary); }
+  .perm-body { padding: 0 16px 15px; display: flex; flex-direction: column; gap: 9px; color: var(--text-primary); font-size: 13.5px; line-height: 1.45; }
   .perm-cmd { font-family: var(--font-mono); font-size: 14px; background: var(--bg-tint); color: var(--text-primary); padding: 7px 10px; border-radius: 6px; }
   .perm-actions { display: flex; align-items: center; gap: 8px; }
   .perm-remember { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 14.5px; color: var(--text-tertiary); }
@@ -356,9 +419,18 @@
   .perm-resolved.allowed { color: var(--accent); }
   .perm-resolved.denied { color: var(--danger); }
 
+  /* Resolved interactive prompts fold like tool-sequence-summary rows */
+  .prompt-fold .tool-sequence-summary-head { max-width: 84%; }
+  .prompt-fold-head-extra { display: inline-flex; flex-shrink: 0; }
+
   /* Plan mode — same theme-conditional elevation, no divider lines */
   .plan-card { border: 1px solid var(--elevation-border); background: var(--bg-panel); border-radius: var(--r-lg); overflow: hidden; max-width: 84%; box-shadow: var(--elevation-shadow); }
   .plan-head { display: flex; align-items: center; gap: 8px; padding: 13px 16px 6px; font-size: 13.5px; font-weight: 600; }
+  .plan-head-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+  .plan-head button[data-testid="plan-review-button"],
+  .plan-head .plan-review-btn { width: 22px; height: 22px; margin-left: auto; flex-shrink: 0; border: none; background: transparent; color: var(--text-tertiary); border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .plan-head button.review-active { color: var(--accent); background: var(--accent-dim); }
+  .plan-card.response-review-selected { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 4px; }
   .plan-body { padding: 4px 16px 15px; font-size: var(--text-base); line-height: 1.6; }
   .plan-body h4 { margin: 0 0 6px; font-size: 15px; }
   .plan-body ol { margin: 0; padding-left: 18px; }
@@ -373,11 +445,13 @@
      line above it (the variant lets whitespace do that job instead of a border-top) */
   .composer-wrap { padding: 12px 28px 20px; }
   .composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; }
-  .composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
-  .composer-box textarea { width: 100%; border: none; border-top-left-radius: var(--r-xl); border-top-right-radius: var(--r-xl); background: transparent; color: var(--text-primary); padding: 11px 13px 4px; font-family: var(--font-ui); font-size: var(--text-base); resize: none; outline: none; min-height: 22px; max-height: 160px; line-height: 1.5; overflow-y: auto; }
+  .composer-box:focus-within { border-color: var(--elevation-border); box-shadow: var(--elevation-shadow); }
+  .composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; overflow: visible; font-size: var(--composer-input-font-size, 15px); }
+  .composer-box textarea { width: 100%; border: none; border-top-left-radius: var(--r-xl); border-top-right-radius: var(--r-xl); background: transparent; color: var(--text-primary); padding: 11px 13px 4px; font-family: var(--font-ui); font-size: 1em; resize: none; outline: none; min-height: 22px; max-height: 160px; line-height: 1.35; overflow-y: auto; }
   .composer-box textarea::-webkit-scrollbar { width: 8px; }
   .composer-box textarea::-webkit-scrollbar-track { background: transparent; margin: 10px 0; }
   .composer-box textarea::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 4px; }
+  .composer-box textarea::-webkit-scrollbar-corner { background: transparent; }
   .composer-footer { display: flex; align-items: center; gap: 8px; padding: 8px 14px 12px; flex-wrap: wrap; }
   .composer-footer .spacer { flex: 1; }
   .footer-btn { display: flex; align-items: center; gap: 6px; font-size: 14.5px; color: var(--text-tertiary); background: transparent; border: none; cursor: pointer; padding: 5px 8px; border-radius: 6px; }
@@ -476,9 +550,44 @@
   .commit-detail-bar .commit-stat .ft-del { color: var(--danger); margin-left: 4px; }
 
   /* ===== Files tab ===== */
-  .files-body { flex: 1; display: flex; min-height: 0; }
-  .files-tree { width: 240px; flex-shrink: 0; border-right: 1px solid var(--border-subtle); overflow-y: auto; padding: 8px; }
+  .files-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .files-profile-bar {
+    flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+    border-bottom: 1px solid var(--border-subtle); font-size: 12px; color: var(--text-tertiary);
+    background: var(--bg-panel-raised);
+  }
+  .files-profile-bar .profile-badge {
+    font-weight: 500; color: var(--text-secondary);
+    padding: 2px 8px; border-radius: 100px; background: var(--accent-dim); color: var(--accent);
+  }
+  .files-body-inner { flex: 1; display: flex; min-height: 0; }
+  .files-tree { width: 260px; flex-shrink: 0; border-right: 1px solid var(--border-subtle); overflow-y: auto; padding: 8px; }
   .files-tree .ft-item.dir { color: var(--text-secondary); }
+  .files-tree-root { margin-bottom: 10px; }
+  .files-tree-root:last-child { margin-bottom: 0; }
+  .files-tree-root-label {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.02em;
+    color: var(--text-tertiary); text-transform: uppercase; padding: 4px 6px 6px;
+    border-bottom: 1px solid var(--border-subtle); margin-bottom: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .files-tree-root-label .root-kind { color: var(--accent); margin-right: 4px; }
+
+  /* Session profiles */
+  .profile-list { display: flex; flex-direction: column; gap: 8px; }
+  .profile-row {
+    display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+    border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-input);
+  }
+  .profile-row-main { flex: 1; min-width: 0; }
+  .profile-row-name { font-size: var(--text-sm); font-weight: 600; margin-bottom: 4px; }
+  .profile-row-meta { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .profile-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .file-dir-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .file-dir-row { display: flex; gap: 6px; align-items: center; }
+  .file-dir-row .input { flex: 1; font-family: var(--font-mono); font-size: 12.5px; }
+  #modal-profile-edit .modal-dialog { width: 520px; }
+  #modal-profile-edit { z-index: 60; }
 
   /* Context bar — fused inside composer-box (matches src/renderer Composer.tsx + global.css) */
   .context-bar {
@@ -555,6 +664,11 @@
   .chat-changes-file .fname {
     flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     font-family: var(--font-ui); font-size: 12px; color: var(--text-primary);
+  }
+  .chat-changes-plan-tag {
+    flex-shrink: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase;
+    padding: 1px 5px; border-radius: 3px;
+    background: var(--info-dim, rgba(127,168,193,0.15)); color: var(--info, #7fa8c1);
   }
   .chat-changes-stats {
     font-family: var(--font-mono); font-size: 11px; flex-shrink: 0;
@@ -684,7 +798,7 @@
   .term-toolbox-row-side { flex-shrink: 0; display: flex; align-items: center; gap: 0; }
   .term-toolbox-row-side .term-toolbox-icon-btn { width: 22px; height: 22px; }
   .term-toolbox-row-side .tb-remove:hover { color: var(--danger, #e06c75); }
-  .term-toolbox-row.editing { border-color: var(--accent); }
+  .term-toolbox-row.editing { border-color: var(--border-default); }
   .term-toolbox-edit-fields { display: flex; flex-direction: column; gap: 6px; width: 100%; }
   .term-toolbox-edit-fields input {
     width: 100%; box-sizing: border-box; font-size: 12px; padding: 6px 8px;
@@ -736,6 +850,23 @@
   /* New Session dialog specifics */
   #modal-new-session .modal-dialog { width: 560px; }
   .project-picker { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-input); cursor: pointer; }
+  .project-field { position: relative; }
+  .project-path-input { width: 100%; font-family: var(--font-mono); font-size: 13px; }
+  .project-path-input.profile-selected { color: var(--accent); font-family: var(--font-ui); font-weight: 500; }
+  .project-picker-menu {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 10;
+    background: var(--bg-panel); border: 1px solid var(--border-default); border-radius: var(--r-md);
+    box-shadow: var(--shadow-popover); max-height: 280px; overflow-y: auto; padding: 4px;
+  }
+  .project-picker-menu.hidden { display: none; }
+  .project-picker-section { padding: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-tertiary); }
+  .project-picker-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  .project-picker-item:hover, .project-picker-item.selected { background: var(--bg-active); }
+  .project-picker-item .pp-main { flex: 1; min-width: 0; }
+  .project-picker-item .pp-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-picker-item .pp-sub { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-picker-item .pp-tag { flex-shrink: 0; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 100px; background: var(--accent-dim); color: var(--accent); }
+  .project-picker-footer { border-top: 1px solid var(--border-subtle); margin-top: 4px; padding-top: 4px; }
   .segmented { display: flex; gap: 2px; background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 100px; padding: 2px; }
   .segmented button { flex: 1; padding: 7px 10px; border: none; background: transparent; color: var(--text-secondary); font-size: var(--text-sm); font-weight: 500; border-radius: 100px; cursor: pointer; }
   .segmented button.active { background: var(--bg-active); color: var(--text-primary); }
@@ -783,7 +914,7 @@
   input[type="range"] { accent-color: var(--accent); }
   .vault-field { display: flex; gap: 6px; }
   .vault-field input[type="text"] { flex: 1; background: var(--bg-input); border: 1px solid var(--border-default); border-radius: var(--r-md); color: var(--text-primary); font-family: var(--font-mono); font-size: 13.5px; padding: 7px 10px; outline: none; }
-  .vault-field input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .vault-field input[type="text"]:focus { border-color: var(--border-default); box-shadow: none; }
   .vault-field input[type="text"].unset { color: var(--text-tertiary); }
   .vault-section-label { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: -4px; }
 
@@ -815,6 +946,25 @@
   #modal-file-quick-open .cp-results { max-height: 280px; }
   .fqo-row-name--dir { color: var(--accent-strong); }
   .fqo-hint { padding: 8px 16px 12px; font-size: 11.5px; color: var(--text-tertiary); border-top: 1px solid var(--border-subtle); }
+  /* File quick open — multi-directory profile scope */
+  .fqo-profile-scope { display: flex; flex-direction: column; gap: 0; }
+  .fqo-profile-scope.hidden { display: none; }
+  .fqo-single-dir.hidden { display: none; }
+  .fqo-profile-row { display: flex; align-items: center; gap: 10px; padding: 10px 16px 6px; min-height: 36px; }
+  .fqo-profile-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .fqo-profile-badge { flex-shrink: 0; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 100px; background: var(--accent-dim); color: var(--accent); }
+  .fqo-scope-list { padding: 0 12px 10px; display: flex; flex-direction: column; gap: 2px; }
+  .fqo-scope-item {
+    display: flex; align-items: baseline; gap: 8px; padding: 5px 8px; border-radius: 6px;
+    font-size: 12px; color: var(--text-secondary); cursor: pointer;
+  }
+  .fqo-scope-item:hover { background: var(--bg-hover); }
+  .fqo-scope-item.active { background: var(--accent-dim); color: var(--text-primary); }
+  .fqo-scope-item .fqo-scope-kind { flex-shrink: 0; font-weight: 600; font-size: 11px; letter-spacing: 0.02em; color: var(--accent); min-width: 4.5rem; }
+  .fqo-scope-item .fqo-scope-path { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fqo-result-group { padding: 6px 16px 2px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-tertiary); background: var(--bg-panel-raised); border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); }
+  .fqo-result-group:first-child { border-top: none; }
+  .cp-item .fqo-root-tag { flex-shrink: 0; font-size: 10px; font-weight: 500; padding: 1px 5px; border-radius: 3px; background: var(--bg-hover); color: var(--text-tertiary); font-family: var(--font-mono); margin-right: 6px; }
 
   /* Onboarding */
   #modal-onboarding .modal-dialog { width: 480px; }
@@ -911,6 +1061,13 @@
   .task-chip.done span { text-decoration: line-through; color: var(--text-tertiary); }
   .task-chip button { margin-left: auto; opacity: 0; font-size: 11.5px; }
   .task-chip:hover button { opacity: 1; }
+  .dn-carry-item { display: flex; align-items: center; gap: 9px; font-size: 14px; padding: 7px 0; }
+  .dn-carry-item-main { flex: 1; min-width: 0; }
+  .dn-carry-item-text { min-width: 0; }
+  .dn-carry-item.done .dn-carry-item-text { text-decoration: line-through; color: var(--text-tertiary); }
+  .dn-carry-item-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .dn-carry-add, .dn-carry-dismiss { opacity: 0; }
+  .dn-carry-item:hover .dn-carry-add, .dn-carry-item:hover .dn-carry-dismiss { opacity: 1; }
   .tracker-mini { display: flex; align-items: center; gap: 10px; font-size: 15px; padding: 6px 0; }
 
   /* ===== Project selector ===== */
@@ -932,7 +1089,7 @@
   .session-menu-popup .sm-colors { display: flex; gap: 6px; padding: 6px 9px; }
   .session-menu-popup .sm-color-dot { width: 16px; height: 16px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
   .session-menu-popup .sm-color-dot.sel { border-color: var(--text-primary); }
-  .session-name-input { width: 100%; background: var(--bg-input); border: 1px solid var(--accent); border-radius: 4px; color: var(--text-primary); font-size: var(--text-sm); padding: 1px 4px; }
+  .session-name-input { width: 100%; background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 4px; color: var(--text-primary); font-size: var(--text-sm); padding: 1px 4px; }
 
   /* ===== History / closed sessions ===== */
   .history-empty-hint { font-size: 12.5px; color: var(--text-tertiary); padding: 4px 8px 10px; }
@@ -959,6 +1116,26 @@
   .msg-wrap:hover .msg-actions { display: flex; }
   .msg-actions button { width: 22px; height: 22px; border: none; background: transparent; color: var(--text-tertiary); border-radius: 5px; cursor: pointer; font-size: 13.5px; }
   .msg-actions button:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .msg-actions button.review-active { color: var(--accent); background: var(--accent-dim); }
+
+  /* Response review split (chat tab): readonly assistant message on the right with per-line comments → composer. */
+  .response-review-pane { flex-shrink: 0; border-left: 1px solid var(--border-subtle); display: flex; flex-direction: column; min-height: 0; background: var(--bg-panel); min-width: 0; }
+  .response-review-pane.hidden { display: none; }
+  .response-review-split-handle { width: 5px; flex-shrink: 0; cursor: col-resize; background: transparent; align-self: stretch; }
+  .response-review-split-handle.hidden { display: none; }
+  .response-review-split-handle:hover { background: var(--accent); }
+  .chat-body-row.response-review-open .tracker-rail { display: none; }
+  .chat-body-row.response-review-open .chat-main-col { min-width: 0; flex: 1 1 0; }
+  .response-review-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); font-size: 14px; font-weight: 600; flex-shrink: 0; }
+  .response-review-sub { font-size: 12px; font-weight: 400; color: var(--text-tertiary); margin-right: auto; min-width: 0; }
+  .response-review-body { flex: 1; overflow-y: auto; padding: 8px 0; min-height: 0; position: relative; }
+  .response-review-rendered-lines { padding: 4px 12px 12px; font-size: var(--font-agent-message-size); line-height: 1.6; user-select: text; }
+  .response-review-selection-chip { position: absolute; z-index: 3; display: flex; padding: 2px; background: var(--bg-panel-raised); border: 1px solid var(--border-default); border-radius: 7px; box-shadow: var(--shadow-panel); }
+  .response-review-selection-chip button { width: 22px; height: 22px; border: none; background: transparent; color: var(--text-tertiary); border-radius: 5px; cursor: pointer; font-size: 13.5px; }
+  .response-review-inline-comment { position: absolute; z-index: 3; margin: 0; left: 28px; right: 12px; max-width: 340px; }
+  .response-review-comment-popover { position: absolute; z-index: 3; margin: 0; left: 28px; right: 12px; max-width: 340px; border-color: color-mix(in srgb, var(--accent) 28%, var(--border-default)); background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel-raised)); }
+  .msg-wrap.response-review-selected { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 4px; border-radius: var(--r-md); }
+
   .speaking-indicator { font-size: 12.5px; color: var(--accent); margin-top: 4px; display: flex; align-items: center; gap: 5px; }
 
   /* ===== Readline hint ===== */
@@ -1030,6 +1207,7 @@
   <symbol id="icon-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 4 6 4 9s-1.4 6.4-4 9c-2.6-2.6-4-6-4-9s1.4-6.4 4-9z"/></symbol>
   <symbol id="icon-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></symbol>
   <symbol id="icon-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v18H6.5A2.5 2.5 0 0 0 4 22.5z"/><path d="M4 4.5v18"/></symbol>
+  <symbol id="icon-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></symbol>
   <symbol id="icon-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V19.6a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H4.4a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 6.05 7.4a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H10.5a1.7 1.7 0 0 0 1.04-1.56V1.4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V7.5a1.7 1.7 0 0 0 1.56 1.04h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.04z" transform="scale(0.8) translate(2.6,2.6)"/></symbol>
   <symbol id="icon-coin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.5c0-1.2 1.2-2 2.8-2s2.8.8 2.8 1.9-1.1 1.6-2.8 2-2.8.9-2.8 2 1.2 1.9 2.8 1.9 2.8-.8 2.8-2"/><line x1="12" y1="6" x2="12" y2="18"/></symbol>
   <symbol id="icon-sparkle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z"/></symbol>
@@ -1047,6 +1225,7 @@
   <symbol id="icon-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="15"/><polyline points="7 10 12 15 17 10"/><path d="M4 18h16"/></symbol>
   <symbol id="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
   <symbol id="icon-speaker" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9.5a3 3 0 0 1 0 5"/></symbol>
+  <symbol id="icon-review" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/><line x1="7" y1="8" x2="7" y2="8.01"/><line x1="17" y1="8" x2="17" y2="8.01"/><line x1="7" y1="12" x2="7" y2="16"/><line x1="17" y1="12" x2="17" y2="16"/></symbol>
   <symbol id="icon-shuffle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h4l9 12h3"/><path d="M4 18h4l9-12h3"/><polyline points="17 3 20 6 17 9"/><polyline points="17 15 20 18 17 21"/></symbol>
   <symbol id="icon-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4.5 4.5 0 0 0 6 .4l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.6 1.5"/><path d="M14 10a4.5 4.5 0 0 0-6-.4l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5"/></symbol>
   <symbol id="icon-puzzle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h4v2.2a1.8 1.8 0 1 0 0 3.6V11H9.2a1.8 1.8 0 1 1 0 4H13v6H3V13h2.2a1.8 1.8 0 1 0 0-4H3V3h6z"/></symbol>
@@ -1109,14 +1288,14 @@
           <div class="session-list session-list--natural" id="sessionList">
         <div class="group-header"><span class="chev">▾</span><span class="hide-on-collapse"><svg class="icon" width="14" height="14"><use href="#icon-pin"/></svg> Pinned</span><span class="count hide-on-collapse">1</span></div>
         <div class="group-body" data-group="pinned">
-          <div class="session-row active" data-session="s1" data-status="working" draggable="true" onclick="selectSession('s1')">
+          <div class="session-row active" data-session="s1" data-status="working" data-profile-id="p1" draggable="true" onclick="selectSession('s1')">
             <span class="session-indicator" title="Color: custom · Status: working">
               <span class="color-core" id="cdot-s1" style="background:var(--sc-green)"></span>
               <span class="status-badge status-working" id="sdot-s1"></span>
             </span>
             <div class="session-main hide-on-collapse">
               <div class="session-name" id="sname-s1">Fix auth token refresh</div>
-              <div class="session-meta"><span>gardenia-app</span><span>·</span><span class="row-tag">bug</span></div>
+              <div class="session-meta"><span>Gardenia dev</span><span>·</span><span class="row-tag">bug</span></div>
             </div>
             <span class="pin-icon hide-on-collapse" id="spin-s1"><svg class="icon" width="14" height="14"><use href="#icon-pin"/></svg></span>
             <button class="row-menu-btn hide-on-collapse" onclick="openSessionMenu(event,'s1')">⋯</button>
@@ -1194,6 +1373,19 @@
                 <div class="session-meta"><span class="row-tag">Obsidian vault</span></div>
               </div>
             </div>
+            <div
+              class="session-row app-note-row app-note-row--weekly hide-on-collapse"
+              id="weeklyPlanSidebarRow"
+              data-testid="weekly-plan-row"
+              onclick="selectWeeklyPlanView()"
+            >
+              <span class="session-indicator" aria-hidden="true"><svg class="icon" width="14" height="14"><use href="#icon-calendar"/></svg></span>
+              <div class="session-main">
+                <div class="session-name">Weekly plan</div>
+                <div class="session-meta"><span class="row-tag" id="weeklyPlanWeekTag">Aug 10 – 16, 2026</span></div>
+              </div>
+              <button type="button" class="row-menu-btn hide-on-collapse weekly-plan-create-btn" data-testid="weekly-plan-create-button" title="Create weekly plan" onclick="event.stopPropagation(); selectWeeklyPlanWizard();">+</button>
+            </div>
             <div id="appNotesUserList"></div>
             <div class="history-empty-hint hide-on-collapse" id="appNotesEmptyHint">Scratch notes live here — use + above.</div>
           </div>
@@ -1265,7 +1457,7 @@
 
             <div class="transcript" id="transcript-s1">
               <div class="msg-user">Can you figure out why the token refresh fails after ~55 minutes on remote sessions?</div>
-              <div class="msg-wrap"><div class="msg-actions"><button title="Copy" onclick="copyMessage(this)"><svg class="icon" width="14" height="14"><use href="#icon-copy"/></svg></button><button title="Speak" onclick="speakMessage(this)"><svg class="icon" width="14" height="14"><use href="#icon-speaker"/></svg></button></div><div class="msg-assistant">I'll look at the token refresh scheduling logic and reproduce this first.</div></div>
+              <div class="msg-wrap"><div class="msg-actions"><button title="Copy" onclick="copyMessage(this)"><svg class="icon" width="14" height="14"><use href="#icon-copy"/></svg></button><button title="Review response" onclick="openResponseReview('s1', this)"><svg class="icon" width="14" height="14"><use href="#icon-review"/></svg></button><button title="Speak" onclick="speakMessage(this)"><svg class="icon" width="14" height="14"><use href="#icon-speaker"/></svg></button></div><div class="msg-assistant">I'll look at the token refresh scheduling logic and reproduce this first.</div></div>
 
               <div class="tool-card" onclick="toggleTool(this, event)">
                 <div class="tool-head">
@@ -1309,6 +1501,47 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
               </div>
 
               <div class="turn-divider">2m 14s</div>
+              <div class="msg-wrap" data-review-id="failover-runbook">
+                <div class="msg-actions">
+                  <button title="Copy" onclick="copyMessage(this)"><svg class="icon" width="14" height="14"><use href="#icon-copy"/></svg></button>
+                  <button title="Review response" onclick="openResponseReview('s1', this)"><svg class="icon" width="14" height="14"><use href="#icon-review"/></svg></button>
+                  <button title="Speak" onclick="speakMessage(this)"><svg class="icon" width="14" height="14"><use href="#icon-speaker"/></svg></button>
+                </div>
+                <div class="msg-assistant">
+                  <div class="md-body">
+                    <p>Good — I now have the correct old runbook URL from the doc: <code>https://engwiki.uberinternal.com/display/LOG/Logging+Failover+Runbook</code></p>
+                    <p>For your question — I've read the full doc. Here's the goal and suggested steps:</p>
+                    <h3>Goal</h3>
+                    <p>Integrate logging failover mitigations with <strong>Outage Mitigator (OMG)</strong> so an on-call engineer can apply them in one command during an incident. Three levers:</p>
+                    <table>
+                      <thead><tr><th>Lever</th><th>Phase</th><th>How fast</th><th>Status</th></tr></thead>
+                      <tbody>
+                        <tr><td>Namespace sampling</td><td>Phase 1</td><td>~60s (Flip)</td><td>Ready to implement</td></tr>
+                        <tr><td>Throughput quota</td><td>Phase 2</td><td>~30 min (or seconds with breakglass)</td><td>Ready to implement</td></tr>
+                        <tr><td>Retention</td><td>Phase 3</td><td>Blocked</td><td>Blocked on Pinot team</td></tr>
+                      </tbody>
+                    </table>
+                    <p>Root cause from incident <strong>#117865</strong>: throughput quota is compute-based (baseline × CPU count). After failover, services absorb double traffic without scaling CPU — quota doesn't move and the cluster drowns while dashboards still show everyone under quota.</p>
+                    <hr/>
+                    <h3>Suggested Steps (13 tasks)</h3>
+                    <p><strong>Phase 1 — Sampling (no external dependencies)</strong></p>
+                    <ul>
+                      <li><strong>Task 1:</strong> Build the sampling OMG plan + plugin (<code>logging/sample_namespaces</code>)</li>
+                      <li><strong>Task 2:</strong> Make the plan snapshot prior state so revert script can restore</li>
+                      <li><strong>Task 3:</strong> Start Charter policy (long lead time — begin immediately)</li>
+                      <li><strong>Task 4:</strong> Write revert script (sampling only first; structured to add throughput/retention later)</li>
+                    </ul>
+                    <p><strong>Phase 2 — Throughput quota</strong></p>
+                    <ul>
+                      <li><strong>Task 5:</strong> Ship region-aware Flip block map (<code>compute_based_throughput_quota_blocked_namespace</code>)</li>
+                      <li><strong>Task 6:</strong> Build throughput cut OMG plan (calls <code>ThroughputQuotaUpdate</code>, persists prior values)</li>
+                      <li><strong>Task 7:</strong> Chain breakglass deploy node (otherwise cut takes 30 min–hours to propagate)</li>
+                      <li><strong>Task 8:</strong> Extend revert script to throughput (unblock after restore — ordering is critical)</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
               <div class="msg-assistant">Found it — <code>session-bootstrap.ts</code> passes an absolute timestamp where a relative duration is expected. Before I patch it, one question:</div>
 
               <div class="aq-card" id="aq1">
@@ -1365,7 +1598,10 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                 <div class="compaction-banner" style="margin:12px auto;">— context compacted (44k → 12k tokens) —</div>
                 <div class="msg-assistant">Tests pass. Here's a short plan for the remaining regression coverage:</div>
                 <div class="plan-card" id="plan1">
-                  <div class="plan-head"><svg class="icon" width="14" height="14"><use href="#icon-notepad"/></svg> Proposed plan</div>
+                  <div class="plan-head">
+                    <span class="plan-head-title"><svg class="icon" width="14" height="14"><use href="#icon-notepad"/></svg> Proposed plan</span>
+                    <button type="button" class="plan-review-btn" title="Review plan" onclick="openPlanReview('s1', this)"><svg class="icon" width="14" height="14"><use href="#icon-review"/></svg></button>
+                  </div>
                   <div class="plan-body">
                     <h4>Regression coverage</h4>
                     <ol>
@@ -1406,6 +1642,19 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                   <div class="rail-mini-badge" title="Subagents: 1 running"><svg class="icon" width="14" height="14"><use href="#icon-fan"/></svg><b>1</b></div>
                 </div>
               </div>
+              <div class="response-review-split-handle hidden" id="responseReviewHandle-s1" onmousedown="startResponseReviewResize(event, 's1')"></div>
+              <aside class="response-review-pane hidden" id="responseReview-s1" data-session="s1">
+                <div class="response-review-head">
+                  <span id="responseReviewTitle-s1">Response review</span>
+                  <span class="response-review-sub">Formatted · select text to comment</span>
+                  <button class="btn btn-icon btn-sm" title="Close review pane" onclick="closeResponseReview('s1')"><svg class="icon" width="14" height="14"><use href="#icon-close"/></svg></button>
+                </div>
+                <div class="response-review-body" id="responseReviewBody-s1">
+                  <div class="response-review-rendered-lines" id="responseReviewLines-s1"></div>
+                  <div class="response-review-selection-chip hidden" id="responseReviewSelection-s1"></div>
+                  <div id="responseReviewInline-s1"></div>
+                </div>
+              </aside>
             </div>
 
             <div class="composer-wrap" style="padding-top:0;">
@@ -1429,6 +1678,11 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                   <div class="chat-changes-file" onclick="openChangedFileInDiff('s1','token-manager.test.ts')">
                     <span class="fname">token-manager.test.ts</span>
                     <span class="chat-changes-stats"><span class="chat-changes-add">+14</span><span class="chat-changes-del">−3</span></span>
+                  </div>
+                  <div class="chat-changes-file chat-changes-file-plan" onclick="openPlanFromCap('s1')">
+                    <span class="fname">effervescent-imagining-treehouse.md</span>
+                    <span class="chat-changes-plan-tag">Plan</span>
+                    <span class="chat-changes-stats"><span class="chat-changes-add">+42</span></span>
                   </div>
                 </div>
               </div>
@@ -1542,12 +1796,33 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
         <!-- FILES TAB -->
         <div class="tab-content hidden" data-tab="files">
           <div class="files-body">
+            <div class="files-profile-bar" data-testid="files-profile-bar">
+              <span class="profile-badge">Gardenia dev</span>
+              <span>workspace <span style="font-family:var(--font-mono);">~/code/gardenia-app/.gardenia/worktrees/fix-token-refresh</span></span>
+              <span>·</span>
+              <span>3 file directories</span>
+            </div>
+            <div class="files-body-inner">
             <div class="files-tree" id="filesTree-s1">
-              <div class="ft-item dir"><svg class="icon" width="14" height="14"><use href="#icon-folder"/></svg> src</div>
-              <div class="ft-item dir" style="padding-left:20px;"><svg class="icon" width="14" height="14"><use href="#icon-folder"/></svg> auth</div>
-              <div class="ft-item active files-tree-file" style="padding-left:32px;" onclick="selectFile(this,'s1','token-manager.ts')"><svg class="icon" width="14" height="14"><use href="#icon-file"/></svg> token-manager.ts</div>
-              <div class="ft-item files-tree-file" style="padding-left:32px;" onclick="selectFile(this,'s1','session-bootstrap.ts')"><svg class="icon" width="14" height="14"><use href="#icon-file"/></svg> session-bootstrap.ts</div>
-              <div class="ft-item files-tree-file" style="padding-left:32px;" onclick="selectFile(this,'s1','token-manager.test.ts')"><svg class="icon" width="14" height="14"><use href="#icon-file"/></svg> token-manager.test.ts</div>
+              <div class="files-tree-root">
+                <div class="files-tree-root-label"><span class="root-kind">Workspace</span> ~/code/gardenia-app/.gardenia/worktrees/fix-token-refresh</div>
+                <div class="ft-item dir"><svg class="icon" width="14" height="14"><use href="#icon-folder"/></svg> src</div>
+                <div class="ft-item dir" style="padding-left:20px;"><svg class="icon" width="14" height="14"><use href="#icon-folder"/></svg> auth</div>
+                <div class="ft-item active files-tree-file" style="padding-left:32px;" onclick="selectFile(this,'s1','token-manager.ts')"><svg class="icon" width="14" height="14"><use href="#icon-file"/></svg> token-manager.ts</div>
+                <div class="ft-item files-tree-file" style="padding-left:32px;" onclick="selectFile(this,'s1','session-bootstrap.ts')"><svg class="icon" width="14" height="14"><use href="#icon-file"/></svg> session-bootstrap.ts</div>
+                <div class="ft-item files-tree-file" style="padding-left:32px;" onclick="selectFile(this,'s1','token-manager.test.ts')"><svg class="icon" width="14" height="14"><use href="#icon-file"/></svg> token-manager.test.ts</div>
+              </div>
+              <div class="files-tree-root">
+                <div class="files-tree-root-label"><span class="root-kind">Features</span> ~/code/gardenia-app/.gardenia/worktrees/fix-token-refresh/Features</div>
+                <div class="ft-item dir"><svg class="icon" width="14" height="14"><use href="#icon-folder"/></svg> UI-Design</div>
+                <div class="ft-item files-tree-file" style="padding-left:20px;" onclick="selectFile(this,'s1','session-profiles-spec.md')"><svg class="icon" width="14" height="14"><use href="#icon-file"/></svg> session-profiles/spec.md</div>
+              </div>
+              <div class="files-tree-root">
+                <div class="files-tree-root-label"><span class="root-kind">~/Documents/notes</span> ~/Documents/notes</div>
+                <div class="ft-item dir"><svg class="icon" width="14" height="14"><use href="#icon-folder"/></svg> daily</div>
+                <div class="ft-item files-tree-file" style="padding-left:20px;" onclick="selectFile(this,'s1','2026-08-11.md')"><svg class="icon" width="14" height="14"><use href="#icon-file"/></svg> 2026-08-11.md</div>
+                <div class="ft-item files-tree-file" style="padding-left:20px;" onclick="selectFile(this,'s1','token-refresh-debug.md')"><svg class="icon" width="14" height="14"><use href="#icon-file"/></svg> token-refresh-debug.md</div>
+              </div>
             </div>
             <div class="monaco-editor-wrap" id="monacoWrap-s1">
               <div class="editor-tabs-bar" id="editorTabs-s1"></div>
@@ -1563,6 +1838,7 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                 </div>
               </div>
               <div class="editor-statusbar" id="editorStatusbar-s1"></div>
+            </div>
             </div>
           </div>
         </div>
@@ -1800,6 +2076,95 @@ On branch main. nothing to commit, working tree clean.
         </div>
       </div>
 
+      <!-- ---------- Weekly plan wizard (guided review — mock schedule step) ---------- -->
+      <div class="session-panel hidden" id="panel-weekly-plan" data-panel="weekly-plan" data-testid="weekly-plan-panel">
+        <div class="weekly-plan-scope-bar">
+          Opens from the <strong>+</strong> on Weekly plan when this week&apos;s file is missing. Writes <code>02.weeklynotes/2026-W33.md</code> when you finish.
+        </div>
+        <div class="weekly-plan-main">
+          <div class="wp-progress" data-testid="weekly-plan-progress">
+            <span class="wp-progress-dot done"></span><span class="wp-progress-dot done"></span><span class="wp-progress-dot done"></span><span class="wp-progress-dot done"></span><span class="wp-progress-dot done"></span><span class="wp-progress-dot active"></span><span class="wp-progress-dot"></span>
+          </div>
+          <div class="wp-body">
+            <div class="wp-split is-schedule-step">
+              <div class="wp-split-main">
+                <div class="wp-phase-label">Schedule</div>
+                <h3 class="wp-title">Schedule the week</h3>
+                <p style="font-size:13px;color:var(--text-secondary);margin:0 0 12px;">Drag to a day&apos;s <strong>Unscheduled</strong> row or <strong>timeline</strong>.</p>
+                <div style="border:1px solid var(--border-subtle);border-radius:var(--r-md);padding:10px 12px;background:var(--bg-panel);">
+                  <h4 style="margin:0 0 8px;font-size:12px;color:var(--text-tertiary);text-transform:uppercase;">Big Three</h4>
+                  <span class="wp-cal-chip">Logging failover runbook #q2</span>
+                  <h4 style="margin:12px 0 8px;font-size:12px;color:var(--text-tertiary);text-transform:uppercase;">Rejuvenation</h4>
+                  <span class="wp-cal-chip">Clean the garden</span>
+                </div>
+              </div>
+              <aside class="wp-schedule-preview">
+                <div class="wp-schedule-preview-title">Aug 10 – 16, 2026</div>
+                <div class="wp-cal-matrix">
+                  <div class="wp-cal-matrix-corner"></div>
+                  <div class="wp-cal-matrix-day-head">Mon</div><div class="wp-cal-matrix-day-head">Tue</div><div class="wp-cal-matrix-day-head">Wed</div><div class="wp-cal-matrix-day-head">Thu</div><div class="wp-cal-matrix-day-head">Fri</div><div class="wp-cal-matrix-day-head">Sat</div><div class="wp-cal-matrix-day-head">Sun</div>
+                  <div class="wp-cal-matrix-unsched-label">Unscheduled</div>
+                  <div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div>
+                  <div class="wp-cal-time-axis"><span style="top:0%">07:00</span><span style="top:25%">11:00</span><span style="top:50%">14:00</span><span style="top:75%">18:00</span><span style="top:100%">21:00</span></div>
+                  <div class="wp-cal-matrix-timeline"><div class="wp-cal-block is-q2" style="top:28%;height:12%;">Logging failover runbook #q2</div></div>
+                  <div class="wp-cal-matrix-timeline"></div><div class="wp-cal-matrix-timeline"></div><div class="wp-cal-matrix-timeline"></div><div class="wp-cal-matrix-timeline"></div><div class="wp-cal-matrix-timeline"></div><div class="wp-cal-matrix-timeline"></div>
+                </div>
+              </aside>
+            </div>
+          </div>
+          <div class="wp-footer">
+            <button type="button" class="btn btn-sm" data-testid="weekly-plan-back">Back</button>
+            <span class="wp-step-label" data-testid="weekly-plan-step-label">Step 6 of 7</span>
+            <button type="button" class="btn btn-sm btn-primary" data-testid="weekly-plan-next">Continue</button>
+            <button type="button" class="btn btn-sm" data-testid="weekly-plan-close" onclick="selectSession('s1')">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------- Weekly plan view (existing note — Big Three, Rejuvenation, timeline) ---------- -->
+      <div class="session-panel hidden" id="panel-weekly-plan-view" data-panel="weekly-plan-view" data-testid="weekly-plan-view-panel">
+        <div class="weekly-plan-scope-bar">
+          Weekly plan <strong>Aug 10 – 16, 2026</strong> <span class="weekly-plan-iso-hint"> (2026-W33)</span> · <code>02.weeklynotes/2026-W33.md</code>
+        </div>
+        <div class="weekly-plan-main">
+          <div class="wp-view-body">
+            <section class="wp-view-section" data-testid="weekly-plan-view-big-three">
+              <h3 class="wp-view-section-title">Weekly Big Three</h3>
+              <ol class="wp-view-list">
+                <li>Logging failover runbook</li>
+                <li>Interview Preparation</li>
+                <li>Tune the exercise plan</li>
+              </ol>
+            </section>
+            <section class="wp-view-section" data-testid="weekly-plan-view-rejuvenation">
+              <h3 class="wp-view-section-title">Rejuvenation</h3>
+              <ol class="wp-view-list">
+                <li>Clean the garden</li>
+              </ol>
+            </section>
+            <section class="wp-view-section" data-testid="weekly-plan-view-schedule">
+              <h3 class="wp-view-section-title">Schedule</h3>
+              <div class="wp-split is-schedule-step is-embedded" data-testid="weekly-plan-view-timeline">
+                <aside class="wp-schedule-preview">
+                  <div class="wp-schedule-preview-head">
+                    <div class="wp-schedule-preview-title">Aug 10 – 16, 2026</div>
+                  </div>
+                <div class="wp-cal-matrix">
+                  <div class="wp-cal-matrix-corner"></div>
+                  <div class="wp-cal-matrix-day-head">Mon</div><div class="wp-cal-matrix-day-head">Tue</div><div class="wp-cal-matrix-day-head">Wed</div><div class="wp-cal-matrix-day-head">Thu</div><div class="wp-cal-matrix-day-head">Fri</div><div class="wp-cal-matrix-day-head">Sat</div><div class="wp-cal-matrix-day-head">Sun</div>
+                  <div class="wp-cal-matrix-unsched-label">Unscheduled</div>
+                  <div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div><div class="wp-cal-matrix-unsched"></div>
+                  <div class="wp-cal-time-axis"><span style="top:0%">07:00</span><span style="top:25%">11:00</span><span style="top:50%">14:00</span><span style="top:75%">18:00</span><span style="top:100%">21:00</span></div>
+                  <div class="wp-cal-matrix-timeline"><div class="wp-cal-block is-q2" data-testid="weekly-plan-cal-block" style="top:32%;height:10%;">Logging failover runbook #q2</div></div>
+                  <div class="wp-cal-matrix-timeline"></div><div class="wp-cal-matrix-timeline"></div><div class="wp-cal-matrix-timeline"></div><div class="wp-cal-matrix-timeline"></div><div class="wp-cal-matrix-timeline"></div><div class="wp-cal-matrix-timeline"></div>
+                </div>
+              </aside>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
       <!-- ---------- Machines view (workspace-mode: machines, mirrors Playground's DevMachineManager) ---------- -->
       <div class="machines-view hidden" id="machinesView">
         <div class="machines-topbar">
@@ -1880,7 +2245,33 @@ On branch main. nothing to commit, working tree clean.
           <div class="task-chip" draggable="true" ondragstart="dragStart(event)"><div class="tbox"></div><span>Reply to design review comments</span><button class="btn btn-icon btn-sm" onclick="this.closest('.task-chip').remove()">✕</button></div>
         </div>
       </div>
-      <div class="dn-resize-handle" onmousedown="startResize(event,'dnUnscheduledSection','dnTrackersSection')"></div>
+      <div class="dn-resize-handle" onmousedown="startResize(event,'dnUnscheduledSection','dnCarrySection')"></div>
+      <div class="dn-section" id="dnCarrySection" style="flex:1; display:flex; flex-direction:column; min-height:40px;">
+        <div class="dn-section-head">From Jul 29</div>
+        <div class="dn-section-body scroll-y" id="carryList" style="flex:1;">
+          <div class="dn-carry-item" data-carry-label="Finish API draft" oncontextmenu="carryContextMenu(event,this)">
+            <div class="dn-tbox" onclick="toggleCarryDone(this)"></div>
+            <div class="dn-carry-item-main">
+              <span class="dn-carry-item-text">Finish API draft</span>
+            </div>
+            <div class="dn-carry-item-actions">
+              <button type="button" class="btn btn-icon btn-sm dn-carry-add" title="Add to today" onclick="carryAddToday(this)">+</button>
+              <button type="button" class="btn btn-icon btn-sm dn-carry-dismiss" title="Dismiss" onclick="carryDismiss(this)">✕</button>
+            </div>
+          </div>
+          <div class="dn-carry-item" data-carry-label="Review Obsidian sync spec" oncontextmenu="carryContextMenu(event,this)">
+            <div class="dn-tbox" onclick="toggleCarryDone(this)"></div>
+            <div class="dn-carry-item-main">
+              <span class="dn-carry-item-text">Review Obsidian sync spec</span>
+            </div>
+            <div class="dn-carry-item-actions">
+              <button type="button" class="btn btn-icon btn-sm dn-carry-add" title="Add to today" onclick="carryAddToday(this)">+</button>
+              <button type="button" class="btn btn-icon btn-sm dn-carry-dismiss" title="Dismiss" onclick="carryDismiss(this)">✕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="dn-resize-handle" onmousedown="startResize(event,'dnCarrySection','dnTrackersSection')"></div>
       <div class="dn-section" id="dnTrackersSection" style="flex:1; display:flex; flex-direction:column; min-height:40px;">
         <div class="dn-section-head">Trackers</div>
         <div class="dn-section-body scroll-y" style="flex:1;">
@@ -1896,13 +2287,24 @@ On branch main. nothing to commit, working tree clean.
 </div>
 
 <!-- ===================== MODAL: NEW SESSION ===================== -->
-<div class="modal-backdrop hidden" id="modal-new-session" onclick="if(event.target===this) closeModal('modal-new-session')">
+<div class="modal-backdrop hidden" id="modal-new-session">
   <div class="modal-dialog">
     <div class="modal-header"><h2>New Session</h2><button class="btn btn-icon" onclick="closeModal('modal-new-session')">✕</button></div>
     <div class="modal-body">
-      <div>
+      <div class="project-field">
         <div class="field-label">Project</div>
-        <div class="project-picker"><span><svg class="icon" width="14" height="14"><use href="#icon-folder"/></svg></span><span style="flex:1;">~/code/gardenia-app</span><span style="font-size:11px;color:var(--text-tertiary);">recent ▾</span></div>
+        <input
+          class="input project-path-input"
+          id="newSessionProjectInput"
+          type="text"
+          data-testid="project-path"
+          placeholder="/Users/you/code/my-project"
+          autocomplete="off"
+          onfocus="openNewSessionProjectMenu()"
+          oninput="onNewSessionProjectInput()"
+          onkeydown="onNewSessionProjectKeydown(event)"
+        />
+        <div class="project-picker-menu hidden" id="newSessionProjectMenu"></div>
       </div>
       <div>
         <div class="field-label">Session type</div>
@@ -1931,7 +2333,7 @@ On branch main. nothing to commit, working tree clean.
       <div class="claude-only" id="claudeOnlySection">
         <div class="toggle-row">
           <div><div class="toggle-title">Use worktree</div><div class="toggle-sub">Isolated copy at &lt;project&gt;/.gardenia/worktrees/&lt;name&gt;</div></div>
-          <label class="switch"><input type="checkbox" checked /><span class="track"></span></label>
+          <label class="switch"><input type="checkbox" id="newSessionUseWorktree" checked onchange="renderNewSessionProjectDisplay()" /><span class="track"></span></label>
         </div>
         <div>
           <div class="field-label">Initial prompt <span style="color:var(--text-tertiary); font-weight:400;">(optional)</span></div>
@@ -1943,6 +2345,39 @@ On branch main. nothing to commit, working tree clean.
       <div style="flex:1;"></div>
       <button class="btn" onclick="closeModal('modal-new-session')">Cancel</button>
       <button class="btn btn-primary" onclick="createSession()">Start Session</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: SESSION PROFILE EDIT ===================== -->
+<div class="modal-backdrop hidden" id="modal-profile-edit" onclick="if(event.target===this) closeModal('modal-profile-edit')">
+  <div class="modal-dialog">
+    <div class="modal-header"><h2 id="profileEditTitle">Edit profile</h2><button class="btn btn-icon" onclick="closeModal('modal-profile-edit')">✕</button></div>
+    <div class="modal-body">
+      <div>
+        <div class="field-label">Name</div>
+        <input class="input" id="profileEditName" placeholder="e.g. Gardenia dev" />
+      </div>
+      <div style="margin-top:12px;">
+        <div class="field-label">Workspace location</div>
+        <div style="display:flex; gap:6px;">
+          <input class="input" id="profileEditWorkspacePath" type="text" value="~/code/gardenia-app" placeholder="~/code/my-project" style="flex:1; font-family:var(--font-mono); font-size:13.5px;" spellcheck="false" />
+          <button type="button" class="btn btn-sm" onclick="browseProfileWorkspace()">Browse…</button>
+        </div>
+        <div class="field-hint">Terminal, diff, and agent cwd use this path.</div>
+      </div>
+      <div style="margin-top:12px;">
+        <div class="field-label">File directories</div>
+        <div class="field-hint">Relative paths (e.g. <code>src</code>, <code>docs</code>) are resolved from the session workspace — or from the worktree when <strong>Use worktree</strong> is checked. Absolute paths (<code>~/…</code>, <code>/…</code>) are used as-is.</div>
+        <div class="file-dir-list" id="profileEditFileDirs"></div>
+        <button type="button" class="btn btn-sm" style="margin-top:8px;" onclick="addProfileFileDirRow('')">+ Add directory</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-danger btn-sm hidden" id="profileEditDeleteBtn" onclick="deleteProfileEditing()">Delete</button>
+      <div style="flex:1;"></div>
+      <button class="btn" onclick="closeModal('modal-profile-edit')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveProfileEdit()">Save</button>
     </div>
   </div>
 </div>
@@ -1959,6 +2394,7 @@ On branch main. nothing to commit, working tree clean.
         <button onclick="selectSettingsPane(this,'hosts')">Engine / Hosts</button>
         <button onclick="selectSettingsPane(this,'notif')">Notifications</button>
         <button onclick="selectSettingsPane(this,'vault')"><svg class="icon" width="14" height="14"><use href="#icon-book"/></svg> Vault</button>
+        <button onclick="selectSettingsPane(this,'profiles')"><svg class="icon" width="14" height="14"><use href="#icon-folder"/></svg> Session profiles</button>
         <button onclick="selectSettingsPane(this,'market')"><svg class="icon" width="14" height="14"><use href="#icon-puzzle"/></svg> Marketplace</button>
         <button onclick="selectSettingsPane(this,'diag')">Diagnostics</button>
         <button onclick="openOnboarding()" style="margin-top:auto; color:var(--text-tertiary);">↻ Replay onboarding</button>
@@ -2029,6 +2465,11 @@ On branch main. nothing to commit, working tree clean.
           <span id="vaultSaveStatus" style="font-size:13px; color:var(--text-tertiary);"></span>
         </div>
       </div>
+      <div class="settings-pane" data-pane="profiles">
+        <div class="field-hint" style="margin-bottom:12px;">Profiles bundle a workspace (terminal, diff, harness cwd) with extra directories shown in the Files tab and file quick open.</div>
+        <div class="profile-list" id="profileList"></div>
+        <button type="button" class="btn btn-sm" style="margin-top:12px;" onclick="openProfileEdit(null)">+ Add profile</button>
+      </div>
       <div class="settings-pane" data-pane="market">
         <div class="field-hint">Community plugins add tabs/backend services — likely a post-v1 feature, shown here as a placeholder entry point.</div>
         <div class="plugin-row"><span class="icon icon-standalone" style="display:inline-flex;"><svg width="18" height="18"><use href="#icon-archive"/></svg></span><div style="flex:1;"><div class="pname">Project Stats</div><div class="pdesc">Repo activity dashboard tab</div></div><button class="btn btn-sm">Install</button></div>
@@ -2062,10 +2503,20 @@ On branch main. nothing to commit, working tree clean.
 <div class="modal-backdrop hidden" id="modal-file-quick-open" onclick="if(event.target===this) closeModal('modal-file-quick-open')">
   <div class="modal-dialog">
     <div class="fqo-head" id="fqo-head">
-      <div class="fqo-dir-row">
-        <span class="fqo-dir-label">Dir</span>
-        <button type="button" class="fqo-dir-display" id="fqo-dir-display" onclick="window.fqoMock.focusDir()">~/Documents/…/gardenia/src</button>
-        <input class="fqo-dir-input" id="fqo-dir-input" placeholder="~/Documents/…/gardenia/src" style="display:none" aria-label="Filter folders at this level" />
+      <div class="fqo-single-dir" id="fqo-single-dir">
+        <div class="fqo-dir-row">
+          <span class="fqo-dir-label">Dir</span>
+          <button type="button" class="fqo-dir-display" id="fqo-dir-display" onclick="window.fqoMock.focusDir()">~/Documents/…/gardenia/src</button>
+          <input class="fqo-dir-input" id="fqo-dir-input" placeholder="~/Documents/…/gardenia/src" style="display:none" aria-label="Filter folders at this level" />
+        </div>
+      </div>
+      <div class="fqo-profile-scope hidden" id="fqo-profile-scope">
+        <div class="fqo-profile-row">
+          <span class="fqo-dir-label">Profile</span>
+          <span class="fqo-profile-badge">Profile</span>
+          <span class="fqo-profile-name" id="fqo-profile-name">Gardenia dev</span>
+        </div>
+        <div class="fqo-scope-list" id="fqo-scope-list"></div>
       </div>
       <div class="fqo-sep" role="separator"></div>
       <div class="fqo-search-row">
@@ -2078,9 +2529,9 @@ On branch main. nothing to commit, working tree clean.
 </div>
 
 <!-- ===================== MODAL: ONBOARDING ===================== -->
-<div class="modal-backdrop hidden" id="modal-onboarding" onclick="if(event.target===this) closeModal('modal-onboarding')">
+<div class="modal-backdrop hidden" id="modal-onboarding">
   <div class="modal-dialog">
-    <div class="modal-header"><h2>Welcome to Gardenia</h2></div>
+    <div class="modal-header"><h2>Welcome to Gardenia</h2><button type="button" class="btn btn-icon" onclick="closeModal('modal-onboarding')">✕</button></div>
     <div class="ob-steps"><div class="ob-step-dot done" id="obdot0"></div><div class="ob-step-dot" id="obdot1"></div><div class="ob-step-dot" id="obdot2"></div></div>
     <div class="modal-body">
       <div class="ob-step active" data-step="0">
@@ -2269,6 +2720,40 @@ function loadDailyNoteForViewDate(opts) {
   setDailySyncChip('synced');
 }
 
+function hideWeeklyPlanPanels() {
+  document.getElementById('panel-weekly-plan')?.classList.add('hidden');
+  document.getElementById('panel-weekly-plan-view')?.classList.add('hidden');
+  document.getElementById('weeklyPlanSidebarRow')?.classList.remove('active');
+}
+
+function selectWeeklyPlanView() {
+  appNotesState.focusKind = 'weekly';
+  appNotesState.activeId = null;
+  document.getElementById('machinesView')?.classList.add('hidden');
+  document.querySelectorAll('.session-row[data-session]').forEach(r => r.classList.remove('active'));
+  document.querySelectorAll('.app-note-row').forEach(r => r.classList.remove('active'));
+  document.getElementById('weeklyPlanSidebarRow')?.classList.add('active');
+  document.querySelectorAll('.session-panel[data-session]').forEach(p => p.classList.add('hidden'));
+  document.getElementById('panel-app-notes')?.classList.add('hidden');
+  document.getElementById('panel-daily-note')?.classList.add('hidden');
+  document.getElementById('panel-weekly-plan')?.classList.add('hidden');
+  document.getElementById('panel-weekly-plan-view')?.classList.remove('hidden');
+}
+
+function selectWeeklyPlanWizard() {
+  appNotesState.focusKind = 'weekly';
+  appNotesState.activeId = null;
+  document.getElementById('machinesView')?.classList.add('hidden');
+  document.querySelectorAll('.session-row[data-session]').forEach(r => r.classList.remove('active'));
+  document.querySelectorAll('.app-note-row').forEach(r => r.classList.remove('active'));
+  document.getElementById('weeklyPlanSidebarRow')?.classList.add('active');
+  document.querySelectorAll('.session-panel[data-session]').forEach(p => p.classList.add('hidden'));
+  document.getElementById('panel-app-notes')?.classList.add('hidden');
+  document.getElementById('panel-daily-note')?.classList.add('hidden');
+  document.getElementById('panel-weekly-plan-view')?.classList.add('hidden');
+  document.getElementById('panel-weekly-plan')?.classList.remove('hidden');
+}
+
 function showDailyNotePanel() {
   appNotesState.focusKind = 'daily';
   appNotesState.activeId = null;
@@ -2278,6 +2763,7 @@ function showDailyNotePanel() {
   document.getElementById('dailyNoteSidebarRow')?.classList.add('active');
   document.querySelectorAll('.session-panel[data-session]').forEach(p => p.classList.add('hidden'));
   document.getElementById('panel-app-notes')?.classList.add('hidden');
+  hideWeeklyPlanPanels();
   document.getElementById('panel-daily-note')?.classList.remove('hidden');
 }
 
@@ -2432,6 +2918,7 @@ function showAppNotesPanel() {
   renderAppNotesList();
   document.querySelectorAll('.session-panel[data-session]').forEach(p => p.classList.add('hidden'));
   document.getElementById('panel-daily-note')?.classList.add('hidden');
+  hideWeeklyPlanPanels();
   const panel = document.getElementById('panel-app-notes');
   if (panel) panel.classList.remove('hidden');
 }
@@ -2499,6 +2986,7 @@ function selectSession(id) {
   document.querySelectorAll('.app-note-row').forEach(r => r.classList.remove('active'));
   document.getElementById('panel-app-notes')?.classList.add('hidden');
   document.getElementById('panel-daily-note')?.classList.add('hidden');
+  hideWeeklyPlanPanels();
   document.querySelectorAll('.session-row[data-session]').forEach(r => r.classList.toggle('active', r.dataset.session === id));
   document.querySelectorAll('.session-panel[data-session]').forEach(p => p.classList.toggle('hidden', p.dataset.session !== id));
 }
@@ -3181,6 +3669,204 @@ function pushCommentToChat(btn) {
   ta.focus();
 }
 
+/* ===== Response review split (assistant message → right pane, line comments → composer) ===== */
+const responseReviewState = {};
+
+function sourceLineNumberForQuote(sourceContent, quote) {
+  const trimmed = (quote || '').trim();
+  if (!trimmed) return 1;
+  const lines = sourceContent.split('\n');
+  const firstLine = trimmed.split('\n')[0];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes(firstLine)) return i + 1;
+  }
+  const idx = sourceContent.indexOf(trimmed);
+  if (idx >= 0) return sourceContent.slice(0, idx).split('\n').length;
+  return 1;
+}
+
+function renderResponseReviewContent(sessionId, text) {
+  const container = document.getElementById('responseReviewLines-' + sessionId);
+  if (!container) return;
+  container.innerHTML = `<div class="plan-body"><div class="md-body">${escapeHtml(text)}</div></div>`;
+  container.onmouseup = () => handleResponseReviewSelection(sessionId);
+}
+
+function handleResponseReviewSelection(sessionId) {
+  const container = document.getElementById('responseReviewLines-' + sessionId);
+  const body = document.getElementById('responseReviewBody-' + sessionId);
+  const ui = document.getElementById('responseReviewSelection-' + sessionId);
+  if (!container || !body || !ui) return;
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !container.contains(sel.anchorNode)) {
+    ui.classList.add('hidden');
+    ui.innerHTML = '';
+    return;
+  }
+  const quote = sel.toString().trim();
+  if (!quote) return;
+  const rect = sel.getRangeAt(0).getBoundingClientRect();
+  const hostRect = body.getBoundingClientRect();
+  ui.style.top = (rect.bottom - hostRect.top + body.scrollTop + 6) + 'px';
+  ui.style.left = Math.max(8, rect.left - hostRect.left) + 'px';
+  ui.classList.remove('hidden');
+  ui.innerHTML = `<button type="button" title="Comment on selection" onclick="openResponseSelectionComment('${sessionId}')">💬</button>`;
+  if (!responseReviewState[sessionId]) responseReviewState[sessionId] = { comments: [] };
+  responseReviewState[sessionId].pendingQuote = quote;
+  responseReviewState[sessionId].pendingTop = ui.style.top;
+  responseReviewState[sessionId].pendingLeft = ui.style.left;
+}
+
+function openResponseSelectionComment(sessionId) {
+  const ui = document.getElementById('responseReviewSelection-' + sessionId);
+  const body = document.getElementById('responseReviewBody-' + sessionId);
+  if (!ui || !body) return;
+  ui.className = 'inline-comment response-review-inline-comment';
+  ui.style.left = '28px';
+  ui.style.right = '12px';
+  ui.innerHTML = `<textarea rows="2" placeholder="Comment on this selection…"></textarea>
+    <div class="inline-comment-actions">
+      <button class="btn btn-primary btn-sm" onclick="pushResponseCommentToChat(this, '${sessionId}')">Add to next message</button>
+      <button class="btn btn-sm" onclick="clearResponseReviewSelection('${sessionId}')">Cancel</button>
+    </div>`;
+  ui.querySelector('textarea').focus();
+}
+
+function clearResponseReviewSelection(sessionId) {
+  const ui = document.getElementById('responseReviewSelection-' + sessionId);
+  ui?.classList.add('hidden');
+  if (ui) {
+    ui.className = 'response-review-selection-chip hidden';
+    ui.style.left = '';
+    ui.style.right = '';
+    ui.innerHTML = '';
+  }
+  window.getSelection()?.removeAllRanges();
+}
+
+function renderResponseReviewInline(sessionId) {
+  const layer = document.getElementById('responseReviewInline-' + sessionId);
+  const comments = responseReviewState[sessionId]?.comments || [];
+  if (!layer) return;
+  layer.innerHTML = comments.map(c =>
+    `<div class="response-review-inline-comment" style="top:${c.top};left:${c.left}">${escapeHtml(c.text)}</div>`
+  ).join('');
+}
+
+function startResponseReviewResize(e, sessionId) {
+  e.preventDefault();
+  const row = document.getElementById('panel-' + sessionId)?.querySelector('.chat-body-row');
+  const pane = document.getElementById('responseReview-' + sessionId);
+  if (!row || !pane) return;
+  const startX = e.clientX;
+  const startWidth = pane.offsetWidth;
+  function onMove(ev) {
+    const min = row.clientWidth * 0.2;
+    const max = row.clientWidth * 0.85;
+    const next = Math.min(max, Math.max(min, startWidth + (startX - ev.clientX)));
+    pane.style.width = Math.round(next) + 'px';
+    pane.style.flex = '0 0 auto';
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function openPlanReview(sessionId, btn) {
+  const card = btn.closest('.plan-card');
+  const body = card?.querySelector('.plan-body');
+  if (!card || !body) return;
+  openReviewPane(sessionId, {
+    kind: 'plan',
+    contentEl: body,
+    highlightEl: card,
+    activeBtn: btn
+  });
+}
+
+function openResponseReview(sessionId, btn) {
+  const wrap = btn.closest('.msg-wrap');
+  const assistant = wrap?.querySelector('.msg-assistant');
+  if (!wrap || !assistant) return;
+  openReviewPane(sessionId, {
+    kind: 'response',
+    contentEl: assistant,
+    highlightEl: wrap,
+    activeBtn: btn
+  });
+}
+
+function openReviewPane(sessionId, opts) {
+  const { contentEl, kind, highlightEl, activeBtn } = opts;
+  const panel = document.getElementById('panel-' + sessionId);
+  const row = panel?.querySelector('.chat-body-row');
+  const pane = document.getElementById('responseReview-' + sessionId);
+  const handle = document.getElementById('responseReviewHandle-' + sessionId);
+  const titleEl = document.getElementById('responseReviewTitle-' + sessionId);
+  if (!row || !pane || !handle) return;
+  const reviewKey = `${kind}:${highlightEl.id || highlightEl.dataset.reviewId || 'default'}`;
+  if (responseReviewState[sessionId]?.reviewKey !== reviewKey) {
+    responseReviewState[sessionId] = { reviewKey, comments: [] };
+  } else if (!responseReviewState[sessionId]) {
+    responseReviewState[sessionId] = { reviewKey, comments: [] };
+  }
+  const text = (contentEl.innerText || contentEl.textContent || '').trim();
+  panel.querySelectorAll('.msg-wrap, .plan-card').forEach(el => el.classList.remove('response-review-selected'));
+  panel.querySelectorAll('.msg-actions button.review-active, .plan-review-btn.review-active').forEach(b => b.classList.remove('review-active'));
+  highlightEl.classList.add('response-review-selected');
+  activeBtn.classList.add('review-active');
+  renderResponseReviewContent(sessionId, text);
+  responseReviewState[sessionId].kind = kind;
+  responseReviewState[sessionId].sourceText = text;
+  clearResponseReviewSelection(sessionId);
+  renderResponseReviewInline(sessionId);
+  if (titleEl) titleEl.textContent = kind === 'plan' ? 'Plan review' : 'Response review';
+  pane.style.width = Math.round(row.clientWidth * 0.5) + 'px';
+  pane.style.flex = '0 0 auto';
+  pane.classList.remove('hidden');
+  handle.classList.remove('hidden');
+  row.classList.add('response-review-open');
+  showToast('Opened in review pane — select text to comment');
+}
+function closeResponseReview(sessionId) {
+  const panel = document.getElementById('panel-' + sessionId);
+  const pane = document.getElementById('responseReview-' + sessionId);
+  const handle = document.getElementById('responseReviewHandle-' + sessionId);
+  pane?.classList.add('hidden');
+  handle?.classList.add('hidden');
+  clearResponseReviewSelection(sessionId);
+  panel?.querySelector('.chat-body-row')?.classList.remove('response-review-open');
+  panel?.querySelectorAll('.response-review-selected').forEach(w => w.classList.remove('response-review-selected'));
+  panel?.querySelectorAll('.msg-actions button.review-active, .plan-review-btn.review-active').forEach(b => b.classList.remove('review-active'));
+}
+function pushResponseCommentToChat(btn, sessionId) {
+  const box = btn.closest('.inline-comment');
+  const comment = box.querySelector('textarea').value.trim() || '(comment)';
+  const quote = responseReviewState[sessionId]?.pendingQuote || '';
+  const top = responseReviewState[sessionId]?.pendingTop || '0px';
+  const left = responseReviewState[sessionId]?.pendingLeft || '12px';
+  const sourceText = responseReviewState[sessionId]?.sourceText || '';
+  const lineNum = sourceLineNumberForQuote(sourceText, quote);
+  clearResponseReviewSelection(sessionId);
+  if (!responseReviewState[sessionId]) responseReviewState[sessionId] = { comments: [] };
+  if (!responseReviewState[sessionId].comments) responseReviewState[sessionId].comments = [];
+  responseReviewState[sessionId].comments.push({ quote, text: comment, top, left });
+  renderResponseReviewInline(sessionId);
+  const ta = document.getElementById('input-' + sessionId);
+  if (!ta) return;
+  const kind = responseReviewState[sessionId]?.kind || 'response';
+  const prefix = kind === 'plan' ? 'Re plan' : 'Re response';
+  const quoted = quote.split('\n').map(l => `> ${l}`).join('\n');
+  const note = `${prefix} (line ${lineNum}):\n${quoted}\n\n${comment}`;
+  ta.value = ta.value.trim() ? `${ta.value.trim()}\n\n${note}` : note;
+  ta.focus();
+  if (typeof onComposerInput === 'function') onComposerInput(sessionId);
+  showToast('Comment added to review pane and composer');
+}
+
 /* ===== Monaco Editor (Files tab) ===== */
 
 const monacoFiles = {
@@ -3612,8 +4298,30 @@ function openModal(id) {
   document.getElementById(id).classList.remove('hidden');
   if (id === 'modal-command-palette') { renderPalette('actions'); setTimeout(() => document.getElementById('cpInput').focus(), 30); }
   if (id === 'modal-file-quick-open') { window.fqoMock.open(); }
+  if (id === 'modal-new-session') {
+    if (pendingNewSessionProfileId && sessionProfilesMock.byId(pendingNewSessionProfileId)) {
+      newSessionProject = { kind: 'profile', value: pendingNewSessionProfileId };
+      pendingNewSessionProfileId = null;
+    }
+    renderNewSessionProjectDisplay();
+    renderNewSessionProjectMenu();
+    setTimeout(function () {
+      document.addEventListener('click', function closeProjectMenuOnOutside(e) {
+        var field = document.querySelector('.project-field');
+        if (field && !field.contains(e.target)) {
+          closeNewSessionProjectMenu();
+          document.removeEventListener('click', closeProjectMenuOnOutside);
+        }
+      });
+    }, 0);
+  }
 }
-function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+function closeModal(id) {
+  document.getElementById(id).classList.add('hidden');
+  if (id === 'modal-settings' || id === 'modal-profile-edit') {
+    if (window.sessionProfilesMock && sessionProfilesMock.refreshProjectPicker) sessionProfilesMock.refreshProjectPicker();
+  }
+}
 let fqoLeaderAt = null;
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openModal('modal-command-palette'); }
@@ -3629,6 +4337,240 @@ function setMode(mode) {
   document.querySelectorAll('#modeSegment button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   document.getElementById('claudeOnlySection').classList.toggle('hidden', mode !== 'claude');
 }
+/** New Session project field: a path or a saved profile (same control). */
+var newSessionProject = { kind: 'path', value: '~/code/gardenia-app' };
+var newSessionRecentPaths = ['~/code/gardenia-app', '~/code/design-system', '~/Documents/notes'];
+var pendingNewSessionProfileId = null;
+function isAbsoluteFileDir(p) {
+  return p.startsWith('/') || p.startsWith('~');
+}
+function mockWorktreePathFor(workspace) {
+  return workspace.replace(/\/?$/, '') + '/.gardenia/worktrees/new-session';
+}
+function resolveProfileFileDir(dir, workspace, useWorktree) {
+  if (isAbsoluteFileDir(dir)) return dir;
+  var base = useWorktree ? mockWorktreePathFor(workspace) : workspace;
+  var rel = dir.replace(/^\.\//, '');
+  return base.replace(/\/?$/, '') + '/' + rel;
+}
+function resolveProfileFileDirs(profile, useWorktree) {
+  return profile.fileDirs.map(function (d) { return resolveProfileFileDir(d, profile.workspace, useWorktree); });
+}
+function newSessionUseWorktreeChecked() {
+  var el = document.getElementById('newSessionUseWorktree');
+  return el ? el.checked : false;
+}
+function renderNewSessionProjectDisplay() {
+  var input = document.getElementById('newSessionProjectInput');
+  if (!input) return;
+  if (newSessionProject.kind === 'profile') {
+    var p = sessionProfilesMock.byId(newSessionProject.value);
+    if (!p) return;
+    input.value = p.name;
+    input.classList.add('profile-selected');
+  } else {
+    input.value = newSessionProject.value;
+    input.classList.remove('profile-selected');
+  }
+}
+function projectMenuQuery() {
+  var input = document.getElementById('newSessionProjectInput');
+  if (!input || newSessionProject.kind === 'profile') return '';
+  return input.value.trim().toLowerCase();
+}
+function renderNewSessionProjectMenu() {
+  var menu = document.getElementById('newSessionProjectMenu');
+  if (!menu || !window.sessionProfilesMock) return;
+  var profiles = sessionProfilesMock.listProfiles();
+  var q = projectMenuQuery();
+  var html = '<div class="project-picker-section">Recent paths</div>';
+  var paths = newSessionRecentPaths.filter(function (path) { return !q || path.toLowerCase().indexOf(q) >= 0; });
+  if (!paths.length) html += '<div class="project-picker-item" style="cursor:default; opacity:0.7;"><span class="pp-main"><div class="pp-label">No matching paths</div></span></div>';
+  paths.forEach(function (path) {
+    var sel = newSessionProject.kind === 'path' && newSessionProject.value === path ? ' selected' : '';
+    html += '<div class="project-picker-item' + sel + '" onmousedown="event.preventDefault(); selectNewSessionPath(\'' + path.replace(/'/g, "\\'") + '\')">' +
+      '<svg class="icon" width="14" height="14"><use href="#icon-folder"/></svg>' +
+      '<span class="pp-main"><div class="pp-label">' + escapeHtml(path) + '</div></span></div>';
+  });
+  html += '<div class="project-picker-section">Profiles</div>';
+  var matched = profiles.filter(function (p) {
+    if (!q) return true;
+    return p.name.toLowerCase().indexOf(q) >= 0 || p.workspace.toLowerCase().indexOf(q) >= 0;
+  });
+  if (!matched.length) html += '<div class="project-picker-item" style="cursor:default; opacity:0.7;"><span class="pp-main"><div class="pp-label">No matching profiles</div></span></div>';
+  matched.forEach(function (p) {
+    var sel = newSessionProject.kind === 'profile' && newSessionProject.value === p.id ? ' selected' : '';
+    html += '<div class="project-picker-item' + sel + '" onmousedown="event.preventDefault(); selectNewSessionProfile(\'' + p.id + '\')">' +
+      '<svg class="icon" width="14" height="14"><use href="#icon-book"/></svg>' +
+      '<span class="pp-main"><div class="pp-label">' + escapeHtml(p.name) + '</div>' +
+      '<div class="pp-sub">' + escapeHtml(p.workspace) + '</div></span>' +
+      '<span class="pp-tag">Profile</span></div>';
+  });
+  html += '<div class="project-picker-footer"><div class="project-picker-item" onmousedown="event.preventDefault(); openProfileManagerFromNewSession()">' +
+    '<span class="pp-main"><div class="pp-label">Manage profiles…</div></span></div></div>';
+  menu.innerHTML = html;
+}
+function openNewSessionProjectMenu() {
+  var menu = document.getElementById('newSessionProjectMenu');
+  if (!menu) return;
+  menu.classList.remove('hidden');
+  renderNewSessionProjectMenu();
+}
+function closeNewSessionProjectMenu() {
+  var menu = document.getElementById('newSessionProjectMenu');
+  if (menu) menu.classList.add('hidden');
+}
+function onNewSessionProjectInput() {
+  var input = document.getElementById('newSessionProjectInput');
+  if (!input) return;
+  newSessionProject = { kind: 'path', value: input.value };
+  input.classList.remove('profile-selected');
+  openNewSessionProjectMenu();
+}
+function onNewSessionProjectKeydown(e) {
+  if (e.key === 'Escape') closeNewSessionProjectMenu();
+}
+function selectNewSessionPath(path) {
+  newSessionProject = { kind: 'path', value: path };
+  renderNewSessionProjectDisplay();
+  closeNewSessionProjectMenu();
+  document.getElementById('newSessionProjectInput')?.focus();
+}
+function selectNewSessionProfile(id) {
+  newSessionProject = { kind: 'profile', value: id };
+  renderNewSessionProjectDisplay();
+  closeNewSessionProjectMenu();
+  document.getElementById('newSessionProjectInput')?.focus();
+}
+function openProfileManagerFromNewSession() {
+  closeNewSessionProjectMenu();
+  closeModal('modal-new-session');
+  openModal('modal-settings');
+  var btn = document.querySelector('.settings-nav button[onclick*="profiles"]');
+  if (btn) selectSettingsPane(btn, 'profiles');
+}
+/* ===== Session profiles mock ===== */
+window.sessionProfilesMock = (function () {
+  var STORAGE_KEY = 'gardenia-mock-session-profiles';
+  var nextId = 3;
+  var editingId = null;
+  var DEFAULT_PROFILES = [
+    { id: 'p1', name: 'Gardenia dev', workspace: '~/code/gardenia-app', fileDirs: ['src', 'Features', '~/Documents/notes'] },
+    { id: 'p2', name: 'Design system', workspace: '~/code/design-system', fileDirs: ['src/components', 'docs'] }
+  ];
+  var profiles = [];
+  function loadProfiles() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length) {
+          profiles = parsed;
+          parsed.forEach(function (p) {
+            var n = parseInt(String(p.id).replace(/^p/, ''), 10);
+            if (!isNaN(n) && n >= nextId) nextId = n + 1;
+          });
+          return;
+        }
+      }
+    } catch (e) { /* ignore */ }
+    profiles = DEFAULT_PROFILES.map(function (p) { return Object.assign({}, p, { fileDirs: p.fileDirs.slice() }); });
+    persistProfiles();
+  }
+  function persistProfiles() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles)); } catch (e) { /* ignore */ }
+  }
+  function listProfiles() { return profiles; }
+  function byId(id) { return profiles.find(function (p) { return p.id === id; }); }
+  function refreshProjectPicker() {
+    renderNewSessionProjectMenu();
+    renderNewSessionProjectDisplay();
+  }
+  function renderProfileList() {
+    var list = document.getElementById('profileList');
+    if (!list) return;
+    list.innerHTML = profiles.map(function (p) {
+      var dirCount = p.fileDirs.length;
+      return '<div class="profile-row" data-profile="' + p.id + '">' +
+        '<div class="profile-row-main">' +
+          '<div class="profile-row-name">' + escapeHtml(p.name) + '</div>' +
+          '<div class="profile-row-meta">' + escapeHtml(p.workspace) + ' · ' + dirCount + ' file dir' + (dirCount === 1 ? '' : 's') + '</div>' +
+        '</div>' +
+        '<div class="profile-row-actions">' +
+          '<button type="button" class="btn btn-sm" onclick="openProfileEdit(\'' + p.id + '\')">Edit</button>' +
+          '<button type="button" class="btn btn-sm" onclick="deleteProfileById(\'' + p.id + '\')">Delete</button>' +
+        '</div></div>';
+    }).join('');
+  }
+  window.updateNewSessionProfileSummary = function () { refreshProjectPicker(); };
+  window.openProfileEdit = function (id) {
+    editingId = id;
+    var p = id ? byId(id) : null;
+    document.getElementById('profileEditTitle').textContent = p ? 'Edit profile' : 'Add profile';
+    document.getElementById('profileEditName').value = p ? p.name : '';
+    document.getElementById('profileEditWorkspacePath').value = p ? p.workspace : '~/code/gardenia-app';
+    document.getElementById('profileEditDeleteBtn').classList.toggle('hidden', !p);
+    var dirs = document.getElementById('profileEditFileDirs');
+    dirs.innerHTML = '';
+    (p ? p.fileDirs : ['']).forEach(function (d) { window.addProfileFileDirRow(d); });
+    openModal('modal-profile-edit');
+  };
+  window.addProfileFileDirRow = function (value) {
+    var row = document.createElement('div');
+    row.className = 'file-dir-row';
+    row.innerHTML = '<input class="input file-dir-input" value="' + escapeHtml(value || '') + '" placeholder="src or ~/absolute/path" />' +
+      '<button type="button" class="btn btn-icon btn-sm" title="Remove" onclick="this.closest(\'.file-dir-row\').remove()">✕</button>';
+    document.getElementById('profileEditFileDirs').appendChild(row);
+  };
+  window.saveProfileEdit = function () {
+    var name = document.getElementById('profileEditName').value.trim();
+    var workspace = document.getElementById('profileEditWorkspacePath').value.trim();
+    var fileDirs = Array.from(document.querySelectorAll('#profileEditFileDirs .file-dir-input'))
+      .map(function (el) { return el.value.trim(); }).filter(Boolean);
+    if (!name || !workspace) { showToast('Name and workspace are required'); return; }
+    var savedId = editingId;
+    if (editingId) {
+      var p = byId(editingId);
+      if (p) { p.name = name; p.workspace = workspace; p.fileDirs = fileDirs.length ? fileDirs : ['src']; }
+    } else {
+      savedId = 'p' + (nextId++);
+      profiles.push({ id: savedId, name: name, workspace: workspace, fileDirs: fileDirs.length ? fileDirs : ['src'] });
+    }
+    editingId = null;
+    persistProfiles();
+    pendingNewSessionProfileId = savedId;
+    closeModal('modal-profile-edit');
+    renderProfileList();
+    refreshProjectPicker();
+    showToast('Profile saved');
+  };
+  window.deleteProfileEditing = function () {
+    if (editingId) deleteProfileById(editingId, true);
+  };
+  window.deleteProfileById = function (id, fromEditor) {
+    var p = byId(id);
+    if (!p) return;
+    if (!fromEditor && !confirm('Delete profile “' + p.name + '”? Existing sessions keep their paths.')) return;
+    var idx = profiles.findIndex(function (x) { return x.id === id; });
+    if (idx >= 0) profiles.splice(idx, 1);
+    persistProfiles();
+    if (newSessionProject.kind === 'profile' && newSessionProject.value === id) {
+      newSessionProject = { kind: 'path', value: newSessionRecentPaths[0] || '~/code/gardenia-app' };
+    }
+    if (fromEditor) closeModal('modal-profile-edit');
+    renderProfileList();
+    refreshProjectPicker();
+    showToast('Profile deleted');
+  };
+  window.getActiveSessionProfile = function () {
+    var row = document.querySelector('.session-row.active');
+    if (!row || !row.dataset.profileId) return null;
+    return byId(row.dataset.profileId);
+  };
+  loadProfiles();
+  refreshProjectPicker();
+  return { listProfiles: listProfiles, byId: byId, refreshProjectPicker: refreshProjectPicker, renderProfileList: renderProfileList };
+})();
 function selectHost(el) {
   document.querySelectorAll('.host-option').forEach(o => o.classList.remove('selected'));
   el.closest('.host-option').classList.add('selected');
@@ -3684,15 +4626,27 @@ function openLocalTerminal() {
 function createSession() {
   const mode = document.querySelector('#modeSegment button.active').dataset.mode;
   const promptVal = document.getElementById('newSessionPrompt').value.trim();
+  const profile = newSessionProject.kind === 'profile' ? sessionProfilesMock.byId(newSessionProject.value) : null;
+  const useWorktree = newSessionUseWorktreeChecked();
   const id = 's' + (sessionCounter++);
   const name = mode === 'terminal' ? 'New terminal session' : (promptVal ? promptVal.slice(0, 40) : 'New Claude Code session');
+  const metaLabel = profile ? profile.name : (newSessionProject.kind === 'path' ? newSessionProject.value.replace(/^~\/code\//, '').split('/')[0] : 'gardenia-app');
+  const workspacePath = profile ? profile.workspace : newSessionProject.value;
+  const sessionCwd = profile && useWorktree && mode !== 'terminal' ? mockWorktreePathFor(profile.workspace) : workspacePath;
+  const profileFileRoots = profile ? profile.fileDirs.map(function (d, i) {
+    return { raw: d, resolved: resolveProfileFileDir(d, profile.workspace, useWorktree && mode !== 'terminal') };
+  }) : [];
+  const profileFilesHtml = profile ? profileFileRoots.map(function (r) {
+    return '<div class="files-tree-root"><div class="files-tree-root-label"><span class="root-kind">' + escapeHtml(r.raw) + '</span> ' + escapeHtml(r.resolved) + '</div><div class="ft-item dir"><svg class="icon" width="14" height="14"><use href="#icon-folder"/></svg> …</div></div>';
+  }).join('') : '';
 
   const group = document.querySelectorAll('#sessionList .group-body')[0];
   const row = document.createElement('div');
   row.className = 'session-row'; row.dataset.session = id;
+  if (profile) row.dataset.profileId = profile.id;
   row.onclick = () => selectSession(id);
   row.innerHTML = `<span class="session-indicator" title="Color: custom · Status: idle"><span class="color-core" style="background:var(--sc-cyan)"></span><span class="status-badge status-idle"></span></span>
-    <div class="session-main hide-on-collapse"><div class="session-name">${escapeHtml(name)}</div><div class="session-meta"><span>gardenia-app</span></div></div>`;
+    <div class="session-main hide-on-collapse"><div class="session-name">${escapeHtml(name)}</div><div class="session-meta"><span>${escapeHtml(metaLabel)}</span></div></div>`;
   group.appendChild(row);
 
   const panel = document.createElement('div');
@@ -3728,9 +4682,13 @@ function createSession() {
           </div></div></div>
       </div></div>
       <div class="tab-content hidden" data-tab="diff"><div class="empty-main" style="height:100%;"><div class="empty-icon"><svg class="icon icon-standalone" width="26" height="26"><use href="#icon-shuffle"/></svg></div><div>No changes yet</div></div></div>
-      <div class="tab-content hidden" data-tab="files"><div class="empty-main" style="height:100%;"><div class="empty-icon"><svg class="icon icon-standalone" width="26" height="26"><use href="#icon-folder"/></svg></div><div>Project files will appear here</div></div></div>
+      <div class="tab-content hidden" data-tab="files">${profile ? `
+        <div class="files-body">
+          <div class="files-profile-bar"><span class="profile-badge">${escapeHtml(profile.name)}</span><span>workspace <span style="font-family:var(--font-mono);">${escapeHtml(sessionCwd)}</span></span><span>·</span><span>${profile.fileDirs.length} file directories</span></div>
+          <div class="files-body-inner"><div class="files-tree">${profileFilesHtml}</div><div class="empty-main" style="flex:1;"><div class="empty-icon"><svg class="icon icon-standalone" width="26" height="26"><use href="#icon-file"/></svg></div><div>Select a file from any profile directory</div></div></div>
+        </div>` : '<div class="empty-main" style="height:100%;"><div class="empty-icon"><svg class="icon icon-standalone" width="26" height="26"><use href="#icon-folder"/></svg></div><div>Project files will appear here</div></div>'}
       <div class="tab-content hidden" data-tab="terminal">${termShellWrap(
-`<span class="prompt">qingqin@localhost</span>:<span style="color:#6fa8dc;">~/code/gardenia-app</span>$ <span class="term-paste-target"></span><span class="cursor-block"></span>`
+`<span class="prompt">qingqin@localhost</span>:<span style="color:#6fa8dc;">${escapeHtml(sessionCwd)}</span>$ <span class="term-paste-target"></span><span class="cursor-block"></span>`
       )}</div>`;
   }
   document.getElementById('mainArea').appendChild(panel);
@@ -3829,6 +4787,45 @@ window.fqoMock = (function () {
       { kind: 'file', name: 'index.html', path: SESSION + '/Features/UI-Design/mocks/index.html' }
     ]
   };
+  var PROFILE_SCOPES = [
+    { kind: 'Workspace', raw: 'workspace', path: '~/code/gardenia-app/.gardenia/worktrees/fix-token-refresh' },
+    { kind: 'src', raw: 'src', path: '~/code/gardenia-app/.gardenia/worktrees/fix-token-refresh/src' },
+    { kind: 'Features', raw: 'Features', path: '~/code/gardenia-app/.gardenia/worktrees/fix-token-refresh/Features' },
+    { kind: '~/Documents/notes', raw: '~/Documents/notes', path: '~/Documents/notes' }
+  ];
+  var PROFILE_FILES = [
+    { kind: 'file', name: 'token-manager.ts', rootKind: 'src', relPath: 'auth/token-manager.ts' },
+    { kind: 'file', name: 'session-bootstrap.ts', rootKind: 'src', relPath: 'auth/session-bootstrap.ts' },
+    { kind: 'file', name: 'App.tsx', rootKind: 'src', relPath: 'renderer/App.tsx' },
+    { kind: 'file', name: 'spec.md', rootKind: 'Features', relPath: 'session-profiles/spec.md' },
+    { kind: 'file', name: 'index.html', rootKind: 'Features', relPath: 'UI-Design/mocks/index.html' },
+    { kind: 'file', name: '2026-08-11.md', rootKind: '~/Documents/notes', relPath: 'daily/2026-08-11.md' },
+    { kind: 'file', name: 'token-refresh-debug.md', rootKind: '~/Documents/notes', relPath: 'token-refresh-debug.md' }
+  ];
+  var profileScopeFilter = null;
+  function activeProfile() { return window.getActiveSessionProfile ? window.getActiveSessionProfile() : null; }
+  function profileSearchRows() {
+    return PROFILE_FILES.filter(function (r) {
+      if (profileScopeFilter && r.rootKind !== profileScopeFilter) return false;
+      return fuzzy(searchFilter, r.name) || fuzzy(searchFilter, r.relPath);
+    });
+  }
+  function renderProfileScopeList() {
+    var list = document.getElementById('fqo-scope-list');
+    var nameEl = document.getElementById('fqo-profile-name');
+    var prof = activeProfile();
+    if (!list || !prof) return;
+    if (nameEl) nameEl.textContent = prof.name;
+    list.innerHTML = PROFILE_SCOPES.map(function (s) {
+      var active = profileScopeFilter === s.kind ? ' active' : '';
+      var label = s.raw === 'workspace' ? 'Workspace' : s.raw;
+      return '<div class="fqo-scope-item' + active + '" onclick="window.fqoMock.setScopeFilter(\'' + s.kind.replace(/'/g, "\\'") + '\')">' +
+        '<span class="fqo-scope-kind">' + escapeHtml(label) + '</span>' +
+        '<span class="fqo-scope-path">' + escapeHtml(s.path) + '</span></div>';
+    }).join('') +
+    '<div class="fqo-scope-item' + (!profileScopeFilter ? ' active' : '') + '" onclick="window.fqoMock.setScopeFilter(null)">' +
+      '<span class="fqo-scope-kind">All</span><span class="fqo-scope-path">Search every directory below</span></div>';
+  }
   function allFilesUnder(dir) {
     var out = [];
     function walk(d) {
@@ -3857,36 +4854,75 @@ window.fqoMock = (function () {
       var ctx = resolveDirQuery(dirQuery);
       return (TREE[ctx.listDir] || []).filter(function (r) { return fuzzy(ctx.segment, r.name); });
     }
+    if (activeProfile()) return profileSearchRows();
     return allFilesUnder(currentDir).filter(function (r) { return fuzzy(searchFilter, r.name); });
   }
   function renderFqo() {
     var head = document.getElementById('fqo-head');
     var disp = document.getElementById('fqo-dir-display');
     var din = document.getElementById('fqo-dir-input');
+    var singleDir = document.getElementById('fqo-single-dir');
+    var profileScope = document.getElementById('fqo-profile-scope');
+    var searchInput = document.getElementById('fqo-search-input');
+    var prof = activeProfile();
+    var inProfileMode = prof && mode === 'search';
     if (!head) return;
     head.className = 'fqo-head' + (mode === 'dir' ? ' fqo-head--dir-active' : '');
+    if (singleDir) singleDir.classList.toggle('hidden', inProfileMode);
+    if (profileScope) profileScope.classList.toggle('hidden', !inProfileMode);
+    if (inProfileMode) renderProfileScopeList();
     if (mode === 'dir') {
       disp.style.display = 'none';
       din.style.display = 'block';
       din.value = dirQuery;
-    } else {
+    } else if (!inProfileMode) {
       disp.style.display = 'block';
       din.style.display = 'none';
       disp.textContent = displayPath(currentDir);
     }
-    document.getElementById('fqo-search-input').value = searchFilter;
+    if (searchInput) {
+      searchInput.placeholder = inProfileMode
+        ? (profileScopeFilter ? 'Search in ' + profileScopeFilter + '…' : 'Search files across all profile directories…')
+        : 'Search files under this folder…';
+      searchInput.value = searchFilter;
+    }
     document.getElementById('fqo-hint').textContent = mode === 'dir'
       ? 'Edit path · one level listed · Backspace at empty goes up · Tab completes folder → search'
-      : 'Recursive search under folder · Backspace at empty edits directory';
+      : (inProfileMode
+        ? 'Results grouped by directory · click a scope to filter · All searches everywhere'
+        : 'Recursive search under folder · Backspace at empty edits directory');
     var rs = rows();
     if (sel >= rs.length) sel = 0;
-    document.getElementById('fqo-results').innerHTML = rs.map(function (r, i) {
-      var label = r.kind === 'dir' ? r.name + '/' : r.name;
-      var sub = mode === 'search' && r.path.indexOf(currentDir + '/') === 0 ? r.path.slice(currentDir.length + 1) : '';
-      return '<div class="cp-item' + (i === sel ? ' selected' : '') + '" data-i="' + i + '"><span class="fqo-row-name' +
-        (r.kind === 'dir' ? ' fqo-row-name--dir' : '') + '">' + label + '</span>' +
-        (sub ? '<span class="cpsub">' + sub + '</span>' : '') + '</div>';
-    }).join('');
+    var html = '';
+    if (inProfileMode) {
+      var groups = [];
+      var groupMap = {};
+      rs.forEach(function (r) {
+        if (!groupMap[r.rootKind]) { groupMap[r.rootKind] = []; groups.push(r.rootKind); }
+        groupMap[r.rootKind].push(r);
+      });
+      var flatIdx = 0;
+      groups.forEach(function (gk) {
+        html += '<div class="fqo-result-group">' + escapeHtml(gk) + '</div>';
+        groupMap[gk].forEach(function (r) {
+          var selected = flatIdx === sel ? ' selected' : '';
+          html += '<div class="cp-item' + selected + '" data-i="' + flatIdx + '">' +
+            '<span class="fqo-row-name">' + escapeHtml(r.name) + '</span>' +
+            '<span class="cpsub">' + escapeHtml(r.relPath) + '</span></div>';
+          flatIdx++;
+        });
+      });
+      if (!html) html = '<div style="padding:16px; text-align:center; color:var(--text-tertiary); font-size:12.5px;">No matching files</div>';
+    } else {
+      html = rs.map(function (r, i) {
+        var label = r.kind === 'dir' ? r.name + '/' : r.name;
+        var sub = mode === 'search' && r.path && r.path.indexOf(currentDir + '/') === 0 ? r.path.slice(currentDir.length + 1) : '';
+        return '<div class="cp-item' + (i === sel ? ' selected' : '') + '" data-i="' + i + '"><span class="fqo-row-name' +
+          (r.kind === 'dir' ? ' fqo-row-name--dir' : '') + '">' + label + '</span>' +
+          (sub ? '<span class="cpsub">' + sub + '</span>' : '') + '</div>';
+      }).join('');
+    }
+    document.getElementById('fqo-results').innerHTML = html;
     document.querySelectorAll('#fqo-results .cp-item').forEach(function (el) {
       el.onclick = function () { sel = parseInt(el.getAttribute('data-i'), 10); activateRow(); };
     });
@@ -3932,9 +4968,15 @@ window.fqoMock = (function () {
       mode = 'search';
       dirQuery = displayPath(currentDir);
       searchFilter = '';
+      profileScopeFilter = null;
       sel = 0;
       renderFqo();
       setTimeout(function () { document.getElementById('fqo-search-input').focus(); }, 30);
+    },
+    setScopeFilter: function (kind) {
+      profileScopeFilter = kind || null;
+      sel = 0;
+      renderFqo();
     },
     focusDir: function () {
       mode = 'dir';
@@ -3956,6 +4998,12 @@ function pickVaultRoot() {
   const current = input.value || placeholder;
   const picked = prompt('Vault root path:', current);
   if (picked !== null) { input.value = picked; input.classList.toggle('unset', !picked); }
+}
+function browseProfileWorkspace() {
+  const input = document.getElementById('profileEditWorkspacePath');
+  const current = input.value || '~/code/gardenia-app';
+  const picked = prompt('Workspace location:', current);
+  if (picked !== null) input.value = picked;
 }
 function saveVaultSettings() {
   const status = document.getElementById('vaultSaveStatus');
@@ -4147,6 +5195,80 @@ function dropOnTimeline(e) {
   document.getElementById('timelineGrid').appendChild(block);
   if (src.classList.contains('task-chip')) src.remove();
   window._dragSource = null;
+}
+let activeCarryMenu = null;
+function closeCarryMenu() {
+  if (activeCarryMenu) {
+    activeCarryMenu.remove();
+    activeCarryMenu = null;
+    document.removeEventListener('click', closeCarryMenuOnce, true);
+  }
+}
+function closeCarryMenuOnce(ev) {
+  if (activeCarryMenu && !activeCarryMenu.contains(ev.target)) closeCarryMenu();
+}
+function carryAddToday(btn) {
+  const item = btn.closest('.dn-carry-item');
+  if (!item) return;
+  const label = item.getAttribute('data-carry-label') || item.querySelector('.dn-carry-item-text').textContent.trim();
+  const chip = document.createElement('div');
+  chip.className = 'task-chip';
+  chip.draggable = true;
+  chip.setAttribute('ondragstart', 'dragStart(event)');
+  chip.innerHTML = '<div class="tbox"></div><span>' + escapeHtml(label) + '</span><button class="btn btn-icon btn-sm" onclick="this.closest(\'.task-chip\').remove()">✕</button>';
+  document.getElementById('unscheduledList').appendChild(chip);
+  item.remove();
+  maybeHideCarrySection();
+}
+function carryDismiss(btn) {
+  btn.closest('.dn-carry-item')?.remove();
+  maybeHideCarrySection();
+}
+function toggleCarryDone(box) {
+  const item = box.closest('.dn-carry-item');
+  if (!item) return;
+  item.classList.toggle('done');
+  box.classList.toggle('done');
+  if (item.classList.contains('done')) {
+    setTimeout(() => { item.remove(); maybeHideCarrySection(); }, 400);
+  }
+}
+function maybeHideCarrySection() {
+  const list = document.getElementById('carryList');
+  const section = document.getElementById('dnCarrySection');
+  if (list && section && list.querySelectorAll('.dn-carry-item').length === 0) {
+    section.style.display = 'none';
+    const handleAbove = section.previousElementSibling;
+    const handleBelow = section.nextElementSibling;
+    if (handleAbove && handleAbove.classList.contains('dn-resize-handle')) handleAbove.style.display = 'none';
+    if (handleBelow && handleBelow.classList.contains('dn-resize-handle')) handleBelow.style.display = 'none';
+  }
+}
+function carryContextMenu(e, item) {
+  e.preventDefault();
+  closeCarryMenu();
+  const pop = document.createElement('div');
+  pop.className = 'session-menu-popup';
+  pop.style.top = e.clientY + 'px';
+  pop.style.left = e.clientX + 'px';
+  pop.innerHTML = `
+    <div class="smi" style="justify-content:space-between;">Move to… <span style="color:var(--text-tertiary);">›</span></div>
+    <div class="smi" onclick="carryMoveToDate(this,'Aug 1')">Aug 1 (Tomorrow)</div>
+    <div class="smi" onclick="carryMoveToDate(this,'Aug 2')">Saturday</div>
+    <div class="smi" onclick="carryMoveToDate(this,'Aug 4')">Next Monday</div>`;
+  pop._carryItem = item;
+  document.body.appendChild(pop);
+  activeCarryMenu = pop;
+  setTimeout(() => document.addEventListener('click', closeCarryMenuOnce, true), 0);
+}
+function carryMoveToDate(menuItem, _dateLabel) {
+  const pop = menuItem.closest('.session-menu-popup');
+  const item = pop && pop._carryItem;
+  closeCarryMenu();
+  if (item) {
+    item.remove();
+    maybeHideCarrySection();
+  }
 }
 function startResize(e, aboveId, belowId) {
   e.preventDefault();

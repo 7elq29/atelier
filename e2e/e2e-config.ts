@@ -1,8 +1,47 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 
-/** Select a closed session in History and reconnect via the main disconnected gate. */
+/** Select text inside the review pane content and trigger the selection toolbar. */
+export async function selectReviewPaneText(reviewPane: Locator, text: string): Promise<void> {
+  const content = reviewPane.getByTestId('response-review-content')
+  await content.evaluate((root, target) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    let node = walker.nextNode() as Text | null
+    while (node) {
+      const value = node.textContent ?? ''
+      const index = value.indexOf(target)
+      if (index >= 0) {
+        const range = document.createRange()
+        range.setStart(node, index)
+        range.setEnd(node, index + target.length)
+        const selection = window.getSelection()
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+        root.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+        return
+      }
+      node = walker.nextNode() as Text | null
+    }
+    throw new Error(`Review pane text not found: ${target}`)
+  }, text)
+  await expect(reviewPane.getByTestId('response-review-selection-ui')).toBeVisible()
+}
+
+/** Open the comment form for the current review-pane text selection. */
+export async function commentOnReviewSelection(reviewPane: Locator, body: string): Promise<void> {
+  await reviewPane.getByTestId('response-review-comment-btn').click()
+  const input = reviewPane.getByTestId('response-review-comment-input')
+  await input.fill(body)
+  await input.press('Enter')
+  await expect(reviewPane.getByTestId('response-review-comment-icon').first()).toBeVisible()
+}
+
+/** Open the popover for the first saved review comment. */
+export async function openReviewCommentPopover(reviewPane: Locator): Promise<void> {
+  await reviewPane.getByTestId('response-review-comment-icon').first().click()
+  await expect(reviewPane.getByTestId('response-review-comment-popover')).toBeVisible()
+}
 export async function reconnectClosedSessionFromHistory(page: Page, sessionId: string): Promise<void> {
   const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
   await historyRow.click()

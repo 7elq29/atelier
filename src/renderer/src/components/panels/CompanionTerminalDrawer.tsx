@@ -1,17 +1,16 @@
-import TerminalPanel from './TerminalPanel'
+import TerminalWithToolbox from './TerminalWithToolbox'
 
 /**
  * Companion terminal drawer (07-secondary-panels §5b): a resizable
  * bottom drawer with its own independent pty (`${sessionId}:companion`,
- * never the session's own agent I/O), matching the mock's `.drawer-head`
- * ("▤ Companion Terminal" + close button) over `.drawer-handle`/`.drawer`.
- * Resizing is a plain drag-to-resize on the handle (real DOM height change,
- * not a CSS-only affordance).
+ * never the session's own agent I/O). Resizing is a plain drag-to-resize
+ * on the handle (real DOM height change, not a CSS-only affordance).
  */
 export default function CompanionTerminalDrawer({
   sessionId,
   cwd,
   hostname,
+  shellRemoteHost,
   height,
   onHeightChange,
   onClose
@@ -19,6 +18,7 @@ export default function CompanionTerminalDrawer({
   sessionId: string
   cwd: string
   hostname?: string | null
+  shellRemoteHost?: string | null
   height: number
   onHeightChange: (h: number) => void
   onClose: () => void
@@ -43,14 +43,15 @@ export default function CompanionTerminalDrawer({
     <div data-testid="companion-drawer">
       <div className="drawer-handle" onMouseDown={startResize} data-testid="companion-drawer-handle" />
       <div className="drawer" style={{ height }}>
-        <div className="drawer-head">
-          ▤ Companion Terminal
-          <span className="spacer" />
-          <button className="btn btn-icon btn-sm" onClick={onClose} data-testid="companion-drawer-close">
-            ✕
-          </button>
-        </div>
-        <TerminalPanel ptyId={`${sessionId}:companion`} cwd={cwd} hostname={hostname} />
+        <TerminalWithToolbox
+          ptyId={`${sessionId}:companion`}
+          cwd={cwd}
+          hostname={hostname}
+          shellRemoteHost={shellRemoteHost}
+          variant="companion"
+          active
+          onClose={onClose}
+        />
       </div>
     </div>
   )

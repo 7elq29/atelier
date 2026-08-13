@@ -42,6 +42,15 @@ export default function OnboardingWizard({
       <div className="modal-dialog onboarding-dialog" data-testid="onboarding-wizard">
         <div className="modal-header">
           <h2>Welcome to {APP_DISPLAY_NAME}</h2>
+          <button
+            type="button"
+            className="btn btn-icon"
+            data-testid="onboarding-close"
+            aria-label="Close"
+            onClick={onSkip}
+          >
+            ✕
+          </button>
         </div>
         <div className="ob-steps">
           <div className={'ob-step-dot' + (step >= 0 ? ' done' : '')} />

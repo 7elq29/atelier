@@ -1,23 +1,32 @@
 import { Fragment, useState } from 'react'
-import type { ToolCallContent } from '../../../../shared/chat-content'
-import ToolCallCard, { toolBadgeClass } from './ToolCallCard'
+import type { ThinkingBlockContent, ToolCallContent } from '../../../../shared/chat-content'
+import { toolBadgeClass } from './ToolCallCard'
+import ThinkingBlockInline from './ThinkingBlockInline'
 
 /**
- * One entry in a tool-call sequence (14-tool-call-sequence-collapse): the
- * `tool` content drives grouping/status decisions, `render` produces
- * whatever this entry's *own* full markup was before this feature existed
- * (its `transcript-message` wrapper + `MessageActions` + `ToolCallCard`,
- * plus a nested `.subagent-wrap` after it if this call spawned a subagent)
- * — kept as a callback so `ToolCallSequence` doesn't need to know whether an
- * entry is a top-level call or a subagent-nested child, just when to call it.
+ * One entry in a tool/thinking sequence (14-tool-call-sequence-collapse): the
+ * `tool` or `thinking` content drives grouping/status decisions, `render`
+ * produces whatever this entry's *own* full markup was before this feature
+ * existed — kept as a callback so `ToolCallSequence` doesn't need to know
+ * whether an entry is a top-level call or a subagent-nested child, just when
+ * to call it.
  */
 export interface ToolCallSequenceEntry {
   key: string
-  tool: ToolCallContent
+  tool?: ToolCallContent
+  thinking?: ThinkingBlockContent
+  render: () => JSX.Element
+}
+
+/** Resolved interactive prompt folded into the same summary row as tool activity. */
+export type SidecarSequenceEntry = {
+  key: string
+  foldSummary: string
   render: () => JSX.Element
 }
 
 const BUCKET_PHRASE: Record<string, (count: number) => string> = {
+  thinking: (n) => `extended reasoning ${n} time${n === 1 ? '' : 's'}`,
   read: (n) => `read ${n} file${n === 1 ? '' : 's'}`,
   bash: (n) => `ran ${n} shell command${n === 1 ? '' : 's'}`,
   edit: (n) => `edited ${n} file${n === 1 ? '' : 's'}`,
@@ -28,18 +37,31 @@ const BUCKET_PHRASE: Record<string, (count: number) => string> = {
   other: (n) => `ran ${n} other action${n === 1 ? '' : 's'}`
 }
 
+function entryRunning(entry: ToolCallSequenceEntry): boolean {
+  if (entry.thinking) return entry.thinking.status === 'running'
+  if (entry.tool) return entry.tool.status === 'running'
+  return false
+}
+
+function renderRunningEntry(entry: ToolCallSequenceEntry): JSX.Element {
+  if (entry.thinking?.status === 'running') {
+    return <ThinkingBlockInline content={entry.thinking} />
+  }
+  return entry.render()
+}
+
 /**
- * Aggregate summary text, e.g. "Read 2 files, ran 1 shell command"
- * (14-tool-call-sequence-collapse). Groups by the same `toolBadgeClass`
- * buckets `ToolCallCard` uses for its badge color, in the order each bucket
- * first appears in `tools`, comma-joined, singular/plural per count, only
- * the very first character of the whole string capitalized.
+ * Aggregate summary text, e.g. "Extended reasoning 2 times, read 2 files"
+ * (14-tool-call-sequence-collapse). Groups tool calls by the same
+ * `toolBadgeClass` buckets `ToolCallCard` uses; thinking blocks get their
+ * own bucket. Order follows first appearance; only the first character is
+ * capitalized.
  */
-export function buildSequenceSummary(tools: ToolCallContent[]): string {
+export function buildSequenceSummary(entries: ToolCallSequenceEntry[]): string {
   const order: string[] = []
   const counts = new Map<string, number>()
-  for (const tool of tools) {
-    const bucket = toolBadgeClass(tool.name)
+  for (const entry of entries) {
+    const bucket = entry.thinking ? 'thinking' : toolBadgeClass(entry.tool!.name)
     if (!counts.has(bucket)) order.push(bucket)
     counts.set(bucket, (counts.get(bucket) ?? 0) + 1)
   }
@@ -47,10 +69,35 @@ export function buildSequenceSummary(tools: ToolCallContent[]): string {
   return phrase.length > 0 ? phrase.charAt(0).toUpperCase() + phrase.slice(1) : ''
 }
 
-/** The one clickable/expandable aggregate row that finished calls collapse into. */
-function SequenceSummaryRow({ entries }: { entries: ToolCallSequenceEntry[] }): JSX.Element {
+function appendSummaryPhrase(parts: string[], phrase: string): void {
+  const trimmed = phrase.trim()
+  if (!trimmed) return
+  parts.push(trimmed.charAt(0).toLowerCase() + trimmed.slice(1))
+}
+
+/** Tool/thinking summary plus resolved interactive sidecars in one comma-separated line. */
+export function buildCombinedSequenceSummary(
+  entries: ToolCallSequenceEntry[],
+  sidecars: SidecarSequenceEntry[]
+): string {
+  const parts: string[] = []
+  const toolSummary = buildSequenceSummary(entries)
+  if (toolSummary) parts.push(toolSummary)
+  for (const sidecar of sidecars) appendSummaryPhrase(parts, sidecar.foldSummary)
+  const joined = parts.join(', ')
+  return joined.length > 0 ? joined.charAt(0).toUpperCase() + joined.slice(1) : ''
+}
+
+/** The one clickable expandable text row that finished calls collapse into. */
+function SequenceSummaryRow({
+  entries,
+  sidecars
+}: {
+  entries: ToolCallSequenceEntry[]
+  sidecars: SidecarSequenceEntry[]
+}): JSX.Element {
   const [open, setOpen] = useState(false)
-  const summary = buildSequenceSummary(entries.map((entry) => entry.tool))
+  const summary = buildCombinedSequenceSummary(entries, sidecars)
 
   return (
     <div
@@ -67,6 +114,9 @@ function SequenceSummaryRow({ entries }: { entries: ToolCallSequenceEntry[] }): 
           {entries.map((entry) => (
             <Fragment key={entry.key}>{entry.render()}</Fragment>
           ))}
+          {sidecars.map((sidecar) => (
+            <Fragment key={sidecar.key}>{sidecar.render()}</Fragment>
+          ))}
         </div>
       )}
     </div>
@@ -74,30 +124,46 @@ function SequenceSummaryRow({ entries }: { entries: ToolCallSequenceEntry[] }): 
 }
 
 /**
- * Renders an ordered sequence of tool calls per 14-tool-call-sequence-
- * collapse's aggregation rule — used identically for a turn's top-level
- * tool-call sequence and for each subagent's own nested sequence inside its
+ * Renders an ordered sequence of tool/thinking activity per 14-tool-call-
+ * sequence-collapse's aggregation rule — used for a turn's top-level
+ * sequence and for each subagent's own nested sequence inside its
  * `.subagent-wrap`:
- * - Exactly one call: render it as a normal standalone card, no wrapper.
- * - 2+ calls, last one still running: every call except the last collapses
- *   into one aggregate row; the last renders as its own separate, always-
- *   visible card after it.
- * - 2+ calls, last one finished: all calls (including what was the current
- *   one) collapse into that one aggregate row — nothing stands alone.
+ * - Finished steps (including a lone step) collapse into one aggregate row.
+ * - A running tool call renders as its own card after any collapsed prefix.
+ * - A running thinking block renders as inline blinking text, not a card.
+ * Resolved interactive sidecars in the same run merge into the summary line.
  */
-export default function ToolCallSequence({ entries }: { entries: ToolCallSequenceEntry[] }): JSX.Element {
-  if (entries.length === 1) {
-    return entries[0].render()
+export default function ToolCallSequence({
+  entries,
+  sidecars = []
+}: {
+  entries: ToolCallSequenceEntry[]
+  sidecars?: SidecarSequenceEntry[]
+}): JSX.Element {
+  const mergedSidecars = sidecars.filter((s) => s.foldSummary.trim())
+
+  if (entries.length === 0) {
+    if (mergedSidecars.length === 0) return <></>
+    return <SequenceSummaryRow entries={[]} sidecars={mergedSidecars} />
   }
 
   const last = entries[entries.length - 1]
-  const running = last.tool.status === 'running'
+  const running = entryRunning(last)
   const collapsed = running ? entries.slice(0, -1) : entries
+  const hasCollapsed = collapsed.length > 0 || mergedSidecars.length > 0
+
+  if (!running) {
+    return <SequenceSummaryRow entries={entries} sidecars={mergedSidecars} />
+  }
+
+  if (!hasCollapsed) {
+    return renderRunningEntry(last)
+  }
 
   return (
     <>
-      <SequenceSummaryRow entries={collapsed} />
-      {running && last.render()}
+      <SequenceSummaryRow entries={collapsed} sidecars={mergedSidecars} />
+      {renderRunningEntry(last)}
     </>
   )
 }

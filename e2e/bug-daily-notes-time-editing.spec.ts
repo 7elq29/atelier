@@ -186,6 +186,9 @@ test.describe('fix-confirmed: daily-notes timeline right-click creates a task at
     await input.press('Enter')
 
     await expect(page.locator('[data-testid="timeline-task"]', { hasText: 'Team sync' })).toBeVisible()
+    await expect(
+      page.locator('[data-testid="timeline-task"]', { hasText: 'Team sync' }).getByTestId('task-tag-chip').filter({ hasText: '#meeting' })
+    ).toBeVisible()
     await page.waitForTimeout(1200)
 
     const content = readFileSync(notePath, 'utf-8')
@@ -193,5 +196,82 @@ test.describe('fix-confirmed: daily-notes timeline right-click creates a task at
     expect(line).toBeTruthy()
     expect(line).toMatch(/^-\s+(?:\d{1,2}:\d{2}[^\s]+\s+)?Team sync #meeting/)
     expect(line).not.toMatch(/^-\s+\[/)
+  })
+
+  test('timeline rename via context menu: priority keeps the original time slot', async () => {
+    const timelineBody = page.locator('[data-testid="timeline-body"]')
+    const box = await timelineBody.boundingBox()
+    if (!box) throw new Error('timeline body not visible')
+
+    // Place the task lower on the grid so a spurious jump to ~6am would be obvious.
+    const createY = Math.min(220, box.height - 2)
+    await timelineBody.click({ button: 'right', position: { x: 40, y: createY } })
+    const draftInput = page.getByTestId('timeline-new-task-input')
+    await draftInput.fill('Priority timeline task')
+    await draftInput.press('Enter')
+
+    const block = page.locator('[data-testid="timeline-task"]', { hasText: 'Priority timeline task' })
+    await expect(block).toBeVisible()
+    const beforeStart = await block.getAttribute('data-start')
+    const beforeEnd = await block.getAttribute('data-end')
+    expect(beforeStart).toBeTruthy()
+    expect(beforeEnd).toBeTruthy()
+
+    const blockBox = await block.boundingBox()
+    if (!blockBox) throw new Error('priority task block not visible')
+    await page.mouse.move(blockBox.x + blockBox.width / 2, blockBox.y + blockBox.height / 2)
+    await page.mouse.down({ button: 'right' })
+    await page.mouse.move(blockBox.x + blockBox.width / 2 + 40, blockBox.y + blockBox.height / 2 + 30)
+    await page.mouse.up({ button: 'right' })
+
+    await page.getByTestId('task-rename-option').click()
+
+    const editInput = page.getByTestId('timeline-task-edit-input')
+    await expect(editInput).toBeVisible()
+    await editInput.press('[')
+    await expect(page.locator('[data-testid="task-priority-picker"]')).toBeVisible()
+    await page.locator('[data-testid="task-priority-suggestion"][data-priority-value="high"]').click()
+    await editInput.blur()
+
+    await expect(block.locator('[data-testid="task-priority-badge"]')).toHaveText('high')
+    await expect(block).toHaveClass(/dn-tblock-pri-high/)
+    await expect(block).toHaveClass(/(?:^|\s)dn-tblock(?:\s|$)/)
+    await expect(block).toHaveAttribute('data-start', beforeStart!)
+    await expect(block).toHaveAttribute('data-end', beforeEnd!)
+
+    await page.waitForTimeout(1200)
+    const content = readFileSync(notePath, 'utf-8')
+    expect(content).toMatch(new RegExp(`${beforeStart!.replace(':', '\\:')}.*Priority timeline task.*\\[priority:: high\\]`))
+  })
+
+  test('timeline rename via double-click: priority keeps the original time slot', async () => {
+    const timelineBody = page.locator('[data-testid="timeline-body"]')
+    const box = await timelineBody.boundingBox()
+    if (!box) throw new Error('timeline body not visible')
+
+    const createY = Math.min(260, box.height - 2)
+    await timelineBody.click({ button: 'right', position: { x: 40, y: createY } })
+    const draftInput = page.getByTestId('timeline-new-task-input')
+    await draftInput.fill('Double-click priority task')
+    await draftInput.press('Enter')
+
+    const block = page.locator('[data-testid="timeline-task"]', { hasText: 'Double-click priority task' })
+    await expect(block).toBeVisible()
+    const beforeStart = await block.getAttribute('data-start')
+    const beforeEnd = await block.getAttribute('data-end')
+    expect(beforeStart).toBeTruthy()
+    expect(beforeEnd).toBeTruthy()
+
+    await block.locator('.dn-tb-body').dblclick()
+
+    const editInput = page.getByTestId('timeline-task-edit-input')
+    await expect(editInput).toBeVisible()
+    await editInput.press('[')
+    await page.locator('[data-testid="task-priority-suggestion"][data-priority-value="high"]').click()
+    await editInput.blur()
+
+    await expect(block).toHaveAttribute('data-start', beforeStart!)
+    await expect(block).toHaveAttribute('data-end', beforeEnd!)
+    await expect(block.locator('[data-testid="task-priority-badge"]')).toHaveText('high')
   })
 })

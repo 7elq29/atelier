@@ -1,8 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AtelierConfig } from '../shared/config'
-import type { DailyNote, ReadDailyNoteResult, DailyNoteNotesSliceResult, DailyNotePasteImagePayload, DailyNotePasteImageResult } from '../shared/daily-note-types'
+import type { DailyNote, ReadDailyNoteResult, DailyNoteNotesSliceResult, DailyNotePasteImagePayload, DailyNotePasteImageResult, DailyNoteCarrySuggestionsResult } from '../shared/daily-note-types'
 import type {
   WeeklyPlanCreatePayload,
+  WeeklyPlanDraftPayload,
+  WeeklyPlanReadResult,
+  WeeklyPlanScheduleEntry,
+  WeeklyPlanViewResult,
   WeeklyPlanStatus,
   WeeklyPlanWizardContext
 } from '../shared/weekly-plan-types'
@@ -25,6 +29,8 @@ import type {
   SessionStatusEvent,
   SessionStreamDeltaEvent,
   SessionStreamEvent,
+  SessionMessageRemovedEvent,
+  SessionInterruptResult,
   SessionTokenUsageEvent,
   SessionPromptSuggestionEvent,
   SessionTurnStateEvent,
@@ -52,6 +58,7 @@ import type {
   SessionWorkspacePayload,
   SessionWorkspaceUpdatedEvent
 } from '../shared/session-workspace-types'
+import type { SessionChangesCap } from '../shared/session-changes-cap'
 import type {
   SessionAuthStatusEvent,
   SessionBackgroundTasksEvent,
@@ -64,6 +71,8 @@ import type {
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 const api = {
+  /** Host OS id (`darwin` | `win32` | `linux`) — used for platform-specific chrome. */
+  platform: process.platform,
   /** Round-trip IPC call to main: asks for the real app version string. */
   getAppVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
   /** Path of the main-process structured log file, for debugging/e2e use. */
@@ -100,6 +109,10 @@ const api = {
   readDailyNoteAttachmentDataUrl: (date: string, fileName: string): Promise<string | null> =>
     ipcRenderer.invoke('daily-note:read-attachment-data-url', date, fileName),
   createDailyNote: (date: string): Promise<ReadDailyNoteResult> => ipcRenderer.invoke('daily-note:create', date),
+  getDailyNoteCarrySuggestions: (date: string, dismissedKeys: string[]): Promise<DailyNoteCarrySuggestionsResult> =>
+    ipcRenderer.invoke('daily-note:carry-suggestions', date, dismissedKeys),
+  toggleDailyNoteCarryTask: (sourceDate: string, taskId: string): Promise<DailyNote> =>
+    ipcRenderer.invoke('daily-note:carry-toggle-task', sourceDate, taskId),
   writeDailyNote: (date: string, note: DailyNote): Promise<{ note: DailyNote }> =>
     ipcRenderer.invoke('daily-note:write', date, note),
   watchDailyNote: (date: string): Promise<void> => ipcRenderer.invoke('daily-note:watch', date),
@@ -120,10 +133,30 @@ const api = {
     ipcRenderer.invoke('daily-note:move-task', sourceDate, taskId, targetDate),
 
   getWeeklyPlanStatus: (): Promise<WeeklyPlanStatus> => ipcRenderer.invoke('weekly-plan:getStatus'),
+  readWeeklyPlanNote: (isoWeek?: string): Promise<WeeklyPlanViewResult> =>
+    ipcRenderer.invoke('weekly-plan:readNote', isoWeek),
   loadWeeklyPlanContext: (): Promise<(WeeklyPlanWizardContext & { initialData: WeeklyPlanCreatePayload['data'] }) | null> =>
     ipcRenderer.invoke('weekly-plan:loadContext'),
+  saveWeeklyPlanDraft: (payload: WeeklyPlanDraftPayload): Promise<{ ok: true }> =>
+    ipcRenderer.invoke('weekly-plan:saveDraft', payload),
+  clearWeeklyPlanDraft: (isoWeek: string): Promise<{ ok: true }> =>
+    ipcRenderer.invoke('weekly-plan:clearDraft', isoWeek),
+  importWeeklyPlanDraftFromFile: (payload: {
+    filePath: string
+    isoWeek?: string
+    step?: number
+  }): Promise<{ ok: true; isoWeek: string; step: number }> =>
+    ipcRenderer.invoke('weekly-plan:importDraftFromFile', payload),
   createWeeklyPlan: (payload: WeeklyPlanCreatePayload): Promise<{ path: string; relativePath: string }> =>
     ipcRenderer.invoke('weekly-plan:create', payload),
+  writeWeeklyPlanNote: (payload: { isoWeek: string; markdown: string }): Promise<{ ok: true }> =>
+    ipcRenderer.invoke('weekly-plan:writeNote', payload),
+  syncWeeklyPlanSchedule: (payload: {
+    isoWeek: string
+    scheduleEntries: WeeklyPlanScheduleEntry[]
+    removedDailySourceKeys?: string[]
+  }): Promise<{ ok: true; scheduleEntries: WeeklyPlanScheduleEntry[] }> =>
+    ipcRenderer.invoke('weekly-plan:syncSchedule', payload),
 
   // ── Sessions (02-session-lifecycle) ──────────────────────────────
   pickProjectFolder: (): Promise<string | null> => ipcRenderer.invoke('session:pickProjectFolder'),
@@ -147,11 +180,17 @@ const api = {
     ipcRenderer.invoke('session:getWorkspaceSnapshot', sessionId),
   refreshSessionWorkspace: (sessionId: string, force: boolean): Promise<SessionWorkspacePayload | null> =>
     ipcRenderer.invoke('session:refreshWorkspace', sessionId, force),
+  capOutsideFileDiff: (
+    sessionId: string,
+    workspacePath: string,
+    capPath: string
+  ): Promise<{ file: DiffFileChange; pair: DiffFileContentPair } | null> =>
+    ipcRenderer.invoke('session:capOutsideFileDiff', sessionId, workspacePath, capPath),
   touchSessionActive: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:touchActive', sessionId),
   isSessionStartupIdle: (sessionId: string): Promise<boolean> => ipcRenderer.invoke('session:isStartupIdle', sessionId),
   sendSessionMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment): Promise<void> =>
     ipcRenderer.invoke('session:sendMessage', sessionId, text, modelSelection, image),
-  interruptSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:interrupt', sessionId),
+  interruptSession: (sessionId: string): Promise<SessionInterruptResult> => ipcRenderer.invoke('session:interrupt', sessionId),
   validateModel: (sessionId: string, model: string): Promise<ModelValidationResult> =>
     ipcRenderer.invoke('session:validateModel', sessionId, model),
   forkSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:fork', sessionId),
@@ -219,6 +258,11 @@ const api = {
     ipcRenderer.on('session:message', listener)
     return () => ipcRenderer.removeListener('session:message', listener)
   },
+  onSessionMessageRemoved: (callback: (event: SessionMessageRemovedEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionMessageRemovedEvent): void => callback(payload)
+    ipcRenderer.on('session:messageRemoved', listener)
+    return () => ipcRenderer.removeListener('session:messageRemoved', listener)
+  },
   /** Token-level live push for an in-progress assistant message (03-chat-surface-core) — see SessionStreamDeltaEvent. */
   onSessionStreamDelta: (callback: (event: SessionStreamDeltaEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: SessionStreamDeltaEvent): void => callback(payload)
@@ -248,7 +292,7 @@ const api = {
     ipcRenderer.on('session:harnessCwd', listener)
     return () => ipcRenderer.removeListener('session:harnessCwd', listener)
   },
-  /** Context-window token usage push (token-usage-indicator) — fired after each completed turn with cumulative inputTokens and contextWindow for the session's active connection. */
+  /** Context-window token usage push (token-usage-indicator) — after each turn, `inputTokens` is SDK total in-context usage and `contextWindow` is the compaction threshold. */
   onSessionTokenUsage: (callback: (event: SessionTokenUsageEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: SessionTokenUsageEvent): void => callback(payload)
     ipcRenderer.on('session:tokenUsage', listener)
@@ -318,6 +362,14 @@ const api = {
   /** Test-only: raw mutating SQL statement (INSERT/UPDATE/DELETE) against the real SQLite DB (see debug:execDb handler). */
   debugExecDb: (sql: string, params: unknown[] = []): Promise<{ changes: number }> =>
     ipcRenderer.invoke('debug:execDb', sql, params),
+  /** Test-only: mirror inline plan markdown into workspace + session changes cap. */
+  debugRegisterPlanInCap: (
+    sessionId: string,
+    args: { plan: string; planFilePath?: string; toolUseId: string }
+  ): Promise<SessionChangesCap | null> => ipcRenderer.invoke('debug:registerPlanInCap', sessionId, args),
+  /** Test-only: apply harness UI events through SessionManager (background_tasks, task_*). */
+  debugApplyHarnessUiEvents: (sessionId: string, events: unknown[]): Promise<void> =>
+    ipcRenderer.invoke('debug:applyHarnessUiEvents', sessionId, events),
 
   // ── Secondary panels (07-secondary-panels) ──────────────────────────
   gitDiff: (projectPath: string, hostname?: string | null, force?: boolean): Promise<DiffSummary> =>
@@ -368,6 +420,8 @@ const api = {
   filesDir: (root: string, dir: string, hostname?: string | null): Promise<FileTreeNode[]> => ipcRenderer.invoke('panel:files:dir', root, dir, hostname),
   filesList: (workspaceRoot: string, underDir?: string | null, hostname?: string | null): Promise<WorkspaceFileEntry[]> =>
     ipcRenderer.invoke('panel:files:list', workspaceRoot, underDir, hostname),
+  filesIsDirectory: (path: string, hostname?: string | null): Promise<boolean> =>
+    ipcRenderer.invoke('panel:files:isDirectory', path, hostname),
   filesRead: (path: string, hostname?: string | null): Promise<FileReadResult> => ipcRenderer.invoke('panel:files:read', path, hostname),
   filesWrite: (path: string, content: string, hostname?: string | null): Promise<FileWriteResult> => ipcRenderer.invoke('panel:files:write', path, content, hostname),
 

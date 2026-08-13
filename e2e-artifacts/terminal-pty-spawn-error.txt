@@ -1,0 +1,2 @@
+Error: Error invoking remote method 'panel:pty:spawn': Error: posix_spawnp failed.
+log: /private/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-terminal-pty-ynbm04/logs/main.log

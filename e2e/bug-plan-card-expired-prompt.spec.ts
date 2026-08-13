@@ -78,18 +78,24 @@ test('bug-repro: plan card renders real markdown, and an expired prompt shows a 
     await expect(page.getByTestId('new-session-modal')).toBeVisible()
     await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('plan-mode-checkbox').check()
-    await page.getByTestId('initial-prompt').fill(
-      'Propose a plan (via ExitPlanMode, do not call any other tool first) to create a file. ' +
-        'In the plan text itself, use real Markdown: a heading, a numbered list, at least one **bold** phrase, ' +
-        'and at least one `inline code` span naming the file. Keep it short.'
-    )
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
 
     const row = page.locator('[data-testid="session-row"]').first()
     await expect(row).toBeVisible({ timeout: 15_000 })
     const sessionId = (await row.getAttribute('data-session-id')) as string
+
+    const composer = page.getByTestId('composer-input')
+    await expect(composer).toBeVisible({ timeout: 15_000 })
+    await composer.click()
+    await composer.press('Shift+Tab')
+    await expect(page.getByTestId('composer-mode-pill')).toHaveAttribute('data-mode', 'plan', { timeout: 10_000 })
+    await composer.fill(
+      'Propose a plan (via ExitPlanMode, do not call any other tool first) to create a file. ' +
+        'In the plan text itself, use real Markdown: a heading, a numbered list, at least one **bold** phrase, ' +
+        'and at least one `inline code` span naming the file. Keep it short.'
+    )
+    await page.getByTestId('send-button').click()
 
     const planCard = page.getByTestId('plan-card').first()
     await expect(planCard).toBeVisible({ timeout: 45_000 })
@@ -133,10 +139,13 @@ test('bug-repro: plan card renders real markdown, and an expired prompt shows a 
     await page.waitForLoadState('domcontentloaded')
     await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
 
+    const expiredSummary = page.locator('[data-testid="tool-sequence-summary"]').filter({ hasText: /proposed plan — expired/i }).last()
+    await expect(expiredSummary).toBeVisible({ timeout: 15_000 })
+    await expiredSummary.click()
+
     const reloadedCard = page.getByTestId('plan-card').first()
-    await expect(reloadedCard).toBeVisible({ timeout: 15_000 })
+    await expect(reloadedCard).toBeVisible()
     await expect(reloadedCard).toHaveAttribute('data-status', 'expired')
-    await expect(reloadedCard.getByTestId('plan-resolved-note')).toContainText('expired')
     await expect(reloadedCard.getByTestId('plan-actions')).not.toBeVisible()
 
     await page.screenshot({ path: join(artifactsDir, 'bug-plan-card-expired-note.png') })

@@ -43,7 +43,7 @@ iterating.
 |---|---|
 | **Spec files** | `session-lifecycle.spec.ts`, `bug-new-session-path-history.spec.ts`, `bug-slash-model-command-missing.spec.ts` (setup path only), `secondary-panels.spec.ts` (terminal-only session setup) |
 | **Source paths** | `src/renderer/src/components/NewSessionModal.tsx`, `src/main/sessions/manager.ts`, `src/main/sessions/hosts.ts`, `src/main/sessions/ipc.ts`, `src/main/sessions/store.ts`, `src/main/harness/*` |
-| **Catches** | New Session Modal flows (claude-code vs terminal mode, project-folder picker, remote path history/host options), session menu actions (rename/fork/restart/delete), resume of a prior session, terminal-only sessions. Use-worktree: modal closes immediately when "Use worktree" is checked, sidebar row shows `creating-worktree` state (dimmed, "Setting up worktree…" label), transitions to live status on success; row disappears on failure (non-git project). |
+| **Catches** | New Session Modal flows (claude-code vs terminal mode, project-folder picker, remote path history/host options), session menu actions (rename/fork/restart/delete), resume of a prior session, terminal-only sessions. Use-worktree: modal closes immediately when "Use worktree" is checked, sidebar row shows `creating-worktree` state (dimmed, "Setting up worktree…" label), transitions to live status on success; on failure the row stays with a system error (no silent delete). |
 
 ### 3. Session Organization (Sidebar, Groups, Search, Filters, Tags)
 
@@ -105,7 +105,7 @@ iterating.
 
 | | |
 |---|---|
-| **Spec files** | `secondary-panels.spec.ts` |
+| **Spec files** | `secondary-panels.spec.ts`, `terminal-pty.spec.ts` |
 | **Source paths** | `src/renderer/src/components/panels/*` (`DiffPanel.tsx`, `FilesPanel.tsx`, `PortsPanel.tsx`, `TerminalPanel.tsx`, `TabBar.tsx`, `CompanionTerminalDrawer.tsx`), `src/main/panels/*` (`git.ts`, `files.ts`, `ports.ts`, `pty.ts`, `ipc.ts`) |
 | **Catches** | Tab strip switching (chat/diff/files/ports), git diff sub-tabs (changes/commits/worktrees) including worktree add/merge/remove and diff inline comments, file tree browsing + content/image/HTML preview, port forwarding rows (add/remove/status), real PTY-backed terminal panel and the companion terminal drawer. SSH ControlMaster: verifies that opening a devpod terminal creates a `/tmp/atelier-ssh-*` multiplexing socket (proving `SSH_MUX_OPTS` are applied so subsequent SSH calls reuse the socket instead of doing a full crypto handshake). |
 

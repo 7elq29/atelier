@@ -55,6 +55,7 @@ interface SessionRow {
   last_active_at: string
   linked_daily_task_gid: string | null
   linked_daily_note_date: string | null
+  profile_id: string | null
 }
 
 interface MessageRow {
@@ -118,6 +119,7 @@ function toSessionRecord(row: SessionRow, tags: string[] = []): SessionRecord {
     // use-worktree: absolute path to the session's isolated git worktree, or
     // null for sessions not created with the "Use worktree" toggle.
     worktreePath: row.worktree_path ?? null,
+    profileId: row.profile_id ?? null,
     lastActiveAt: row.last_active_at || row.created_at,
     linkedDailyTaskGid: row.linked_daily_task_gid ?? null,
     linkedDailyNoteDate: row.linked_daily_note_date ?? null
@@ -174,13 +176,14 @@ export class SessionStore {
     id?: string
     sortOrder?: number
     worktreePath?: string | null
+    profileId?: string | null
   }): SessionRecord {
     const id = input.id ?? randomUUID()
     const createdAt = new Date().toISOString()
     this.db
       .prepare(
-        `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order, worktree_path, last_active_at)
-         VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, @pinned, @color, @createdAt, NULL, NULL, @sortOrder, @worktreePath, @lastActiveAt)`
+        `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order, worktree_path, last_active_at, profile_id)
+         VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, @pinned, @color, @createdAt, NULL, NULL, @sortOrder, @worktreePath, @lastActiveAt, @profileId)`
       )
       .run({
         id,
@@ -194,7 +197,8 @@ export class SessionStore {
         createdAt,
         sortOrder: input.sortOrder ?? Date.now(),
         worktreePath: input.worktreePath ?? null,
-        lastActiveAt: createdAt
+        lastActiveAt: createdAt,
+        profileId: input.profileId ?? null
       })
     return this.getSession(id)!
   }
@@ -259,7 +263,7 @@ export class SessionStore {
     return this.getSession(id)
   }
 
-  setWorktreePath(id: string, worktreePath: string): SessionRecord | undefined {
+  setWorktreePath(id: string, worktreePath: string | null): SessionRecord | undefined {
     this.db.prepare('UPDATE sessions SET worktree_path = ? WHERE id = ?').run(worktreePath, id)
     return this.getSession(id)
   }
@@ -606,6 +610,15 @@ export class SessionStore {
     return record
   }
 
+  /** Hard-delete a single message row (and its FTS index entry). Returns the removed row when it existed. */
+  deleteMessage(id: number): MessageRecord | undefined {
+    const existing = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as MessageRow | undefined
+    if (!existing) return undefined
+    this.db.prepare('DELETE FROM messages_fts WHERE rowid = ?').run(id)
+    this.db.prepare('DELETE FROM messages WHERE id = ?').run(id)
+    return toMessageRecord(existing)
+  }
+
   listMessages(sessionId: string): MessageRecord[] {
     const rows = this.db
       .prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC')
@@ -757,6 +770,10 @@ export class SessionStore {
     this.db
       .prepare(`UPDATE session_touched_paths SET last_pending_at = ? WHERE session_id = ? AND path = ?`)
       .run(pendingAt, sessionId, path)
+  }
+
+  deleteSessionTouchedPath(sessionId: string, path: string): void {
+    this.db.prepare(`DELETE FROM session_touched_paths WHERE session_id = ? AND path = ?`).run(sessionId, path)
   }
 
   getSessionGitCursor(

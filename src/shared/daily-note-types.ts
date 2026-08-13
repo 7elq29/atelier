@@ -41,6 +41,8 @@ export interface DailyTask {
   isNote: boolean
   /** Atelier session id stored as `[session:: …]` in the vault task line. */
   linkedSessionId?: string
+  /** Dataview-style `[priority:: …]` (e.g. high, medium, low). */
+  priority?: string
 }
 
 /** Non-task markdown this note contains, preserved verbatim for round-tripping. */
@@ -63,6 +65,12 @@ export interface ReadDailyNoteResult {
   note: DailyNote | null
   raw: RawSections | null
   exists: boolean
+}
+
+/** Incomplete timeline/unscheduled tasks from the most recent prior daily note. */
+export interface DailyNoteCarrySuggestionsResult {
+  sourceDate: string | null
+  tasks: DailyTask[]
 }
 
 /** Renderer-facing result for the Notes-section-only editor (## Notes → EOF). */

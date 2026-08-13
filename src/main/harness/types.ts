@@ -290,6 +290,8 @@ export type HarnessEvent =
       isError: boolean
       subtype: string
       result?: string
+      /** Populated on SDK error results (`SDKResultError.errors`). */
+      errors?: string[]
       numTurns: number
       durationMs: number
       totalCostUsd: number
@@ -618,11 +620,11 @@ export interface HarnessDriver {
   /**
    * Returns the current context window usage for a live session via the SDK's
    * own `getContextUsage()` query — call this after a `result` event to get
-   * `totalTokens` (all token categories summed) and `autoCompactThreshold`
-   * (the cap before auto-compaction kicks in, smaller than the model's full
-   * context window). Returns `null` if the session is not live.
+   * `totalTokens` (all in-context categories summed) and `compactThreshold`
+   * (when auto-compaction fires — `autoCompactThreshold ?? maxTokens`, not
+   * the model's full `rawMaxTokens`). Returns `null` if the session is not live.
    */
-  getContextUsage(sessionId: string): Promise<{ totalTokens: number; autoCompactThreshold?: number } | null>
+  getContextUsage(sessionId: string): Promise<{ totalTokens: number; compactThreshold: number } | null>
 
   /**
    * Resolves a pending `permission_request` / `ask_user_question` /

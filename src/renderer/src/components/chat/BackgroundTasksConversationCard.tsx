@@ -1,37 +1,41 @@
 import type { BackgroundTaskRow } from '../../../../shared/harness-ui-types'
-import { backgroundTaskRailGroup, countActiveBackgroundTasks } from '../../../../shared/background-tasks-ui'
+import {
+  backgroundTaskRailGroup,
+  backgroundTasksForTranscriptCard,
+  countActiveBackgroundTasks,
+} from '../../../../shared/background-tasks-ui'
 import BackgroundTaskRowView from './BackgroundTaskRowView'
 
 /**
- * Live background jobs / monitors / shell tasks in the transcript (approved mock:
- * `.background-item` in sdk-harness-events-review.html). Shown while tasks exist;
- * status merges from SDK task_* events in the main process.
+ * Non-subagent SDK background tasks in the transcript (monitors / jobs / shell).
+ * Subagents (`task_type: subagent`) render only in the tracker rail with live status.
  */
 export default function BackgroundTasksConversationCard({
   tasks,
 }: {
   tasks: BackgroundTaskRow[]
 }): JSX.Element | null {
-  if (tasks.length === 0) return null
+  const visible = backgroundTasksForTranscriptCard(tasks)
+  if (visible.length === 0) return null
 
   const monitors: BackgroundTaskRow[] = []
   const jobs: BackgroundTaskRow[] = []
   const shell: BackgroundTaskRow[] = []
-  for (const t of tasks) {
+  for (const t of visible) {
     const g = backgroundTaskRailGroup(t.taskType)
     if (g === 'monitors') monitors.push(t)
     else if (g === 'shell') shell.push(t)
     else jobs.push(t)
   }
 
-  const active = countActiveBackgroundTasks(tasks)
+  const active = countActiveBackgroundTasks(visible)
 
   return (
     <div className="background-tasks-conversation-card" data-testid="background-tasks-conversation-card">
       <div className="background-tasks-conversation-head">
         <span className="background-tasks-conversation-title">Background tasks</span>
         <span className="background-tasks-conversation-count" data-testid="background-tasks-conversation-count">
-          {active > 0 ? `${active} active` : `${tasks.length} total`}
+          {active > 0 ? `${active} active` : `${visible.length} total`}
         </span>
       </div>
       {monitors.length > 0 && (

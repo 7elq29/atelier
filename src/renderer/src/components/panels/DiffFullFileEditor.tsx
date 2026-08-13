@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as monaco from 'monaco-editor'
-import type { DiffFileChange, DiffHunk } from '../../../../shared/panel-types'
+import type { DiffFileChange, DiffFileContentPair, DiffHunk } from '../../../../shared/panel-types'
 import { ensureAtelierMonacoThemes, monacoThemeId } from '../../editor/atelier-monaco-theme'
 import { registerEmacsMonacoKeybindings } from '../../editor/emacs-monaco-keybindings'
 import { detectLanguageFromPath } from '../../editor/monaco-language'
@@ -90,7 +90,8 @@ export default function DiffFullFileEditor({
   effectiveTheme,
   active,
   commitHash,
-  scopeKey
+  scopeKey,
+  contentPair
 }: {
   workspacePath: string
   file: DiffFileChange
@@ -99,6 +100,8 @@ export default function DiffFullFileEditor({
   active: boolean
   commitHash?: string | null
   scopeKey: string
+  /** When set (e.g. cap paths outside git), skip git pair IPC. */
+  contentPair?: DiffFileContentPair
 }): JSX.Element {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const modelRef = useRef<monaco.editor.ITextModel | null>(null)
@@ -165,9 +168,11 @@ export default function DiffFullFileEditor({
     setError(null)
 
     void (async () => {
-      const pair = commitHash
-        ? await window.atelier.gitCommitFilePair(workspacePath, commitHash, file.path, file.status, hostname)
-        : await window.atelier.gitWorkingTreeFilePair(workspacePath, file.path, file.status, hostname)
+      const pair = contentPair
+        ? contentPair
+        : commitHash
+          ? await window.atelier.gitCommitFilePair(workspacePath, commitHash, file.path, file.status, hostname)
+          : await window.atelier.gitWorkingTreeFilePair(workspacePath, file.path, file.status, hostname)
 
       if (cancelled) return
       const editor = editorRef.current
@@ -214,7 +219,8 @@ export default function DiffFullFileEditor({
     commitHash,
     scopeKey,
     clearDiffUi,
-    editorReady
+    editorReady,
+    contentPair
   ])
 
   useEffect(() => {

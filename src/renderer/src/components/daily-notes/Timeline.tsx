@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DailyTask } from '../../../../shared/daily-note-types'
+import type { DailyTask, ExternalLink } from '../../../../shared/daily-note-types'
 import CurrentTimeMarker from './CurrentTimeLine'
 import DailyNoteTaskInput from './DailyNoteTaskInput'
 import TaskMoveContextMenu from './TaskMoveContextMenu'
@@ -18,10 +18,16 @@ import {
   snapToHalfHour,
   computeColumns
 } from './timeline-scale'
-import { formatTaskTextWithInlineTags, extractInlineTagsFromText } from '../../../../shared/daily-note-tags'
+import { extractInlineTagsFromText } from '../../../../shared/daily-note-tags'
+import { formatTaskEditBuffer } from '../../../../shared/task-priority'
+import { priorityTimelineAccentClass } from '../../../../shared/task-priority'
+import { TaskEditInput, TaskPriorityBadge, buildTaskEditPatch } from './task-priority-ui'
+import TaskTextDisplay from './TaskTextDisplay'
 
 const DEFAULT_DURATION_MIN = 30
 const NOW_POLL_MS = 30_000
+/** Pixels of vertical movement before a mousedown becomes a drag (clicks/double-clicks stay put). */
+const DRAG_ACTIVATION_PX = 8
 const GRID_START_MIN = TIMELINE_START_HOUR * 60
 const GRID_END_MIN = TIMELINE_END_HOUR * 60
 const GRID_HEIGHT_PX = minutesToPx(GRID_END_MIN - GRID_START_MIN)
@@ -31,8 +37,10 @@ interface TimelineProps {
   onToggle: (id: string) => void
   onCreate: (text: string, timeBlock: string) => void
   onDropExisting: (id: string, timeBlock: string) => void
+  onMoveToUnscheduled: (id: string) => void
   onDelete: (id: string) => void
   onUpdateText: (id: string, text: string) => void
+  onUpdateTask: (id: string, patch: Partial<DailyTask>) => void
   moveDateOptions: MoveDateOptions
   onMoveToDate: (id: string, targetDate: string) => void
   onCreateSessionFromTask?: (task: DailyTask) => void
@@ -77,8 +85,10 @@ export default function Timeline({
   onToggle,
   onCreate,
   onDropExisting,
+  onMoveToUnscheduled,
   onDelete,
   onUpdateText,
+  onUpdateTask,
   moveDateOptions,
   onMoveToDate,
   onCreateSessionFromTask
@@ -89,10 +99,53 @@ export default function Timeline({
   const [moveMenu, setMoveMenu] = useState<{ x: number; y: number; taskId: string } | null>(null)
   const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null)
   const [renameText, setRenameText] = useState('')
+  const renameInputRef = useRef<HTMLTextAreaElement>(null)
 
+  const pendingDragRef = useRef<Omit<DragInfo, 'liveStartMin' | 'liveEndMin'> | null>(null)
+  /** Task id for an in-flight HTML5 drag — dataTransfer is empty during dragover. */
+  const htmlDragTaskIdRef = useRef<string | null>(null)
   const dragRef = useRef<DragInfo | null>(null)
+  const dragActivatedRef = useRef(false)
   const [dragActive, setDragActive] = useState(false)
   const [liveBlock, setLiveBlock] = useState<{ taskId: string; startMin: number; endMin: number } | null>(null)
+
+  function clearDragGesture(): void {
+    pendingDragRef.current = null
+    dragRef.current = null
+    dragActivatedRef.current = false
+    setLiveBlock(null)
+    setDragActive(false)
+  }
+
+  function applyDragMove(drag: DragInfo, clientY: number): void {
+    const deltaMin = snapMinutes(pxToMinutes(clientY - drag.initialMouseY))
+    let nextStart = drag.initialStartMin
+    let nextEnd = drag.initialEndMin
+
+    if (drag.mode === 'move') {
+      const duration = drag.initialEndMin - drag.initialStartMin
+      nextStart = drag.initialStartMin + deltaMin
+      nextEnd = nextStart + duration
+      if (nextStart < GRID_START_MIN) {
+        nextStart = GRID_START_MIN
+        nextEnd = GRID_START_MIN + duration
+      }
+      if (nextEnd > GRID_END_MIN) {
+        nextEnd = GRID_END_MIN
+        nextStart = GRID_END_MIN - duration
+      }
+    } else if (drag.mode === 'resize-top') {
+      nextStart = clamp(drag.initialStartMin + deltaMin, GRID_START_MIN, drag.initialEndMin - SNAP_MINUTES)
+      nextEnd = drag.initialEndMin
+    } else {
+      nextEnd = clamp(drag.initialEndMin + deltaMin, drag.initialStartMin + SNAP_MINUTES, GRID_END_MIN)
+      nextStart = drag.initialStartMin
+    }
+
+    drag.liveStartMin = nextStart
+    drag.liveEndMin = nextEnd
+    setLiveBlock({ taskId: drag.taskId, startMin: nextStart, endMin: nextEnd })
+  }
 
   useEffect(() => {
     const interval = setInterval(() => setNowMinutes(minutesNow()), NOW_POLL_MS)
@@ -133,54 +186,44 @@ export default function Timeline({
     return () => window.removeEventListener('mousedown', onMouseDown)
   }, [draft])
 
-  // Drag state machine (UC-9/UC-10 move + resize): dragRef is the source of
-  // truth read by the window-level mousemove/mouseup listeners (so they
-  // never see a stale closure over the initial mousedown values); liveBlock
-  // mirrors the ref's live position purely to trigger a re-render so the
-  // dragged block visually tracks the pointer before the drop is committed.
+  // Drag state machine (UC-9/UC-10 move + resize): arm on mousedown, activate only
+  // after DRAG_ACTIVATION_PX of movement so clicks/double-clicks/right-click menus
+  // do not accidentally commit a new timeBlock.
   useEffect(() => {
-    if (!dragActive) return
-
     function onMove(e: MouseEvent): void {
-      const drag = dragRef.current
-      if (!drag) return
-      const deltaMin = snapMinutes(pxToMinutes(e.clientY - drag.initialMouseY))
-      let nextStart = drag.initialStartMin
-      let nextEnd = drag.initialEndMin
-
-      if (drag.mode === 'move') {
-        const duration = drag.initialEndMin - drag.initialStartMin
-        nextStart = drag.initialStartMin + deltaMin
-        nextEnd = nextStart + duration
-        if (nextStart < GRID_START_MIN) {
-          nextStart = GRID_START_MIN
-          nextEnd = GRID_START_MIN + duration
+      const pending = pendingDragRef.current
+      if (pending && !dragRef.current) {
+        if (Math.abs(e.clientY - pending.initialMouseY) < DRAG_ACTIVATION_PX) return
+        dragActivatedRef.current = true
+        dragRef.current = {
+          ...pending,
+          liveStartMin: pending.initialStartMin,
+          liveEndMin: pending.initialEndMin
         }
-        if (nextEnd > GRID_END_MIN) {
-          nextEnd = GRID_END_MIN
-          nextStart = GRID_END_MIN - duration
-        }
-      } else if (drag.mode === 'resize-top') {
-        nextStart = clamp(drag.initialStartMin + deltaMin, GRID_START_MIN, drag.initialEndMin - SNAP_MINUTES)
-        nextEnd = drag.initialEndMin
-      } else {
-        nextEnd = clamp(drag.initialEndMin + deltaMin, drag.initialStartMin + SNAP_MINUTES, GRID_END_MIN)
-        nextStart = drag.initialStartMin
+        pendingDragRef.current = null
+        setDragActive(true)
       }
 
-      drag.liveStartMin = nextStart
-      drag.liveEndMin = nextEnd
-      setLiveBlock({ taskId: drag.taskId, startMin: nextStart, endMin: nextEnd })
+      const drag = dragRef.current
+      if (!drag) return
+      applyDragMove(drag, e.clientY)
     }
 
     function onUp(): void {
+      if (pendingDragRef.current && !dragActivatedRef.current) {
+        pendingDragRef.current = null
+        return
+      }
+
       const drag = dragRef.current
-      if (drag && (drag.liveStartMin !== drag.initialStartMin || drag.liveEndMin !== drag.initialEndMin)) {
+      if (
+        drag &&
+        dragActivatedRef.current &&
+        (drag.liveStartMin !== drag.initialStartMin || drag.liveEndMin !== drag.initialEndMin)
+      ) {
         onDropExisting(drag.taskId, `${minutesToTime(drag.liveStartMin)}-${minutesToTime(drag.liveEndMin)}`)
       }
-      dragRef.current = null
-      setLiveBlock(null)
-      setDragActive(false)
+      clearDragGesture()
     }
 
     window.addEventListener('mousemove', onMove)
@@ -189,22 +232,21 @@ export default function Timeline({
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [dragActive, onDropExisting])
+  }, [onDropExisting])
 
   const startDrag = (mode: DragMode, task: DailyTask, block: { start: number; end: number }, e: React.MouseEvent): void => {
+    if (e.button !== 0) return
+    if (renamingTaskId === task.id) return
     e.preventDefault()
     e.stopPropagation()
-    dragRef.current = {
+    clearDragGesture()
+    pendingDragRef.current = {
       mode,
       taskId: task.id,
       initialMouseY: e.clientY,
       initialStartMin: block.start,
-      initialEndMin: block.end,
-      liveStartMin: block.start,
-      liveEndMin: block.end
+      initialEndMin: block.end
     }
-    setLiveBlock({ taskId: task.id, startMin: block.start, endMin: block.end })
-    setDragActive(true)
   }
 
   /** Map a client Y coordinate to a snapped grid-minutes value (UC-5/UC-13). */
@@ -241,12 +283,42 @@ export default function Timeline({
     })
   }
 
+  const handleDragOver = (e: React.DragEvent): void => {
+    e.preventDefault()
+    const id = htmlDragTaskIdRef.current
+    if (!id) return
+    const task = tasks.find((t) => t.id === id)
+    if (!task) return
+    const parsed = parseTimeBlock(task.timeBlock)
+    const duration = parsed ? parsed.end - parsed.start : DEFAULT_DURATION_MIN
+    const start = clampedStartForDefaultDuration(e.clientY)
+    const end = Math.min(start + duration, GRID_END_MIN)
+    setLiveBlock({ taskId: id, startMin: start, endMin: end })
+  }
+
+  const handleDragEnd = (): void => {
+    htmlDragTaskIdRef.current = null
+    setLiveBlock(null)
+  }
+
+  const handleTaskDragStart = (task: DailyTask, e: React.DragEvent): void => {
+    clearDragGesture()
+    htmlDragTaskIdRef.current = task.id
+    e.dataTransfer.setData('text/task-id', task.id)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
   const handleDrop = (e: React.DragEvent): void => {
     e.preventDefault()
+    htmlDragTaskIdRef.current = null
+    setLiveBlock(null)
     const id = e.dataTransfer.getData('text/task-id')
     if (!id) return
+    const task = tasks.find((t) => t.id === id)
+    const parsed = task ? parseTimeBlock(task.timeBlock) : null
+    const duration = parsed ? parsed.end - parsed.start : DEFAULT_DURATION_MIN
     const start = clampedStartForDefaultDuration(e.clientY)
-    const end = start + DEFAULT_DURATION_MIN
+    const end = Math.min(start + duration, GRID_END_MIN)
     onDropExisting(id, `${minutesToTime(start)}-${minutesToTime(end)}`)
   }
 
@@ -257,9 +329,30 @@ export default function Timeline({
     setDraft(null)
   }
 
-  const commitRename = (taskId: string): void => {
-    if (renameText.trim()) onUpdateText(taskId, renameText.trim())
+  const commitRename = (
+    taskId: string,
+    parsed: {
+      text: string
+      priority?: string
+      priorityTouched: boolean
+      externalLinks: ExternalLink[]
+    }
+  ): void => {
+    const task = tasks.find((t) => t.id === taskId)
+    if (!task) {
+      setRenamingTaskId(null)
+      return
+    }
+    const patch = buildTaskEditPatch(task, parsed)
+    if (Object.keys(patch).length > 0) onUpdateTask(taskId, patch)
+    else if (parsed.text.trim()) onUpdateText(taskId, parsed.text.trim())
     setRenamingTaskId(null)
+  }
+
+  const startRename = (task: DailyTask): void => {
+    clearDragGesture()
+    setRenameText(formatTaskEditBuffer(task))
+    setRenamingTaskId(task.id)
   }
 
   const draftBlock = draft ? parseTimeBlock(draft.timeBlock) : null
@@ -290,7 +383,7 @@ export default function Timeline({
       className="dn-section-body scroll-y"
       data-testid="timeline-body"
       onContextMenu={handleContextMenu}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
       <div className="dn-timeline-grid" data-testid="timeline-grid" style={{ height: `${GRID_HEIGHT_PX}px` }}>
@@ -321,7 +414,9 @@ export default function Timeline({
               key={task.id}
               className={`dn-tblock${task.status === 'done' ? ' done' : ''}${
                 liveBlock && liveBlock.taskId === task.id ? ' dragging' : ''
-              }${task.isNote ? ' meeting' : ''}${renamingTaskId === task.id ? ' renaming' : ''}`}
+              }${task.isNote ? ' meeting' : ''}${priorityTimelineAccentClass(task.priority)}${
+                renamingTaskId === task.id ? ' renaming' : ''
+              }`}
               data-testid="timeline-task"
               data-task-id={task.id}
               data-start={minutesToTime(start)}
@@ -332,7 +427,9 @@ export default function Timeline({
                 left: `calc(${LABEL_WIDTH}px + (100% - ${LABEL_WIDTH}px) * ${leftFrac})`,
                 width: `calc((100% - ${LABEL_WIDTH}px) * ${colFrac} - 4px)`
               }}
-              onMouseDown={(e) => startDrag('move', task, { start, end }, e)}
+              draggable={renamingTaskId !== task.id}
+              onDragStart={(e) => handleTaskDragStart(task, e)}
+              onDragEnd={handleDragEnd}
               onContextMenu={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -357,7 +454,14 @@ export default function Timeline({
               >
                 ✕
               </button>
-              <div className="dn-tb-body">
+              <div
+                className="dn-tb-body"
+                onDoubleClick={(e) => {
+                  if ((e.target as HTMLElement).closest('.dn-tbox')) return
+                  e.stopPropagation()
+                  startRename(task)
+                }}
+              >
                 {!task.isNote && (
                   <div
                     className="dn-tbox"
@@ -371,19 +475,29 @@ export default function Timeline({
                   />
                 )}
                 {renamingTaskId === task.id ? (
-                  <DailyNoteTaskInput
-                    autoFocus
-                    value={renameText}
-                    onChange={setRenameText}
-                    inputClassName="dn-task-edit-input"
-                    testId="timeline-task-edit-input"
+                  <div
+                    className="dn-task-input-wrap"
                     onMouseDown={(e) => e.stopPropagation()}
-                    onSubmit={() => commitRename(task.id)}
-                    onCancel={() => setRenamingTaskId(null)}
-                    onBlur={() => commitRename(task.id)}
-                  />
+                  >
+                    <TaskEditInput
+                      autoFocus
+                      deferFocus
+                      value={renameText}
+                      onChange={setRenameText}
+                      onCommit={(parsed) => commitRename(task.id, parsed)}
+                      onCancel={() => setRenamingTaskId(null)}
+                      inputRef={renameInputRef}
+                      className="dn-task-edit-input"
+                      testId="timeline-task-edit-input"
+                    />
+                  </div>
                 ) : (
-                  <span className="dn-tb-label">{task.text}</span>
+                  <>
+                    <span className="dn-tb-label">
+                      <TaskTextDisplay task={task} />
+                    </span>
+                    {task.priority ? <TaskPriorityBadge priority={task.priority} /> : null}
+                  </>
                 )}
               </div>
               <div
@@ -441,11 +555,9 @@ export default function Timeline({
           onSelect={(targetDate) => onMoveToDate(moveMenu.taskId, targetDate)}
           onRename={() => {
             const task = tasks.find((t) => t.id === moveMenu.taskId)
-            if (task) {
-              setRenameText(formatTaskTextWithInlineTags(task.text, task.tags))
-              setRenamingTaskId(task.id)
-            }
+            if (task) startRename(task)
           }}
+          onMoveToUnscheduled={() => onMoveToUnscheduled(moveMenu.taskId)}
           onCreateSession={
             onCreateSessionFromTask
               ? () => {

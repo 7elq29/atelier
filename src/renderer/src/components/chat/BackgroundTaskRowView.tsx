@@ -24,24 +24,30 @@ export default function BackgroundTaskRowView({
   const typeLabel = backgroundTaskTypeBadgeLabel(task.taskType)
 
   if (variant === 'rail') {
+    const detail =
+      task.subtitle?.replace(/^last:\s*/i, '') ??
+      (running ? null : statusLabel !== 'done' ? statusLabel : null)
+    const detailWithError = task.error ? `${detail ?? statusLabel} · ${task.error}` : detail
+
     return (
       <div
-        className={`subagent-item background-rail-row${failed ? ' background-rail-failed' : ''}${done ? ' background-rail-done' : ''}`}
+        className={`background-rail-entry${failed ? ' background-rail-failed' : ''}${done ? ' background-rail-done' : ''}`}
         data-testid="background-rail-item"
         data-task-id={task.taskId}
         data-task-status={statusLabel}
       >
-        {running && <span className="spinner" />}
-        <span className="background-rail-title" title={fullTitle}>
-          {displayTitle}
-        </span>
-        <span className="background-rail-status" data-testid="background-rail-status">
-          {statusLabel}
-        </span>
-        {task.subtitle && (
-          <span className="background-rail-sub" data-testid="background-rail-sub">
-            {task.subtitle}
+        <div className="subagent-item background-rail-head">
+          {running && <span className="spinner" />}
+          {!running && done && !failed && <span className="background-rail-icon done">✓</span>}
+          {!running && failed && <span className="background-rail-icon failed">!</span>}
+          <span className="background-rail-title" title={fullTitle}>
+            {fullTitle}
           </span>
+        </div>
+        {detailWithError && (
+          <div className="background-rail-detail" data-testid="background-rail-sub">
+            {detailWithError}
+          </div>
         )}
       </div>
     )
@@ -62,7 +68,7 @@ export default function BackgroundTaskRowView({
         </div>
         <div className="background-sub" data-testid="background-transcript-sub">
           {statusLabel}
-          {task.subtitle ? ` · ${task.subtitle}` : ''}
+          {task.subtitle ? ` · ${task.subtitle.replace(/^last:\s*/i, '')}` : ''}
           {task.error ? ` · ${task.error}` : ''}
         </div>
       </div>

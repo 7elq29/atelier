@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { SessionChangesCapItem } from '../../../../shared/session-changes-cap'
+import { isClaudePlanPath } from '../../../../shared/claude-plan-path'
 
 function basenamePath(p: string): string {
   const i = p.lastIndexOf('/')
@@ -14,13 +15,58 @@ function ChevronDown(): JSX.Element {
   )
 }
 
+function ChatChangesFileRow({
+  path,
+  additions,
+  deletions,
+  opensInFilesTab,
+  onOpen
+}: {
+  path: string
+  additions: number
+  deletions: number
+  opensInFilesTab: boolean
+  onOpen: (path: string, opensInFilesTab: boolean) => void
+}): JSX.Element {
+  const isPlan = isClaudePlanPath(path)
+  return (
+    <div
+      className={`chat-changes-file${isPlan ? ' chat-changes-file-plan' : ''}`}
+      role="button"
+      tabIndex={0}
+      data-testid="chat-changes-file"
+      data-path={path}
+      data-opens-in-files-tab={opensInFilesTab ? 'true' : 'false'}
+      data-is-plan={isPlan ? 'true' : 'false'}
+      onClick={() => onOpen(path, opensInFilesTab)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen(path, opensInFilesTab)
+        }
+      }}
+    >
+      <span className="fname">{basenamePath(path)}</span>
+      {isPlan ? (
+        <span className="chat-changes-plan-tag" data-testid="chat-changes-plan-tag">
+          Plan
+        </span>
+      ) : null}
+      <span className="chat-changes-stats">
+        {additions > 0 && <span className="chat-changes-add">+{additions}</span>}
+        {deletions > 0 && <span className="chat-changes-del">−{deletions}</span>}
+      </span>
+    </div>
+  )
+}
+
 export default function ChatUncommittedChanges({
   items,
   onOpenFile,
   onOpenCommit
 }: {
   items: SessionChangesCapItem[] | null | undefined
-  onOpenFile: (path: string) => void
+  onOpenFile: (path: string, opensInFilesTab: boolean) => void
   onOpenCommit: (hash: string) => void
 }): JSX.Element | null {
   const [collapsed, setCollapsed] = useState(true)
@@ -52,27 +98,14 @@ export default function ChatUncommittedChanges({
         <div className="chat-changes-body">
           {rows.map((row) =>
             row.kind === 'file' ? (
-              <div
+              <ChatChangesFileRow
                 key={`file:${row.path}`}
-                className="chat-changes-file"
-                role="button"
-                tabIndex={0}
-                data-testid="chat-changes-file"
-                data-path={row.path}
-                onClick={() => onOpenFile(row.path)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    onOpenFile(row.path)
-                  }
-                }}
-              >
-                <span className="fname">{basenamePath(row.path)}</span>
-                <span className="chat-changes-stats">
-                  {row.additions > 0 && <span className="chat-changes-add">+{row.additions}</span>}
-                  {row.deletions > 0 && <span className="chat-changes-del">−{row.deletions}</span>}
-                </span>
-              </div>
+                path={row.path}
+                additions={row.additions}
+                deletions={row.deletions}
+                opensInFilesTab={row.opensInFilesTab}
+                onOpen={onOpenFile}
+              />
             ) : (
               <div
                 key={`commit:${row.hash}`}

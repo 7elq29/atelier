@@ -4,7 +4,7 @@
 
 1. On **Chat**, when the session has pending file changes and/or session-attributed commits, a collapsible cap appears **above** the composer (`data-testid="chat-uncommitted-changes"`).
 2. Header shows chevron + count of **changes** (pending files + commit rows combined).
-3. **File rows:** basename + `+`/`-` from `git diff HEAD` for that path (one row per path). Click → **Diff › Changes**, select file.
+3. **File rows:** basename + `+`/`-` from `git diff HEAD` for that path (one row per path). Click → **Diff › Changes**, select file — except paths **outside the session git repo** (e.g. `~/.mcp/json`, or workspace-local files when the project is not a git checkout), which open **Files** in read-only inline diff instead.
 4. **Commit rows:** truncated subject (no +/-). Click → **Diff › Commits**, open that commit.
 5. Items sorted **newest activity first** (e.g. after edit → commit → edit again: file row for second edit + earlier commit row both visible).
 

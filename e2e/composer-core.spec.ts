@@ -48,6 +48,27 @@ async function appendComposerLog(page: Page, label: string): Promise<void> {
   writeFileSync(composerLogPath, `[${label}]\n${lines.join('\n')}\n`, { flag: 'a' })
 }
 
+async function createComposerSession(page: Page, projectDir: string): Promise<string> {
+  execFileSync('git', ['init'], { cwd: projectDir })
+  execFileSync('git', ['checkout', '-b', 'composer-e2e-branch'], { cwd: projectDir })
+  execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: projectDir })
+  await openNewSessionModal(page)
+  await page.getByTestId('project-path').fill(projectDir)
+  await page.getByTestId('mode-claude-code').click()
+  await page.getByTestId('initial-prompt').fill('Reply with exactly: READY.')
+  await page.getByTestId('start-session-button').click()
+  await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+  const row = page.locator('[data-testid="session-row"]').first()
+  await expect(row).toBeVisible({ timeout: 15_000 })
+  const id = (await row.getAttribute('data-session-id')) as string
+  expect(id).toBeTruthy()
+
+  await expect(activeComposer(page).getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 90_000 })
+  await expect(activeComposer(page).getByTestId('send-button')).toBeVisible()
+  return id
+}
+
 test.describe.configure({ mode: 'serial' })
 
 test.describe('04-composer-core', () => {
@@ -72,25 +93,7 @@ test.describe('04-composer-core', () => {
   // ── 0. Create a real claude-code session to attach the composer to ─────
   test('create session', async ({}, testInfo) => {
     testInfo.setTimeout(90_000)
-    execFileSync('git', ['init'], { cwd: projectDir })
-    execFileSync('git', ['checkout', '-b', 'composer-e2e-branch'], { cwd: projectDir })
-    execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: projectDir })
-        await openNewSessionModal(page)
-    await page.getByTestId('project-path').fill(projectDir)
-    await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('initial-prompt').fill('Reply with exactly: READY.')
-    await page.getByTestId('start-session-button').click()
-    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
-
-    const row = page.locator('[data-testid="session-row"]').first()
-    await expect(row).toBeVisible({ timeout: 15_000 })
-    sessionId = (await row.getAttribute('data-session-id')) as string
-    expect(sessionId).toBeTruthy()
-
-    // Wait for the initial turn to fully finish (composer back to idle)
-    // before the rest of the suite starts driving it.
-    await expect(activeComposer(page).getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 90_000 })
-    await expect(activeComposer(page).getByTestId('send-button')).toBeVisible()
+    sessionId = await createComposerSession(page, projectDir)
     await expect(page.getByTestId('topbar-workspace')).toBeVisible()
     await expect(activeComposer(page).getByTestId('composer-context-claude-path')).toBeVisible()
     await expect(activeComposer(page).getByTestId('composer-context-claude-path')).not.toContainText('/~/')
@@ -214,6 +217,93 @@ test.describe('04-composer-core', () => {
     await appendComposerLog(page, 'enter-sends')
   })
 
+  test('Emacs navigation: Opt+F/B/V, Ctrl+A/E, Opt+Shift+,/.', async () => {
+    const textarea = activeComposer(page).getByTestId('composer-input')
+    const sample = 'hello world\nsecond line'
+    await textarea.click()
+    await textarea.fill(sample)
+    await textarea.evaluate((el: HTMLTextAreaElement) => {
+      el.focus()
+      el.setSelectionRange(0, 0)
+    })
+
+    await page.keyboard.down('Alt')
+    await page.keyboard.press('KeyF')
+    await page.keyboard.up('Alt')
+    await expect.poll(async () => textarea.evaluate((el) => el.selectionStart)).toBe(5)
+
+    await page.keyboard.down('Alt')
+    await page.keyboard.press('KeyB')
+    await page.keyboard.up('Alt')
+    await expect.poll(async () => textarea.evaluate((el) => el.selectionStart)).toBe(0)
+
+    await textarea.fill(sample)
+    await textarea.evaluate((el: HTMLTextAreaElement) => {
+      el.focus()
+      el.setSelectionRange(12, 12)
+    })
+    await textarea.press('Control+a')
+    await expect.poll(async () => textarea.evaluate((el) => el.selectionStart)).toBe(12)
+
+    await textarea.press('Control+e')
+    await expect.poll(async () => textarea.evaluate((el) => el.selectionStart)).toBe(sample.length)
+
+    const tallText = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join('\n')
+    await textarea.fill(tallText)
+    await textarea.evaluate((el: HTMLTextAreaElement) => {
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+      el.scrollTop = el.scrollHeight
+    })
+    const scrollBefore = await textarea.evaluate((el) => el.scrollTop)
+    expect(scrollBefore).toBeGreaterThan(0)
+    await page.keyboard.down('Alt')
+    await page.keyboard.press('KeyV')
+    await page.keyboard.up('Alt')
+    await expect.poll(async () => textarea.evaluate((el) => el.scrollTop)).toBeLessThan(scrollBefore)
+
+    await textarea.evaluate((el: HTMLTextAreaElement) => {
+      el.focus()
+      el.setSelectionRange(12, 12)
+    })
+    await page.keyboard.down('Alt')
+    await page.keyboard.down('Shift')
+    await page.keyboard.press('Comma')
+    await page.keyboard.up('Shift')
+    await page.keyboard.up('Alt')
+    await expect.poll(async () => textarea.evaluate((el) => el.selectionStart)).toBe(0)
+
+    await page.keyboard.down('Alt')
+    await page.keyboard.down('Shift')
+    await page.keyboard.press('Period')
+    await page.keyboard.up('Shift')
+    await page.keyboard.up('Alt')
+    await expect.poll(async () => textarea.evaluate((el) => el.selectionStart)).toBe(tallText.length)
+
+    await textarea.fill('')
+  })
+
+  test('Ctrl+K kills to end of line and removes empty lines', async () => {
+    const textarea = activeComposer(page).getByTestId('composer-input')
+    await textarea.click()
+    await textarea.fill('line one\n\nline three')
+    await textarea.evaluate((el: HTMLTextAreaElement) => {
+      el.focus()
+      el.setSelectionRange(9, 9)
+    })
+    await textarea.press('Control+k')
+    await expect(textarea).toHaveValue('line one\nline three')
+
+    await textarea.fill('hello world')
+    await textarea.evaluate((el: HTMLTextAreaElement) => {
+      el.focus()
+      el.setSelectionRange(6, 6)
+    })
+    await textarea.press('Control+k')
+    await expect(textarea).toHaveValue('hello ')
+
+    await textarea.fill('')
+  })
 
   // ── 3. Stop button shows mid-turn; screenshot proof ─────────────────────
   test('Stop button appears while a turn is in flight, swaps back to Send when idle', async ({}, testInfo) => {
@@ -363,5 +453,75 @@ test.describe('04-composer-core', () => {
 
     await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
     await expect(page.locator('.composer-cache-entry.active').getByTestId('composer-input')).toHaveValue(draftA)
+  })
+
+  test('large paste shows copied-characters summary in composer', async ({}, testInfo) => {
+    testInfo.setTimeout(90_000)
+    if (!sessionId) sessionId = await createComposerSession(page, projectDir)
+    const large = `PASTE_START_${'x'.repeat(5_000)}_PASTE_END`
+    const expectedLabel = `[copied ${large.length} charactors]`
+    await page.evaluate(async (text) => {
+      await navigator.clipboard.writeText(text)
+    }, large)
+
+    const composer = activeComposer(page).getByTestId('composer-input')
+    await composer.click()
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+V' : 'Control+V')
+
+    await expect(composer).toHaveValue(expectedLabel)
+    await page.screenshot({ path: join(artifactsDir, 'composer-large-paste-display.png') })
+  })
+
+  test('large paste sends full text, not the copied-characters summary', async ({}, testInfo) => {
+    testInfo.setTimeout(90_000)
+    if (!sessionId) sessionId = await createComposerSession(page, projectDir)
+
+    const marker = `PASTE_SEND_${Date.now()}_`
+    const large = `${marker}${'z'.repeat(200)}`
+    await page.evaluate(async (text) => {
+      await navigator.clipboard.writeText(text)
+    }, large)
+
+    const composer = activeComposer(page).getByTestId('composer-input')
+    await composer.click()
+    await composer.fill('')
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+V' : 'Control+V')
+    await expect(composer).toHaveValue(`[copied ${large.length} charactors]`)
+
+    await composer.press('Enter')
+    await expect(composer).toHaveValue('', { timeout: 5_000 })
+
+    await expect
+      .poll(async () => {
+        const rows = await page.evaluate(
+          (args) =>
+            window.atelier.debugQueryDb<{ content: string }>(
+              "SELECT content FROM messages WHERE session_id = ? AND role='user' ORDER BY id DESC LIMIT 1",
+              [args.id]
+            ),
+          { id: sessionId }
+        )
+        return rows[0]?.content ?? ''
+      }, { timeout: 10_000 })
+      .toBe(large)
+
+    await expect(activeComposer(page).getByTestId('send-button')).toBeVisible({ timeout: 30_000 })
+    await page.screenshot({ path: join(artifactsDir, 'composer-deferred-paste-placeholder.png') })
+  })
+
+  test('small paste shows full text in composer', async ({}, testInfo) => {
+    testInfo.setTimeout(90_000)
+    if (!sessionId) sessionId = await createComposerSession(page, projectDir)
+
+    const small = 'short paste under fifty characters'
+    await page.evaluate(async (text) => {
+      await navigator.clipboard.writeText(text)
+    }, small)
+
+    const composer = activeComposer(page).getByTestId('composer-input')
+    await composer.click()
+    await composer.fill('')
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+V' : 'Control+V')
+    await expect(composer).toHaveValue(small)
   })
 })

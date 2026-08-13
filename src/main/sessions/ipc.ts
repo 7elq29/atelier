@@ -202,4 +202,26 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
   ipcMain.handle('session:refreshWorkspace', async (_event, sessionId: string, force: boolean) =>
     manager.refreshSessionWorkspace(sessionId, force)
   )
+
+  ipcMain.handle(
+    'session:capOutsideFileDiff',
+    (_event, sessionId: string, workspacePath: string, capPath: string) =>
+      manager.getCapOutsideFileDiff(sessionId, workspacePath, capPath)
+  )
+
+  ipcMain.handle(
+    'debug:registerPlanInCap',
+    (
+      _event,
+      sessionId: string,
+      args: { plan: string; planFilePath?: string; toolUseId: string }
+    ) => manager.debugRegisterPlanInCap(sessionId, args)
+  )
+
+  ipcMain.handle(
+    'debug:applyHarnessUiEvents',
+    (_event, sessionId: string, events: import('../harness/types').HarnessEvent[]) => {
+      manager.debugApplyHarnessUiEvents(sessionId, events)
+    }
+  )
 }

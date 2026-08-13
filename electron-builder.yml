@@ -17,3 +17,5 @@ linux:
 npmRebuild: true
 asarUnpack:
   - '**/*.node'
+  - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude'
+  - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude.exe'

@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DailyTask } from '../../../../shared/daily-note-types'
-import { filterDailyNoteTagSuggestions, normalizeDailyNoteTag, formatTaskTextWithInlineTags } from '../../../../shared/daily-note-tags'
-import DailyNoteTaskInput from './DailyNoteTaskInput'
+import type { DailyTask, ExternalLink } from '../../../../shared/daily-note-types'
+import {
+  filterDailyNoteTagSuggestions,
+  normalizeDailyNoteTag
+} from '../../../../shared/daily-note-tags'
+import { formatTaskEditBuffer } from '../../../../shared/task-priority'
 import TaskMoveContextMenu from './TaskMoveContextMenu'
+import { TaskEditInput, TaskPriorityBadge, buildTaskEditPatch } from './task-priority-ui'
+import TaskTextDisplay from './TaskTextDisplay'
 import type { MoveDateOptions } from './move-date-options'
 
 interface TaskItemProps {
@@ -10,6 +15,7 @@ interface TaskItemProps {
   onToggle: (id: string) => void
   onDelete: (id: string) => void
   onUpdateText: (id: string, text: string) => void
+  onUpdateTask: (id: string, patch: Partial<DailyTask>) => void
   onUpdateTags: (id: string, tags: string[]) => void
   draggable?: boolean
   /** Root element's data-testid — defaults to "unscheduled-task"; the
@@ -26,11 +32,6 @@ interface TaskItemProps {
   onCreateSessionFromTask?: (task: DailyTask) => void
 }
 
-/** Structural tags managed by section semantics (see daily-note-io.ts's
- * `serializeTaskLine`/`parseBulletLine`) — never shown/removable as a chip,
- * since removing them via the UI would silently corrupt the task's section. */
-const STRUCTURAL_TAGS = new Set(['#tracker', '#delegated'])
-
 /** A single "chip" row used by the Unscheduled section (and, without the
  * delete affordance, could be reused elsewhere). Matches the mock's
  * `.task-chip` markup/classnames. */
@@ -39,6 +40,7 @@ export default function TaskItem({
   onToggle,
   onDelete,
   onUpdateText,
+  onUpdateTask,
   onUpdateTags,
   draggable = true,
   testId = 'unscheduled-task',
@@ -52,19 +54,25 @@ export default function TaskItem({
   const [tagInput, setTagInput] = useState('')
   const [moveMenu, setMoveMenu] = useState<{ x: number; y: number } | null>(null)
   const tagInputRef = useRef<HTMLInputElement>(null)
+  const editInputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     if (tagPickerOpen) tagInputRef.current?.focus()
   }, [tagPickerOpen])
 
-  function commitEdit(): void {
-    const trimmed = editText.trim()
-    if (trimmed) onUpdateText(task.id, trimmed)
+  function commitEdit(parsed: {
+    text: string
+    priority?: string
+    priorityTouched: boolean
+    externalLinks: ExternalLink[]
+  }): void {
+    const patch = buildTaskEditPatch(task, parsed)
+    if (Object.keys(patch).length > 0) onUpdateTask(task.id, patch)
     setEditing(false)
   }
 
   function cancelEdit(): void {
-    setEditText(formatTaskTextWithInlineTags(task.text, task.tags))
+    setEditText(formatTaskEditBuffer(task))
     setEditing(false)
   }
 
@@ -83,7 +91,6 @@ export default function TaskItem({
     )
   }
 
-  const visibleTags = task.tags.filter((t) => !STRUCTURAL_TAGS.has(t))
   const suggestions = filterDailyNoteTagSuggestions(tagInput, task.tags).slice(0, 4)
 
   return (
@@ -103,42 +110,33 @@ export default function TaskItem({
     >
       {!task.isNote && <div className="dn-tbox" onClick={() => onToggle(task.id)} />}
       {editing ? (
-        <DailyNoteTaskInput
-          autoFocus
-          value={editText}
-          onChange={setEditText}
-          inputClassName="dn-task-edit-input"
-          testId="task-edit-input"
-          onSubmit={commitEdit}
-          onCancel={cancelEdit}
-          onBlur={commitEdit}
-        />
+        <div className="dn-task-input-wrap">
+          <TaskEditInput
+            autoFocus
+            value={editText}
+            onChange={setEditText}
+            onCommit={commitEdit}
+            onCancel={cancelEdit}
+            inputRef={editInputRef}
+            className="dn-task-edit-input"
+            testId="task-edit-input"
+          />
+        </div>
       ) : (
-        <span
-          onDoubleClick={(e) => {
-            e.stopPropagation()
-            setEditText(formatTaskTextWithInlineTags(task.text, task.tags))
-            setEditing(true)
-          }}
-        >
-          {task.text}
-        </span>
-      )}
-
-      {visibleTags.map((tag) => (
-        <span className="dn-tag-chip" key={tag} data-testid="task-tag-chip">
-          {tag}
-          <button
-            type="button"
-            className="dn-tag-chip-remove"
-            data-testid="task-tag-remove"
-            onClick={() => removeTag(tag)}
-            aria-label={`remove tag ${tag}`}
+        <>
+          <span
+            className="dn-task-chip-text"
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              setEditText(formatTaskEditBuffer(task))
+              setEditing(true)
+            }}
           >
-            ×
-          </button>
-        </span>
-      ))}
+            <TaskTextDisplay task={task} onRemoveTag={removeTag} />
+          </span>
+          {task.priority ? <TaskPriorityBadge priority={task.priority} /> : null}
+        </>
+      )}
 
       {tagPickerOpen ? (
         <div className="dn-tag-picker" data-testid="tag-picker">
@@ -201,7 +199,7 @@ export default function TaskItem({
           options={moveDateOptions}
           onSelect={(targetDate) => onMoveToDate(task.id, targetDate)}
           onRename={() => {
-            setEditText(formatTaskTextWithInlineTags(task.text, task.tags))
+            setEditText(formatTaskEditBuffer(task))
             setEditing(true)
           }}
           onCreateSession={onCreateSessionFromTask ? () => onCreateSessionFromTask(task) : undefined}

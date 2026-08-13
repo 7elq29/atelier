@@ -7,12 +7,19 @@
  * cost instead of ~4.5s.
  */
 import { readdirSync, readFileSync, statSync, existsSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join, relative, extname, basename } from 'node:path'
 import { execFile, spawn } from 'node:child_process'
-import { shQuote, remoteCdTarget } from '../shell-quote'
+import { expandTildePath } from '../../shared/project-path-autocomplete'
+import { shQuote, remoteCdTarget, remoteFilePath } from '../shell-quote'
 import { logger } from '../logger'
 import { sshExec, SSH_MUX_OPTS } from '../ssh-exec'
 import type { FileKind, FileReadResult, FileTreeNode, FileWriteResult, WorkspaceFileEntry } from '../../shared/panel-types'
+
+/** Local fs walks — Node does not expand `~`; match harness/terminal (`expandTildePath`). */
+function resolveLocalPath(path: string): string {
+  return expandTildePath(path.trim(), homedir())
+}
 
 const ALWAYS_IGNORED = new Set(['.git', 'node_modules', '.DS_Store', '.claude'])
 const MAX_ENTRIES = 3000
@@ -132,8 +139,8 @@ function normalizeUnderWorkspace(workspaceRoot: string, underDir: string): strin
 }
 
 function listLocalWorkspaceFiles(workspaceRoot: string, underDir?: string): WorkspaceFileEntry[] {
-  const root = workspaceRoot.replace(/\/$/, '')
-  const startDir = normalizeUnderWorkspace(root, underDir ?? root)
+  const root = resolveLocalPath(workspaceRoot).replace(/\/$/, '')
+  const startDir = normalizeUnderWorkspace(root, underDir ? resolveLocalPath(underDir) : root)
   if (!existsSync(startDir)) return []
   const matchers = loadIgnoreMatchers(root)
   const out: WorkspaceFileEntry[] = []
@@ -241,8 +248,9 @@ async function listRemoteWorkspaceFiles(workspaceRoot: string, sshHost: string, 
 export function walkFileTree(root: string, sshHost?: string | null): Promise<FileTreeNode[]> | FileTreeNode[] {
   logger.info('files:tree', { root, remote: Boolean(sshHost) })
   if (sshHost) return walkRemote(root, sshHost)
-  const result = walkLocal(root)
-  logger.info('files:tree:done', { root, count: result.length })
+  const resolved = resolveLocalPath(root)
+  const result = walkLocal(resolved)
+  logger.info('files:tree:done', { root, resolved, count: result.length })
   return result
 }
 
@@ -250,7 +258,7 @@ export function walkFileTree(root: string, sshHost?: string | null): Promise<Fil
 export function walkDirChildren(root: string, dir: string, sshHost?: string | null): Promise<FileTreeNode[]> | FileTreeNode[] {
   logger.info('files:dir', { root, dir, remote: Boolean(sshHost) })
   if (sshHost) return walkRemoteChildren(root, dir, sshHost)
-  return walkLocalChildren(root, dir)
+  return walkLocalChildren(resolveLocalPath(root), resolveLocalPath(dir))
 }
 
 /** Recursive flat list of files under `underDir` (defaults to workspace root). */
@@ -266,6 +274,25 @@ export function listWorkspaceFiles(
   return result
 }
 
+function assertRemoteCommandOk(code: number, stderr: string, path: string, op: string): void {
+  if (code !== 0) {
+    throw new Error(stderr.trim() || `${op} failed for ${path} (exit ${code})`)
+  }
+}
+
+/** Whether `path` is an existing directory (local or remote). */
+export async function pathIsDirectory(path: string, sshHost?: string | null): Promise<boolean> {
+  if (sshHost) {
+    const { code } = await sshExec(sshHost, `test -d ${remoteFilePath(path)}`)
+    return code === 0
+  }
+  try {
+    return statSync(resolveLocalPath(path)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
 export async function readFileForPreview(path: string, sshHost?: string | null): Promise<FileReadResult> {
   const ext = extname(path).slice(1).toLowerCase()
 
@@ -274,19 +301,23 @@ export async function readFileForPreview(path: string, sshHost?: string | null):
       return { kind: 'binary' as FileKind, content: '', extension: ext }
     }
     if (IMAGE_EXTENSIONS.has(ext)) {
-      const { stdout } = await sshExec(sshHost, `base64 ${shQuote(path)}`)
+      const { stdout, stderr, code } = await sshExec(sshHost, `base64 ${remoteFilePath(path)}`)
+      assertRemoteCommandOk(code, stderr, path, 'base64 read')
       const mime = MIME_BY_EXT[ext] ?? 'application/octet-stream'
       return { kind: 'image' as FileKind, content: `data:${mime};base64,${stdout.replace(/\s/g, '')}`, extension: ext }
     }
-    const { stdout } = await sshExec(sshHost, `cat ${shQuote(path)}`)
+    const { stdout, stderr, code } = await sshExec(sshHost, `cat ${remoteFilePath(path)}`)
+    assertRemoteCommandOk(code, stderr, path, 'read')
     if (HTML_EXTENSIONS.has(ext)) {
       return { kind: 'html' as FileKind, content: stdout, extension: ext }
     }
     return { kind: 'text' as FileKind, content: stdout, extension: ext || basename(path) }
   }
 
+  const localPath = resolveLocalPath(path)
+
   if (IMAGE_EXTENSIONS.has(ext)) {
-    const buf = readFileSync(path)
+    const buf = readFileSync(localPath)
     const mime = MIME_BY_EXT[ext] ?? 'application/octet-stream'
     return { kind: 'image' as FileKind, content: `data:${mime};base64,${buf.toString('base64')}`, extension: ext }
   }
@@ -295,7 +326,7 @@ export async function readFileForPreview(path: string, sshHost?: string | null):
     return { kind: 'binary' as FileKind, content: '', extension: ext }
   }
 
-  const text = readFileSync(path, 'utf-8')
+  const text = readFileSync(localPath, 'utf-8')
   if (HTML_EXTENSIONS.has(ext)) {
     return { kind: 'html' as FileKind, content: text, extension: ext }
   }
@@ -305,7 +336,7 @@ export async function readFileForPreview(path: string, sshHost?: string | null):
 export async function writeFileContent(path: string, content: string, sshHost?: string | null): Promise<FileWriteResult> {
   if (sshHost) {
     return new Promise((resolve) => {
-      const proc = spawn('ssh', [...SSH_MUX_OPTS, sshHost, '--', `cat > ${shQuote(path)}`])
+      const proc = spawn('ssh', [...SSH_MUX_OPTS, sshHost, '--', `cat > ${remoteFilePath(path)}`])
       proc.stdin.write(content, 'utf8')
       proc.stdin.end()
       proc.on('close', (code) => {
@@ -317,7 +348,7 @@ export async function writeFileContent(path: string, content: string, sshHost?: 
   }
 
   try {
-    writeFileSync(path, content, 'utf8')
+    writeFileSync(resolveLocalPath(path), content, 'utf8')
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message }

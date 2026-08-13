@@ -7,6 +7,8 @@ export interface SessionChangesCapFileItem {
   path: string
   additions: number
   deletions: number
+  /** When true, cap row opens Files (inline diff) instead of Diff › Changes. */
+  opensInFilesTab: boolean
   /** ISO timestamp for newest-first ordering in the cap. */
   sortAt: string
 }
@@ -28,7 +30,7 @@ export function sessionChangesCapSignature(cap: SessionChangesCap): string {
   return cap.items
     .map((i) =>
       i.kind === 'file'
-        ? `f:${i.path}:${i.additions}:${i.deletions}:${i.sortAt}`
+        ? `f:${i.path}:${i.additions}:${i.deletions}:${i.opensInFilesTab ? 1 : 0}:${i.sortAt}`
         : `c:${i.hash}:${i.subject}:${i.sortAt}`
     )
     .join('|')

@@ -375,6 +375,42 @@ test.describe('settings: theme + independent font sizes', () => {
       .poll(() => JSON.parse(readFileSync(configPath(userDataDir), 'utf-8')).defaultClaudeEffort)
       .toBe('medium')
   })
+
+  test('Agent pane saves default permission mode together with model settings', async ({}, testInfo) => {
+    testInfo.setTimeout(90_000)
+    await page.locator('.settings-nav button', { hasText: 'Agent' }).click()
+
+    await page.getByTestId('default-claude-permission-mode-select').selectOption('plan')
+    await page.getByTestId('default-claude-model-input').fill('claude-sonnet-5')
+    await page.getByTestId('default-claude-model-save-btn').click()
+
+    await expect(page.getByTestId('default-claude-model-save-status')).toBeVisible({ timeout: 60_000 })
+
+    await expect
+      .poll(() => JSON.parse(readFileSync(configPath(userDataDir), 'utf-8')).defaultClaudePermissionMode)
+      .toBe('plan')
+  })
+
+  test('saved session profiles appear in New Session project picker', async () => {
+    await page.getByTestId('settings-nav-profiles').click()
+    await expect(page.getByTestId('settings-pane-profiles')).toBeVisible()
+    await page.getByTestId('profile-add-btn').click()
+    await expect(page.getByTestId('profile-edit-modal')).toBeVisible()
+    await page.getByTestId('profile-edit-name-input').fill('Logging')
+    await page.getByTestId('profile-edit-workspace-input').fill('~/code/gardenia-app')
+    await page.getByTestId('profile-edit-save-btn').click()
+    await expect(page.getByTestId('profile-edit-modal')).toHaveCount(0)
+    await expect(page.locator('.profile-row-name', { hasText: 'Logging' })).toBeVisible()
+
+    await page.getByTestId('settings-close').click()
+    await page.getByTestId('new-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toBeVisible()
+    await page.getByTestId('project-path').focus()
+    await expect(page.getByTestId('project-path-suggestions')).toBeVisible()
+    await expect(page.getByText('Profiles', { exact: true })).toBeVisible()
+    const profileRow = page.locator('[data-testid^="project-path-suggestion-profile-"]').filter({ hasText: 'Logging' })
+    await expect(profileRow).toBeVisible()
+  })
 })
 
 function sessionStartedModels(logPath: string, sessionId: string): string[] {
@@ -432,6 +468,42 @@ test.describe('settings: default claude model applies to new sessions', () => {
   })
 })
 
+test.describe('settings: default claude permission mode applies to new sessions', () => {
+  let electronApp: ElectronApplication
+  let page: Page
+  let userDataDir: string
+  let projectDir: string
+
+  test.beforeAll(async () => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-default-mode-'))
+    projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-default-mode-project-'))
+    writeFileSync(join(projectDir, 'README.md'), '# test\n')
+    seedE2eConfig(userDataDir, { defaultClaudePermissionMode: 'auto' })
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+  })
+
+  test.afterAll(async () => {
+    await electronApp.close().catch(() => undefined)
+  })
+
+  test('new agent session starts on the configured global default permission mode', async () => {
+    await page.getByTestId('new-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toBeVisible()
+    await page.getByTestId('project-path').fill(projectDir)
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    const row = page.locator('[data-testid="session-row"]').first()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+
+    const pill = page.getByTestId('composer-mode-pill')
+    await expect(pill).toBeVisible()
+    await expect(pill).toHaveAttribute('data-mode', 'auto')
+    await expect(pill).toContainText('Auto')
+  })
+})
+
 // Bug: full-app-audit-onboarding-nav. The Command Palette closes itself on
 // Escape (its search input auto-focuses on open, so its own keydown handler
 // sees the key). Settings and New Session never auto-focus anything inside
@@ -485,6 +557,23 @@ test.describe('Escape key closes any open overlay, not just the command palette'
 
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+  })
+
+  test('clicking the New Session backdrop does not dismiss the modal', async () => {
+    await page.getByTestId('new-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toBeVisible()
+
+    const clickPoint = await page.evaluate(() => {
+      const backdrop = document.querySelector('[data-testid="new-session-modal"]') as HTMLElement | null
+      const dialog = backdrop?.querySelector('.modal-dialog') as HTMLElement | null
+      if (!backdrop || !dialog) return null
+      const b = backdrop.getBoundingClientRect()
+      const d = dialog.getBoundingClientRect()
+      return { x: b.left + 16, y: (d.top + d.bottom) / 2 }
+    })
+    expect(clickPoint).toBeTruthy()
+    await page.mouse.click(clickPoint!.x, clickPoint!.y)
+    await expect(page.getByTestId('new-session-modal')).toBeVisible()
   })
 
   // Bug: full-app-audit-onboarding-nav. Same root cause as the onboarding
@@ -610,6 +699,30 @@ test.describe('onboarding — first-run wizard shows once', () => {
 
     mkdirSync(artifactsDir, { recursive: true })
     await page.screenshot({ path: join(artifactsDir, 'bug-onboarding-focus-escape.png') })
+
+    await app.close()
+    rmSync(freshDir, { recursive: true, force: true })
+  })
+
+  test('clicking the onboarding backdrop does not dismiss the wizard', async () => {
+    const freshDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-onboarding-backdrop-'))
+    const { app, page } = await launchApp(freshDir)
+    await expect(page.getByTestId('onboarding-wizard')).toBeVisible()
+
+    const clickPoint = await page.evaluate(() => {
+      const backdrop = document.querySelector('[data-testid="onboarding-backdrop"]') as HTMLElement | null
+      const dialog = backdrop?.querySelector('.modal-dialog') as HTMLElement | null
+      if (!backdrop || !dialog) return null
+      const b = backdrop.getBoundingClientRect()
+      const d = dialog.getBoundingClientRect()
+      return { x: b.left + 16, y: (d.top + d.bottom) / 2 }
+    })
+    expect(clickPoint).toBeTruthy()
+    await page.mouse.click(clickPoint!.x, clickPoint!.y)
+    await expect(page.getByTestId('onboarding-wizard')).toBeVisible()
+
+    await page.getByTestId('onboarding-close').click()
+    await expect(page.getByTestId('onboarding-wizard')).toHaveCount(0)
 
     await app.close()
     rmSync(freshDir, { recursive: true, force: true })

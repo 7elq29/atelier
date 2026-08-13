@@ -143,7 +143,27 @@ test.describe('02-session-lifecycle', () => {
     await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 90_000 })
     await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 90_000 })
 
+    await expect
+      .poll(async () => page.locator('[data-testid="transcript-message"]').count(), { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(2)
+    await expect(page.getByTestId('transcript-message').first()).toContainText('PING')
+
     await page.screenshot({ path: join(artifactsDir, '02-startup-idle-reconnect.png') })
+  })
+
+  test('connected: transcript restores without leaving the session after app relaunch reconnect', async () => {
+    await electronApp.close()
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+
+    const row = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await row.click()
+
+    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 90_000 })
+    await expect
+      .poll(async () => page.locator('[data-testid="transcript-message"]').count(), { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(2)
+    await expect(page.getByTestId('transcript-message').first()).toContainText('PING')
   })
 
   // ── 2. Rename + auto-naming regression guard (Bug #93) ──────────────
@@ -535,6 +555,46 @@ test.describe('02-session-lifecycle', () => {
     const tildeRow = page.locator(`[data-testid="session-row"][data-session-id="${tildeSessionId!}"]`)
     await tildeRow.getByTestId('session-menu-button').click()
     await tildeRow.getByTestId('menu-close').click()
+  })
+
+  // ── 8c. Local with a literal `~` project path (spawn cwd bug) ─────────
+  test('local: project path "~" expands before harness spawn instead of failing to launch claude', async ({}, testInfo) => {
+    testInfo.setTimeout(180_000)
+    await openNewSessionModal(page)
+    await page.getByTestId('project-path').fill('~')
+    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PONGLOCALTILDE')
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    let localTildeSessionId: string
+    await expect
+      .poll(
+        async () => {
+          const rows = await queryDb<{ id: string }>(
+            page,
+            "SELECT id FROM sessions WHERE hostname IS NULL AND project_path = '~' ORDER BY created_at DESC LIMIT 1",
+          )
+          localTildeSessionId = rows[0]?.id
+          return localTildeSessionId ?? null
+        },
+        { timeout: 15_000 },
+      )
+      .not.toBeNull()
+
+    await expect
+      .poll(
+        async () => {
+          const log = appendMainLog(userDataDir)
+          return (
+            log.includes('session_started') &&
+            log.includes('"cwd":"/Users/') &&
+            !log.includes('failed to launch') &&
+            !log.includes('already in use')
+          )
+        },
+        { timeout: 30_000 },
+      )
+      .toBe(true)
   })
 
   // ── UI-match: sidebar tokens ──────────────────────────────────────────
@@ -1073,7 +1133,7 @@ test.describe('02-session-lifecycle', () => {
 // closes immediately and a dimmed sidebar row shows "Setting up worktree…"
 // while the async worktree creation + harness start runs in the background.
 // On success the row transitions to live and both chat and terminal run from
-// the worktree directory; on failure (non-git path) the row disappears.
+// the worktree directory; on failure the row stays with a visible error.
 // Uses a minimal empty git repo created on the devpod in beforeAll so the
 // worktree checkout is instant (no files to check out), keeping the test fast.
 test.describe('02-session-lifecycle (use-worktree)', () => {
@@ -1160,23 +1220,28 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
       .toBe(0)
 
     // DB must have worktree_path persisted for this session.
-    const rows = await queryDb<{ worktree_path: string | null }>(
+    const sessionRows = await queryDb<{ id: string; worktree_path: string | null }>(
       page,
-      'SELECT worktree_path FROM sessions ORDER BY created_at DESC LIMIT 1'
+      'SELECT id, worktree_path FROM sessions ORDER BY created_at DESC LIMIT 1'
     )
-    expect(rows[0]?.worktree_path, 'worktree_path must be set in DB after successful creation').toBeTruthy()
-    expect(rows[0]?.worktree_path).toContain('.atelier')
+    expect(sessionRows[0]?.worktree_path, 'worktree_path must be set in DB after successful creation').toBeTruthy()
+    expect(sessionRows[0]?.worktree_path).toContain('.atelier')
+    const sessionId = sessionRows[0]!.id
+    const worktreePath = sessionRows[0]!.worktree_path!
+    const expectedBranch = `atelier-${sessionId.slice(0, 8)}`
 
     await page.screenshot({ path: join(artifactsDir, '02-worktree-created.png') })
 
-    // Click the session and verify Claude is running from the worktree directory.
+    // Click the session and verify context bar shows worktree path + branch before first prompt.
     const sessionRow = page.locator('[data-testid="session-row"]').first()
     await sessionRow.click()
 
-    const worktreePath = rows[0]!.worktree_path!
     const contextBar = page.getByTestId('composer-context-bar')
     await expect(contextBar).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('composer-context-claude-path')).toContainText(worktreePath.split('/').slice(-2).join('/'))
+    await expect(page.getByTestId('composer-worktree-indicator')).toBeVisible()
+    await expect(page.getByTestId('composer-context-branch')).toContainText(expectedBranch)
+    await page.screenshot({ path: join(artifactsDir, '02-worktree-context-before-prompt.png') })
 
     const composer = page.getByTestId('composer-input')
     await composer.fill('Print your current working directory path. Reply with only the path, nothing else.')
@@ -1201,7 +1266,95 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     await page.screenshot({ path: join(artifactsDir, '02-worktree-terminal-in-worktree.png') })
   })
 
-  test('use-worktree failure: non-git remote path causes session row to disappear', async () => {
+  test('use-worktree: closing session removes worktree and clears worktree_path', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-wt-close-'))
+    execFileSync('git', ['init'], { cwd: projectDir })
+    execFileSync(
+      'git',
+      ['-c', 'user.name=test', '-c', 'user.email=test@test.com', 'commit', '--allow-empty', '-m', 'init'],
+      { cwd: projectDir }
+    )
+
+    await openNewSessionModal(page)
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('project-path').fill(projectDir)
+    await page.getByTestId('use-worktree-checkbox').check()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 3_000 })
+    await expect
+      .poll(
+        () => page.locator('[data-testid="session-row"][data-status="creating-worktree"]').count(),
+        { timeout: 30_000, intervals: [500] }
+      )
+      .toBe(0)
+
+    const sessionRows = await queryDb<{ id: string; worktree_path: string | null }>(
+      page,
+      'SELECT id, worktree_path FROM sessions ORDER BY created_at DESC LIMIT 1'
+    )
+    const sessionId = sessionRows[0]!.id
+    const worktreePath = sessionRows[0]!.worktree_path
+    expect(worktreePath).toBeTruthy()
+    expect(existsSync(worktreePath!)).toBe(true)
+    expect(execFileSync('git', ['-C', projectDir, 'worktree', 'list'], { encoding: 'utf8' })).toContain(worktreePath!)
+
+    const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+    await row.click()
+    await row.getByTestId('session-menu-button').click()
+    await row.getByTestId('menu-close').click()
+    await expect(page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)).toHaveCount(1, {
+      timeout: 5_000
+    })
+
+    await expect
+      .poll(async () => {
+        const rows = await queryDb<{ worktree_path: string | null; closed_at: string | null }>(
+          page,
+          'SELECT worktree_path, closed_at FROM sessions WHERE id = ?',
+          [sessionId]
+        )
+        return rows[0]
+      })
+      .toEqual(expect.objectContaining({ worktree_path: null }))
+    const closedRow = await queryDb<{ closed_at: string | null }>(
+      page,
+      'SELECT closed_at FROM sessions WHERE id = ?',
+      [sessionId]
+    )
+    expect(closedRow[0]?.closed_at).toBeTruthy()
+
+    await expect
+      .poll(() => existsSync(worktreePath!), { timeout: 15_000, intervals: [500] })
+      .toBe(false)
+    expect(execFileSync('git', ['-C', projectDir, 'worktree', 'list'], { encoding: 'utf8' })).not.toContain(sessionId)
+    expect(
+      execFileSync('git', ['-C', projectDir, 'branch', '--list', `atelier-${sessionId.slice(0, 8)}`], {
+        encoding: 'utf8'
+      }).trim()
+    ).toBe('')
+  })
+
+  test('use-worktree failure: non-git local path keeps session row with error', async () => {
+    const noGitDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-local-no-git-'))
+    const countBefore = await page.locator('[data-testid="session-row"]').count()
+
+    await openNewSessionModal(page)
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('project-path').fill(noGitDir)
+    await page.getByTestId('use-worktree-checkbox').check()
+    await page.getByTestId('start-session-button').click()
+
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 3_000 })
+    await expect
+      .poll(() => page.locator('[data-testid="session-row"]').count(), { timeout: 20_000, intervals: [300] })
+      .toBe(countBefore + 1)
+    await expect(page.locator('[data-testid="transcript-message"][data-role="system"]').last()).toContainText(/Error:/, {
+      timeout: 15_000
+    })
+    await expect(page.locator('[data-testid="session-row"][data-status="creating-worktree"]')).toHaveCount(0)
+  })
+
+  test('use-worktree failure: non-git remote path keeps session row with error', async () => {
     test.skip(!devpodHost || !remoteNoGitDir, 'No devpod configured')
     if (!devpodHost || !remoteNoGitDir) return
 
@@ -1217,15 +1370,19 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     // Modal closes immediately even though worktree creation will fail.
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 3_000 })
 
-    // setupWorktreeAsync: createWorktree fails → session:deleted → row gone.
+    // setupWorktreeAsync: createWorktree fails → session kept with system error.
     await expect
       .poll(
         () => page.locator('[data-testid="session-row"]').count(),
         { timeout: 20_000, intervals: [300] }
       )
-      .toBe(countBefore)
+      .toBe(countBefore + 1)
+    await expect(page.locator('[data-testid="transcript-message"][data-role="system"]').last()).toContainText(/Error:/, {
+      timeout: 15_000
+    })
+    await expect(page.locator('[data-testid="session-row"][data-status="creating-worktree"]')).toHaveCount(0)
 
-    await page.screenshot({ path: join(artifactsDir, '02-worktree-failure-removed.png') })
+    await page.screenshot({ path: join(artifactsDir, '02-worktree-failure-kept.png') })
   })
 })
 

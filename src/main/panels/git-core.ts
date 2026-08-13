@@ -47,6 +47,16 @@ function repoRootCacheKey(projectPath: string, sshHost?: string | null): string 
   return `${sshHost ?? 'local'}\0${projectPath}`
 }
 
+/** Git toplevel when `projectPath` is inside a repo; null when not a git checkout. */
+export async function resolveActualGitRepoRoot(
+  projectPath: string,
+  sshHost?: string | null
+): Promise<string | null> {
+  const res = await runGit(projectPath, ['rev-parse', '--show-toplevel'], sshHost)
+  if (res.code !== 0 || !res.stdout.trim()) return null
+  return res.stdout.trim()
+}
+
 /** Git toplevel for `projectPath` (may be a nested directory inside a monorepo). */
 export async function resolveGitRepoRoot(
   projectPath: string,
@@ -55,8 +65,7 @@ export async function resolveGitRepoRoot(
   const key = repoRootCacheKey(projectPath, sshHost)
   const hit = repoRootCache.get(key)
   if (hit) return hit
-  const res = await runGit(projectPath, ['rev-parse', '--show-toplevel'], sshHost)
-  const root = res.code === 0 && res.stdout.trim() ? res.stdout.trim() : projectPath
+  const root = (await resolveActualGitRepoRoot(projectPath, sshHost)) ?? projectPath
   repoRootCache.set(key, root)
   return root
 }

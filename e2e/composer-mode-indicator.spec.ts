@@ -161,23 +161,4 @@ test.describe('11-composer-mode-indicator', () => {
     await expect(pill).toHaveAttribute('data-mode', 'acceptEdits', { timeout: 10_000 })
     await expect(pill).toContainText('Accept edits')
   })
-
-  // ── 5. "Start in plan mode" checkbox starts the pill in Plan mode ──────
-  test('a session created with "Start in plan mode" checked starts showing Plan mode, not Default', async () => {
-        await openNewSessionModal(page)
-    await page.getByTestId('project-path').fill(projectDir)
-    await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('plan-mode-checkbox').check()
-    await page.getByTestId('start-session-button').click()
-    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
-
-    const row = page.locator('[data-testid="session-row"]').first();
-    await expect(row).toBeVisible({ timeout: 15_000 })
-
-    const pill = page.getByTestId('composer-mode-pill')
-    await expect(pill).toHaveAttribute('data-mode', 'plan', { timeout: 10_000 })
-    await expect(pill).toContainText('Plan mode')
-
-    await page.screenshot({ path: join(artifactsDir, '11-mode-planmode-checkbox-start.png') })
-  })
 })

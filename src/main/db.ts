@@ -305,6 +305,25 @@ const MIGRATIONS: Array<{ name: string; sql?: string; run?: (database: Database.
         rebuildSessionTouchedPathsFromMessages(store, session.id, workspace)
       }
     }
+  },
+  {
+    name: '0015_weekly_plan_drafts',
+    sql: `
+      CREATE TABLE IF NOT EXISTS weekly_plan_drafts (
+        iso_week TEXT PRIMARY KEY,
+        step INTEGER NOT NULL DEFAULT 0,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `
+  },
+  {
+    name: '0016_session_profile_id',
+    run(database) {
+      if (!tableHasColumn(database, 'sessions', 'profile_id')) {
+        database.exec(`ALTER TABLE sessions ADD COLUMN profile_id TEXT;`)
+      }
+    }
   }
 ]
 

@@ -57,6 +57,7 @@
   --text-xs: 14px;
   --text-sm: 16px;
   --text-base: 17.5px;
+  --composer-input-font-size: 15px;
   --text-md: 19.5px;
   --text-lg: 23px;
   --text-xl: 28px;
@@ -91,6 +92,9 @@
      cards, option rows — grouped by background color alone, the variant's core trick for
      avoiding "card soup". */
   --bg-tint: #332f27;
+
+  /* Daily note + app notes Atomic editor: full main-panel width (package default is 70ch). */
+  --notes-editor-measure: 100%;
 }
 
 /* Light theme override (applied via [data-theme="light"] on <html>) — "Soft Paper" */
@@ -150,6 +154,9 @@ code, pre, .mono { font-family: var(--font-mono); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); background-clip: content-box; }
+/* Chromium paints the bottom-right junction (and h+v overlap) with a default
+   white corner when the track is transparent — reads as a stray white box. */
+::-webkit-scrollbar-corner { background: transparent; }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -246,7 +253,11 @@ a:hover { text-decoration: underline; }
   font-size: var(--text-base);
   outline: none;
 }
-.input:focus, textarea.input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.input:focus, textarea.input:focus { border-color: var(--border-default); box-shadow: none; }
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"]):focus,
+textarea:focus {
+  outline: none;
+}
 .input::placeholder { color: var(--text-tertiary); }
 
 /* ---- Scrollable regions ---- */

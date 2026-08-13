@@ -11,7 +11,6 @@ import type {
   WeeklyPlanCarrySuggestion,
   WeeklyPlanContextLine,
   WeeklyPlanCreatePayload,
-  WeeklyPlanScheduleEntry,
   WeeklyPlanStatus,
   WeeklyPlanWizardContext,
   WeeklyPlanWizardData
@@ -31,19 +30,62 @@ week: {{date:gggg-[W]WW}}
 type: weekly
 ---
 
+# Retro
+
+---
+
+## Review Projects
+
+First review the projects under *03.projects* and *04.goals*.
+
+%% Altitude check (Get Current): also scan the current Linear cycle. Confirm each Weekly Big Three ladders UP to a goal (03.projects / 04.goals / Linear initiative). No orphan goals, no orphan busywork. %%
+
 ## AFTER ACTION REVIEW
 
-## Last week Big Three
+*List 3–5 of your biggest wins from the week.*
 
-## Reflection
+1. 
+2. 
+3. 
+
+## Last Week's Big Three
+
+1. [Completion: %] 
+2. [Completion: %] 
+3. [Completion: %] 
+
+## What worked? What didn't? Why? How would you change
+
+> *(write something)*
+
+# Plan
+
+---
 
 ## REJUVENATION
 
+*Three non-work resets for the week.*
+
+1. 
+2. 
+3. 
+
 ## Ideas
 
-## Weekly Big Three
+- 
+- 
+- 
+- 
+- 
+- 
 
-## Q2 Blocks
+## WEEKLY BIG THREE
+
+%% At least ONE must be a #q2 (Important-not-urgent) item. Each should ladder to a goal/initiative. %%
+
+1. [ ] 
+2. [ ] 
+3. [ ] 
 `
 
 export function formatIsoWeekKey(date: string): string {
@@ -88,6 +130,31 @@ export function datesInIsoWeek(isoWeek: string): string[] {
   return out
 }
 
+/** Human-readable Mon–Sun range for an ISO week, e.g. "Jul 28 – Aug 3, 2026". */
+export function formatIsoWeekDateRange(isoWeek: string): string {
+  const dates = datesInIsoWeek(isoWeek)
+  if (!dates.length) return isoWeek
+  const startKey = dates[0]!
+  const endKey = dates[dates.length - 1]!
+  const start = new Date(`${startKey}T00:00:00`)
+  const end = new Date(`${endKey}T00:00:00`)
+  const monthDay = (d: Date) =>
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const endWithYear = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  if (start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()) {
+    return `${monthDay(start)} – ${end.getDate()}, ${end.getFullYear()}`
+  }
+  if (start.getFullYear() === end.getFullYear()) {
+    return `${monthDay(start)} – ${endWithYear}`
+  }
+  const startWithYear = start.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })
+  return `${startWithYear} – ${endWithYear}`
+}
+
 export function prevIsoWeekKey(isoWeek: string): string {
   const { year, week } = parseIsoWeekKey(isoWeek)
   const monday = mondayOfIsoWeek(year, week)
@@ -105,6 +172,7 @@ export function weeklyStatusForDate(vaultRoot: string | null, date: string): Wee
   const fileExists = vaultRoot ? existsSync(resolveWeeklyNotePath(vaultRoot, isoWeek)) : false
   return {
     isoWeek,
+    weekDateRange: formatIsoWeekDateRange(isoWeek),
     prevWeek: prevIsoWeekKey(isoWeek),
     relativePath,
     fileExists
@@ -215,12 +283,257 @@ function extractWeeklySectionBody(content: string, heading: string): string {
   return nextHeading === -1 ? rest : rest.slice(0, nextHeading)
 }
 
-function replaceSection(body: string, heading: string, content: string): string {
-  const re = new RegExp(`(^## ${heading}\\s*\\n)([\\s\\S]*?)(?=^## )`, 'm')
-  if (re.test(body)) {
-    return body.replace(re, `$1${content}\n`)
+function sectionRange(lines: string[], headingPattern: RegExp): [number, number] | null {
+  let start = -1
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i]!.match(/^##\s+(.+?)\s*(?:<|$)/)
+    if (!m) continue
+    if (headingPattern.test(m[1]!.trim())) {
+      start = i + 1
+      break
+    }
   }
-  return `${body.trim()}\n\n## ${heading}\n${content}\n`
+  if (start < 0) return null
+  let end = lines.length
+  for (let i = start; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i]!)) {
+      end = i
+      break
+    }
+  }
+  return [start, end]
+}
+
+function usesObsidianCalloutWeeklyTemplate(template: string): boolean {
+  return /> \[!letter\]/i.test(template) || /> \[!multi-column\]/i.test(template)
+}
+
+function usesStandardWeeklyTemplate(template: string): boolean {
+  return /^#\s+Retro/m.test(template) && !usesObsidianCalloutWeeklyTemplate(template)
+}
+
+const AFTER_ACTION_HEADING = /^AFTER ACTION REVIEW/i
+const LAST_WEEK_B3_HEADING = /^Last Week'?s Big Three|^Last week Big Three/i
+const REFLECTION_HEADING = /^What worked|^Reflection/i
+const REJUVENATION_HEADING = /^REJUVENATION/i
+const IDEAS_HEADING = /^Ideas/i
+
+function fillLetterNumberedLines(
+  lines: string[],
+  start: number,
+  end: number,
+  values: string[],
+  maxSlot: number,
+  formatLine: (slot: number, text: string) => string
+): void {
+  for (let i = start; i < end; i++) {
+    const m = lines[i]!.match(/^>\s*(\d+)\.\s*(.*)$/)
+    if (!m) continue
+    const slot = parseInt(m[1]!, 10)
+    if (slot < 1 || slot > maxSlot) continue
+    const text = values[slot - 1]?.trim() ?? ''
+    lines[i] = formatLine(slot, text)
+  }
+}
+
+function fillPlainNumberedLines(
+  lines: string[],
+  start: number,
+  end: number,
+  values: string[],
+  maxSlot: number,
+  formatLine: (slot: number, text: string) => string
+): void {
+  for (let i = start; i < end; i++) {
+    const m = lines[i]!.match(/^(\d+)\.\s*(.*)$/)
+    if (!m) continue
+    const slot = parseInt(m[1]!, 10)
+    if (slot < 1 || slot > maxSlot) continue
+    const text = values[slot - 1]?.trim() ?? ''
+    lines[i] = formatLine(slot, text)
+  }
+}
+
+function fillLastWeekBigThreeLines(
+  lines: string[],
+  start: number,
+  end: number,
+  rows: WeeklyPlanWizardData['lastBigThree']
+): void {
+  fillLetterNumberedLines(lines, start, end, rows.map((r) => r.text), 3, (slot, text) => {
+    const row = rows[slot - 1]!
+    const pctRaw = String(row.pct).trim().toLowerCase()
+    const pct = pctRaw === 'n/a' ? 'n/a' : `${parseInt(row.pct, 10) || 0}%`
+    const body = text.trim()
+    if (!body) return `> ${slot}. [Completion: ${pct}]`
+    return `> ${slot}. [Completion: ${pct}] ${body}`
+  })
+}
+
+function fillReflectionCallout(lines: string[], start: number, end: number, reflect: string): void {
+  const trimmed = reflect.trim()
+  for (let i = start; i < end; i++) {
+    if (!lines[i]!.startsWith('>')) continue
+    if (/^>\s*\[!/.test(lines[i]!)) continue
+    if (!/\(write something\)/i.test(lines[i]!) && !trimmed) continue
+    if (!trimmed) {
+      lines[i] = '> (write something)'
+      return
+    }
+    const parts = trimmed.split('\n')
+    lines[i] = `> ${parts[0]}`
+    if (parts.length > 1) {
+      lines.splice(i + 1, 0, ...parts.slice(1).map((p) => `> ${p}`))
+    }
+    return
+  }
+}
+
+function fillRejuvenationLines(lines: string[], start: number, end: number, values: string[]): void {
+  let idx = 0
+  for (let i = start; i < end && idx < values.length; i++) {
+    const m = lines[i]!.match(/^>>\s*(\d+)\.\s*(.*)$/)
+    if (!m || m[1] !== '1') continue
+    const text = values[idx]?.trim() ?? ''
+    lines[i] = text ? `>> 1. ${text}` : '>> 1.'
+    idx++
+  }
+}
+
+function fillIdeasLines(lines: string[], start: number, end: number, ideas: string[]): void {
+  const slots: { line: number; num: number }[] = []
+  for (let i = start; i < end; i++) {
+    const m = lines[i]!.match(/^>>\s*(\d+)\s*(.*)$/)
+    if (m) slots.push({ line: i, num: parseInt(m[1]!, 10) })
+  }
+  slots.sort((a, b) => a.num - b.num)
+  for (let i = 0; i < slots.length && i < ideas.length; i++) {
+    const text = ideas[i]?.trim() ?? ''
+    const { line, num } = slots[i]!
+    lines[line] = text ? `>> ${num} ${text}` : `>> ${num} `
+  }
+}
+
+function fillIdeasBullets(lines: string[], start: number, end: number, ideas: string[]): void {
+  let idx = 0
+  for (let i = start; i < end && idx < ideas.length; i++) {
+    if (!/^-\s*/.test(lines[i]!)) continue
+    const text = ideas[idx]?.trim() ?? ''
+    lines[i] = text ? `- ${text}` : '- '
+    idx++
+  }
+}
+
+function fillLastWeekBigThreePlainLines(
+  lines: string[],
+  start: number,
+  end: number,
+  rows: WeeklyPlanWizardData['lastBigThree']
+): void {
+  fillPlainNumberedLines(lines, start, end, rows.map((r) => r.text), 3, (slot, text) => {
+    const row = rows[slot - 1]!
+    const pctRaw = String(row.pct).trim().toLowerCase()
+    const pct = pctRaw === 'n/a' ? 'n/a' : `${parseInt(row.pct, 10) || 0}%`
+    const body = text.trim()
+    if (!body) return `${slot}. [Completion: ${pct}] `
+    return `${slot}. [Completion: ${pct}] ${body}`
+  })
+}
+
+function fillWeeklyBigThreeCheckboxes(lines: string[], start: number, end: number, values: string[]): void {
+  for (let i = start; i < end; i++) {
+    const m = lines[i]!.match(/^(\d+)\.\s*\[\s*\]\s*(.*)$/)
+    if (!m) continue
+    const slot = parseInt(m[1]!, 10)
+    if (slot < 1 || slot > 3) continue
+    const text = values[slot - 1]?.trim() ?? ''
+    lines[i] = text ? `${slot}. [ ] ${text}` : `${slot}. [ ]`
+  }
+}
+
+function fillVaultWeeklyTemplate(body: string, data: WeeklyPlanWizardData): string {
+  const lines = body.split('\n')
+
+  const winsRange = sectionRange(lines, AFTER_ACTION_HEADING)
+  if (winsRange) {
+    fillLetterNumberedLines(lines, winsRange[0], winsRange[1], data.wins, 5, (slot, text) =>
+      text ? `> ${slot}. ${text}` : `> ${slot}. `
+    )
+  }
+
+  const retroRange = sectionRange(lines, LAST_WEEK_B3_HEADING)
+  if (retroRange) fillLastWeekBigThreeLines(lines, retroRange[0], retroRange[1], data.lastBigThree)
+
+  const reflectRange = sectionRange(lines, REFLECTION_HEADING)
+  if (reflectRange) fillReflectionCallout(lines, reflectRange[0], reflectRange[1], data.retroReflect)
+
+  const rejRange = sectionRange(lines, REJUVENATION_HEADING)
+  if (rejRange) fillRejuvenationLines(lines, rejRange[0], rejRange[1], data.rejuvenation)
+
+  const ideasRange = sectionRange(lines, IDEAS_HEADING)
+  if (ideasRange) fillIdeasLines(lines, ideasRange[0], ideasRange[1], data.ideas)
+
+  const b3Range = sectionRange(lines, WEEKLY_BIG_THREE_HEADING)
+  if (b3Range) fillWeeklyBigThreeCheckboxes(lines, b3Range[0], b3Range[1], data.bigThree)
+
+  return lines.join('\n')
+}
+
+function fillStandardWeeklyTemplate(body: string, data: WeeklyPlanWizardData): string {
+  const lines = body.split('\n')
+
+  const winsRange = sectionRange(lines, AFTER_ACTION_HEADING)
+  if (winsRange) {
+    fillPlainNumberedLines(lines, winsRange[0], winsRange[1], data.wins, 5, (slot, text) =>
+      text ? `${slot}. ${text}` : `${slot}. `
+    )
+  }
+
+  const retroRange = sectionRange(lines, LAST_WEEK_B3_HEADING)
+  if (retroRange) fillLastWeekBigThreePlainLines(lines, retroRange[0], retroRange[1], data.lastBigThree)
+
+  const reflectRange = sectionRange(lines, REFLECTION_HEADING)
+  if (reflectRange) fillReflectionCallout(lines, reflectRange[0], reflectRange[1], data.retroReflect)
+
+  const rejRange = sectionRange(lines, REJUVENATION_HEADING)
+  if (rejRange) {
+    fillPlainNumberedLines(lines, rejRange[0], rejRange[1], data.rejuvenation, 3, (slot, text) =>
+      text ? `${slot}. ${text}` : `${slot}. `
+    )
+  }
+
+  const ideasRange = sectionRange(lines, IDEAS_HEADING)
+  if (ideasRange) fillIdeasBullets(lines, ideasRange[0], ideasRange[1], data.ideas)
+
+  const b3Range = sectionRange(lines, WEEKLY_BIG_THREE_HEADING)
+  if (b3Range) fillWeeklyBigThreeCheckboxes(lines, b3Range[0], b3Range[1], data.bigThree)
+
+  return lines.join('\n')
+}
+
+function replaceSectionByPattern(body: string, headingPattern: RegExp, content: string): string {
+  const lines = body.split('\n')
+  const range = sectionRange(lines, headingPattern)
+  if (!range) return body
+  const [start, end] = range
+  const insert = content.trimEnd() ? content.trimEnd().split('\n') : ['- ']
+  const next = [...lines.slice(0, start), ...insert, '', ...lines.slice(end)]
+  return next.join('\n').replace(/\n{3,}/g, '\n\n')
+}
+
+function fillLegacyWeeklyTemplate(body: string, data: WeeklyPlanWizardData): string {
+  let out = body
+  out = replaceSectionByPattern(out, AFTER_ACTION_HEADING, bulletLines(data.wins))
+  out = replaceSectionByPattern(out, LAST_WEEK_B3_HEADING, formatLastBigThreeRetro(data.lastBigThree))
+  out = replaceSectionByPattern(
+    out,
+    REFLECTION_HEADING,
+    data.retroReflect.trim() ? `${data.retroReflect.trim()}\n` : '- \n'
+  )
+  out = replaceSectionByPattern(out, REJUVENATION_HEADING, bulletLines(data.rejuvenation))
+  out = replaceSectionByPattern(out, IDEAS_HEADING, bulletLines(data.ideas))
+  out = replaceSectionByPattern(out, WEEKLY_BIG_THREE_HEADING, bulletLines(data.bigThree))
+  return out
 }
 
 function bulletLines(lines: string[]): string {
@@ -242,35 +555,13 @@ function formatLastBigThreeRetro(rows: WeeklyPlanWizardData['lastBigThree']): st
   )
 }
 
-function formatScheduledBlocks(entries: WeeklyPlanScheduleEntry[]): { all: string; q2: string } {
-  const timed = entries.filter((e) => e.day.trim() && e.slot.trim())
-  timed.sort((a, b) => a.day.localeCompare(b.day) || a.slot.localeCompare(b.slot))
-  const allLines: string[] = []
-  const q2Lines: string[] = []
-  for (const e of timed) {
-    const line = `- [ ] ${e.slot} ${e.text.trim()}`
-    allLines.push(line)
-    if (/#q2/i.test(e.text)) q2Lines.push(line)
-  }
-  return {
-    all: allLines.length ? allLines.join('\n') + '\n' : '- \n',
-    q2: q2Lines.length ? q2Lines.join('\n') + '\n' : '- \n'
-  }
-}
-
 export function buildWeeklyNoteMarkdown(template: string, isoWeek: string, data: WeeklyPlanWizardData): string {
-  let body = fillWeeklyTemplateTokens(template, isoWeek)
-  body = replaceSection(body, 'AFTER ACTION REVIEW', bulletLines(data.wins))
-  body = replaceSection(body, 'Last week Big Three', formatLastBigThreeRetro(data.lastBigThree))
-  body = replaceSection(body, 'Reflection', data.retroReflect.trim() ? `${data.retroReflect.trim()}\n` : '- \n')
-  body = replaceSection(body, 'REJUVENATION', bulletLines(data.rejuvenation))
-  body = replaceSection(body, 'Ideas', bulletLines(data.ideas))
-  body = replaceSection(body, 'Weekly Big Three', bulletLines(data.bigThree))
-  const sched = formatScheduledBlocks(data.scheduleEntries)
-  body = replaceSection(body, 'Q2 Blocks', sched.q2)
-  if (sched.all.trim() !== '-') {
-    body = replaceSection(body, 'Schedule', sched.all)
-  }
+  const filled = fillWeeklyTemplateTokens(template, isoWeek)
+  const body = usesObsidianCalloutWeeklyTemplate(template)
+    ? fillVaultWeeklyTemplate(filled, data)
+    : usesStandardWeeklyTemplate(template)
+      ? fillStandardWeeklyTemplate(filled, data)
+      : fillLegacyWeeklyTemplate(filled, data)
   return body.endsWith('\n') ? body : `${body}\n`
 }
 
@@ -411,7 +702,8 @@ export async function loadWeeklyPlanWizardContext(
     lastWeekCompleted: dedupeContextLines(completed),
     lastWeekOpen: dedupeContextLines(open),
     lastWeekWeeklyBigThree,
-    bigThreeSuggestionWeek
+    bigThreeSuggestionWeek,
+    draftStep: 0
   }
 
   return {

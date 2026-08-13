@@ -161,6 +161,11 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
     await textarea.press('Escape')
     await expect(popover).toHaveCount(0)
     await expect(textarea).toHaveValue('/')
+
+    // Refocus with `/` still in the buffer — popover should return without retyping.
+    await textarea.click()
+    await expect(popover).toBeVisible()
+
     await textarea.fill('')
   })
 

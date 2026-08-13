@@ -7,6 +7,8 @@ export interface SdkChromeState {
   compactFailed?: boolean
   compactError?: string
   apiRetryText?: string | null
+  thinkingActive?: boolean
+  thinkingEstimatedTokens?: number
 }
 
 export interface RateLimitChromeState {
@@ -45,7 +47,7 @@ function formatRateLimitLabel(
 
 function taskSubtitleFromProgress(event: Extract<HarnessEvent, { type: 'task_progress' }>): string {
   const parts: string[] = []
-  if (event.lastToolName) parts.push(`last: ${event.lastToolName}`)
+  if (event.lastToolName) parts.push(event.lastToolName)
   if (event.usage) {
     parts.push(`${event.usage.tool_uses} tool uses`)
     const sec = Math.round(event.usage.duration_ms / 1000)
@@ -87,6 +89,25 @@ export class SessionHarnessUiState {
     return this.sdkChrome.get(sessionId) ?? null
   }
 
+  setThinkingChrome(sessionId: string, estimatedTokens?: number): void {
+    const cur = this.sdkChrome.get(sessionId) ?? { status: null, apiRetryText: null }
+    this.sdkChrome.set(sessionId, {
+      ...cur,
+      thinkingActive: true,
+      ...(estimatedTokens != null ? { thinkingEstimatedTokens: estimatedTokens } : {}),
+    })
+  }
+
+  clearThinkingChrome(sessionId: string): void {
+    const cur = this.sdkChrome.get(sessionId)
+    if (!cur?.thinkingActive && cur?.thinkingEstimatedTokens == null) return
+    this.sdkChrome.set(sessionId, {
+      ...(cur ?? { status: null, apiRetryText: null }),
+      thinkingActive: false,
+      thinkingEstimatedTokens: undefined,
+    })
+  }
+
   getRateLimit(sessionId: string): RateLimitChromeState | null {
     return this.rateLimit.get(sessionId) ?? null
   }
@@ -112,6 +133,8 @@ export class SessionHarnessUiState {
       compactFailed: false,
       compactError: undefined,
       apiRetryText: null,
+      thinkingActive: false,
+      thinkingEstimatedTokens: undefined,
     })
   }
 

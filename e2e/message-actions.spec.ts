@@ -1,5 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
+import { commentOnReviewSelection, e2eConfigPath as configPath, openReviewCommentPopover, seedE2eConfig, seedSkipOnboarding, selectReviewPaneText } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -104,6 +104,34 @@ test.describe('10d-enrichment-message-actions', () => {
       .toBe(true)
 
     await expect(wrap.getByTestId('msg-speaking-indicator')).toBeVisible()
+  })
+
+  test('review: assistant response opens split pane with selection comments', async () => {
+    const assistantMsg = page.locator('.msg-assistant[data-testid="transcript-message"]').first()
+    const wrap = page.locator('.msg-wrap').filter({ has: assistantMsg })
+    await wrap.hover()
+    await wrap.getByTestId('msg-review-button').click()
+    const reviewPane = page.getByTestId('response-review-pane')
+    await expect(reviewPane).toBeVisible()
+    await expect(reviewPane).toHaveAttribute('data-review-kind', 'response')
+    await expect(wrap).toHaveClass(/response-review-selected/)
+    await expect(reviewPane.getByTestId('response-review-content')).toBeVisible()
+    const assistantText = ((await assistantMsg.textContent()) ?? '').trim()
+    const quote = assistantText.split(/\s+/).slice(0, 4).join(' ')
+    await selectReviewPaneText(reviewPane, quote)
+    await commentOnReviewSelection(reviewPane, 'Clarify this point')
+    await openReviewCommentPopover(reviewPane)
+    await expect(reviewPane.getByTestId('response-review-saved-body')).toHaveText('Clarify this point')
+    await expect(page.getByTestId('composer-input')).toContainText(/Re response \(line \d+\):/)
+    await expect(page.getByTestId('composer-input')).toContainText(quote)
+    await reviewPane.getByTestId('response-review-saved-comment').first().click()
+    const editInput = reviewPane.getByTestId('response-review-comment-input')
+    await editInput.fill('Clarify this point — revised')
+    await editInput.press('Enter')
+    await expect(reviewPane.getByTestId('response-review-saved-body').first()).toHaveText(
+      'Clarify this point — revised'
+    )
+    await expect(page.getByTestId('composer-input')).toContainText('Clarify this point — revised')
   })
 
   test('copy on the user message copies its raw text', async () => {

@@ -3,13 +3,17 @@ import { APP_DISPLAY_NAME } from '../../../shared/app-brand'
 import {
   defaultClaudeModelFromConfig,
   defaultClaudeEffortFromConfig,
+  defaultClaudePermissionModeFromConfig,
   DEFAULT_CLAUDE_EFFORT_OPTIONS,
+  DEFAULT_CLAUDE_PERMISSION_MODE_OPTIONS,
   type AtelierConfig,
   type VaultConfig
 } from '../../../shared/config'
 import { worktreeRootFromConfig } from '../../../shared/worktree-path'
-import type { EffortLevel } from '../../../shared/session-types'
+import type { EffortLevel, PermissionModeValue } from '../../../shared/session-types'
+import type { SessionProfile } from '../../../shared/session-profile-types'
 import type { SessionAuthStatusEvent } from '../../../shared/harness-ui-types'
+import ProfileEditModal from './ProfileEditModal'
 
 interface SettingsPanelProps {
   isOpen: boolean
@@ -18,9 +22,10 @@ interface SettingsPanelProps {
   onUpdate: (partial: Partial<AtelierConfig>) => Promise<AtelierConfig>
   onReplayOnboarding: () => void
   authStatus?: SessionAuthStatusEvent | null
+  initialPane?: Pane
 }
 
-type Pane = 'theme' | 'fonts' | 'notifications' | 'vault' | 'agent' | 'sessions'
+type Pane = 'theme' | 'fonts' | 'notifications' | 'vault' | 'agent' | 'sessions' | 'profiles'
 
 /**
  * Settings modal: theme (system/light/dark, really flips `data-theme` on
@@ -34,20 +39,26 @@ export default function SettingsPanel({
   config,
   onUpdate,
   onReplayOnboarding,
-  authStatus = null
+  authStatus = null,
+  initialPane
 }: SettingsPanelProps): JSX.Element | null {
-  const [pane, setPane] = useState<Pane>('theme')
+  const [pane, setPane] = useState<Pane>(initialPane ?? 'theme')
   const [notifyStatus, setNotifyStatus] = useState<string | null>(null)
   const [vaultEdit, setVaultEdit] = useState<VaultConfig>(() => config.vault)
   const [vaultSaved, setVaultSaved] = useState(false)
   const [defaultModelEdit, setDefaultModelEdit] = useState(() => defaultClaudeModelFromConfig(config))
   const [defaultEffortEdit, setDefaultEffortEdit] = useState<EffortLevel>(() => defaultClaudeEffortFromConfig(config))
+  const [defaultPermissionModeEdit, setDefaultPermissionModeEdit] = useState<PermissionModeValue>(() =>
+    defaultClaudePermissionModeFromConfig(config)
+  )
   const [defaultModelError, setDefaultModelError] = useState<string | null>(null)
   const [defaultModelValidating, setDefaultModelValidating] = useState(false)
   const [defaultModelSaved, setDefaultModelSaved] = useState(false)
   const [worktreeRootEdit, setWorktreeRootEdit] = useState(() => worktreeRootFromConfig(config))
   const [worktreeRootSaved, setWorktreeRootSaved] = useState(false)
   const [vaultRootFromEnv, setVaultRootFromEnv] = useState(false)
+  const [profileEditOpen, setProfileEditOpen] = useState(false)
+  const [editingProfile, setEditingProfile] = useState<SessionProfile | null>(null)
 
   useEffect(() => {
     setDefaultModelEdit(defaultClaudeModelFromConfig(config))
@@ -58,8 +69,17 @@ export default function SettingsPanel({
   }, [config.defaultClaudeEffort])
 
   useEffect(() => {
+    setDefaultPermissionModeEdit(defaultClaudePermissionModeFromConfig(config))
+  }, [config.defaultClaudePermissionMode])
+
+  useEffect(() => {
     setWorktreeRootEdit(worktreeRootFromConfig(config))
   }, [config.worktreeRoot])
+
+  useEffect(() => {
+    if (!isOpen || !initialPane) return
+    setPane(initialPane)
+  }, [isOpen, initialPane])
 
   /** Load saved vault fields when the modal opens — not on every config touch (avoids wiping unsaved edits). */
   useEffect(() => {
@@ -113,7 +133,11 @@ export default function SettingsPanel({
       setDefaultModelError(result.error)
       return
     }
-    onUpdate({ defaultClaudeModel: trimmed, defaultClaudeEffort: defaultEffortEdit })
+    onUpdate({
+      defaultClaudeModel: trimmed,
+      defaultClaudeEffort: defaultEffortEdit,
+      defaultClaudePermissionMode: defaultPermissionModeEdit
+    })
     setDefaultModelSaved(true)
     setTimeout(() => setDefaultModelSaved(false), 2000)
   }
@@ -122,6 +146,28 @@ export default function SettingsPanel({
     onUpdate({ worktreeRoot: worktreeRootEdit.trim() || '~/.atelier/worktrees' })
     setWorktreeRootSaved(true)
     setTimeout(() => setWorktreeRootSaved(false), 2000)
+  }
+
+  function openProfileEdit(profile: SessionProfile | null): void {
+    setEditingProfile(profile)
+    setProfileEditOpen(true)
+  }
+
+  async function saveProfile(profile: SessionProfile): Promise<void> {
+    const existing = config.sessionProfiles ?? []
+    const next = existing.some((p) => p.id === profile.id)
+      ? existing.map((p) => (p.id === profile.id ? profile : p))
+      : [...existing, profile]
+    await onUpdate({ sessionProfiles: next })
+    setProfileEditOpen(false)
+    setEditingProfile(null)
+  }
+
+  async function deleteProfile(id: string): Promise<void> {
+    const next = (config.sessionProfiles ?? []).filter((p) => p.id !== id)
+    await onUpdate({ sessionProfiles: next })
+    setProfileEditOpen(false)
+    setEditingProfile(null)
   }
 
   return (
@@ -156,6 +202,13 @@ export default function SettingsPanel({
               onClick={() => setPane('sessions')}
             >
               Sessions
+            </button>
+            <button
+              className={pane === 'profiles' ? 'active' : ''}
+              data-testid="settings-nav-profiles"
+              onClick={() => setPane('profiles')}
+            >
+              Session profiles
             </button>
             <button
               onClick={onReplayOnboarding}
@@ -318,6 +371,25 @@ export default function SettingsPanel({
                     </option>
                   ))}
                 </select>
+                <div>
+                  <div className="stitle">Default mode</div>
+                  <div className="ssub">
+                    Permission mode for new Claude Code sessions (same as the composer mode pill).
+                  </div>
+                </div>
+                <select
+                  className="input"
+                  data-testid="default-claude-permission-mode-select"
+                  value={defaultPermissionModeEdit}
+                  onChange={(e) => setDefaultPermissionModeEdit(e.target.value as PermissionModeValue)}
+                  style={{ width: '100%', fontSize: '13.5px' }}
+                >
+                  {DEFAULT_CLAUDE_PERMISSION_MODE_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <button
                     className="btn btn-sm btn-primary"
@@ -370,6 +442,55 @@ export default function SettingsPanel({
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {pane === 'profiles' && (
+            <div className="settings-pane active" data-testid="settings-pane-profiles">
+              <div className="field-hint" style={{ marginBottom: 12 }}>
+                Profiles bundle a workspace (terminal, diff, harness cwd) with extra directories shown in the Files
+                tab and file quick open.
+              </div>
+              <div className="profile-list">
+                {(config.sessionProfiles ?? []).map((profile) => (
+                  <div className="profile-row" key={profile.id} data-testid={`profile-row-${profile.id}`}>
+                    <div className="profile-row-main">
+                      <div className="profile-row-name">{profile.name}</div>
+                      <div className="profile-row-meta">
+                        {profile.workspace} · {profile.fileDirectories.length} file dir
+                        {profile.fileDirectories.length === 1 ? '' : 's'}
+                      </div>
+                    </div>
+                    <div className="profile-row-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        data-testid={`profile-edit-btn-${profile.id}`}
+                        onClick={() => openProfileEdit(profile)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        data-testid={`profile-delete-btn-${profile.id}`}
+                        onClick={() => void deleteProfile(profile.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{ marginTop: 12 }}
+                data-testid="profile-add-btn"
+                onClick={() => openProfileEdit(null)}
+              >
+                + Add profile
+              </button>
             </div>
           )}
 
@@ -454,6 +575,16 @@ export default function SettingsPanel({
           )}
         </div>
       </div>
+      <ProfileEditModal
+        isOpen={profileEditOpen}
+        profile={editingProfile}
+        onClose={() => {
+          setProfileEditOpen(false)
+          setEditingProfile(null)
+        }}
+        onSave={(profile) => void saveProfile(profile)}
+        onDelete={editingProfile ? (id) => void deleteProfile(id) : undefined}
+      />
     </div>
   )
 }

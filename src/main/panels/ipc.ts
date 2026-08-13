@@ -9,7 +9,7 @@ import { ipcMain, shell, type BrowserWindow } from 'electron'
 import type { DiffFileStatus } from '../../shared/panel-types'
 import { logger } from '../logger'
 import * as git from './git'
-import { walkFileTree, walkDirChildren, listWorkspaceFiles, readFileForPreview, writeFileContent } from './files'
+import { walkFileTree, walkDirChildren, listWorkspaceFiles, pathIsDirectory, readFileForPreview, writeFileContent } from './files'
 import { PtyManager } from './pty'
 import { PortForwardManager } from './ports'
 
@@ -71,6 +71,7 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
   ipcMain.handle('panel:files:list', (_e, workspaceRoot: string, underDir?: string | null, hostname?: string | null) =>
     listWorkspaceFiles(workspaceRoot, hostname, underDir)
   )
+  ipcMain.handle('panel:files:isDirectory', (_e, path: string, hostname?: string | null) => pathIsDirectory(path, hostname))
   ipcMain.handle('panel:files:read', (_e, path: string, hostname?: string | null) => readFileForPreview(path, hostname))
   ipcMain.handle('panel:files:write', (_e, path: string, content: string, hostname?: string | null) => writeFileContent(path, content, hostname))
 

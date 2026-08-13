@@ -8,6 +8,7 @@ export {
   getDiffSummary,
   getFileDiff,
   getGitBranch,
+  getOutsideWorkspaceCapFileDiff,
   getWorkingTreeFilePair,
   getPathWorkingTreeNumstat,
   invalidateGitRepository,

@@ -6,7 +6,11 @@ interface TaskContextMenuProps {
   y: number
   options: MoveDateOptions
   onSelect: (targetDate: string) => void
-  onRename: () => void
+  onRename?: () => void
+  /** carry-over panel: only "Move to…" dates, no rename/session/unscheduled rows. */
+  variant?: 'default' | 'carry'
+  /** Timeline-only: clear the time block and return the task to Unscheduled. */
+  onMoveToUnscheduled?: () => void
   onCreateSession?: () => void
   onClose: () => void
 }
@@ -17,6 +21,8 @@ export default function TaskMoveContextMenu({
   options,
   onSelect,
   onRename,
+  variant = 'default',
+  onMoveToUnscheduled,
   onCreateSession,
   onClose
 }: TaskContextMenuProps): JSX.Element {
@@ -61,20 +67,31 @@ export default function TaskMoveContextMenu({
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div
-        className="smi"
-        data-testid="task-rename-option"
-        onClick={() => { onRename(); onClose() }}
-      >
-        Rename
-      </div>
-      {onCreateSession && (
+      {variant === 'default' && onRename && (
+        <div
+          className="smi"
+          data-testid="task-rename-option"
+          onClick={() => { onRename(); onClose() }}
+        >
+          Rename
+        </div>
+      )}
+      {variant === 'default' && onCreateSession && (
         <div
           className="smi"
           data-testid="task-create-session-option"
           onClick={() => { onCreateSession(); onClose() }}
         >
           Create session
+        </div>
+      )}
+      {variant === 'default' && onMoveToUnscheduled && (
+        <div
+          className="smi"
+          data-testid="task-move-to-unscheduled-option"
+          onClick={() => { onMoveToUnscheduled(); onClose() }}
+        >
+          Move to Unscheduled
         </div>
       )}
       <div className="sm-sep" />

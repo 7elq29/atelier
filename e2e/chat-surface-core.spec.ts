@@ -170,18 +170,26 @@ test.describe('03-chat-surface-core', () => {
     // UI-match test below for the assertion on computed style).
     await expect(page.getByTestId('transcript-message').first()).toContainText('sleep 2')
 
-    // Tool-call card: must appear, show the RUNNING (pulsing) indicator
-    // first (the `sleep 2` gives a real ~2s window to observe this before
-    // it flips), then flip to a completed status chip.
-    const toolCard = page.locator('[data-testid="tool-card"][data-tool-name="Bash"]').first()
-    await expect(toolCard).toBeVisible({ timeout: 30_000 })
-    await expect(toolCard.locator('[data-testid="tool-running-indicator"]')).toBeVisible({ timeout: 5_000 })
+    // Tool-call card: must appear while running (sleep 2 gives a window to
+    // observe the pulsing indicator). Once finished, the lone call folds
+    // into the aggregate row — expand it to verify completion + I/O.
+    const runningToolCard = page.locator('[data-testid="tool-card"][data-tool-name="Bash"]').first()
+    await expect(runningToolCard).toBeVisible({ timeout: 30_000 })
+    await expect(runningToolCard.locator('[data-testid="tool-running-indicator"]')).toBeVisible({ timeout: 5_000 })
     await page.screenshot({ path: join(artifactsDir, '03-tool-card-running.png') })
 
-    await expect(toolCard.locator('[data-testid="tool-status-chip"]')).toHaveText('completed', { timeout: 30_000 })
+    const summaryRow = page.locator('[data-testid="tool-sequence-summary"]').last()
+    await waitForCondition(
+      page,
+      async () => /ran 1 shell command/i.test((await summaryRow.locator('.tool-sequence-summary-text').textContent()) ?? ''),
+      30_000
+    )
+    await summaryRow.click()
+    const toolCard = summaryRow.locator('[data-testid="tool-sequence-summary-body"] [data-testid="tool-card"][data-tool-name="Bash"]').first()
+    await expect(toolCard.locator('[data-testid="tool-status-chip"]')).toHaveText('completed', { timeout: 10_000 })
     await page.screenshot({ path: join(artifactsDir, '03-tool-card-completed.png') })
 
-    // Expanding shows real (non-empty) input/output.
+    // Expanding the card shows real (non-empty) input/output.
     await toolCard.click()
     await expect(toolCard).toHaveClass(/open/)
     const inputText = await toolCard.locator('[data-testid="tool-input"]').textContent()
@@ -341,7 +349,11 @@ test.describe('03-chat-surface-core', () => {
     // The authoritative count is read again post-turn below, once nothing
     // is running.
     const summaryRow = page.locator('[data-testid="tool-sequence-summary"]').last()
-    await waitForCondition(page, async () => /^Read \d+ files?$/.test((await summaryRow.locator('.tool-sequence-summary-text').textContent()) ?? ''), 30_000)
+    await waitForCondition(
+      page,
+      async () => /read \d+ files?/i.test((await summaryRow.locator('.tool-sequence-summary-text').textContent()) ?? ''),
+      30_000
+    )
 
     // Find the specific Bash card that is actually running right now (by
     // `data-tool-status`, not just `.last()` on name) — `.last()` alone can
@@ -381,9 +393,13 @@ test.describe('03-chat-surface-core', () => {
     // corrected `Read` for the real project-dir path) — a real, occasional
     // SDK/model retry, not a bug in this feature's aggregation, which
     // correctly counts whatever tool calls actually occurred.
-    await waitForCondition(page, async () => /^Read \d+ files?, ran 1 shell command$/.test((await summaryRow.locator('.tool-sequence-summary-text').textContent()) ?? ''), 10_000)
+    await waitForCondition(
+      page,
+      async () => /read \d+ files?, ran 1 shell command/i.test((await summaryRow.locator('.tool-sequence-summary-text').textContent()) ?? ''),
+      10_000
+    )
     const finalText = (await summaryRow.locator('.tool-sequence-summary-text').textContent()) ?? ''
-    const readCount = Number(finalText.match(/^Read (\d+) files?, ran 1 shell command$/)?.[1] ?? NaN)
+    const readCount = Number(finalText.match(/read (\d+) files?, ran 1 shell command/i)?.[1] ?? NaN)
     expect(Number.isFinite(readCount) && readCount >= 2).toBe(true)
     await expect(thisBashCard).toHaveCount(0)
     await page.screenshot({ path: join(artifactsDir, '14-tool-call-sequence-collapse-post-turn.png') })
@@ -412,39 +428,37 @@ test.describe('03-chat-surface-core', () => {
     await logTranscriptState(page, sessionId, 'turn3b-sequence-collapse')
   })
 
-  test('a sequence of exactly one tool call renders as a standalone card, never wrapped in an aggregate', async () => {
-    const summaryCountBefore = await page.locator('[data-testid="tool-sequence-summary"]').count()
-    const bashCardLocator = page.locator('[data-testid="tool-card"][data-tool-name="Bash"]')
-    const bashCardsBefore = await bashCardLocator.count()
-
+  test('a sequence of exactly one completed tool call collapses into an aggregate row', async () => {
     await page.getByTestId('composer-input').fill(
       'Use the Bash tool to run exactly: echo single-tool-test. Do not use any other tool. ' +
         'Wait for it to finish, then reply with exactly the word DONE.'
     )
     await page.getByTestId('send-button').click()
 
-    // `.last()` re-resolves dynamically, but grabbing it right away would
-    // bake in whatever Bash card is *currently* last — a stale, already-
-    // completed one from an earlier test's turn if this turn's own Bash
-    // call hasn't rendered yet at this exact instant (the same class of
-    // race as the top-level/subagent sequence-collapse tests above). Wait
-    // for a genuinely new Bash card to appear first.
-    await waitForCondition(page, async () => (await bashCardLocator.count()) > bashCardsBefore, 30_000)
-    const bashCard = bashCardLocator.last()
-    await expect(bashCard).toBeVisible({ timeout: 30_000 })
-    await expect(bashCard.locator('[data-testid="tool-status-chip"]')).toHaveText('completed', { timeout: 30_000 })
-    expect(await bashCard.locator('.tool-headline').textContent()).toContain('echo single-tool-test')
-
-    // No new aggregate row was introduced for this single-call turn.
-    expect(await page.locator('[data-testid="tool-sequence-summary"]').count()).toBe(summaryCountBefore)
-
-    await bashCard.scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(artifactsDir, '14-tool-call-sequence-collapse-single-call.png') })
-
-    // Wait for the turn to actually finish (Send button reappears) before
-    // finishing — otherwise a still-in-flight reply can land during the
-    // *next* test and disturb its own state.
     await waitForTurnIdle(page, 30_000)
+
+    const summaryRow = page
+      .locator('[data-testid="transcript-message"][data-role="user"]')
+      .filter({ hasText: 'single-tool-test' })
+      .locator('~ [data-testid="tool-sequence-summary"]')
+      .first()
+    await expect(summaryRow).toBeVisible({ timeout: 30_000 })
+    await expect(summaryRow.locator('.tool-sequence-summary-text')).toContainText(/ran 1 shell command/i)
+
+    const bashInSummary = page
+      .locator('[data-testid="tool-card"][data-tool-name="Bash"]')
+      .filter({ hasText: 'single-tool-test' })
+    await expect(bashInSummary).toHaveCount(0)
+
+    await summaryRow.click()
+    const bashCard = summaryRow
+      .locator('[data-testid="tool-sequence-summary-body"] [data-testid="tool-card"][data-tool-name="Bash"]')
+      .filter({ hasText: 'single-tool-test' })
+    await expect(bashCard).toHaveCount(1)
+    await expect(bashCard.locator('[data-testid="tool-status-chip"]')).toHaveText('completed')
+
+    await summaryRow.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(artifactsDir, '14-tool-call-sequence-collapse-single-call.png') })
 
     await logTranscriptState(page, sessionId, 'turn3c-single-call-no-aggregate')
   })
@@ -522,10 +536,8 @@ test.describe('03-chat-surface-core', () => {
 
     // Wait for the subagent's own turn to fully finish before asserting the
     // nested sequence's final collapsed state — avoids racing the aggregate
-    // text update against the (by-then-removed) standalone running card,
-    // same reasoning as the top-level sequence-collapse test above. Approve
-    // any permission prompt along the way, same as the top-level test.
-    await waitForCondition(page, async () => (await taskCard.getAttribute('data-tool-status')) === 'completed', 90_000)
+    // text update against the (by-then-removed) standalone running card.
+    await waitForTurnIdle(page, 90_000)
 
     // The subagent's own Read sequence collapses into its own aggregate
     // row, nested inside the wrap, independent of the parent turn's
@@ -536,9 +548,13 @@ test.describe('03-chat-surface-core', () => {
     // real, occasional SDK/model retry, not a bug in the aggregation.
     const nestedSummary = wrap.locator('[data-testid="tool-sequence-summary"]')
     await expect(nestedSummary).toBeVisible({ timeout: 10_000 })
-    await waitForCondition(page, async () => /^Read \d+ files?$/.test((await nestedSummary.locator('.tool-sequence-summary-text').textContent()) ?? ''), 10_000)
+    await waitForCondition(
+      page,
+      async () => /read \d+ files?/i.test((await nestedSummary.locator('.tool-sequence-summary-text').textContent()) ?? ''),
+      10_000
+    )
     const nestedText = (await nestedSummary.locator('.tool-sequence-summary-text').textContent()) ?? ''
-    const nestedReadCount = Number(nestedText.match(/^Read (\d+) files?$/)?.[1] ?? NaN)
+    const nestedReadCount = Number(nestedText.match(/read (\d+) files?/i)?.[1] ?? NaN)
     expect(Number.isFinite(nestedReadCount) && nestedReadCount >= 2).toBe(true)
     expect(await wrap.locator('[data-testid="tool-card"]').count()).toBe(0)
 
@@ -625,7 +641,59 @@ test.describe('03-chat-surface-core', () => {
     await logTranscriptState(page, sessionId, 'turn5-markdown-link')
   })
 
+  test('user message bare URL is clickable and opens in the external browser', async () => {
+    await electronApp.evaluate(({ shell }) => {
+      shell.openExternal = async (url: string) => {
+        // @ts-expect-error test-only bookkeeping read back below
+        globalThis.__lastOpenedExternalUrl = url
+        return undefined
+      }
+    })
+
+    const targetUrl = 'https://example.com/atelier-user-link-test'
+    await page.getByTestId('composer-input').fill(`Please review ${targetUrl} when you can.`)
+    await page.getByTestId('send-button').click()
+
+    const userMsg = page.locator('.msg-user[data-testid="transcript-message"]').last()
+    await expect(userMsg).toBeVisible({ timeout: 15_000 })
+
+    const link = userMsg.locator('[data-testid="external-link"]')
+    await expect(link).toHaveText(targetUrl)
+    await link.click()
+
+    const openedUrl = await electronApp.evaluate(() => {
+      // @ts-expect-error test-only bookkeeping
+      return globalThis.__lastOpenedExternalUrl ?? null
+    })
+    expect(openedUrl).toBe(targetUrl)
+    expect(page.url()).not.toContain('example.com')
+  })
+
+  test('assistant home-relative file paths (~/.file) open without duplicating tilde', async () => {
+    await page.getByTestId('composer-input').fill(
+      'Reply with exactly this sentence and nothing else, do not use any tools: Config lives in `~/.mcp.json`.'
+    )
+    await page.getByTestId('send-button').click()
+    await waitForTurnIdle(page, 60_000)
+
+    const assistantMsg = page.locator('.msg-assistant[data-testid="transcript-message"]').last()
+    await expect(assistantMsg).toBeVisible({ timeout: 30_000 })
+
+    const fileLink = assistantMsg.locator('[data-testid="msg-file-link"]').filter({ hasText: '.mcp.json' })
+    await expect(fileLink).toHaveText('~/.mcp.json', { timeout: 30_000 })
+    await expect(fileLink).toHaveAttribute('href', /atelier-file:.*\.mcp\.json/)
+    const href = (await fileLink.getAttribute('href')) ?? ''
+    expect(decodeURIComponent(href.replace(/^atelier-file:/, ''))).toBe('~/.mcp.json')
+
+    await fileLink.click()
+
+    await expect(page.getByTestId('files-panel-active')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('files-location-input')).toHaveValue('~/.mcp.json')
+  })
+
   test('assistant file paths in markdown open the Files tab when clicked', async () => {
+    await page.getByTestId('tab-chat').click()
+    await expect(page.getByTestId('composer-input')).toBeVisible()
     await page.getByTestId('composer-input').fill(
       'Reply with exactly this sentence and nothing else, do not use any tools: Update `a.txt` when done.'
     )
@@ -641,6 +709,7 @@ test.describe('03-chat-surface-core', () => {
 
     await expect(page.getByTestId('files-panel-active')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('files-location-input')).toHaveValue(/a\.txt$/)
+    await expect(page.getByTestId('files-editor-tab')).toHaveCount(1, { timeout: 10_000 })
   })
 
   test('user messages are NOT Markdown-rendered: literal ** / ` stay literal', async () => {

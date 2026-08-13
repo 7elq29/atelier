@@ -10,12 +10,11 @@
  * surface an error dialog, only make the sidebar chip disappear.
  */
 import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
 import { userInfo } from 'node:os'
 import type { HarnessSpendBreakdown, SpendStatus } from '../shared/spend-status-types'
 
 const UBER_EMAIL_SUFFIX = '@uber.com'
-const USSO_CANDIDATES = ['/opt/uber/bin/usso', '/opt/homebrew/bin/usso', '/usr/local/bin/usso']
+import { findUsso } from './uber-auth'
 const SPEND_STATUS_BASE_URL = 'https://genai-api.uberinternal.com/v1/spendstatus/harness-pool'
 const SPEND_STATUS_TIMEOUT_MS = 15_000
 
@@ -81,11 +80,8 @@ function getCurrentUberEmail(): string {
 }
 
 /** Locates the `usso` binary, falling back to a bare PATH lookup. */
-function findUsso(): string {
-  for (const candidate of USSO_CANDIDATES) {
-    if (existsSync(candidate)) return candidate
-  }
-  return 'usso'
+function resolveUsso(): string {
+  return findUsso()
 }
 
 function normalizeKey(key: string): string {
@@ -199,7 +195,7 @@ async function getGenAiToken(forceRefresh = false): Promise<string> {
   if (forceRefresh) args.push('-force')
 
   const stdout = await new Promise<string>((resolve, reject) => {
-    execFile(findUsso(), args, { encoding: 'utf-8', timeout: 10_000, maxBuffer: 1024 * 1024 }, (err, out) => {
+    execFile(resolveUsso(), args, { encoding: 'utf-8', timeout: 10_000, maxBuffer: 1024 * 1024 }, (err, out) => {
       if (err) reject(err)
       else resolve(out)
     })

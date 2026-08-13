@@ -7,11 +7,10 @@
  * its message stream into the HarnessEvent union.
  *
  * Auth: this file never reads or sets ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL
- * itself. Unless a caller explicitly passes `opts.env`, the SDK's `env`
- * option is left `undefined`, which per the SDK's own contract means "the
- * subprocess inherits process.env" — i.e. whatever ambient environment
- * launched the Atelier process (same as how the `claude` CLI picks up
- * ANTHROPIC_BASE_URL on this machine) flows straight through.
+ * itself. For local sessions it passes `subprocessEnvWithDevPath(process.env)`
+ * so auth vars from the ambient launch environment flow through while PATH
+ * includes Homebrew/`~/.local/bin` (stripped when Atelier is opened from
+ * Dock). Remote sessions use the remote host's own auth settings.
  *
  * The SDK package ships ESM-only (`"type": "module"`), while Atelier's
  * main process is bundled as CommonJS by electron-vite. A static
@@ -22,6 +21,7 @@
  */
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { resolveContextCompactThreshold } from '../../shared/context-usage'
 import type {
   CanUseTool,
   Options as SdkOptions,
@@ -49,6 +49,10 @@ import type { PermissionModeValue } from '../../shared/session-types'
 import { defaultClaudeModelFromConfig } from '../../shared/config'
 import { loadConfig } from '../config'
 import { shQuote, remoteCdTarget } from '../shell-quote'
+import { resolveClaudeCodeExecutable } from './resolve-claude-code-executable'
+import { subprocessEnvWithDevPath } from '../shell-path'
+import { SSH_REMOTE_OPTS } from '../ssh-exec'
+import { ensureGenAiAuth, ensureUssh } from '../uber-auth'
 
 function resolveDefaultModel(): string {
   return defaultClaudeModelFromConfig(loadConfig())
@@ -78,7 +82,7 @@ function makeRemoteSpawner(host: RemoteHost, remoteCwd: string): (opts: SpawnOpt
       .map(shQuote)
       .join(' ')}`
     logger.info('spawning remote harness process over ssh', { sshHost: host.sshHost, remoteCwd })
-    const child = spawn('ssh', ['-o', 'BatchMode=yes', host.sshHost, '--', remoteCommand], {
+    const child = spawn('ssh', [...SSH_REMOTE_OPTS, host.sshHost, '--', remoteCommand], {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     child.stderr?.on('data', (chunk: Buffer) => {
@@ -382,6 +386,13 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     if (!active) return
     logger.info('harness.interrupt() called', { sessionId })
     active.interruptRequested = true
+    // Unblock any canUseTool wait blocked on a permission/question/plan
+    // card — without this, interrupt() is a no-op while a prompt is showing
+    // because the SDK is idle waiting for our response, not generating.
+    for (const [requestId, resolve] of active.pendingPrompts.entries()) {
+      active.pendingPrompts.delete(requestId)
+      resolve({ kind: 'permission', decision: 'deny' })
+    }
     await active.query.interrupt().catch(() => undefined)
     // Belt-and-suspenders teardown for 04-composer-core's now-persistent
     // sessions (see normalize()'s `continue` after `result`): `query.
@@ -515,16 +526,17 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
    * Returns the current context usage for a live session, pulled directly
    * from the SDK's own context-usage query (token-usage-indicator). Use this
    * after a `result` harness event to get accurate token counts and the
-   * auto-compact threshold (the real cap before compaction kicks in, which is
-   * smaller than the model's total context window).
+   * compaction threshold (`autoCompactThreshold ?? maxTokens`).
    * Returns `null` if the session is not live (no query object available).
    */
-  async getContextUsage(sessionId: string): Promise<{ totalTokens: number; autoCompactThreshold?: number } | null> {
+  async getContextUsage(sessionId: string): Promise<{ totalTokens: number; compactThreshold: number } | null> {
     const active = this.sessions.get(sessionId)
     if (!active) return null
     try {
       const usage = await active.query.getContextUsage()
-      return { totalTokens: usage.totalTokens, autoCompactThreshold: usage.autoCompactThreshold }
+      const compactThreshold = resolveContextCompactThreshold(usage)
+      if (compactThreshold == null) return null
+      return { totalTokens: usage.totalTokens, compactThreshold }
     } catch {
       return null
     }
@@ -556,18 +568,28 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       toolInputAcc: new Map(),
     }
 
+    const claudeExecutable = resolveClaudeCodeExecutable()
+    if (!claudeExecutable) {
+      throw new Error('Bundled Claude Code binary not found in this Atelier install.')
+    }
+    if (!opts.host) {
+      await ensureGenAiAuth()
+    } else {
+      await ensureUssh()
+    }
     const options: SdkOptions = {
       cwd: opts.cwd,
       includePartialMessages: true,
+      pathToClaudeCodeExecutable: claudeExecutable,
       ...(spec.mode === 'resume' ? { resume: sessionId } : { sessionId }),
       model: opts.model ?? resolveDefaultModel(),
       ...(opts.effort ? { effort: opts.effort } : {}),
       ...(opts.systemPrompt ? { systemPrompt: opts.systemPrompt } : {}),
       ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
-      // Deliberately omitted when opts.env is undefined: per the SDK's
-      // contract this makes the subprocess inherit process.env verbatim,
-      // which is the auth-inheritance behavior this task must prove.
-      ...(opts.env ? { env: opts.env } : {}),
+      // Local sessions: pass process.env with GUI-safe PATH prefixes so Claude
+      // Code hooks (`aifx`, etc.) resolve when Atelier is launched from Dock.
+      // Auth vars (ANTHROPIC_BASE_URL, apiKeyHelper settings) still flow through.
+      ...(!opts.host ? { env: subprocessEnvWithDevPath(opts.env ?? process.env) } : opts.env ? { env: opts.env } : {}),
       // Remote/devpod sessions: swap the local spawn for one that tunnels
       // over SSH. `cwd` above is still required by the SDK's types but is
       // meaningless to the (never-invoked) local spawn path in this case —
@@ -788,6 +810,9 @@ function makeCanUseTool(sessionId: string, active: ActiveSession): CanUseTool {
         toolUseId: requestId,
         questions,
       }))
+      if (active.interruptRequested) {
+        return { behavior: 'deny', message: 'Interrupted by user' }
+      }
       if (response.kind !== 'ask_user_question') {
         return { behavior: 'deny', message: 'Internal error: mismatched prompt response' }
       }
@@ -811,6 +836,9 @@ function makeCanUseTool(sessionId: string, active: ActiveSession): CanUseTool {
         plan: planInput.plan ?? '',
         planFilePath: planInput.planFilePath,
       }))
+      if (active.interruptRequested) {
+        return { behavior: 'deny', message: 'Interrupted by user' }
+      }
       if (response.kind !== 'plan') {
         return { behavior: 'deny', message: 'Internal error: mismatched prompt response' }
       }
@@ -847,6 +875,9 @@ function makeCanUseTool(sessionId: string, active: ActiveSession): CanUseTool {
       description: opts.description,
       suggestedPattern,
     }))
+    if (active.interruptRequested) {
+      return { behavior: 'deny', message: 'Interrupted by user' }
+    }
     if (response.kind !== 'permission') {
       return { behavior: 'deny', message: 'Internal error: mismatched prompt response' }
     }
@@ -1271,6 +1302,7 @@ function toHarnessEvents(sessionId: string, message: SDKMessage, active: ActiveS
   }
 
   if (message.type === 'result') {
+    const errors = message.subtype !== 'success' && 'errors' in message ? message.errors : undefined
     return [
       {
         type: 'result',
@@ -1279,6 +1311,7 @@ function toHarnessEvents(sessionId: string, message: SDKMessage, active: ActiveS
         isError: message.is_error,
         subtype: message.subtype,
         result: message.subtype === 'success' ? message.result : undefined,
+        errors,
         numTurns: message.num_turns,
         durationMs: message.duration_ms,
         totalCostUsd: message.total_cost_usd,
