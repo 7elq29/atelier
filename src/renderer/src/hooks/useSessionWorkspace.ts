@@ -1,17 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SessionWorkspacePayload } from '../../../shared/session-workspace-types'
+import type {
+  SessionConnectProgressEvent,
+  SessionWorkspacePayload
+} from '../../../shared/session-workspace-types'
 
 export function useSessionWorkspace(): {
   workspaceBySession: Record<string, SessionWorkspacePayload>
   readySessionIds: Set<string>
   refreshingBySession: Record<string, boolean>
+  connectProgressBySession: Record<string, SessionConnectProgressEvent>
   hydrateSnapshot: (sessionId: string) => void
   evictSession: (sessionId: string) => void
 } {
   const [workspaceBySession, setWorkspaceBySession] = useState<Record<string, SessionWorkspacePayload>>({})
   const [readySessionIds, setReadySessionIds] = useState<Set<string>>(() => new Set())
   const [refreshingBySession, setRefreshingBySession] = useState<Record<string, boolean>>({})
+  const [connectProgressBySession, setConnectProgressBySession] = useState<
+    Record<string, SessionConnectProgressEvent>
+  >({})
   const hydrateGenerationRef = useRef(new Map<string, number>())
+  const readySessionIdsRef = useRef(readySessionIds)
+  readySessionIdsRef.current = readySessionIds
 
   const mergeWorkspace = useCallback((sessionId: string, workspace: SessionWorkspacePayload) => {
     setWorkspaceBySession((prev) => ({ ...prev, [sessionId]: workspace }))
@@ -21,9 +30,16 @@ export function useSessionWorkspace(): {
       next.add(sessionId)
       return next
     })
+    setConnectProgressBySession((prev) => {
+      if (!(sessionId in prev)) return prev
+      const next = { ...prev }
+      delete next[sessionId]
+      return next
+    })
   }, [])
 
   const hydrateSnapshot = useCallback((sessionId: string) => {
+    if (readySessionIdsRef.current.has(sessionId)) return
     const generation = (hydrateGenerationRef.current.get(sessionId) ?? 0) + 1
     hydrateGenerationRef.current.set(sessionId, generation)
     void window.atelier.refreshSessionWorkspace(sessionId, false).then((workspace) => {
@@ -47,6 +63,12 @@ export function useSessionWorkspace(): {
       return next
     })
     setRefreshingBySession((prev) => {
+      if (!(sessionId in prev)) return prev
+      const next = { ...prev }
+      delete next[sessionId]
+      return next
+    })
+    setConnectProgressBySession((prev) => {
       if (!(sessionId in prev)) return prev
       const next = { ...prev }
       delete next[sessionId]
@@ -81,5 +103,18 @@ export function useSessionWorkspace(): {
     })
   }, [])
 
-  return { workspaceBySession, readySessionIds, refreshingBySession, hydrateSnapshot, evictSession }
+  useEffect(() => {
+    return window.atelier.onSessionConnectProgress((event) => {
+      setConnectProgressBySession((prev) => ({ ...prev, [event.sessionId]: event }))
+    })
+  }, [])
+
+  return {
+    workspaceBySession,
+    readySessionIds,
+    refreshingBySession,
+    connectProgressBySession,
+    hydrateSnapshot,
+    evictSession
+  }
 }

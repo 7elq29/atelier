@@ -5,10 +5,13 @@
  */
 export default function SessionDisconnectedPanel({
   onReconnect,
-  connecting
+  connecting,
+  connectStatusLabel
 }: {
   onReconnect: () => void
   connecting?: boolean
+  /** Current essential preload step (SSH, files, terminal, git probe). */
+  connectStatusLabel?: string | null
 }): JSX.Element {
   return (
     <div className="empty-main session-disconnected-panel" data-testid="session-disconnected-panel">
@@ -19,12 +22,12 @@ export default function SessionDisconnectedPanel({
               Connecting…
             </div>
             <p className="session-disconnected-body">
-              Loading diff and workspace panels for this session. Chat, diff, files, and terminal will
-              open when ready — switch to another session after this finishes.
+              Preparing chat, diff, files, and terminal for this session. You can switch to other
+              sessions or use the rest of the app while this finishes.
             </p>
-            <div className="session-connecting-status" aria-live="polite">
+            <div className="session-connecting-status" aria-live="polite" data-testid="session-connecting-step">
               <span className="spinner" aria-hidden />
-              <span>Loading diff…</span>
+              <span>{connectStatusLabel ?? 'Loading workspace…'}</span>
             </div>
           </>
         ) : (

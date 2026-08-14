@@ -492,11 +492,8 @@ export default function DiffPanel({
     applySummary(workspaceDiff)
   }, [workspaceDiff, applySummary])
 
-  // Spec: Diff › Changes requests immediate refresh when the tab becomes visible.
-  useEffect(() => {
-    if (!active) return
-    onRefreshWorkspace?.()
-  }, [active, onRefreshWorkspace])
+  // Diff › Changes uses preloaded workspace data; background refresh runs from main.
+  // Do not force a full git rescan on every tab switch — that duplicated preload work.
 
   // When the Diff tab becomes visible before workspace push arrives, bootstrap from IPC.
   useEffect(() => {

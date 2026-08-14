@@ -22,6 +22,7 @@ export {
   listCommits,
   listWorktrees,
   mergeWorktreeBranch,
+  probeGitRepo,
   removeWorktree,
   resolveHead,
   warmRemoteGitHost

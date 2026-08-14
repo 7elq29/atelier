@@ -3,10 +3,6 @@ import {
   getOutsideWorkspaceCapTextPairDiff,
   getPathWorkingTreeNumstat,
   getWorkingTreeNumstatMap,
-  latestReflogSubject,
-  listCommitChangedPaths,
-  listCommitsInRange,
-  resolveHead,
   getFileDiff,
   type WorkingTreeNumstat
 } from '../panels/git'
@@ -37,6 +33,7 @@ import {
   resolveWorkspacePlanMirrorPath
 } from '../../shared/plan-mirror-path'
 import type { DiffFileChange, DiffFileContentPair } from '../../shared/panel-types'
+import { logger } from '../logger'
 
 export {
   normalizePlanPathForWorkspace,
@@ -89,7 +86,7 @@ export async function registerPlanFileInSessionChangesCap(
   workspacePath: string,
   hostname: string | null
 ): Promise<SessionChangesCap> {
-  return refreshSessionChangesCap(store, sessionId, workspacePath, hostname, { processHead: false })
+  return refreshSessionChangesCap(store, sessionId, workspacePath, hostname)
 }
 
 /** Drop malformed plan paths (e.g. `Users/me/.claude/plans/foo.md`) and re-register normalized ones. */
@@ -100,7 +97,7 @@ function pruneAndNormalizePlanTouchedPaths(
 ): void {
   for (const row of store.listSessionTouchedPaths(sessionId)) {
     const slashPath = row.path.replace(/\\/g, '/')
-    if (isCapPathOutsideWorkspace(slashPath) && !isClaudePlanPath(slashPath)) {
+    if (isCapPathOutsideWorkspace(slashPath, workspaceRoot) && !isClaudePlanPath(slashPath)) {
       continue
     }
     const normalized = normalizePlanPathForWorkspace(row.path, workspaceRoot)
@@ -142,13 +139,6 @@ export async function syncSessionPlansFromMessages(
       if (raw !== planPath) registerTouchedPathFromPlanFile(store, sessionId, workspaceRoot, raw)
     }
   }
-}
-
-function isPullLikeReflog(subject: string): boolean {
-  const s = subject.toLowerCase()
-  if (s.includes('pull')) return true
-  if (s.includes('fetch') && (s.includes('merge') || s.includes('fast-forward'))) return true
-  return false
 }
 
 /** True when a Bash command may revert, commit, or otherwise mutate git state affecting the cap. */
@@ -210,64 +200,6 @@ export async function registerTouchedPathFromToolCallAsync(
     if (!path) continue
     store.registerSessionTouchedPath(sessionId, path, now)
   }
-}
-
-export async function syncSessionGitCursor(
-  store: SessionStore,
-  sessionId: string,
-  workspacePath: string,
-  hostname: string | null
-): Promise<void> {
-  const head = await resolveHead(workspacePath, hostname)
-  if (!head) return
-  const cursor = store.getSessionGitCursor(sessionId)
-  if (!cursor?.baselineHead) {
-    store.upsertSessionGitCursor(sessionId, head, head)
-    return
-  }
-  if (!cursor.lastHead) {
-    store.upsertSessionGitCursor(sessionId, head, cursor.baselineHead)
-  }
-}
-
-export async function processHeadAdvanceIfNeeded(
-  store: SessionStore,
-  sessionId: string,
-  workspacePath: string,
-  hostname: string | null
-): Promise<void> {
-  const newHead = await resolveHead(workspacePath, hostname)
-  if (!newHead) return
-
-  let cursor = store.getSessionGitCursor(sessionId)
-  if (!cursor) {
-    store.upsertSessionGitCursor(sessionId, newHead, newHead)
-    return
-  }
-
-  const oldHead = cursor.lastHead ?? cursor.baselineHead
-  if (!oldHead || oldHead === newHead) {
-    if (cursor.lastHead !== newHead) store.upsertSessionGitCursor(sessionId, newHead, cursor.baselineHead ?? newHead)
-    return
-  }
-
-  const reflog = await latestReflogSubject(workspacePath, hostname)
-  if (!isPullLikeReflog(reflog)) {
-    const touched = new Set(store.listSessionTouchedPaths(sessionId).map((r) => r.path))
-    if (touched.size > 0) {
-      const commits = await listCommitsInRange(workspacePath, oldHead, newHead, hostname)
-      let order = Date.now()
-      for (const c of commits) {
-        const files = await listCommitChangedPaths(workspacePath, c.hash, hostname)
-        const hits = files.some((f) => touched.has(f))
-        if (!hits) continue
-        store.insertSessionCapCommit(sessionId, c.hash, c.subject, c.committedAt, order)
-        order += 1
-      }
-    }
-  }
-
-  store.upsertSessionGitCursor(sessionId, newHead, cursor.baselineHead ?? oldHead)
 }
 
 async function fallbackFileStats(
@@ -333,13 +265,13 @@ async function readCapPathText(
   hostname: string | null
 ): Promise<string | null> {
   const absPath = await resolveCapPathAbsolute(capPath, workspacePath, hostname)
-  if (hostname) {
-    const { readFileForPreview } = await import('../panels/files')
-    const result = await readFileForPreview(absPath, hostname)
-    if (result.kind !== 'text' && result.kind !== 'html') return null
-    return result.content
-  }
   try {
+    if (hostname) {
+      const { readFileForPreview } = await import('../panels/files')
+      const result = await readFileForPreview(absPath, hostname)
+      if (result.kind !== 'text' && result.kind !== 'html') return null
+      return result.content
+    }
     return await readFile(absPath, 'utf8')
   } catch {
     return null
@@ -545,43 +477,41 @@ export async function buildSessionChangesCap(
   )
 
   for (const { capPath } of canonicalRows) {
-    const stats = await capPathWorkingTreeStats(
-      store,
-      sessionId,
-      workspacePath,
-      capPath,
-      hostname,
-      projectPath,
-      numstatByRepo
-    )
-    if (!stats) {
+    try {
+      const stats = await capPathWorkingTreeStats(
+        store,
+        sessionId,
+        workspacePath,
+        capPath,
+        hostname,
+        projectPath,
+        numstatByRepo
+      )
+      if (!stats) {
+        store.deleteSessionTouchedPath(sessionId, capPath)
+        continue
+      }
+      const sortAt = now
+      store.updateSessionTouchedPathPendingAt(sessionId, capPath, sortAt)
+      fileItems.push({
+        kind: 'file',
+        path: await capItemPathForNavigation(workspacePath, capPath, hostname),
+        additions: stats.additions,
+        deletions: stats.deletions,
+        opensInFilesTab: await capPathOpensInFilesTab(workspacePath, capPath, hostname),
+        sortAt
+      })
+    } catch (err) {
+      logger.warn('session changes cap: skipped path after read/git failure', {
+        sessionId,
+        capPath,
+        error: err instanceof Error ? err.message : String(err)
+      })
       store.deleteSessionTouchedPath(sessionId, capPath)
-      continue
     }
-    const sortAt = now
-    store.updateSessionTouchedPathPendingAt(sessionId, capPath, sortAt)
-    fileItems.push({
-      kind: 'file',
-      path: await capItemPathForNavigation(workspacePath, capPath, hostname),
-      additions: stats.additions,
-      deletions: stats.deletions,
-      opensInFilesTab: await capPathOpensInFilesTab(workspacePath, capPath, hostname),
-      sortAt
-    })
   }
 
-  const commitRows = store.listSessionCapCommits(sessionId)
-  const commitItems: SessionChangesCapItem[] = commitRows.map((c) => ({
-    kind: 'commit',
-    hash: c.hash,
-    subject: c.subject,
-    sortAt: c.committedAt
-  }))
-
-  const items = [...fileItems, ...commitItems].sort((a, b) => {
-    if (a.sortAt === b.sortAt) return a.kind === 'file' ? -1 : 1
-    return a.sortAt > b.sortAt ? -1 : 1
-  })
+  const items = fileItems.sort((a, b) => (a.sortAt > b.sortAt ? -1 : 1))
 
   return { items }
 }
@@ -590,14 +520,9 @@ export async function refreshSessionChangesCap(
   store: SessionStore,
   sessionId: string,
   workspacePath: string,
-  hostname: string | null,
-  opts?: { processHead?: boolean }
+  hostname: string | null
 ): Promise<SessionChangesCap> {
-  await syncSessionGitCursor(store, sessionId, workspacePath, hostname)
   await syncSessionPlansFromMessages(store, sessionId, workspacePath, hostname)
-  if (opts?.processHead !== false) {
-    await processHeadAdvanceIfNeeded(store, sessionId, workspacePath, hostname)
-  }
   return buildSessionChangesCap(store, sessionId, workspacePath, hostname)
 }
 
@@ -649,7 +574,7 @@ export async function handleFileEditToolCompleted(
     input,
     projectPath
   )
-  return refreshSessionChangesCap(store, sessionId, workspacePath, hostname, { processHead: false })
+  return refreshSessionChangesCap(store, sessionId, workspacePath, hostname)
 }
 
 /** Backfill touched paths from transcript (migration / repair). */

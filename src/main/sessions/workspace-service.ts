@@ -1,29 +1,41 @@
 /**
  * Session workspace preload + background git/cap refresh (Features/session-workspace-preload).
- * Runs in main: initial load before session:openReady; monitor while session is live.
- * Background poll refreshes diff + changes cap only — not the file tree/list (those load
- * once at open, or on explicit force refresh).
+ * Essential preload (SSH, files, terminal, git probe) runs before session:openReady;
+ * full git diff + changes cap load in the background so connect is not blocked on remote git.
  */
 import { watch, type FSWatcher } from 'node:fs'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import type { SessionRecord } from '../../shared/session-types'
-import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
+import type {
+  SessionConnectProgressEvent,
+  SessionConnectStep,
+  SessionOpenTimingEvent,
+  SessionWorkspacePayload
+} from '../../shared/session-workspace-types'
 import type { DiffSummary } from '../../shared/panel-types'
 import type { SessionChangesCap } from '../../shared/session-changes-cap'
 import { sessionChangesCapSignature } from '../../shared/session-changes-cap'
-import { getDiffSummary, getDiffSummaryWithHunks } from '../panels/git'
+import { getDiffSummary, getDiffSummaryWithHunks, probeGitRepo } from '../panels/git'
 import { resolveGitRepoRoot } from '../panels/git-core'
 import { walkFileTree, listWorkspaceFiles } from '../panels/files'
 import type { PtyManager } from '../panels/pty'
 import { logger } from '../logger'
 import { warmSshMux } from '../ssh-exec'
 import { ensureUssh } from '../uber-auth'
+import { withRemotePreloadHostQueue } from './remote-preload-gate'
 
 export const DEVPOD_GIT_POLL_MS = 15_000
 export const LOCAL_GIT_DEBOUNCE_MS = 400
 const DEFAULT_PTY_COLS = 80
 const DEFAULT_PTY_ROWS = 24
+
+const CONNECT_STEP_LABELS: Record<SessionConnectStep, string> = {
+  ssh: 'Warming SSH connection…',
+  files: 'Loading file index…',
+  terminal: 'Starting terminal…',
+  'git-probe': 'Checking git repository…'
+}
 
 function workspacePathFor(session: SessionRecord): string {
   return session.worktreePath ?? session.projectPath
@@ -50,7 +62,9 @@ function mergeDiffHunks(prev: DiffSummary | undefined, next: DiffSummary): DiffS
   }
 }
 
-const PRELOAD_DIFF_HUNKS_TIMEOUT_MS = 120_000
+const PRELOAD_DIFF_HUNKS_TIMEOUT_MS = 60_000
+/** Wall-clock cap for essential preload — clears connecting even if remote SSH/files hang. */
+const PRELOAD_ESSENTIALS_TIMEOUT_MS = 45_000
 
 async function loadPreloadDiff(
   workspacePath: string,
@@ -73,18 +87,22 @@ async function loadPreloadDiff(
   }
 }
 
+async function timed<T>(fn: () => Promise<T>): Promise<{ result: T; ms: number }> {
+  const start = Date.now()
+  const result = await fn()
+  return { result, ms: Date.now() - start }
+}
+
 export class WorkspaceService {
   private readonly cache = new Map<string, SessionWorkspacePayload>()
   private readonly monitors = new Map<string, { stop: () => void }>()
   private readonly refreshInFlight = new Map<string, number>()
+  private readonly backgroundPreloadInFlight = new Set<string>()
   private ptyManager: PtyManager | null = null
 
   constructor(
     private readonly getWindow: () => BrowserWindow | null,
-    private readonly buildSessionChangesCap: (
-      sessionId: string,
-      opts?: { processHead?: boolean }
-    ) => Promise<SessionChangesCap>
+    private readonly buildSessionChangesCap: (sessionId: string) => Promise<SessionChangesCap>
   ) {}
 
   setPtyManager(pty: PtyManager): void {
@@ -93,6 +111,20 @@ export class WorkspaceService {
 
   getCached(sessionId: string): SessionWorkspacePayload | null {
     return this.cache.get(sessionId) ?? null
+  }
+
+  private sendConnectProgress(sessionId: string, step: SessionConnectStep): void {
+    const payload: SessionConnectProgressEvent = {
+      sessionId,
+      step,
+      label: CONNECT_STEP_LABELS[step]
+    }
+    this.getWindow()?.webContents.send('session:connectProgress', payload)
+  }
+
+  private sendOpenTiming(payload: SessionOpenTimingEvent): void {
+    this.getWindow()?.webContents.send('session:openTiming', payload)
+    logger.info('session:openTiming', { ...payload })
   }
 
   private sendOpenReady(payload: SessionWorkspacePayload): void {
@@ -106,7 +138,8 @@ export class WorkspaceService {
       diffFiles: payload.diff.files?.length ?? 0,
       diffHunksLoaded: payload.diff.files?.filter((f) => f.hunks.length > 0).length ?? 0,
       capItems: payload.sessionChangesCap.items.length,
-      treeEntries: payload.filesTree.length
+      treeEntries: payload.filesTree.length,
+      gitDeferred: true
     })
   }
 
@@ -138,59 +171,216 @@ export class WorkspaceService {
     }
   }
 
-  async preloadSession(session: SessionRecord): Promise<SessionWorkspacePayload> {
+  private emptyPreloadPayload(session: SessionRecord, tabTerminalPtyId: string): SessionWorkspacePayload {
     const workspacePath = workspacePathFor(session)
-    const hostname = session.hostname
-    const tabTerminalPtyId = `${session.id}:tab-terminal`
-
-    const pty = this.ptyManager
-    if (pty) {
-      try {
-        await pty.spawn(tabTerminalPtyId, {
-          cwd: workspacePath,
-          hostname,
-          cols: DEFAULT_PTY_COLS,
-          rows: DEFAULT_PTY_ROWS
-        })
-      } catch (err) {
-        logger.warn('workspace preload: tab terminal spawn failed', {
-          sessionId: session.id,
-          error: err instanceof Error ? err.message : String(err)
-        })
-      }
-    }
-
-    if (hostname) {
-      await ensureUssh()
-      await warmSshMux(hostname)
-    }
-
-    const [diff, filesTree, filesList, sessionChangesCap] = await Promise.all([
-      loadPreloadDiff(workspacePath, hostname, session.id),
-      Promise.resolve(walkFileTree(workspacePath, hostname)).then((r) => (Array.isArray(r) ? r : [])),
-      Promise.resolve(listWorkspaceFiles(workspacePath, hostname)).then((r) => (Array.isArray(r) ? r : [])),
-      this.buildSessionChangesCap(session.id, { processHead: true })
-    ])
-
-    const payload: SessionWorkspacePayload = {
+    return {
       sessionId: session.id,
       workspacePath,
-      hostname,
-      diff,
-      sessionChangesCap,
-      filesTree,
-      filesList,
+      hostname: session.hostname,
+      diff: { isRepo: false, branch: null, files: [] },
+      sessionChangesCap: { items: [] },
+      filesTree: [],
+      filesList: [],
       tabTerminalPtyId,
       loadedAt: Date.now()
     }
-    return payload
   }
 
-  /** After harness is live: preload, notify renderer, start background monitor. */
+  private spawnTabTerminal(
+    sessionId: string,
+    tabTerminalPtyId: string,
+    workspacePath: string,
+    hostname: string | null
+  ): Promise<void> {
+    const pty = this.ptyManager
+    if (!pty) return Promise.resolve()
+    return pty
+      .spawn(tabTerminalPtyId, {
+        cwd: workspacePath,
+        hostname,
+        cols: DEFAULT_PTY_COLS,
+        rows: DEFAULT_PTY_ROWS
+      })
+      .catch((err) => {
+        logger.warn('workspace preload: tab terminal spawn failed', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err)
+        })
+      })
+  }
+
+  private async loadSessionChangesCapSafe(
+    sessionId: string,
+    fallback: SessionChangesCap = { items: [] }
+  ): Promise<SessionChangesCap> {
+    try {
+      return await this.buildSessionChangesCap(sessionId)
+    } catch (err) {
+      logger.warn('session changes cap build failed; continuing without cap update', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err)
+      })
+      return fallback
+    }
+  }
+
+  /** Fast path: SSH warm, files, terminal, git repo probe — no full diff scan. */
+  async preloadSessionEssentials(session: SessionRecord): Promise<{
+    payload: SessionWorkspacePayload
+    timings: Pick<
+      SessionOpenTimingEvent,
+      'essentialMs' | 'sshWarmMs' | 'filesTreeMs' | 'filesListMs' | 'ptyMs' | 'gitProbeMs'
+    >
+  }> {
+    const workspacePath = workspacePathFor(session)
+    const hostname = session.hostname
+    const tabTerminalPtyId = `${session.id}:tab-terminal`
+    const essentialStart = Date.now()
+
+    return withRemotePreloadHostQueue(hostname, async () => {
+      let sshWarmMs = 0
+      if (hostname) {
+        this.sendConnectProgress(session.id, 'ssh')
+        const sshTimed = await timed(async () => {
+          await ensureUssh()
+          await warmSshMux(hostname)
+        })
+        sshWarmMs = sshTimed.ms
+      }
+
+      this.sendConnectProgress(session.id, 'files')
+      const filesTreeTimed = timed(() =>
+        Promise.resolve(walkFileTree(workspacePath, hostname)).then((r) => (Array.isArray(r) ? r : []))
+      )
+      const filesListTimed = timed(() =>
+        Promise.resolve(listWorkspaceFiles(workspacePath, hostname)).then((r) => (Array.isArray(r) ? r : []))
+      )
+
+      this.sendConnectProgress(session.id, 'terminal')
+      const ptyTimed = timed(() =>
+        this.spawnTabTerminal(session.id, tabTerminalPtyId, workspacePath, hostname)
+      )
+
+      const [filesTreeResult, filesListResult, ptyResult] = await Promise.all([
+        filesTreeTimed,
+        filesListTimed,
+        ptyTimed
+      ])
+
+      this.sendConnectProgress(session.id, 'git-probe')
+      const gitProbeTimed = await timed(() => probeGitRepo(workspacePath, hostname))
+
+      const essentialMs = Date.now() - essentialStart
+      const payload: SessionWorkspacePayload = {
+        sessionId: session.id,
+        workspacePath,
+        hostname,
+        diff: gitProbeTimed.result,
+        sessionChangesCap: { items: [] },
+        filesTree: filesTreeResult.result,
+        filesList: filesListResult.result,
+        tabTerminalPtyId,
+        loadedAt: Date.now()
+      }
+
+      return {
+        payload,
+        timings: {
+          essentialMs,
+          sshWarmMs: hostname ? sshWarmMs : undefined,
+          filesTreeMs: filesTreeResult.ms,
+          filesListMs: filesListResult.ms,
+          ptyMs: ptyResult.ms,
+          gitProbeMs: gitProbeTimed.ms
+        }
+      }
+    })
+  }
+
+  /** Full git diff + cap — runs after openReady; must not block connect. */
+  private preloadSessionBackground(session: SessionRecord, base: SessionWorkspacePayload): void {
+    if (this.backgroundPreloadInFlight.has(session.id)) return
+    this.backgroundPreloadInFlight.add(session.id)
+    const backgroundStart = Date.now()
+    const workspacePath = base.workspacePath
+    const hostname = base.hostname
+
+    void (async () => {
+      let backgroundGitMs = 0
+      let backgroundCapMs = 0
+      try {
+        const gitTimed = await timed(() => loadPreloadDiff(workspacePath, hostname, session.id))
+        backgroundGitMs = gitTimed.ms
+        const capTimed = await timed(() => this.loadSessionChangesCapSafe(session.id))
+        backgroundCapMs = capTimed.ms
+
+        const diff = mergeDiffHunks(base.diff, gitTimed.result)
+        const payload: SessionWorkspacePayload = {
+          ...base,
+          diff,
+          sessionChangesCap: capTimed.result,
+          loadedAt: Date.now()
+        }
+        this.sendUpdated(payload)
+        this.sendOpenTiming({
+          sessionId: session.id,
+          phase: 'background',
+          essentialMs: 0,
+          backgroundGitMs,
+          backgroundCapMs,
+          backgroundTotalMs: Date.now() - backgroundStart,
+          gitDeferred: true
+        })
+      } catch (err) {
+        logger.warn('workspace background preload failed', {
+          sessionId: session.id,
+          error: err instanceof Error ? err.message : String(err)
+        })
+      } finally {
+        this.backgroundPreloadInFlight.delete(session.id)
+      }
+    })()
+  }
+
+  /** After harness is live: essential preload, notify renderer, background git/cap, start monitor. */
   async completeSessionOpen(session: SessionRecord): Promise<void> {
-    const payload = await this.preloadSession(session)
+    const tabTerminalPtyId = `${session.id}:tab-terminal`
+    let payload: SessionWorkspacePayload
+    let essentialTimings: {
+      essentialMs: number
+      sshWarmMs?: number
+      filesTreeMs?: number
+      filesListMs?: number
+      ptyMs?: number
+      gitProbeMs?: number
+    } = { essentialMs: PRELOAD_ESSENTIALS_TIMEOUT_MS }
+    try {
+      const essentials = await Promise.race([
+        this.preloadSessionEssentials(session),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('preload essentials timed out')), PRELOAD_ESSENTIALS_TIMEOUT_MS)
+        )
+      ])
+      payload = essentials.payload
+      essentialTimings = essentials.timings
+    } catch (err) {
+      logger.warn('workspace essential preload failed or timed out; opening with empty workspace', {
+        sessionId: session.id,
+        error: err instanceof Error ? err.message : String(err)
+      })
+      payload = this.emptyPreloadPayload(session, tabTerminalPtyId)
+      essentialTimings = { essentialMs: PRELOAD_ESSENTIALS_TIMEOUT_MS }
+    }
+
     this.sendOpenReady(payload)
+    this.sendOpenTiming({
+      sessionId: session.id,
+      phase: 'essential',
+      gitDeferred: true,
+      ...essentialTimings
+    })
     this.startMonitor(session)
+    this.preloadSessionBackground(session, payload)
   }
 
   async refreshWorkspace(
@@ -202,14 +392,12 @@ export class WorkspaceService {
     try {
       const workspacePath = workspacePathFor(session)
       const prev = this.cache.get(session.id)
-      // File tree/list load once at session open (preloadSession). Background refresh
-      // never re-scans unless the caller explicitly opts in (e.g. worktree created).
       const includeFiles = opts?.includeFiles === true
       const diffRaw = force
         ? await getDiffSummaryWithHunks(workspacePath, session.hostname, true)
         : await getDiffSummary(workspacePath, session.hostname, force)
       const diff = mergeDiffHunks(prev?.diff, diffRaw)
-      const [filesTree, filesList, sessionChangesCap] = await Promise.all([
+      const [filesTree, filesList] = await Promise.all([
         includeFiles
           ? Promise.resolve(walkFileTree(workspacePath, session.hostname)).then((r) =>
               Array.isArray(r) ? r : []
@@ -219,9 +407,12 @@ export class WorkspaceService {
           ? Promise.resolve(listWorkspaceFiles(workspacePath, session.hostname)).then((r) =>
               Array.isArray(r) ? r : []
             )
-          : Promise.resolve(prev?.filesList ?? []),
-        this.buildSessionChangesCap(session.id, { processHead: true })
+          : Promise.resolve(prev?.filesList ?? [])
       ])
+      const sessionChangesCap = await this.loadSessionChangesCapSafe(
+        session.id,
+        prev?.sessionChangesCap ?? { items: [] }
+      )
       const payload: SessionWorkspacePayload = {
         sessionId: session.id,
         workspacePath,
@@ -274,6 +465,7 @@ export class WorkspaceService {
   evictSession(sessionId: string): void {
     this.stopMonitor(sessionId)
     this.cache.delete(sessionId)
+    this.backgroundPreloadInFlight.delete(sessionId)
   }
 
   private startMonitor(session: SessionRecord): void {

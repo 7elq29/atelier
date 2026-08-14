@@ -32,7 +32,7 @@ export async function resolveCapGitContext(
   workspacePath: string,
   hostname: string | null
 ): Promise<{ repoRoot: string; gitRelative: string; absPath: string } | null> {
-  if (isClaudePlanPath(capPath) || isCapPathOutsideWorkspace(capPath)) return null
+  if (isClaudePlanPath(capPath) || isCapPathOutsideWorkspace(capPath, workspacePath)) return null
 
   const normalizedCap = capPath.replace(/\\/g, '/')
   const expandedWs = resolveSessionWorkspaceRoot(workspacePath)
@@ -126,7 +126,7 @@ export async function resolveCapPathAbsolute(
   workspacePath: string,
   hostname: string | null
 ): Promise<string> {
-  if (isClaudePlanPath(capPath) || isCapPathOutsideWorkspace(capPath)) {
+  if (isClaudePlanPath(capPath) || isCapPathOutsideWorkspace(capPath, workspacePath)) {
     return resolveSessionTouchedAbsolutePath(capPath, workspacePath)
   }
 

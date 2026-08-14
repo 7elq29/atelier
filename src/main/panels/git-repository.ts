@@ -548,9 +548,13 @@ class GitRepositoryManager {
     if (status !== 'deleted') {
       const root = await resolveGitRepoRoot(projectPath, sshHost)
       const abs = join(root, filePath)
-      const read = await readFileForPreview(abs, sshHost)
-      if (read.kind !== 'text' && read.kind !== 'html') return null
-      modified = read.content
+      try {
+        const read = await readFileForPreview(abs, sshHost)
+        if (read.kind !== 'text' && read.kind !== 'html') return null
+        modified = read.content
+      } catch {
+        modified = ''
+      }
     }
 
     return { original, modified }
@@ -583,6 +587,21 @@ class GitRepositoryManager {
 }
 
 export const gitRepositories = new GitRepositoryManager()
+
+/** Fast repo probe for session open — branch only, no numstat/ls-files scan. */
+export async function probeGitRepo(
+  projectPath: string,
+  sshHost?: string | null
+): Promise<DiffSummary> {
+  const inside = await runGit(projectPath, ['rev-parse', '--is-inside-work-tree'], sshHost)
+  if (inside.stdout.trim() !== 'true') {
+    return { isRepo: false, branch: null, files: [] }
+  }
+  const branchRes = await runGitAtRepoRoot(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'], sshHost)
+  const branchRaw = branchRes.stdout.trim()
+  const branch = branchRaw === 'HEAD' || !branchRaw ? null : branchRaw
+  return { isRepo: true, branch, files: [] }
+}
 
 /** Working-tree snapshot with hunks hydrated (used at session open). */
 export async function getDiffSummaryWithHunks(
@@ -710,9 +729,13 @@ export async function getOutsideWorkspaceCapFileDiff(
   baseline: string,
   sshHost?: string | null
 ): Promise<{ file: DiffFileChange; pair: DiffFileContentPair } | null> {
-  const read = await readFileForPreview(absPath, sshHost)
-  if (read.kind !== 'text' && read.kind !== 'html') return null
-  return getOutsideWorkspaceCapTextPairDiff(absPath, baseline, read.content, sshHost)
+  try {
+    const read = await readFileForPreview(absPath, sshHost)
+    if (read.kind !== 'text' && read.kind !== 'html') return null
+    return getOutsideWorkspaceCapTextPairDiff(absPath, baseline, read.content, sshHost)
+  } catch {
+    return null
+  }
 }
 
 /** Diff two in-memory text editions (plan review: previous vs latest transcript). */

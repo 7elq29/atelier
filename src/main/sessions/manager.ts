@@ -50,6 +50,7 @@ import { invalidateGitRepository } from '../panels/git-repository'
 import { getSessionCapOutsideFileDiff, getSessionCapGitFileDiff, registerPlanFileInSessionChangesCap, bashCommandMayAffectSessionChanges, registerFileEditToolTouchedPaths, refreshSessionChangesCap } from './session-changes-cap'
 import { isSessionFileEditTool } from '../../shared/session-file-edits'
 import { WorkspaceService, LOCAL_GIT_DEBOUNCE_MS } from './workspace-service'
+import { scheduleHostStartupReconnect } from './remote-preload-gate'
 import { applyBashCdCommands } from './harness-cwd'
 import { SessionHarnessUiState } from './session-harness-ui'
 import type {
@@ -279,10 +280,7 @@ export class SessionManager {
   private readonly consumeGeneration = new Map<string, number>()
 
   /** Debounced cap + workspace refresh after file edits / mutating git Bash — coalesces multi-tool turns. */
-  private readonly capRefreshDebounce = new Map<
-    string,
-    { timer: ReturnType<typeof setTimeout>; processHead: boolean }
-  >()
+  private readonly capRefreshDebounce = new Map<string, ReturnType<typeof setTimeout>>()
 
   private readonly harnessUi = new SessionHarnessUiState()
 
@@ -326,28 +324,25 @@ export class SessionManager {
     // No cache yet — preloadSession will include cap; avoid force-refreshing files.
   }
 
-  private scheduleCapRefreshAfterMutation(sessionId: string, opts: { processHead: boolean }): void {
+  private scheduleCapRefreshAfterMutation(sessionId: string): void {
     const existing = this.capRefreshDebounce.get(sessionId)
-    const processHead = (existing?.processHead ?? false) || opts.processHead
-    if (existing) clearTimeout(existing.timer)
+    if (existing) clearTimeout(existing)
     const timer = setTimeout(() => {
       this.capRefreshDebounce.delete(sessionId)
       const session = this.getSession(sessionId)
       if (!session) return
       const workspacePath = session.worktreePath ?? session.projectPath
-      void refreshSessionChangesCap(this.store, sessionId, workspacePath, session.hostname, {
-        processHead
-      })
+      void refreshSessionChangesCap(this.store, sessionId, workspacePath, session.hostname)
         .then((cap) => this.publishSessionChangesCap(sessionId, cap))
         .catch(() => undefined)
       void this.refreshSessionWorkspace(sessionId, false).catch(() => undefined)
     }, LOCAL_GIT_DEBOUNCE_MS)
-    this.capRefreshDebounce.set(sessionId, { timer, processHead })
+    this.capRefreshDebounce.set(sessionId, timer)
   }
 
   private clearCapRefreshDebounce(sessionId: string): void {
     const existing = this.capRefreshDebounce.get(sessionId)
-    if (existing) clearTimeout(existing.timer)
+    if (existing) clearTimeout(existing)
     this.capRefreshDebounce.delete(sessionId)
   }
 
@@ -1371,9 +1366,9 @@ export class SessionManager {
         effort: modelSelection?.effort
       })
       // NOT cleared here — `harness.resume()` resolving only means the SDK
-      // `query()` call was constructed, not that the subprocess has actually
-      // spawned/handshaken yet. `connecting` stays until workspace diff preload
-      // finishes in `applyEvent()` → `completeSessionOpen()`.
+      // `query()` call was constructed, not that the subprocess has handshaken.
+      // `connecting` stays until this session's workspace preload finishes
+      // (or times out) in `applyEvent()` → `completeSessionOpen()`.
       this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
       this.resetHarnessUiForSession(sessionId)
       this.sendStatus(sessionId)
@@ -2072,10 +2067,6 @@ export class SessionManager {
           this.sendStatus(sessionId)
         }
       }
-    } else if (this.connecting.has(sessionId) && !this.workspacePreloadInFlight.has(sessionId)) {
-      // Harness is live and no workspace preload is running for this session.
-      this.connecting.delete(sessionId)
-      this.sendStatus(sessionId)
     }
 
     switch (event.type) {
@@ -2277,12 +2268,12 @@ export class SessionManager {
                 input,
                 session.projectPath
               ).then(() => {
-                this.scheduleCapRefreshAfterMutation(sessionId, { processHead: false })
+                this.scheduleCapRefreshAfterMutation(sessionId)
               })
             } else if (toolName === 'Bash') {
               const command = (input as { command?: string } | undefined)?.command
               if (command && bashCommandMayAffectSessionChanges(command)) {
-                this.scheduleCapRefreshAfterMutation(sessionId, { processHead: true })
+                this.scheduleCapRefreshAfterMutation(sessionId)
               }
             }
           }
@@ -2759,13 +2750,10 @@ export class SessionManager {
   }
 
   /**
-   * Attempts to reconnect all active sessions on startup, concurrently and
-   * without blocking the caller. During reconnect each session shows as
-   * 'connecting' (blinking grey). On success it transitions to 'waiting'
-   * (purple). On failure it is pushed to 'session:stale' (steady grey) with
-   * no error written to the transcript — startup failures are silent.
-   * Terminal-mode sessions can't auto-reconnect (they need a pty attach), so
-   * they are probed via `tmux has-session` instead and marked stale if dead.
+   * Attempts to reconnect all active sessions on startup without blocking the
+   * caller. Harness starts on each session are staggered per devpod host so one
+   * host is not hit with every reconnect/preload at once. During preload the
+   * opening session shows 'connecting'; other sessions stay usable.
    */
   startupReconnect(): void {
     const execFileAsync = promisify(execFile)
@@ -2813,24 +2801,27 @@ export class SessionManager {
       const permissionMode = this.permissionModes.get(sessionId) ?? session.permissionMode
       const modelSelection = this.modelSelections.get(sessionId) ?? session.modelSelection ?? undefined
 
-      this.reconnectHarness(session, {
-        permissionMode,
-        model: modelSelection?.model,
-        effort: modelSelection?.effort,
-      }).then((harnessSession) => {
-        this.finalizeStaleRunningToolCalls(sessionId)
-        this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
-      this.resetHarnessUiForSession(sessionId)
-        this.sendStatus(sessionId)
-        void this.consume(sessionId, harnessSession.events, this.bumpConsumeGeneration(sessionId))
-      }).catch(() => {
-        this.pendingPanelPreload.delete(sessionId)
-        this.workspacePreloadInFlight.delete(sessionId)
-        this.startupAutoReconnect.delete(sessionId)
-        // Don't mark as stale — transient startup failures are common (timing,
-        // SSH mux not ready, etc.). Revert to idle so the user can click to retry.
-        this.connecting.delete(sessionId)
-        this.sendStatus(sessionId)
+      scheduleHostStartupReconnect(session.hostname, 250, async () => {
+        try {
+          const harnessSession = await this.reconnectHarness(session, {
+            permissionMode,
+            model: modelSelection?.model,
+            effort: modelSelection?.effort
+          })
+          this.finalizeStaleRunningToolCalls(sessionId)
+          this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
+          this.resetHarnessUiForSession(sessionId)
+          this.sendStatus(sessionId)
+          void this.consume(sessionId, harnessSession.events, this.bumpConsumeGeneration(sessionId))
+        } catch {
+          this.pendingPanelPreload.delete(sessionId)
+          this.workspacePreloadInFlight.delete(sessionId)
+          this.startupAutoReconnect.delete(sessionId)
+          // Don't mark as stale — transient startup failures are common (timing,
+          // SSH mux not ready, etc.). Revert to idle so the user can click to retry.
+          this.connecting.delete(sessionId)
+          this.sendStatus(sessionId)
+        }
       })
     }
   }

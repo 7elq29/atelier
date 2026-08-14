@@ -543,7 +543,9 @@ export default function App(): JSX.Element {
     if (!disconnectedGate && !hasSessionMessages(session.id)) {
       await sessions.resumeSession(session.id)
     }
-    sessionWorkspace.hydrateSnapshot(session.id)
+    if (!disconnectedGate) {
+      sessionWorkspace.hydrateSnapshot(session.id)
+    }
   }
 
   const handleSessionReconnect = useCallback(async (): Promise<void> => {
@@ -1050,7 +1052,7 @@ export default function App(): JSX.Element {
   )
 
   const handleRefreshWorkspace = useCallback((sessionId: string) => {
-    void window.atelier.refreshSessionWorkspace(sessionId, true)
+    void window.atelier.refreshSessionWorkspace(sessionId, false)
   }, [])
 
   const openFileQuickOpen = useCallback(() => {
@@ -1444,6 +1446,11 @@ export default function App(): JSX.Element {
                 onReconnect={() => void handleSessionReconnect()}
                 connecting={
                   !activeSession.closedAt && sessions.statuses[activeSession.id] === 'connecting'
+                }
+                connectStatusLabel={
+                  activeSessionId
+                    ? sessionWorkspace.connectProgressBySession[activeSessionId]?.label ?? null
+                    : null
                 }
               />
             ) : (

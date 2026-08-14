@@ -11,8 +11,66 @@ const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
 const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
 const lifecycleLogPath = join(artifactsDir, '02-lifecycle.log')
 
+/** Production DB holding the real AI conformance session (override for CI/other machines). */
+const PRODUCTION_ATELIER_DB =
+  process.env.ATELIER_SOURCE_DB ?? join(homedir(), 'Library/Application Support/atelier/data/atelier.sqlite')
+/** Real session id — must exist in {@link PRODUCTION_ATELIER_DB}. */
+const AI_CONFORMANCE_SESSION_ID =
+  process.env.ATELIER_CONFORMANCE_SESSION_ID ?? 'b986cbd0-c22a-486e-89a8-49e747d52de0'
+
 mkdirSync(artifactsDir, { recursive: true })
 writeFileSync(lifecycleLogPath, '')
+
+function productionConformanceSessionMeta(
+  sourceDbPath: string,
+  sessionId: string
+): { name: string; messageCount: number } {
+  if (!existsSync(sourceDbPath)) {
+    throw new Error(`Production Atelier DB not found: ${sourceDbPath}`)
+  }
+  const name = execFileSync(
+    'sqlite3',
+    [sourceDbPath, `SELECT name FROM sessions WHERE id = '${sessionId}'`],
+    { encoding: 'utf8' }
+  ).trim()
+  if (!name) {
+    throw new Error(`Session ${sessionId} not found in ${sourceDbPath}`)
+  }
+  const messageCount = Number.parseInt(
+    execFileSync(
+      'sqlite3',
+      [sourceDbPath, `SELECT COUNT(*) FROM messages WHERE session_id = '${sessionId}'`],
+      { encoding: 'utf8' }
+    ).trim(),
+    10
+  )
+  return { name, messageCount }
+}
+
+function cloneExactSessionFromProductionDb(targetDbPath: string, sessionId: string, sourceDbPath: string): void {
+  productionConformanceSessionMeta(sourceDbPath, sessionId)
+  const escapedSource = sourceDbPath.replace(/'/g, "''")
+  const sql = `
+ATTACH '${escapedSource}' AS src;
+DELETE FROM messages_fts WHERE session_id = '${sessionId}';
+DELETE FROM messages WHERE session_id = '${sessionId}';
+DELETE FROM session_tags WHERE session_id = '${sessionId}';
+DELETE FROM session_touched_paths WHERE session_id = '${sessionId}';
+DELETE FROM session_cap_commits WHERE session_id = '${sessionId}';
+DELETE FROM session_git_cursor WHERE session_id = '${sessionId}';
+DELETE FROM sessions WHERE id = '${sessionId}';
+INSERT INTO sessions SELECT * FROM src.sessions WHERE id = '${sessionId}';
+INSERT INTO messages SELECT * FROM src.messages WHERE session_id = '${sessionId}';
+INSERT INTO messages_fts(rowid, text, session_id)
+  SELECT rowid, text, session_id FROM src.messages_fts WHERE session_id = '${sessionId}';
+INSERT INTO session_git_cursor SELECT * FROM src.session_git_cursor WHERE session_id = '${sessionId}';
+INSERT INTO session_tags SELECT * FROM src.session_tags WHERE session_id = '${sessionId}';
+INSERT INTO session_touched_paths SELECT * FROM src.session_touched_paths WHERE session_id = '${sessionId}';
+INSERT INTO session_cap_commits SELECT * FROM src.session_cap_commits WHERE session_id = '${sessionId}';
+DETACH src;
+`
+  execFileSync('sqlite3', [targetDbPath], { input: sql })
+}
 
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
@@ -1379,6 +1437,184 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     await expect(page.locator('[data-testid="session-row"][data-status="creating-worktree"]')).toHaveCount(0)
 
     await page.screenshot({ path: join(artifactsDir, '02-worktree-failure-kept.png') })
+  })
+})
+
+test.describe('02-session-lifecycle — AI conformance connect', () => {
+  test('AI conformance: exact production session opens panels fast; git diff deferred with timing logged', async ({}, testInfo) => {
+    testInfo.setTimeout(180_000)
+    test.skip(!existsSync(PRODUCTION_ATELIER_DB), `Production DB missing — set ATELIER_SOURCE_DB (tried ${PRODUCTION_ATELIER_DB})`)
+
+    let cloned: { name: string; messageCount: number }
+    try {
+      cloned = productionConformanceSessionMeta(PRODUCTION_ATELIER_DB, AI_CONFORMANCE_SESSION_ID)
+    } catch (err) {
+      test.skip(true, err instanceof Error ? err.message : String(err))
+      return
+    }
+    expect(cloned.name).toBe('AI comformance')
+    expect(cloned.messageCount).toBeGreaterThan(0)
+
+    const conformanceUserData = mkdtempSync(join(tmpdir(), 'atelier-e2e-conformance-connect-'))
+    seedE2eConfig(conformanceUserData)
+
+    let electronApp: ElectronApplication
+    let page: Page
+    ;({ app: electronApp, page } = await launchApp(conformanceUserData))
+
+    const hosts = await page.evaluate(() => window.atelier.listHosts())
+    const envTarget = process.env.ATELIER_TEST_DEVPOD
+    const devpodHost = envTarget
+      ? hosts.find((h) => h.sshHost === envTarget || h.id === envTarget)
+      : hosts.find((h) => h.sshHost === 'qingqin-go.devpod-us-or') ?? hosts[0]
+    test.skip(!devpodHost, 'No devpod configured — set ATELIER_TEST_DEVPOD or configure a devpod host')
+    if (!devpodHost) return
+
+    await electronApp.close()
+    cloneExactSessionFromProductionDb(
+      join(conformanceUserData, 'data', 'atelier.sqlite'),
+      AI_CONFORMANCE_SESSION_ID,
+      PRODUCTION_ATELIER_DB
+    )
+    ;({ app: electronApp, page } = await launchApp(conformanceUserData))
+
+    const clonedRows = await queryDb<{ c: number }>(
+      page,
+      'SELECT COUNT(*) AS c FROM messages WHERE session_id = ?',
+      [AI_CONFORMANCE_SESSION_ID]
+    )
+    const clonedMessageCount = clonedRows[0]?.c ?? 0
+    expect(clonedMessageCount).toBe(cloned.messageCount)
+
+    const row = page.locator(`[data-testid="session-row"][data-session-id="${AI_CONFORMANCE_SESSION_ID}"]`)
+    await expect(row).toBeVisible({ timeout: 30_000 })
+    await expect(row).toContainText('AI comformance')
+
+    const connectStart = Date.now()
+    await expect(page.getByTestId('session-connecting-state')).toHaveCount(0, { timeout: 15_000 })
+    const connectMs = Date.now() - connectStart
+
+    await row.click()
+
+    await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 5_000 })
+    await expect
+      .poll(
+        async () => {
+          const dbCount =
+            (
+              await queryDb<{ c: number }>(
+                page,
+                'SELECT COUNT(*) AS c FROM messages WHERE session_id = ?',
+                [AI_CONFORMANCE_SESSION_ID]
+              )
+            )[0]?.c ?? 0
+          const listCount = (
+            await page.evaluate((id) => window.atelier.listSessionMessages(id), AI_CONFORMANCE_SESSION_ID)
+          ).length
+          return dbCount === listCount && listCount >= clonedMessageCount
+        },
+        { timeout: 15_000 }
+      )
+      .toBe(true)
+    await expect
+      .poll(async () => page.locator('[data-testid="transcript-message"]').count(), { timeout: 15_000 })
+      .toBeGreaterThan(0)
+
+    const essentialWorkspace = await page.evaluate(
+      (id) => window.atelier.getSessionWorkspaceSnapshot(id),
+      AI_CONFORMANCE_SESSION_ID
+    )
+    expect(essentialWorkspace?.diff.isRepo).toBe(true)
+    expect((essentialWorkspace?.filesTree.length ?? 0)).toBeGreaterThan(0)
+    expect((essentialWorkspace?.filesList.length ?? 0)).toBeGreaterThan(0)
+    expect(essentialWorkspace?.tabTerminalPtyId).toContain(':tab-terminal')
+
+    await page.getByTestId('tab-diff').click()
+    await expect(page.getByTestId('diff-panel-active')).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByTestId('session-disconnected-panel')).toHaveCount(0)
+    await expect(page.getByTestId('diff-refreshing')).toHaveCount(0)
+    await expect(page.getByText('Loading diff…')).toHaveCount(0)
+    await expect(page.getByText('Not a git repository')).toHaveCount(0)
+
+    await page.getByTestId('tab-files').click()
+    await expect(page.getByTestId('files-tree')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('session-disconnected-panel')).toHaveCount(0)
+    await expect
+      .poll(async () => page.locator('[data-testid="files-tree-root"], [data-testid="file-tree-dir"]').count(), {
+        timeout: 15_000
+      })
+      .toBeGreaterThan(0)
+
+    await page.getByTestId('tab-terminal').click()
+    const term = page.getByTestId('terminal-body')
+    await expect(term).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('session-disconnected-panel')).toHaveCount(0)
+    await term.click()
+    await page.waitForTimeout(3_000)
+    await page.keyboard.type('pwd')
+    await page.keyboard.press('Enter')
+    await expect
+      .poll(async () => term.textContent(), { timeout: 20_000 })
+      .toContain('.atelier/worktrees')
+
+    await page.getByTestId('tab-chat').click()
+    await expect(page.getByTestId('composer-input')).toBeVisible()
+
+    const log = appendMainLog(conformanceUserData)
+    expect(log).toContain('"msg":"session:openTiming"')
+    expect(log).toContain(AI_CONFORMANCE_SESSION_ID)
+    expect(log).toContain('"gitDeferred":true')
+    expect(log).toContain('"phase":"essential"')
+
+    const essentialLine = log
+      .split('\n')
+      .find(
+        (line) =>
+          line.includes('session:openTiming') &&
+          line.includes('"phase":"essential"') &&
+          line.includes(AI_CONFORMANCE_SESSION_ID)
+      )
+    expect(essentialLine).toBeTruthy()
+    const essentialPayload = JSON.parse(essentialLine!) as { essentialMs?: number; gitProbeMs?: number; sshWarmMs?: number }
+    expect(essentialPayload.essentialMs ?? 0).toBeLessThan(15_000)
+    expect(connectMs).toBeLessThan(15_000)
+
+    await expect
+      .poll(
+        () => {
+          const text = readFileSync(join(conformanceUserData, 'logs', 'main.log'), 'utf-8')
+          return text.includes('"phase":"background"') && text.includes(AI_CONFORMANCE_SESSION_ID)
+        },
+        { timeout: 120_000 }
+      )
+      .toBe(true)
+
+    const fullLog = readFileSync(join(conformanceUserData, 'logs', 'main.log'), 'utf-8')
+    const backgroundLine = fullLog
+      .split('\n')
+      .find(
+        (line) =>
+          line.includes('session:openTiming') &&
+          line.includes('"phase":"background"') &&
+          line.includes(AI_CONFORMANCE_SESSION_ID)
+      )
+    expect(backgroundLine).toBeTruthy()
+    const backgroundPayload = JSON.parse(backgroundLine!) as { backgroundGitMs?: number; backgroundTotalMs?: number }
+    expect(typeof backgroundPayload.backgroundGitMs).toBe('number')
+    expect(backgroundPayload.backgroundGitMs ?? 0).toBeGreaterThan(0)
+
+    await page.getByTestId('tab-diff').click()
+    await expect(page.getByTestId('diff-refreshing')).toHaveCount(0, { timeout: 5_000 })
+    await expect(page.getByTestId('diff-panel-active')).toBeVisible()
+    const finalWorkspace = await page.evaluate(
+      (id) => window.atelier.getSessionWorkspaceSnapshot(id),
+      AI_CONFORMANCE_SESSION_ID
+    )
+    expect(finalWorkspace?.diff.isRepo).toBe(true)
+
+    await page.screenshot({ path: join(artifactsDir, '02-conformance-connect.png') })
+    await electronApp.close().catch(() => undefined)
   })
 })
 
