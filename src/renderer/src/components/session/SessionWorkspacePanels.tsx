@@ -31,7 +31,8 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   onRevealFileDiffHandled,
   onAddComment,
   onOpenFileQuickOpen,
-  onRefreshWorkspace
+  onRefreshWorkspace,
+  refreshingBySession
 }: {
   sessionIds: string[]
   allSessions: SessionRecord[]
@@ -57,6 +58,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   onAddComment: (text: string) => void
   onOpenFileQuickOpen: () => void
   onRefreshWorkspace: (sessionId: string) => void
+  refreshingBySession: Record<string, boolean>
 }): JSX.Element {
   return (
     <>
@@ -82,6 +84,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
                 panelScopeKey={`${session.id}:${session.projectPath}`}
                 active={panelsVisible && activeTab === 'diff'}
                 workspaceDiff={ws?.diff}
+                workspaceRefreshing={Boolean(refreshingBySession[sessionId])}
                 onRefreshWorkspace={() => onRefreshWorkspace(sessionId)}
                 revealChangePath={panelsVisible ? revealChangePath : undefined}
                 revealChangeSeq={panelsVisible ? revealChangeSeq : 0}
