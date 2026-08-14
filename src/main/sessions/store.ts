@@ -127,12 +127,20 @@ function toSessionRecord(row: SessionRow, tags: string[] = []): SessionRecord {
 }
 
 function toMessageRecord(row: MessageRow): MessageRecord {
+  let rawEvent: MessageRecord['rawEvent'] = null
+  if (row.raw_event) {
+    try {
+      rawEvent = JSON.parse(row.raw_event) as MessageRecord['rawEvent']
+    } catch {
+      rawEvent = null
+    }
+  }
   return {
     id: row.id,
     sessionId: row.session_id,
     role: row.role as MessageRole,
     content: row.content,
-    rawEvent: row.raw_event ? JSON.parse(row.raw_event) : null,
+    rawEvent,
     createdAt: row.created_at
   }
 }
@@ -496,8 +504,8 @@ export class SessionStore {
     const fork = this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order)
-           VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, 0, @color, @createdAt, NULL, NULL, @sortOrder)`
+          `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order, worktree_path, notes, permission_mode, model_id, effort, profile_id, last_active_at, ever_connected, total_cost_usd)
+           VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, 0, @color, @createdAt, NULL, NULL, @sortOrder, @worktreePath, @notes, @permissionMode, @modelId, @effort, @profileId, @lastActiveAt, 0, 0)`
         )
         .run({
           id: newId,
@@ -508,7 +516,14 @@ export class SessionStore {
           groupId: source.groupId,
           color: source.color,
           createdAt,
-          sortOrder: Date.now()
+          sortOrder: Date.now(),
+          worktreePath: source.worktreePath,
+          notes: source.notes,
+          permissionMode: source.permissionMode,
+          modelId: source.modelSelection?.model ?? null,
+          effort: source.modelSelection?.effort ?? null,
+          profileId: source.profileId,
+          lastActiveAt: createdAt
         })
 
       const insertTag = this.db.prepare('INSERT OR IGNORE INTO session_tags (session_id, tag) VALUES (?, ?)')

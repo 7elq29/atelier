@@ -15,6 +15,7 @@ import {
   resolveNotePath,
   serializeDailyNote
 } from './daily-note-io'
+import { recordDailyNoteVaultWrite } from './daily-notes-handlers'
 import { datesInIsoWeek } from './weekly-note-io'
 import { logger } from './logger'
 
@@ -95,6 +96,7 @@ function writeDailyNote(path: string, note: DailyNote, raw: ReturnType<typeof pa
   const tmp = `${path}.tmp`
   writeFileSync(tmp, serialized, 'utf-8')
   renameSync(tmp, path)
+  recordDailyNoteVaultWrite(path, note, serialized)
 }
 
 /** Apply wizard schedule rows with a day set to the matching ISO-week daily notes. */

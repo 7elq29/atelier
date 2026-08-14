@@ -60,6 +60,7 @@ import type {
 } from '../../shared/harness-ui-types'
 import type { LocalCommandOutputContent, TranscriptNoticeContent } from '../../shared/chat-content'
 import { completeLinkedDailyTask, linkDailyTaskToSession } from '../daily-note-session-link'
+import type { PortForwardManager } from '../panels/ports'
 
 const AUTO_NAME_STARTING_FROM_TURN = 2
 const AUTO_NAME_MAX_WORDS = 3
@@ -273,16 +274,41 @@ export class SessionManager {
    */
   private readonly modelSelections = new Map<string, ModelSelection>()
 
+  /** Bumped on close/delete to drop stale `consume()` loops (pty generation pattern). */
+  private readonly consumeGeneration = new Map<string, number>()
+
   private readonly harnessUi = new SessionHarnessUiState()
 
   private workspace: WorkspaceService | null = null
+  private portForwards: PortForwardManager | null = null
 
   setWorkspaceService(workspace: WorkspaceService): void {
     this.workspace = workspace
   }
 
+  setPortForwardManager(portForwards: PortForwardManager): void {
+    this.portForwards = portForwards
+  }
+
   getWorkspaceService(): WorkspaceService | null {
     return this.workspace
+  }
+
+  private bumpConsumeGeneration(sessionId: string): number {
+    const next = (this.consumeGeneration.get(sessionId) ?? 0) + 1
+    this.consumeGeneration.set(sessionId, next)
+    return next
+  }
+
+  private invalidateConsume(sessionId: string): void {
+    this.bumpConsumeGeneration(sessionId)
+  }
+
+  private async waitUntilNotConnecting(sessionId: string, timeoutMs = 120_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    while (this.connecting.has(sessionId) && Date.now() < deadline) {
+      await delay(50)
+    }
   }
 
   private publishSessionChangesCap(sessionId: string, cap: SessionChangesCap): void {
@@ -518,10 +544,6 @@ export class SessionManager {
     const last = Date.parse(session.lastActiveAt)
     if (Number.isNaN(last)) return false
     return Date.now() - last > SESSION_STARTUP_IDLE_MS
-  }
-
-  private sendReconnectComplete(sessionId: string): void {
-    this.getWindow()?.webContents.send('session:reconnectComplete', { sessionId })
   }
 
   /** Records user focus on a session (sidebar select) for startup-idle eligibility. */
@@ -987,7 +1009,7 @@ export class SessionManager {
       this.sendStatus(session.id)
       this.sendTurnState(session.id, true)
     }
-    void this.consume(session.id, harnessSession.events)
+    void this.consume(session.id, harnessSession.events, this.bumpConsumeGeneration(session.id))
 
     // Broadcast only after live/consume are wired so a renderer resume/reconnect
     // triggered by this event cannot race a second harness start for the same id.
@@ -1077,7 +1099,7 @@ export class SessionManager {
       }
       this.sendStatus(sessionId)
       if (opts.prompt) this.sendTurnState(sessionId, true)
-      void this.consume(sessionId, harnessSession.events)
+      void this.consume(sessionId, harnessSession.events, this.bumpConsumeGeneration(sessionId))
     } catch (err) {
       logger.warn('setupWorktreeAsync: failed', {
         sessionId,
@@ -1289,6 +1311,7 @@ export class SessionManager {
     // Don't race with setupWorktreeAsync — while the worktree is being created
     // the harness will be started by that path once creation completes.
     if (this.creatingWorktree.has(sessionId)) return
+    if (this.connecting.has(sessionId)) return
     // Already live (e.g. connected by createSession or startupReconnect) — resync ephemeral UI.
     if (this.live.has(sessionId) || this.harness.isActive(sessionId)) {
       this.sendBackgroundTasks(sessionId)
@@ -1322,7 +1345,7 @@ export class SessionManager {
       this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
       this.resetHarnessUiForSession(sessionId)
       this.sendStatus(sessionId)
-      void this.consume(sessionId, harnessSession.events)
+      void this.consume(sessionId, harnessSession.events, this.bumpConsumeGeneration(sessionId))
     } catch (err) {
       this.connecting.delete(sessionId)
       this.pendingPanelPreload.delete(sessionId)
@@ -1450,6 +1473,19 @@ export class SessionManager {
         }
         return
       }
+      if (this.connecting.has(sessionId)) {
+        await this.waitUntilNotConnecting(sessionId)
+        if (!selectionChanged && this.harness.isActive(sessionId)) {
+          logger.info('sendUserMessage: live injection after reconnect wait (streamInput)', { sessionId })
+          await this.harness.streamInput(sessionId, text, image)
+          const liveEntry = this.live.get(sessionId)
+          if (liveEntry) {
+            liveEntry.busy = true
+            this.sendStatus(sessionId)
+          }
+          return
+        }
+      }
       logger.info('sendUserMessage: no live harness session, reconnecting via resume()', { sessionId })
       const permissionMode = this.permissionModes.get(sessionId) ?? session.permissionMode
       const modelSelection = this.modelSelections.get(sessionId) ?? session.modelSelection ?? undefined
@@ -1480,7 +1516,7 @@ export class SessionManager {
       liveEntry.pendingUserMessageId = userMessage.id
       liveEntry.turnExecutionStarted = false
       this.sendStatus(sessionId)
-      void this.consume(sessionId, harnessSession.events)
+      void this.consume(sessionId, harnessSession.events, this.bumpConsumeGeneration(sessionId))
     } catch (err) {
       this.sendTurnState(sessionId, false)
       this.reportHarnessFailure(sessionId, 'sendUserMessage', err)
@@ -1692,10 +1728,17 @@ export class SessionManager {
   // ── Fork / Restart ──────────────────────────────────────────────────
 
   forkSession(sourceId: string): SessionRecord {
+    const source = this.store.getSession(sourceId)
     const forked = this.store.forkSession(sourceId)
     if (!forked) throw new Error(`Unknown session: ${sourceId}`)
+    if (source) {
+      this.permissionModes.set(forked.id, source.permissionMode)
+      if (source.modelSelection) {
+        this.modelSelections.set(forked.id, source.modelSelection)
+      }
+    }
     this.sendLifecycle({ type: 'session.forked', session: forked, sourceId })
-    return forked
+    return this.decorate(forked)
   }
 
   restartSession(sourceId: string): SessionRecord {
@@ -1717,6 +1760,7 @@ export class SessionManager {
     const live = this.live.get(sessionId)
     this.finalizeStaleRunningToolCalls(sessionId, live)
     this.live.delete(sessionId)
+    this.invalidateConsume(sessionId)
     // A session can be closed again while a previous reconnect() is still in
     // flight (e.g. rapid resume/close) — don't leave a stale 'connecting'
     // pill visible for a session that's no longer even open.
@@ -1756,12 +1800,20 @@ export class SessionManager {
     if (session?.worktreePath) {
       void this.cleanupSessionWorktree(session, { clearStoredPath: false })
     }
+    this.markInterruptedTurnNoticeIfBusy(sessionId)
+    void this.harness.interrupt(sessionId).catch(() => undefined)
+    const live = this.live.get(sessionId)
+    this.finalizeStaleRunningToolCalls(sessionId, live)
     this.live.delete(sessionId)
+    this.invalidateConsume(sessionId)
     this.connecting.delete(sessionId)
     this.creatingWorktree.delete(sessionId)
     this.pendingPanelPreload.delete(sessionId)
     this.workspacePreloadInFlight.delete(sessionId)
     this.workspace?.evictSession(sessionId)
+    this.portForwards?.removeAllForSession(sessionId)
+    this.sendTurnState(sessionId, false)
+    this.resetHarnessUiForSession(sessionId)
     this.store.deleteSession(sessionId)
     this.sendLifecycle({ type: 'session.deleted', sessionId })
   }
@@ -1891,14 +1943,11 @@ export class SessionManager {
   }
 
   deleteGroup(groupId: string): void {
+    const members = this.store.listActiveSessions().filter((s) => s.groupId === groupId)
     this.store.deleteGroup(groupId)
     this.sendGroupEvent({ type: 'group.deleted', groupId })
-    // Member sessions' group_id changed to NULL underneath them — the
-    // sidebar needs to move them into "Ungrouped", so refresh via a normal
-    // lifecycle-style broadcast too (cheapest correct thing, matches how
-    // every other cross-cutting session change is surfaced).
-    for (const session of this.store.listActiveSessions()) {
-      if (session.groupId === null) this.sendLifecycle({ type: 'session.updated', session })
+    for (const session of members) {
+      this.sendLifecycle({ type: 'session.updated', session: { ...session, groupId: null } })
     }
   }
 
@@ -1924,9 +1973,23 @@ export class SessionManager {
 
   // ── Event stream consumption ─────────────────────────────────────────
 
-  private async consume(sessionId: string, events: AsyncGenerator<HarnessEvent, void, void>): Promise<void> {
-    for await (const event of events) {
-      this.applyEvent(sessionId, event)
+  private async consume(
+    sessionId: string,
+    events: AsyncGenerator<HarnessEvent, void, void>,
+    generation: number
+  ): Promise<void> {
+    try {
+      for await (const event of events) {
+        if (this.consumeGeneration.get(sessionId) !== generation) return
+        if (!this.store.getSession(sessionId)) return
+        this.applyEvent(sessionId, event)
+      }
+    } catch (err) {
+      if (!this.store.getSession(sessionId)) return
+      logger.error('consume loop failed', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err)
+      })
     }
   }
 
@@ -1951,6 +2014,7 @@ export class SessionManager {
   }
 
   private applyEvent(sessionId: string, event: HarnessEvent): void {
+    if (!this.store.getSession(sessionId)) return
     const live = this.live.get(sessionId) ?? newLiveStream()
     this.live.set(sessionId, live)
     const needsWorkspacePreload = this.pendingPanelPreload.delete(sessionId)
@@ -1967,14 +2031,12 @@ export class SessionManager {
           this.workspacePreloadInFlight.delete(sessionId)
           this.connecting.delete(sessionId)
           this.sendStatus(sessionId)
-          this.sendReconnectComplete(sessionId)
         })
       } else {
         if (this.connecting.has(sessionId)) {
           this.connecting.delete(sessionId)
           this.sendStatus(sessionId)
         }
-        this.sendReconnectComplete(sessionId)
       }
     } else if (this.connecting.has(sessionId) && !this.workspacePreloadInFlight.has(sessionId)) {
       // Harness is live and no workspace preload is running for this session.
@@ -2717,7 +2779,7 @@ export class SessionManager {
         this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
       this.resetHarnessUiForSession(sessionId)
         this.sendStatus(sessionId)
-        void this.consume(sessionId, harnessSession.events)
+        void this.consume(sessionId, harnessSession.events, this.bumpConsumeGeneration(sessionId))
       }).catch(() => {
         this.pendingPanelPreload.delete(sessionId)
         this.workspacePreloadInFlight.delete(sessionId)

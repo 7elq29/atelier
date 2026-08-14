@@ -200,7 +200,12 @@ export function parseStructuredContent(content: string): StructuredContent | nul
  */
 export function extractSearchableText(role: string, content: string): string | null {
   if (role !== 'user' && role !== 'assistant') return null
-  if (parseStructuredContent(content) !== null) return null
+  const parsed = parseStructuredContent(content)
+  if (parsed?.kind === 'image_attachment') {
+    const caption = parsed.text?.trim()
+    return caption ? caption : null
+  }
+  if (parsed !== null) return null
   return content.trim().length > 0 ? content : null
 }
 

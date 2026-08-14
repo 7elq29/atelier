@@ -142,6 +142,31 @@ export function useSessions(): UseSessionsResult {
     const offMessages = initSessionMessagesListeners()
     const offLifecycle = window.atelier.onSessionLifecycle((event) => {
       if (event.type === 'session.deleted') {
+        removeSessionMessages(event.sessionId)
+        setBusyBySession((prev) => {
+          if (!(event.sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[event.sessionId]
+          return next
+        })
+        setCommandsBySession((prev) => {
+          if (!(event.sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[event.sessionId]
+          return next
+        })
+        setTokenUsageBySession((prev) => {
+          if (!(event.sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[event.sessionId]
+          return next
+        })
+        setPromptSuggestionBySession((prev) => {
+          if (!(event.sessionId in prev)) return prev
+          const next = { ...prev }
+          delete next[event.sessionId]
+          return next
+        })
         setHarnessCwdBySession((prev) => {
           if (!(event.sessionId in prev)) return prev
           const next = { ...prev }

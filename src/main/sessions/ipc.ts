@@ -3,7 +3,7 @@
  * the same registration pattern as daily-notes-handlers.ts / app:* handlers
  * in index.ts.
  */
-import { ipcMain, dialog, type BrowserWindow } from 'electron'
+import { ipcMain, dialog, app, type BrowserWindow } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import type { CreateSessionOptions, ImageAttachment, ModelSelection, PromptDecision } from '../../shared/session-types'
 import { logger } from '../logger'
@@ -14,6 +14,8 @@ import { formatTranscriptMarkdown, formatTranscriptJson } from './export-format'
 export type ExportFormat = 'markdown' | 'json'
 
 export function registerSessionHandlers(manager: SessionManager, getWindow: () => BrowserWindow | null): void {
+  const allowDebugDb = !app.isPackaged || process.env.ATELIER_TEST_VAULT_ROOT !== undefined
+
   ipcMain.handle('session:pickProjectFolder', async () => {
     const win = getWindow()
     const options = { properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] }
@@ -22,27 +24,16 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
     return result.filePaths[0]
   })
 
-  // Test-only: runs a read-only SQL query against the app's real, already-open
-  // SQLite connection. Exists so e2e tests can verify DB state directly
-  // (per e2e-test-plan.md, "query the DB directly ... don't just trust the
-  // UI") without needing a second connection compiled for a different Node
-  // ABI — better-sqlite3's native binary here is built against Electron's
-  // ABI (see 00-app-shell's postinstall step), which a plain-Node Playwright
-  // test process can't load directly.
-  ipcMain.handle('debug:queryDb', (_event, sql: string, params: unknown[] = []) => {
-    return openDatabase().prepare(sql).all(...params)
-  })
+  // Unpackaged dev/e2e only — packaged production builds must not expose arbitrary SQL.
+  if (allowDebugDb) {
+    ipcMain.handle('debug:queryDb', (_event, sql: string, params: unknown[] = []) => {
+      return openDatabase().prepare(sql).all(...params)
+    })
 
-  // Test-only sibling of `debug:queryDb` for statements that mutate rather
-  // than select (INSERT/UPDATE/DELETE) — needed so e2e specs can seed
-  // deliberately-corrupted fixture rows (e.g.
-  // bug-session-cost-historical-backfill.spec.ts simulating a pre-fix
-  // compounded `total_cost_usd`) directly against the app's real, already-
-  // open SQLite connection, for the same "no separate ABI, no mock DB"
-  // reason `debug:queryDb` exists.
-  ipcMain.handle('debug:execDb', (_event, sql: string, params: unknown[] = []) => {
-    return openDatabase().prepare(sql).run(...params)
-  })
+    ipcMain.handle('debug:execDb', (_event, sql: string, params: unknown[] = []) => {
+      return openDatabase().prepare(sql).run(...params)
+    })
+  }
 
   ipcMain.handle('session:listHosts', () => manager.listHosts())
 

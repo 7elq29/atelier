@@ -434,6 +434,24 @@ export default function App(): JSX.Element {
     (id: string) => {
       if (activeSessionId === id) setActiveSessionId(null)
       void sessions.deleteSession(id)
+      setQueuedMessagesBySession((prev) => {
+        if (!(id in prev)) return prev
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      setModelSelectionBySession((prev) => {
+        if (!(id in prev)) return prev
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      setInjectDiffBySession((prev) => {
+        if (!(id in prev)) return prev
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
       setTerminalShellHostBySessionId((prev) => {
         if (!(id in prev)) return prev
         const next = { ...prev }
@@ -581,15 +599,18 @@ export default function App(): JSX.Element {
       setWeeklyPlanExistsHint('Set your Obsidian vault path in Settings to use Weekly plan.')
       return
     }
-    const ctx = await window.atelier.loadWeeklyPlanContext()
-    if (!ctx) return
-    setActiveAppNoteId(null)
-    setActiveDailyNoteDate(null)
-    setActiveSessionId(null)
-    setWeeklyPlanExistsHint(null)
-    setWeeklyPlanViewDoc(null)
-    setWeeklyPlanContext(ctx)
-    setActiveWeeklyPlanOpen(true)
+    try {
+      const ctx = await window.atelier.loadWeeklyPlanContext()
+      setActiveAppNoteId(null)
+      setActiveDailyNoteDate(null)
+      setActiveSessionId(null)
+      setWeeklyPlanExistsHint(null)
+      setWeeklyPlanViewDoc(null)
+      setWeeklyPlanContext(ctx)
+      setActiveWeeklyPlanOpen(true)
+    } catch {
+      setWeeklyPlanExistsHint('Set your Obsidian vault path in Settings to use Weekly plan.')
+    }
   }, [weeklyPlanStatus?.fileExists])
 
   const onWeeklyPlanRowClick = useCallback(async () => {
@@ -1197,8 +1218,8 @@ export default function App(): JSX.Element {
           onTogglePin={(id, pinned) => void sessions.setPinned(id, pinned)}
           onClose={(id) => performCloseSession(id)}
           onDelete={(id) => handleDeleteSession(id)}
-          onFork={(id) => void sessions.forkSession(id).then((forked) => setActiveSessionId(forked.id))}
-          onRestart={(id) => void sessions.restartSession(id).then((forked) => setActiveSessionId(forked.id))}
+          onFork={(id) => void sessions.forkSession(id).then((forked) => void selectSession(forked))}
+          onRestart={(id) => void sessions.restartSession(id).then((forked) => void selectSession(forked))}
           groups={sessions.groups}
           statuses={sessions.statuses}
           staleSessionIds={sessions.staleSessionIds}
@@ -1644,15 +1665,16 @@ export default function App(): JSX.Element {
             ...opts,
             suggestedName: pendingTaskSessionLink?.taskText.trim() || opts.suggestedName
           })
+          let session = created
           if (pendingTaskSessionLink) {
-            await sessions.linkDailyTask(
+            session = await sessions.linkDailyTask(
               created.id,
               pendingTaskSessionLink.noteDate,
               pendingTaskSessionLink.taskGid
             )
             setPendingTaskSessionLink(null)
           }
-          setActiveSessionId(created.id)
+          await selectSession(session)
         }}
       />
 

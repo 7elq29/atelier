@@ -116,7 +116,7 @@ const api = {
   writeDailyNote: (date: string, note: DailyNote): Promise<{ note: DailyNote }> =>
     ipcRenderer.invoke('daily-note:write', date, note),
   watchDailyNote: (date: string): Promise<void> => ipcRenderer.invoke('daily-note:watch', date),
-  unwatchDailyNote: (): Promise<void> => ipcRenderer.invoke('daily-note:unwatch'),
+  unwatchDailyNote: (date: string): Promise<void> => ipcRenderer.invoke('daily-note:unwatch', date),
   onDailyNoteChanged: (callback: (note: DailyNote) => void): (() => void) => {
     const listener = (_event: unknown, note: DailyNote): void => callback(note)
     ipcRenderer.on('daily-note:changed', listener)
@@ -135,7 +135,7 @@ const api = {
   getWeeklyPlanStatus: (): Promise<WeeklyPlanStatus> => ipcRenderer.invoke('weekly-plan:getStatus'),
   readWeeklyPlanNote: (isoWeek?: string): Promise<WeeklyPlanViewResult> =>
     ipcRenderer.invoke('weekly-plan:readNote', isoWeek),
-  loadWeeklyPlanContext: (): Promise<(WeeklyPlanWizardContext & { initialData: WeeklyPlanCreatePayload['data'] }) | null> =>
+  loadWeeklyPlanContext: (): Promise<WeeklyPlanWizardContext & { initialData: WeeklyPlanCreatePayload['data'] }> =>
     ipcRenderer.invoke('weekly-plan:loadContext'),
   saveWeeklyPlanDraft: (payload: WeeklyPlanDraftPayload): Promise<{ ok: true }> =>
     ipcRenderer.invoke('weekly-plan:saveDraft', payload),

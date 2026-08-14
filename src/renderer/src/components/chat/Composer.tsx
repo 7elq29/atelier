@@ -656,6 +656,12 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     updateCursorPos()
   }, [value, updateCursorPos])
 
+  useEffect(() => {
+    return () => {
+      if (typingTimer.current) clearTimeout(typingTimer.current)
+    }
+  }, [])
+
   useImperativeHandle(ref, () => ({
     setValue: (text: string) => {
       largePastesRef.current = []
@@ -1263,14 +1269,14 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
               rateLimit?.sendBlocked ||
               (!value.trim() && !attachedImage)
             }
-            title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
+            title={busy ? 'Send while busy (Enter)' : 'Send (Enter)'}
             onClick={() => void handleSend()}
           >
             <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="19" x2="12" y2="5" />
               <polyline points="6 11 12 5 18 11" />
             </svg>
-            {busy ? 'Queue' : 'Send'}
+            {busy ? 'Send anyway' : 'Send'}
           </button>
         </div>
       </div>

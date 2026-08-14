@@ -159,10 +159,16 @@ export function useDailyNoteNotesSlice(initialDate: string): UseDailyNoteNotesSl
 
     return () => {
       cancelled = true
-      void window.atelier.unwatchDailyNote().catch(() => {})
+      void window.atelier.unwatchDailyNote(viewDate).catch(() => {})
       unsub()
       window.removeEventListener('focus', onFocus)
-      if (writeTimerRef.current) clearTimeout(writeTimerRef.current)
+      if (writeTimerRef.current) {
+        clearTimeout(writeTimerRef.current)
+        writeTimerRef.current = null
+        const body = notesBodyRef.current
+        const date = viewDateRef.current
+        void window.atelier.writeDailyNoteNotesSlice(date, body).catch(() => {})
+      }
     }
   }, [viewDate, loadSlice, applySlice, reconcileVaultSlice])
 

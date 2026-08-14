@@ -85,6 +85,7 @@ export default function FileQuickOpenPalette({
   const [shallowRows, setShallowRows] = useState<QuickOpenRow[]>([])
   const [deepFiles, setDeepFiles] = useState<WorkspaceFileEntry[]>([])
   const [loading, setLoading] = useState(false)
+  const [homeDir, setHomeDir] = useState<string | undefined>(undefined)
   const dirInputRef = useRef<HTMLInputElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const loadSeq = useRef(0)
@@ -110,19 +111,28 @@ export default function FileQuickOpenPalette({
     })
   }, [focusPane, dirContext.segmentFilter, searchScope, shallowRows, deepFiles])
 
+  const displayPath = useCallback(
+    (absPath: string) => formatPathForDisplay(absPath, homeDir),
+    [homeDir]
+  )
+
+  useEffect(() => {
+    void window.atelier.getHomedir().then(setHomeDir)
+  }, [])
+
   const resetState = useCallback(() => {
     setCurrentDir(sessionRoot)
     setFocusPane('search')
-    setDirQuery(formatPathForDisplay(sessionRoot))
+    setDirQuery(displayPath(sessionRoot))
     setSearchFilter('')
     setSelectedIndex(0)
-  }, [sessionRoot])
+  }, [sessionRoot, displayPath])
 
   const enterDirMode = useCallback(() => {
-    setDirQuery(formatPathForDisplay(currentDir))
+    setDirQuery(displayPath(currentDir))
     setFocusPane('dir')
     setTimeout(() => focusInputCaret(dirInputRef.current, dirInputRef.current?.value.length ?? 0), 0)
-  }, [currentDir])
+  }, [currentDir, displayPath])
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -194,7 +204,7 @@ export default function FileQuickOpenPalette({
     const dir = normalizePath(absDir)
     flushSync(() => {
       setCurrentDir(dir)
-      setDirQuery(formatPathForDisplay(dir))
+      setDirQuery(displayPath(dir))
       setFocusPane('search')
       setSearchFilter('')
     })
@@ -255,7 +265,7 @@ export default function FileQuickOpenPalette({
       if (parent) {
         e.preventDefault()
         setCurrentDir(parent)
-        setDirQuery(formatPathForDisplay(parent))
+        setDirQuery(displayPath(parent))
       }
     } else if (e.key === 'Escape') {
       e.preventDefault()
@@ -314,7 +324,7 @@ export default function FileQuickOpenPalette({
                 data-testid="file-quick-open-dir"
                 onClick={enterDirMode}
               >
-                {formatPathForDisplay(currentDir)}
+                {displayPath(currentDir)}
               </button>
             )}
           </div>

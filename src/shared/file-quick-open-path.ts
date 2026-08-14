@@ -12,8 +12,23 @@ export function parentDirectory(sessionRoot: string, currentDir: string): string
   return parent
 }
 
-export function formatPathForDisplay(absPath: string): string {
-  return absPath.replace(/^\/Users\/[^/]+/, '~')
+export function formatPathForDisplay(absPath: string, homeDir?: string): string {
+  if (homeDir) {
+    const normalized = homeDir.replace(/\/$/, '')
+    if (absPath === normalized || absPath.startsWith(`${normalized}/`)) {
+      return absPath.replace(normalized, '~')
+    }
+  }
+  return absPath.replace(/^\/Users\/[^/]+/, '~').replace(/^\/home\/[^/]+/, '~')
+}
+
+function homeFromSessionRoot(sessionRoot: string, homeDir?: string): string {
+  if (homeDir) return homeDir.replace(/\/$/, '')
+  const mac = sessionRoot.match(/^(\/Users\/[^/]+)/)
+  if (mac) return mac[1]!
+  const linux = sessionRoot.match(/^(\/home\/[^/]+)/)
+  if (linux) return linux[1]!
+  return sessionRoot
 }
 
 /** Join a relative path segment onto a base directory (both normalized). */
@@ -22,11 +37,6 @@ export function joinPathUnderBase(base: string, relative: string): string {
   const rel = relative.replace(/^\/+/, '').replace(/\/+$/, '')
   if (!rel) return b
   return normalizePath(`${b}/${rel}`)
-}
-
-function homeFromSessionRoot(sessionRoot: string): string {
-  const m = sessionRoot.match(/^(\/Users\/[^/]+)/)
-  return m ? m[1]! : sessionRoot
 }
 
 /** Allowed list/browse target: workspace root, inside it, or an ancestor on the path to it. */

@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { ipcMain } from 'electron'
@@ -131,7 +131,10 @@ export function registerWeeklyPlanHandlers(): void {
       if (!isoWeek) throw new Error('isoWeek required')
       const path = resolveWeeklyNotePath(root, isoWeek)
       if (!existsSync(path)) throw new Error(`weekly note not found: ${isoWeek}`)
-      await writeFile(path, payload.markdown, 'utf-8')
+      mkdirSync(dirname(path), { recursive: true })
+      const tmp = `${path}.tmp`
+      await writeFile(tmp, payload.markdown, 'utf-8')
+      renameSync(tmp, path)
       return { ok: true as const }
     }
   )

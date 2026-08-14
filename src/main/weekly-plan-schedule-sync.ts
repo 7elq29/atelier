@@ -15,6 +15,7 @@ import {
   resolveNotePath,
   serializeDailyNote
 } from './daily-note-io'
+import { recordDailyNoteVaultWrite } from './daily-notes-handlers'
 import { datesInIsoWeek } from './weekly-note-io'
 import { logger } from './logger'
 import type { WeeklyPlanDailySyncSettings } from './weekly-plan-daily-sync'
@@ -46,6 +47,7 @@ function writeDailyNote(path: string, note: DailyNote, raw: ReturnType<typeof pa
   const tmp = `${path}.tmp`
   writeFileSync(tmp, serialized, 'utf-8')
   renameSync(tmp, path)
+  recordDailyNoteVaultWrite(path, note, serialized)
 }
 
 async function loadDailyNote(

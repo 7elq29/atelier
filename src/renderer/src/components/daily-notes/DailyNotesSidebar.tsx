@@ -103,9 +103,12 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
   // always the real "today" (or ATELIER_TEST_DATE in tests).
   const moveDateOptions = useMemo(() => computeMoveDateOptions(date), [date])
 
+  const taskSignature =
+    note?.tasks.map((t) => `${t.id}:${t.status}:${t.text}:${t.section}`).join('|') ?? ''
+
   useEffect(() => {
     if (vaultConfigured && note) void carry.refresh()
-  }, [vaultConfigured, note?.tasks.length, date])
+  }, [vaultConfigured, taskSignature, date])
 
   const showCarrySection = Boolean(carry.sourceDate && !carry.loading && carry.tasks.length > 0)
 

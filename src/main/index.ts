@@ -153,6 +153,7 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
   ptyManager = panelManagers.ptyManager
   portManager = panelManagers.portManager
   workspaceService?.setPtyManager(panelManagers.ptyManager)
+  sessionManager.setPortForwardManager(panelManagers.portManager)
 }
 
 app.whenReady().then(() => {

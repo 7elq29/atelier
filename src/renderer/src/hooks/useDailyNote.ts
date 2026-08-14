@@ -68,6 +68,8 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
   const [vaultConfigured, setVaultConfigured] = useState(true)
   const [moveError, setMoveError] = useState<string | null>(null)
   const writeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const noteRef = useRef<DailyNote | null>(null)
+  noteRef.current = note
 
   useEffect(() => {
     let cancelled = false
@@ -131,10 +133,15 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
 
     return () => {
       cancelled = true
-      window.atelier.unwatchDailyNote().catch(() => {})
+      window.atelier.unwatchDailyNote(date).catch(() => {})
       unsub()
       window.removeEventListener('focus', onFocus)
-      if (writeTimerRef.current) clearTimeout(writeTimerRef.current)
+      if (writeTimerRef.current) {
+        clearTimeout(writeTimerRef.current)
+        writeTimerRef.current = null
+        const pending = noteRef.current
+        if (pending) void window.atelier.writeDailyNote(date, pending).catch(() => {})
+      }
     }
   }, [date, configVaultRoot])
 

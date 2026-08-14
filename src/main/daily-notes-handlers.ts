@@ -279,9 +279,106 @@ export function persistMintedGids(path: string, note: DailyNote, raw: RawSection
   })
 }
 
-let activeWatcher: FSWatcher | null = null
-let debounceTimer: ReturnType<typeof setTimeout> | null = null
-let watchedPath: string | null = null
+export function recordDailyNoteVaultWrite(path: string, note: DailyNote, serialized: string): void {
+  recordWrittenContent(path, serialized)
+  recordKnownIds(path, getTaskIds(note))
+}
+
+interface DirWatchState {
+  watcher: FSWatcher
+  /** basename -> { absolute path, note date } */
+  files: Map<string, { path: string; date: string }>
+}
+
+const watchRefCounts = new Map<string, number>()
+const dirWatchers = new Map<string, DirWatchState>()
+let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function notifyDailyNoteFileChanged(
+  getMainWindow: () => BrowserWindow | null,
+  path: string,
+  date: string
+): void {
+  const timer = debounceTimers.get(path)
+  if (timer) clearTimeout(timer)
+  debounceTimers.set(
+    path,
+    setTimeout(() => {
+      debounceTimers.delete(path)
+      try {
+        if (!existsSync(path)) return
+        const content = readFileSync(path, 'utf-8')
+
+        if (lastWrittenContent.get(path) === content) {
+          logger.info('daily-note watcher: suppressed self-write echo', { path })
+          return
+        }
+
+        const { note, raw, mintedIds } = parseDailyNote(content, date)
+        persistMintedGids(path, note, raw, mintedIds)
+        recordKnownIds(path, getTaskIds(note))
+        logger.info('daily-note watcher: reparsed after change', { path, taskCount: note.tasks.length })
+        notifyDailyNoteChanged(getMainWindow, note)
+      } catch {
+        // File may be mid-write; next fs event will retry.
+      }
+    }, WATCH_DEBOUNCE_MS)
+  )
+}
+
+function syncDailyNoteWatchers(getMainWindow: () => BrowserWindow | null, settings: VaultSettings): void {
+  const desiredByDir = new Map<string, Map<string, { path: string; date: string }>>()
+
+  for (const [date, count] of watchRefCounts) {
+    if (count <= 0) continue
+    const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
+    if (!existsSync(path)) continue
+    const dir = dirname(path)
+    const targetName = basename(path)
+    if (!desiredByDir.has(dir)) desiredByDir.set(dir, new Map())
+    desiredByDir.get(dir)!.set(targetName, { path, date })
+  }
+
+  for (const [dir, state] of dirWatchers) {
+    if (desiredByDir.has(dir)) continue
+    state.watcher.close()
+    dirWatchers.delete(dir)
+    logger.info('daily-note watcher: stopped dir watch', { dir })
+  }
+
+  for (const [dir, files] of desiredByDir) {
+    const existing = dirWatchers.get(dir)
+    if (existing) {
+      existing.files = files
+      continue
+    }
+
+    const watcher = watch(dir, (_eventType, filename) => {
+      if (!filename) return
+      const state = dirWatchers.get(dir)
+      if (!state) return
+      const file = state.files.get(filename)
+      if (!file) return
+      logger.info('daily-note watcher: fs event', { path: file.path, filename })
+      notifyDailyNoteFileChanged(getMainWindow, file.path, file.date)
+    })
+    watcher.unref()
+    dirWatchers.set(dir, { watcher, files })
+    logger.info('daily-note watcher: started dir watch', { dir, fileCount: files.size })
+  }
+}
+
+function addDailyNoteWatchRef(date: string, getMainWindow: () => BrowserWindow | null, settings: VaultSettings): void {
+  watchRefCounts.set(date, (watchRefCounts.get(date) ?? 0) + 1)
+  syncDailyNoteWatchers(getMainWindow, settings)
+}
+
+function removeDailyNoteWatchRef(date: string, getMainWindow: () => BrowserWindow | null, settings: VaultSettings): void {
+  const count = watchRefCounts.get(date) ?? 0
+  if (count <= 1) watchRefCounts.delete(date)
+  else watchRefCounts.set(date, count - 1)
+  syncDailyNoteWatchers(getMainWindow, settings)
+}
 
 /**
  * Set (once) by the test-only `daily-note:testDelayNextWrite` handler. When
@@ -759,93 +856,13 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
   ipcMain.handle('daily-note:watch', (_event, date: string) => {
     const settings = resolveVaultSettings()
     if (!settings) return
-
-    if (activeWatcher) {
-      activeWatcher.close()
-      activeWatcher = null
-    }
-    if (debounceTimer) {
-      clearTimeout(debounceTimer)
-      debounceTimer = null
-    }
-
-    const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
-    watchedPath = path
-    if (!existsSync(path)) return
-
-    const dir = dirname(path)
-    const targetName = basename(path)
-
-    const notifyChange = (): void => {
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => {
-        try {
-          if (!existsSync(path)) return
-          const content = readFileSync(path, 'utf-8')
-
-          // Self-write echo suppression: if the content on disk is exactly
-          // what this process itself most recently wrote to this path, this
-          // fs event is a stale/coalesced notification for our own write
-          // (e.g. the create-then-immediately-watch race), not a genuine
-          // external edit. Pushing it anyway would stomp any newer in-memory
-          // edit and cancel its pending write — see
-          // fix-note-content-reverts-to-template-on-edit. Skip the push (and
-          // leave any pending renderer write timer alone) in that case.
-          if (lastWrittenContent.get(path) === content) {
-            logger.info('daily-note watcher: suppressed self-write echo', { path })
-            return
-          }
-
-          const { note, raw, mintedIds } = parseDailyNote(content, date)
-          // fix-gidless-task-id-not-persisted: persist BEFORE recording known
-          // ids / pushing to the renderer. This does its own temp-file +
-          // rename write and records it via recordWrittenContent, so the fs
-          // event it triggers is caught by the self-write-echo check above on
-          // the NEXT invocation of notifyChange — it won't recurse into this
-          // one (that check already ran for the event we're handling now).
-          persistMintedGids(path, note, raw, mintedIds)
-          recordKnownIds(path, getTaskIds(note))
-          logger.info('daily-note watcher: reparsed after change', { path, taskCount: note.tasks.length })
-          const win = getMainWindow()
-          if (win && !win.isDestroyed()) {
-            win.webContents.send('daily-note:changed', note)
-          }
-        } catch {
-          // File may be mid-write (temp-file swap in progress); ignore, the
-          // next fs event (the rename completing) will retrigger this.
-        }
-      }, WATCH_DEBOUNCE_MS)
-    }
-
-    // Watch the parent directory, not the file itself: Obsidian (and our own
-    // write-back) saves atomically via write-temp-then-rename, which swaps
-    // the file's inode. fs.watch() on a specific path can silently stop
-    // reporting further changes once that swap happens (a well-known
-    // macOS/APFS + Linux/inotify limitation, since the watch descriptor is
-    // tied to the original inode). Watching the containing directory and
-    // filtering by filename survives the rename because the directory itself
-    // is never replaced.
-    const watcher = watch(dir, (_eventType, filename) => {
-      if (filename && filename !== targetName) return
-      logger.info('daily-note watcher: fs event', { path, filename })
-      notifyChange()
-    })
-    watcher.unref()
-    activeWatcher = watcher
-    logger.info('daily-note watcher: started', { path, dir })
+    addDailyNoteWatchRef(date, getMainWindow, settings)
   })
 
-  ipcMain.handle('daily-note:unwatch', () => {
-    if (activeWatcher) {
-      activeWatcher.close()
-      activeWatcher = null
-      logger.info('daily-note watcher: stopped', { path: watchedPath })
-    }
-    if (debounceTimer) {
-      clearTimeout(debounceTimer)
-      debounceTimer = null
-    }
-    watchedPath = null
+  ipcMain.handle('daily-note:unwatch', (_event, date: string) => {
+    const settings = resolveVaultSettings()
+    if (!settings) return
+    removeDailyNoteWatchRef(date, getMainWindow, settings)
   })
 
   // Test-only: never registered outside test mode, so it's unreachable from
