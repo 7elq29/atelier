@@ -1062,14 +1062,27 @@ input[type='range'] {
   flex-shrink: 0;
 }
 .resume-btn {
-  font-size: 12.5px;
-  padding: 1px 7px;
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 2px 8px;
   border-radius: 100px;
-  background: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--accent);
-  border: 1px solid var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
   flex-shrink: 0;
   cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.session-row.closed:hover .resume-btn,
+.session-row.closed.active .resume-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+.resume-btn:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
 }
 .row-menu-btn {
   opacity: 0;

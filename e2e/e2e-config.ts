@@ -44,9 +44,8 @@ export async function openReviewCommentPopover(reviewPane: Locator): Promise<voi
 }
 export async function reconnectClosedSessionFromHistory(page: Page, sessionId: string): Promise<void> {
   const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
-  await historyRow.click()
-  await expect(page.getByTestId('session-disconnected-panel')).toBeVisible({ timeout: 15_000 })
-  await page.getByTestId('session-reconnect-button').click()
+  await historyRow.hover()
+  await historyRow.getByTestId('resume-button').click()
   await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 90_000 })
 }
 

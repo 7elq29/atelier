@@ -22,6 +22,7 @@ interface SidebarProps {
   onDelete: (sessionId: string) => void
   onFork: (sessionId: string) => void
   onRestart: (sessionId: string) => void
+  onReconnectSession: (sessionId: string) => void
 
   // ── 06-session-organization ──────────────────────────────────────────
   groups: SessionGroupRecord[]
@@ -448,6 +449,7 @@ function SessionRow({
   onDelete,
   onFork,
   onRestart,
+  onReconnect,
   onAddTag,
   onRemoveTag,
   onSetNotes,
@@ -473,6 +475,7 @@ function SessionRow({
   onDelete: () => void
   onFork: () => void
   onRestart: () => void
+  onReconnect: () => void
   onAddTag: (tag: string) => void
   onRemoveTag: (tag: string) => void
   onSetNotes: (notes: string) => void
@@ -518,7 +521,7 @@ function SessionRow({
 
   return (
     <div
-      className={'session-row' + (active ? ' active' : '')}
+      className={'session-row' + (active ? ' active' : '') + (closed ? ' closed' : '')}
       data-testid="session-row"
       data-hint-session-row=""
       data-session-id={session.id}
@@ -598,6 +601,20 @@ function SessionRow({
         </div>
       )}
       {!closed && session.pinned && <span className="pin-icon hide-on-collapse">📌</span>}
+      {closed && !isTerminal && (
+        <button
+          type="button"
+          className="resume-btn hide-on-collapse"
+          data-testid="resume-button"
+          title="Reconnect session"
+          onClick={(e) => {
+            e.stopPropagation()
+            onReconnect()
+          }}
+        >
+          Reconnect
+        </button>
+      )}
       <button
         className="row-menu-btn hide-on-collapse"
         data-testid="session-menu-button"
@@ -743,6 +760,7 @@ export default function Sidebar({
   onDelete,
   onFork,
   onRestart,
+  onReconnectSession,
   groups,
   statuses,
   staleSessionIds,
@@ -961,6 +979,7 @@ export default function Sidebar({
         onDelete={() => onDelete(session.id)}
         onFork={() => onFork(session.id)}
         onRestart={() => onRestart(session.id)}
+        onReconnect={() => onReconnectSession(session.id)}
         onAddTag={(tag) => onAddTag(session.id, tag)}
         onRemoveTag={(tag) => onRemoveTag(session.id, tag)}
         onSetNotes={(notes) => onSetNotes(session.id, notes)}

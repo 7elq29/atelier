@@ -546,18 +546,29 @@ export default function App(): JSX.Element {
     sessionWorkspace.hydrateSnapshot(session.id)
   }
 
+  const reconnectSessionById = useCallback(
+    async (sessionId: string): Promise<void> => {
+      const session = allSessions.find((s) => s.id === sessionId)
+      if (!session) return
+      if (sessionId !== activeSessionId) {
+        await selectSession(session)
+      }
+      if (session.closedAt) {
+        await sessions.resumeSession(sessionId)
+        return
+      }
+      if (!hasSessionMessages(sessionId)) {
+        await sessions.loadSessionMessages(sessionId)
+      }
+      await sessions.reconnectSession(sessionId)
+    },
+    [activeSessionId, allSessions, selectSession, sessions]
+  )
+
   const handleSessionReconnect = useCallback(async (): Promise<void> => {
     if (!activeSessionId) return
-    const session = allSessions.find((s) => s.id === activeSessionId)
-    if (session?.closedAt) {
-      await sessions.resumeSession(activeSessionId)
-      return
-    }
-    if (!hasSessionMessages(activeSessionId)) {
-      await sessions.loadSessionMessages(activeSessionId)
-    }
-    await sessions.reconnectSession(activeSessionId)
-  }, [activeSessionId, allSessions, sessions])
+    await reconnectSessionById(activeSessionId)
+  }, [activeSessionId, reconnectSessionById])
 
   const openLocalTerminal = useCallback(async () => {
     const home = await window.atelier.getHomedir()
@@ -1229,6 +1240,7 @@ export default function App(): JSX.Element {
           onDelete={(id) => handleDeleteSession(id)}
           onFork={(id) => void sessions.forkSession(id).then((forked) => void selectSession(forked))}
           onRestart={(id) => void sessions.restartSession(id).then((forked) => void selectSession(forked))}
+          onReconnectSession={(id) => void reconnectSessionById(id)}
           groups={sessions.groups}
           statuses={sessions.statuses}
           staleSessionIds={sessions.staleSessionIds}
