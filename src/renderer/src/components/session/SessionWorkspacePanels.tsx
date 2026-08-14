@@ -98,7 +98,6 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
             <div className={`tab-content${activeTab === 'files' ? '' : ' hidden'}`} data-tab="files">
               <FilesPanel
                 projectPath={workspacePath}
-                pathResolutionRoot={session.projectPath}
                 sessionId={sessionId}
                 hostname={session.hostname}
                 effectiveTheme={effectiveTheme}

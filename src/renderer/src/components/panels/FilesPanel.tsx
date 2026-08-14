@@ -279,8 +279,7 @@ export default function FilesPanel({
   onOpenFileQuickOpen,
   initialFilesTree,
   profileBar = null,
-  fileTreeRoots = null,
-  pathResolutionRoot
+  fileTreeRoots = null
 }: {
   projectPath: string
   sessionId?: string
@@ -305,10 +304,9 @@ export default function FilesPanel({
   initialFilesTree?: FileTreeNode[] | null
   profileBar?: ProfileBarInfo | null
   fileTreeRoots?: FileTreeRoot[] | null
-  /** Monorepo root for resolving relative paths (profile sessions use projectPath, not worktree). */
-  pathResolutionRoot?: string
 }): JSX.Element {
-  const browseRoot = pathResolutionRoot ?? projectPath
+  /** Harness cwd / worktree — where files are actually read and written. */
+  const browseRoot = projectPath
   const [localHomeDir, setLocalHomeDir] = useState<string | null>(null)
   useEffect(() => {
     if (hostname) return
@@ -321,6 +319,7 @@ export default function FilesPanel({
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const nextTabIdRef = useRef(0)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [openError, setOpenError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set())
   const [dirChildren, setDirChildren] = useState<Map<string, FileTreeNode[]>>(new Map())
@@ -611,6 +610,7 @@ export default function FilesPanel({
     const editor = editorRef.current
     if (!path || !editor) return
     setSaveError(null)
+    setOpenError(null)
     const result = await window.atelier.filesWrite(path, editor.getValue(), hostname)
     if (result.ok) {
       setOpenTabs((prev) => prev.map((t) => (t.path === path ? { ...t, isDirty: false } : t)))
@@ -764,6 +764,7 @@ export default function FilesPanel({
     if (active?.path === path && cachedResult === undefined) {
       setLocationInput(path)
       setSaveError(null)
+      setOpenError(null)
       await revealInTree(path)
       return
     }
@@ -789,6 +790,7 @@ export default function FilesPanel({
 
     setLocationInput(path)
     setSaveError(null)
+    setOpenError(null)
     await revealInTree(path)
   }
 
@@ -826,6 +828,7 @@ export default function FilesPanel({
     setActiveTabId(tabId)
     setLocationInput(tab.path ?? projectPath)
     setSaveError(null)
+    setOpenError(null)
     if (tab.path) void revealInTree(tab.path)
   }
 
@@ -863,6 +866,7 @@ export default function FilesPanel({
     locationCommitInFlightRef.current = true
     setLocationInput(resolvedPath)
     setCompletions([])
+    setOpenError(null)
     try {
       if (await window.atelier.filesIsDirectory(resolvedPath, hostname)) {
         if (mySeq !== openSeqRef.current) return
@@ -884,7 +888,7 @@ export default function FilesPanel({
         try {
           setLocationEditing(false)
           await openDirectoryInView(parentDir, mySeq)
-          setSaveError(`Could not open ${basenamePath(resolvedPath)}`)
+          setOpenError(`Could not open ${basenamePath(resolvedPath)}`)
           return
         } catch {
           if (mySeq !== openSeqRef.current) return
@@ -892,7 +896,7 @@ export default function FilesPanel({
       }
       setLocationInput(resolvedPath)
       setLocationEditing(false)
-      setSaveError(`Could not open ${basenamePath(resolvedPath)}`)
+      setOpenError(`Could not open ${basenamePath(resolvedPath)}`)
     } finally {
       locationCommitInFlightRef.current = false
     }
@@ -1280,7 +1284,7 @@ export default function FilesPanel({
             )}
 
             {/* Save error toast */}
-            {saveError && (
+            {(saveError || openError) && (
               <div
                 style={{
                   position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)',
@@ -1289,7 +1293,7 @@ export default function FilesPanel({
                   zIndex: 10, whiteSpace: 'nowrap',
                 }}
               >
-                Save failed: {saveError}
+                {saveError ? `Save failed: ${saveError}` : openError}
               </div>
             )}
           </div>

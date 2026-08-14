@@ -304,11 +304,17 @@ export async function readFileForPreview(path: string, sshHost?: string | null):
     }
     if (IMAGE_EXTENSIONS.has(ext)) {
       const { stdout, stderr, code } = await sshExec(sshHost, `base64 ${remoteFilePath(path)}`)
+      if (code !== 0) {
+        logger.warn('files:read:remote:failed', { path, sshHost, code, stderr: stderr.trim().slice(0, 200) })
+      }
       assertRemoteCommandOk(code, stderr, path, 'base64 read')
       const mime = MIME_BY_EXT[ext] ?? 'application/octet-stream'
       return { kind: 'image' as FileKind, content: `data:${mime};base64,${stdout.replace(/\s/g, '')}`, extension: ext }
     }
     const { stdout, stderr, code } = await sshExec(sshHost, `cat ${remoteFilePath(path)}`)
+    if (code !== 0) {
+      logger.warn('files:read:remote:failed', { path, sshHost, code, stderr: stderr.trim().slice(0, 200) })
+    }
     assertRemoteCommandOk(code, stderr, path, 'read')
     if (HTML_EXTENSIONS.has(ext)) {
       return { kind: 'html' as FileKind, content: stdout, extension: ext }

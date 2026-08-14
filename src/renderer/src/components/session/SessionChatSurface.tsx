@@ -56,6 +56,7 @@ export function SessionChatSurface({
 }): JSX.Element {
   const messages = useSessionMessages(session.id)
   const workspaceRoot = sessionFileLinkWorkspaceRoot(session)
+  const projectRoot = session.worktreePath ?? session.projectPath
 
   useEffect(() => {
     if (pendingJumpMessageId == null) return
@@ -81,7 +82,7 @@ export function SessionChatSurface({
           onMatchCount={onMatchCount}
           onOpenPlanFile={onOpenFileInFiles}
           workspaceRoot={workspaceRoot}
-          projectRoot={session.projectPath}
+          projectRoot={projectRoot}
           filePathCandidates={filePathCandidates}
           onOpenFileInFiles={onOpenFileInFiles}
           sdkChrome={sdkChrome}
@@ -99,7 +100,7 @@ export function SessionChatSurface({
           onAddComment={onAddComment}
           onUpdateComment={onUpdateComment}
           workspaceRoot={workspaceRoot}
-          projectRoot={session.projectPath}
+          projectRoot={projectRoot}
           onOpenFileInFiles={onOpenFileInFiles}
         />
       ) : null}

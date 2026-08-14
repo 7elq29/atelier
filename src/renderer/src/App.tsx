@@ -50,7 +50,7 @@ import type {
 import { FTS_SNIPPET_START, FTS_SNIPPET_END, parseStructuredContent } from '../../shared/chat-content'
 import { isClaudePlanPath } from '../../shared/claude-plan-path'
 import { findPlanCapEdition } from '../../shared/plan-cap-editions'
-import { resolveSessionFilePath, collectFilePathCandidates, sessionFileLinkWorkspaceRoot } from './components/chat/file-path-links'
+import { resolveSessionFilePath, collectFilePathCandidates, sessionFileLinkWorkspaceRoot, remapSessionFilePathToWorktree } from './components/chat/file-path-links'
 import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
 import type { DiffSummary, DiffFileChange } from '../../shared/panel-types'
 
@@ -80,11 +80,15 @@ function resolveOpenFilePath(
   candidates: readonly string[] = []
 ): string {
   const trimmed = rawPath.trim()
-  if (!trimmed || trimmed.startsWith('/') || trimmed.startsWith('~')) return trimmed
+  if (!trimmed) return trimmed
+  if (session) {
+    const remapped = remapSessionFilePathToWorktree(trimmed, session)
+    if (remapped !== trimmed) return remapped
+  }
+  if (trimmed.startsWith('/') || trimmed.startsWith('~')) return trimmed
   const workspaceRoot = session ? sessionFileLinkWorkspaceRoot(session) : ''
-  const projectRoot = session?.projectPath ?? workspaceRoot
   if (!workspaceRoot) return trimmed
-  return resolveSessionFilePath(trimmed, workspaceRoot, projectRoot, candidates) ?? trimmed
+  return resolveSessionFilePath(trimmed, workspaceRoot, workspaceRoot, candidates) ?? trimmed
 }
 
 function findPreviousPlanMarkdown(messages: { content: string }[]): string | undefined {

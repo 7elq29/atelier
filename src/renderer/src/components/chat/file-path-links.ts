@@ -40,30 +40,36 @@ function basenameOfPath(path: string): string {
   return path.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? path
 }
 
-/** Prefer cap/touched paths first — basename-only links like `config.go` match the file Claude edited. */
+function isAbsoluteFilePath(path: string): boolean {
+  return path.startsWith('/') || path.startsWith('~')
+}
+
+/** Prefer absolute cap/files paths over git-relative duplicates, then shortest path. */
 function findPathByBasename(basename: string, candidates: readonly string[]): string | null {
   const want = basename.toLowerCase()
   const matches = candidates.filter((p) => basenameOfPath(p).toLowerCase() === want)
   if (matches.length === 0) return null
   if (matches.length === 1) return matches[0]!
-  return [...matches].sort((a, b) => a.length - b.length)[0]!
+  return [...matches].sort((a, b) => {
+    const absDiff = Number(isAbsoluteFilePath(b)) - Number(isAbsoluteFilePath(a))
+    if (absDiff !== 0) return absDiff
+    return a.length - b.length
+  })[0]!
 }
 
-function joinToProjectRoot(relativeOrAbs: string, workspaceRoot: string, projectRoot: string): string {
-  if (relativeOrAbs.startsWith('~') || relativeOrAbs.startsWith('/')) return relativeOrAbs
-  const root = (projectRoot || workspaceRoot).replace(/\/$/, '')
+function joinToWorkspaceRoot(relativeOrAbs: string, workspaceRoot: string): string {
+  if (isAbsoluteFilePath(relativeOrAbs)) return relativeOrAbs
+  const root = workspaceRoot.replace(/\/$/, '')
   return `${root}/${relativeOrAbs.replace(/^\.\//, '')}`
 }
 
-/** Workspace root for joining repo-relative chat file paths (profile sessions use monorepo root). */
+/** Session cwd for file links — the worktree when present, else projectPath. */
 export function sessionFileLinkWorkspaceRoot(session: {
   profileId?: string | null
   worktreePath?: string | null
   projectPath: string
 }): string {
-  return session.profileId
-    ? session.projectPath
-    : (session.worktreePath ?? session.projectPath)
+  return session.worktreePath ?? session.projectPath
 }
 
 export function collectFilePathCandidates(sources: {
@@ -88,10 +94,37 @@ export function collectFilePathCandidates(sources: {
   return out
 }
 
+function extractRelativeUnderRoot(path: string, root: string): string | null {
+  const normalized = path.trim().replace(/\/$/, '')
+  const normalizedRoot = root.trim().replace(/\/$/, '')
+  if (!normalizedRoot) return null
+  if (normalized === normalizedRoot) return ''
+  if (normalized.startsWith(`${normalizedRoot}/`)) return normalized.slice(normalizedRoot.length + 1)
+  if (normalizedRoot.startsWith('~/') && normalized.startsWith('~/')) {
+    const rootTail = normalizedRoot.slice(2)
+    const pathTail = normalized.slice(2)
+    if (pathTail === rootTail) return ''
+    if (pathTail.startsWith(`${rootTail}/`)) return pathTail.slice(rootTail.length + 1)
+  }
+  return null
+}
+
+/** Rewrite paths rooted at the profile monorepo dir to the active session worktree. */
+export function remapSessionFilePathToWorktree(
+  path: string,
+  session: { projectPath: string; worktreePath?: string | null }
+): string {
+  const worktreePath = session.worktreePath
+  if (!worktreePath || worktreePath === session.projectPath) return path
+  const rel = extractRelativeUnderRoot(path, session.projectPath)
+  if (rel == null) return path
+  return joinToWorkspaceRoot(rel, worktreePath)
+}
+
 export function resolveSessionFilePath(
   raw: string,
   workspaceRoot: string,
-  projectRoot: string,
+  _projectRoot: string,
   candidates?: readonly string[]
 ): string | null {
   const trimmed = raw.trim()
@@ -101,11 +134,9 @@ export function resolveSessionFilePath(
   if (trimmed.startsWith('~') || trimmed.startsWith('/')) return trimmed
   if (isBasenameOnly(trimmed) && candidates?.length) {
     const match = findPathByBasename(trimmed, candidates)
-    if (match) return joinToProjectRoot(match, workspaceRoot, projectRoot)
+    if (match) return joinToWorkspaceRoot(match, workspaceRoot)
   }
-  const root = workspaceRoot.replace(/\/$/, '')
-  const rel = trimmed.replace(/^\.\//, '')
-  return `${root}/${rel}`
+  return joinToWorkspaceRoot(trimmed, workspaceRoot)
 }
 
 function isInsideMarkdownLink(whole: string, offset: number, matchEnd: number): boolean {
