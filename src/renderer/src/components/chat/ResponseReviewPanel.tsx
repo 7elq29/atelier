@@ -75,7 +75,8 @@ function nextCommentId(): string {
 }
 
 function buildReviewBlocks(target: ReviewPaneTarget): PlanReviewRenderBlock[] {
-  const previous = target.kind === 'plan' ? target.previousContent : undefined
+  const previous =
+    target.kind === 'plan' || target.kind === 'file' ? target.previousContent : undefined
   return buildPlanReviewRenderBlocks(target.content, previous)
 }
 
@@ -417,7 +418,7 @@ export default function ResponseReviewPanel({
         style={paneWidthPx != null ? { width: paneWidthPx, flex: '0 0 auto' } : { width: `${DEFAULT_PANE_FRACTION * 100}%` }}
       >
         <div className="response-review-head">
-          <span data-testid="response-review-title">{reviewPaneTitle(target.kind)}</span>
+          <span data-testid="response-review-title">{reviewPaneTitle(target)}</span>
           <span className="response-review-sub">{reviewPaneSubtitle(target)}</span>
           <button
             type="button"

@@ -2,11 +2,13 @@ import {
   getOutsideWorkspaceCapFileDiff,
   getOutsideWorkspaceCapTextPairDiff,
   getPathWorkingTreeNumstat,
+  getWorkingTreeNumstatMap,
   latestReflogSubject,
   listCommitChangedPaths,
   listCommitsInRange,
   resolveHead,
-  getFileDiff
+  getFileDiff,
+  type WorkingTreeNumstat
 } from '../panels/git'
 import {
   filePathsForFileEditTool,
@@ -147,6 +149,33 @@ function isPullLikeReflog(subject: string): boolean {
   if (s.includes('pull')) return true
   if (s.includes('fetch') && (s.includes('merge') || s.includes('fast-forward'))) return true
   return false
+}
+
+/** True when a Bash command may revert, commit, or otherwise mutate git state affecting the cap. */
+export function bashCommandMayAffectSessionChanges(command: string): boolean {
+  const normalized = command.replace(/\\(?:\r?\n|\r)/g, ' ').trim()
+  return /\bgit(?:\s|$|\s+[-\w@]+=)*\s+(?:revert|reset|checkout|restore|clean|commit|merge|cherry-pick|am\b|stash(?:\s+(?:pop|apply|restore)))/i.test(
+    normalized
+  )
+}
+
+type NumstatMap = Map<string, WorkingTreeNumstat>
+
+function lookupBatchedNumstat(map: NumstatMap, gitPath: string): WorkingTreeNumstat | null {
+  const direct = map.get(gitPath)
+  if (direct) {
+    return direct.additions > 0 || direct.deletions > 0 ? direct : null
+  }
+  for (const [path, stats] of map) {
+    if (
+      path === gitPath ||
+      path.endsWith(`/${gitPath}`) ||
+      gitPath.endsWith(`/${path}`)
+    ) {
+      return stats.additions > 0 || stats.deletions > 0 ? stats : null
+    }
+  }
+  return null
 }
 
 export function registerTouchedPathFromToolCall(
@@ -380,7 +409,8 @@ async function capPathWorkingTreeStats(
   workspacePath: string,
   capPath: string,
   hostname: string | null,
-  projectPath: string
+  projectPath: string,
+  numstatByRepo: Map<string, NumstatMap>
 ): Promise<{ additions: number; deletions: number } | null> {
   if (isClaudePlanPath(capPath)) {
     const diskStats = await fallbackFileStats(workspacePath, capPath, hostname)
@@ -402,10 +432,14 @@ async function capPathWorkingTreeStats(
   }
   const ctx = await resolveCapGitContext(capPath, workspacePath, hostname)
   const gitPath = ctx?.gitRelative ?? capPath
-  const numstatRoot = ctx?.repoRoot ?? resolveSessionWorkspaceRoot(workspacePath)
-  let stats = await getPathWorkingTreeNumstat(numstatRoot, gitPath, hostname)
-  if (!stats) stats = await fallbackFileStats(workspacePath, capPath, hostname)
-  return stats
+  const repoRoot = ctx?.repoRoot ?? resolveSessionWorkspaceRoot(workspacePath)
+  const repoMap = numstatByRepo.get(repoRoot)
+  if (repoMap) {
+    const fromMap = lookupBatchedNumstat(repoMap, gitPath)
+    if (fromMap) return fromMap
+    return null
+  }
+  return getPathWorkingTreeNumstat(repoRoot, gitPath, hostname)
 }
 
 async function capPathToGitRelative(
@@ -484,6 +518,9 @@ export async function buildSessionChangesCap(
   const now = new Date().toISOString()
   const fileItems: SessionChangesCapItem[] = []
 
+  const canonicalRows: Array<{ row: (typeof paths)[number]; capPath: string }> = []
+  const repoRoots = new Set<string>()
+
   for (const row of paths) {
     const capPath = await canonicalizeStoredCapPath(row.path, workspacePath, hostname, projectPath)
     if (capPath !== row.path) {
@@ -493,15 +530,34 @@ export async function buildSessionChangesCap(
         store.updateSessionTouchedPathPendingAt(sessionId, capPath, row.lastPendingAt)
       }
     }
+    canonicalRows.push({ row, capPath })
+    if (!isClaudePlanPath(capPath) && (await isCapPathInGitRepo(workspacePath, capPath, hostname))) {
+      const ctx = await resolveCapGitContext(capPath, workspacePath, hostname)
+      repoRoots.add(ctx?.repoRoot ?? resolveSessionWorkspaceRoot(workspacePath))
+    }
+  }
+
+  const numstatByRepo = new Map<string, NumstatMap>()
+  await Promise.all(
+    [...repoRoots].map(async (repoRoot) => {
+      numstatByRepo.set(repoRoot, await getWorkingTreeNumstatMap(repoRoot, hostname))
+    })
+  )
+
+  for (const { capPath } of canonicalRows) {
     const stats = await capPathWorkingTreeStats(
       store,
       sessionId,
       workspacePath,
       capPath,
       hostname,
-      projectPath
+      projectPath,
+      numstatByRepo
     )
-    if (!stats) continue
+    if (!stats) {
+      store.deleteSessionTouchedPath(sessionId, capPath)
+      continue
+    }
     const sortAt = now
     store.updateSessionTouchedPathPendingAt(sessionId, capPath, sortAt)
     fileItems.push({
@@ -545,7 +601,7 @@ export async function refreshSessionChangesCap(
   return buildSessionChangesCap(store, sessionId, workspacePath, hostname)
 }
 
-export async function handleFileEditToolCompleted(
+export async function registerFileEditToolTouchedPaths(
   store: SessionStore,
   sessionId: string,
   workspaceRoot: string,
@@ -554,7 +610,7 @@ export async function handleFileEditToolCompleted(
   toolName: string,
   input: unknown,
   projectPath?: string
-): Promise<SessionChangesCap> {
+): Promise<void> {
   const project = projectPath ?? workspaceRoot
   await registerTouchedPathFromToolCallAsync(
     store,
@@ -571,6 +627,28 @@ export async function handleFileEditToolCompleted(
     if (!path) continue
     store.updateSessionTouchedPathPendingAt(sessionId, path, now)
   }
+}
+
+export async function handleFileEditToolCompleted(
+  store: SessionStore,
+  sessionId: string,
+  workspaceRoot: string,
+  workspacePath: string,
+  hostname: string | null,
+  toolName: string,
+  input: unknown,
+  projectPath?: string
+): Promise<SessionChangesCap> {
+  await registerFileEditToolTouchedPaths(
+    store,
+    sessionId,
+    workspaceRoot,
+    workspacePath,
+    hostname,
+    toolName,
+    input,
+    projectPath
+  )
   return refreshSessionChangesCap(store, sessionId, workspacePath, hostname, { processHead: false })
 }
 

@@ -13,6 +13,8 @@ export {
   getOutsideWorkspaceCapTextPairDiff,
   getWorkingTreeFilePair,
   getPathWorkingTreeNumstat,
+  getWorkingTreeNumstatMap,
+  type WorkingTreeNumstat,
   invalidateGitRepository,
   latestReflogSubject,
   listCommitChangedPaths,

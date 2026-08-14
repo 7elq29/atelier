@@ -1,19 +1,28 @@
 /** Active document in the chat tab's right-hand review split pane. */
 export interface ReviewPaneTarget {
   sourceId: number
-  kind: 'response' | 'plan'
+  kind: 'response' | 'plan' | 'file'
   content: string
-  /** Previous plan markdown edition — plan review renders a line diff when set. */
+  /** Previous edition / HEAD baseline — plan and cap file review render inline diff when set. */
   previousContent?: string
   /** Set when opened from the session changes cap (not a transcript plan card). */
   capFilePath?: string
 }
 
-export function reviewPaneTitle(kind: ReviewPaneTarget['kind']): string {
-  return kind === 'plan' ? 'Plan review' : 'Response review'
+export function reviewPaneTitle(target: ReviewPaneTarget): string {
+  if (target.kind === 'plan') return 'Plan review'
+  if (target.kind === 'file') {
+    const path = target.capFilePath ?? ''
+    const base = path.replace(/\\/g, '/').split('/').filter(Boolean).pop()
+    return base ?? 'File review'
+  }
+  return 'Response review'
 }
 
 export function reviewPaneSubtitle(target: ReviewPaneTarget): string {
+  if (target.kind === 'file' && reviewPaneHasDiff(target)) {
+    return 'Inline diff · select text to comment'
+  }
   if (target.kind === 'plan' && target.previousContent != null && target.previousContent !== '') {
     return 'Formatted · inline diff · select text to comment'
   }
@@ -21,11 +30,14 @@ export function reviewPaneSubtitle(target: ReviewPaneTarget): string {
 }
 
 export function reviewPaneHasDiff(target: ReviewPaneTarget): boolean {
+  if (target.kind === 'file') return true
   return target.kind === 'plan' && target.previousContent != null && target.previousContent !== ''
 }
 
 export function reviewPaneCommentPrefix(kind: ReviewPaneTarget['kind']): string {
-  return kind === 'plan' ? 'Re plan' : 'Re response'
+  if (kind === 'plan') return 'Re plan'
+  if (kind === 'file') return 'Re file'
+  return 'Re response'
 }
 
 /** @deprecated Use DOM selection anchors — kept for mock fallback only. */

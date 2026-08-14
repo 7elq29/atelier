@@ -786,6 +786,34 @@ export async function getOutsideWorkspaceCapTextPairDiff(
   }
 }
 
+export type WorkingTreeNumstat = { additions: number; deletions: number }
+
+/** Batched working-tree + staged numstat for all paths vs HEAD (2 git calls per repo root). */
+export async function getWorkingTreeNumstatMap(
+  projectPath: string,
+  sshHost?: string | null
+): Promise<Map<string, WorkingTreeNumstat>> {
+  const map = new Map<string, WorkingTreeNumstat>()
+  const hasHead =
+    (await runGitAtRepoRoot(projectPath, ['rev-parse', '--verify', 'HEAD'], sshHost)).code === 0
+  const target = hasHead ? 'HEAD' : EMPTY_TREE
+  for (const args of [
+    ['diff', '--no-color', '--numstat', target],
+    ['diff', '--no-color', '--numstat', '--cached']
+  ]) {
+    const r = await runGitAtRepoRoot(projectPath, args, sshHost)
+    if (r.code !== 0) continue
+    for (const f of parseNumstatLines(r.stdout.split('\n'))) {
+      const prev = map.get(f.path) ?? { additions: 0, deletions: 0 }
+      map.set(f.path, {
+        additions: prev.additions + f.additions,
+        deletions: prev.deletions + f.deletions
+      })
+    }
+  }
+  return map
+}
+
 /** Working tree + staged numstat for one path vs HEAD (or empty tree when no HEAD). */
 export async function getPathWorkingTreeNumstat(
   projectPath: string,

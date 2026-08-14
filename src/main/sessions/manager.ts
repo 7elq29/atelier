@@ -47,7 +47,8 @@ import { homeDirForWorktreeHost } from './worktree-home'
 import { createWorktree, removeWorktree, worktreePathExists } from './worktree'
 import { warmRemoteGitHost } from '../panels/git'
 import { invalidateGitRepository } from '../panels/git-repository'
-import { handleFileEditToolCompleted, getSessionCapOutsideFileDiff, getSessionCapGitFileDiff, registerPlanFileInSessionChangesCap } from './session-changes-cap'
+import { getSessionCapOutsideFileDiff, getSessionCapGitFileDiff, registerPlanFileInSessionChangesCap, bashCommandMayAffectSessionChanges, registerFileEditToolTouchedPaths, refreshSessionChangesCap } from './session-changes-cap'
+import { isSessionFileEditTool } from '../../shared/session-file-edits'
 import { WorkspaceService, LOCAL_GIT_DEBOUNCE_MS } from './workspace-service'
 import { applyBashCdCommands } from './harness-cwd'
 import { SessionHarnessUiState } from './session-harness-ui'
@@ -277,8 +278,11 @@ export class SessionManager {
   /** Bumped on close/delete to drop stale `consume()` loops (pty generation pattern). */
   private readonly consumeGeneration = new Map<string, number>()
 
-  /** Debounced diff refresh after file-edit tools — coalesces rapid Edit/Write bursts. */
-  private readonly diffRefreshDebounce = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Debounced cap + workspace refresh after file edits / mutating git Bash — coalesces multi-tool turns. */
+  private readonly capRefreshDebounce = new Map<
+    string,
+    { timer: ReturnType<typeof setTimeout>; processHead: boolean }
+  >()
 
   private readonly harnessUi = new SessionHarnessUiState()
 
@@ -322,22 +326,29 @@ export class SessionManager {
     // No cache yet — preloadSession will include cap; avoid force-refreshing files.
   }
 
-  private scheduleDiffRefreshAfterFileEdit(sessionId: string): void {
-    const existing = this.diffRefreshDebounce.get(sessionId)
-    if (existing) clearTimeout(existing)
-    this.diffRefreshDebounce.set(
-      sessionId,
-      setTimeout(() => {
-        this.diffRefreshDebounce.delete(sessionId)
-        void this.refreshSessionWorkspace(sessionId, false).catch(() => undefined)
-      }, LOCAL_GIT_DEBOUNCE_MS)
-    )
+  private scheduleCapRefreshAfterMutation(sessionId: string, opts: { processHead: boolean }): void {
+    const existing = this.capRefreshDebounce.get(sessionId)
+    const processHead = (existing?.processHead ?? false) || opts.processHead
+    if (existing) clearTimeout(existing.timer)
+    const timer = setTimeout(() => {
+      this.capRefreshDebounce.delete(sessionId)
+      const session = this.getSession(sessionId)
+      if (!session) return
+      const workspacePath = session.worktreePath ?? session.projectPath
+      void refreshSessionChangesCap(this.store, sessionId, workspacePath, session.hostname, {
+        processHead
+      })
+        .then((cap) => this.publishSessionChangesCap(sessionId, cap))
+        .catch(() => undefined)
+      void this.refreshSessionWorkspace(sessionId, false).catch(() => undefined)
+    }, LOCAL_GIT_DEBOUNCE_MS)
+    this.capRefreshDebounce.set(sessionId, { timer, processHead })
   }
 
-  private clearDiffRefreshDebounce(sessionId: string): void {
-    const existing = this.diffRefreshDebounce.get(sessionId)
-    if (existing) clearTimeout(existing)
-    this.diffRefreshDebounce.delete(sessionId)
+  private clearCapRefreshDebounce(sessionId: string): void {
+    const existing = this.capRefreshDebounce.get(sessionId)
+    if (existing) clearTimeout(existing.timer)
+    this.capRefreshDebounce.delete(sessionId)
   }
 
   constructor(
@@ -1789,7 +1800,7 @@ export class SessionManager {
     this.creatingWorktree.delete(sessionId)
     this.pendingPanelPreload.delete(sessionId)
     this.workspacePreloadInFlight.delete(sessionId)
-    this.clearDiffRefreshDebounce(sessionId)
+    this.clearCapRefreshDebounce(sessionId)
     this.workspace?.evictSession(sessionId)
     this.sendTurnState(sessionId, false)
     this.resetHarnessUiForSession(sessionId)
@@ -1832,7 +1843,7 @@ export class SessionManager {
     this.creatingWorktree.delete(sessionId)
     this.pendingPanelPreload.delete(sessionId)
     this.workspacePreloadInFlight.delete(sessionId)
-    this.clearDiffRefreshDebounce(sessionId)
+    this.clearCapRefreshDebounce(sessionId)
     this.workspace?.evictSession(sessionId)
     this.portForwards?.removeAllForSession(sessionId)
     this.sendTurnState(sessionId, false)
@@ -2251,21 +2262,29 @@ export class SessionManager {
         if (!event.isError) {
           const session = this.getSession(sessionId)
           if (session) {
+            const toolName = pending.content.name
+            const input = pending.content.input
             const workspaceRoot = session.worktreePath ?? session.projectPath
             const workspacePath = workspaceRoot
-            void handleFileEditToolCompleted(
-              this.store,
-              sessionId,
-              workspaceRoot,
-              workspacePath,
-              session.hostname,
-              pending.content.name,
-              pending.content.input,
-              session.projectPath
-            ).then((cap) => {
-              this.publishSessionChangesCap(sessionId, cap)
-              this.scheduleDiffRefreshAfterFileEdit(sessionId)
-            })
+            if (isSessionFileEditTool(toolName)) {
+              void registerFileEditToolTouchedPaths(
+                this.store,
+                sessionId,
+                workspaceRoot,
+                workspacePath,
+                session.hostname,
+                toolName,
+                input,
+                session.projectPath
+              ).then(() => {
+                this.scheduleCapRefreshAfterMutation(sessionId, { processHead: false })
+              })
+            } else if (toolName === 'Bash') {
+              const command = (input as { command?: string } | undefined)?.command
+              if (command && bashCommandMayAffectSessionChanges(command)) {
+                this.scheduleCapRefreshAfterMutation(sessionId, { processHead: true })
+              }
+            }
           }
         }
         return

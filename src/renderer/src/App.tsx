@@ -940,6 +940,7 @@ export default function App(): JSX.Element {
       if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
       if (!session || !activeSessionId) return
       const ws = sessionWorkspace.workspaceBySession[activeSessionId]
+      const workspacePath = session.worktreePath ?? session.projectPath
       const pathCandidates = filePathCandidatesForSession(ws)
       const activeMessages = getSessionMessages(activeSessionId)
       if (isClaudePlanPath(path)) {
@@ -975,32 +976,41 @@ export default function App(): JSX.Element {
         return
       }
       if (opensInFilesTab) {
-        openChangedFileInFilesWithDiff(path)
+        const result = await window.atelier.capOutsideFileDiff(activeSessionId, workspacePath, path)
+        if (!result) return
+        setActiveTab('chat')
+        setReviewTarget({
+          sourceId: -1,
+          kind: 'file',
+          content: result.pair.modified,
+          previousContent: result.pair.original,
+          capFilePath: path
+        })
         return
       }
-      const workspacePath = session.worktreePath ?? session.projectPath
-      const revealed = revealPathInDiffSummary(path, ws?.diff)
-      const inSummary = ws?.diff?.files.some((f) => f.path === revealed || f.path === path)
-      let diffPath = revealed
-      if (!inSummary) {
-        const file = await window.atelier.capGitFileDiff(activeSessionId, workspacePath, path)
-        if (file) {
-          setInjectDiffBySession((prev) => ({
-            ...prev,
-            [activeSessionId]: { file, seq: (prev[activeSessionId]?.seq ?? 0) + 1 }
-          }))
-          diffPath = file.path
-        }
-      }
-      openChangedFileInDiff(diffPath)
+      const file = await window.atelier.capGitFileDiff(activeSessionId, workspacePath, path)
+      if (!file) return
+      const pair = await window.atelier.gitWorkingTreeFilePair(
+        workspacePath,
+        file.path,
+        file.status,
+        session.hostname ?? null
+      )
+      if (!pair) return
+      setActiveTab('chat')
+      setReviewTarget({
+        sourceId: -1,
+        kind: 'file',
+        content: pair.modified,
+        previousContent: pair.original,
+        capFilePath: path
+      })
     },
     [
       activeSessionId,
       allSessions,
       sessions.statuses,
-      sessionWorkspace.workspaceBySession,
-      openChangedFileInDiff,
-      openChangedFileInFilesWithDiff
+      sessionWorkspace.workspaceBySession
     ]
   )
 
