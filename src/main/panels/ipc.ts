@@ -19,7 +19,9 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
 
   // ── Git / diff / worktrees ─────────────────────────────────────────
   ipcMain.handle('panel:git:diff', (_e, projectPath: string, hostname?: string | null, force?: boolean) =>
-    git.getDiffSummary(projectPath, hostname, force)
+    force
+      ? git.getDiffSummaryWithHunks(projectPath, hostname, true)
+      : git.getDiffSummary(projectPath, hostname, force)
   )
   ipcMain.handle('panel:git:fileDiff', (_e, projectPath: string, filePath: string, hostname?: string | null) =>
     git.getFileDiff(projectPath, filePath, hostname)

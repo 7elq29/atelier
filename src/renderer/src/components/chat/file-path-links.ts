@@ -31,16 +31,78 @@ export function looksLikeFilePath(raw: string): boolean {
   return false
 }
 
+function isBasenameOnly(raw: string): boolean {
+  const s = raw.trim()
+  return looksLikeFilePath(s) && !s.includes('/') && !s.startsWith('~') && !s.startsWith('/')
+}
+
+function basenameOfPath(path: string): string {
+  return path.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? path
+}
+
+/** Prefer cap/touched paths first — basename-only links like `config.go` match the file Claude edited. */
+function findPathByBasename(basename: string, candidates: readonly string[]): string | null {
+  const want = basename.toLowerCase()
+  const matches = candidates.filter((p) => basenameOfPath(p).toLowerCase() === want)
+  if (matches.length === 0) return null
+  if (matches.length === 1) return matches[0]!
+  return [...matches].sort((a, b) => a.length - b.length)[0]!
+}
+
+function joinToProjectRoot(relativeOrAbs: string, workspaceRoot: string, projectRoot: string): string {
+  if (relativeOrAbs.startsWith('~') || relativeOrAbs.startsWith('/')) return relativeOrAbs
+  const root = (projectRoot || workspaceRoot).replace(/\/$/, '')
+  return `${root}/${relativeOrAbs.replace(/^\.\//, '')}`
+}
+
+/** Workspace root for joining repo-relative chat file paths (profile sessions use monorepo root). */
+export function sessionFileLinkWorkspaceRoot(session: {
+  profileId?: string | null
+  worktreePath?: string | null
+  projectPath: string
+}): string {
+  return session.profileId
+    ? session.projectPath
+    : (session.worktreePath ?? session.projectPath)
+}
+
+export function collectFilePathCandidates(sources: {
+  capPaths?: readonly string[]
+  filesList?: readonly { path: string; relativePath: string }[]
+  diffPaths?: readonly string[]
+}): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const add = (p: string) => {
+    const key = p.replace(/\\/g, '/')
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    out.push(p)
+  }
+  for (const p of sources.capPaths ?? []) add(p)
+  for (const e of sources.filesList ?? []) {
+    add(e.path)
+    add(e.relativePath)
+  }
+  for (const p of sources.diffPaths ?? []) add(p)
+  return out
+}
+
 export function resolveSessionFilePath(
   raw: string,
   workspaceRoot: string,
-  _projectRoot: string
+  projectRoot: string,
+  candidates?: readonly string[]
 ): string | null {
   const trimmed = raw.trim()
   if (!looksLikeFilePath(trimmed)) return null
   // Home-relative paths must not be joined to the session workspace — that
   // produces `~/project/~/.mcp.json` and worse on repeated resolution.
   if (trimmed.startsWith('~') || trimmed.startsWith('/')) return trimmed
+  if (isBasenameOnly(trimmed) && candidates?.length) {
+    const match = findPathByBasename(trimmed, candidates)
+    if (match) return joinToProjectRoot(match, workspaceRoot, projectRoot)
+  }
   const root = workspaceRoot.replace(/\/$/, '')
   const rel = trimmed.replace(/^\.\//, '')
   return `${root}/${rel}`
@@ -89,7 +151,8 @@ function tryLinkPath(
   offset: number,
   matchLen: number,
   workspaceRoot: string,
-  projectRoot: string
+  projectRoot: string,
+  candidates?: readonly string[]
 ): string {
   if (isInsideMarkdownLink(whole, offset, offset + matchLen)) return path
   if (isInsideWebUrl(whole, offset, offset + matchLen)) return path
@@ -98,23 +161,28 @@ function tryLinkPath(
   if (whole.slice(offset + matchLen).startsWith('](')) return path
   if (!path.includes('/') && isFilenameBasenameOfLongerPath(whole, offset)) return path
   if (!looksLikeFilePath(path)) return path
-  const resolved = resolveSessionFilePath(path, workspaceRoot, projectRoot)
+  const resolved = resolveSessionFilePath(path, workspaceRoot, projectRoot, candidates)
   if (!resolved) return path
   return `[${path}](${ATELIER_FILE_SCHEME}${encodeURIComponent(resolved)})`
 }
 
-function linkifyPlainSegment(text: string, workspaceRoot: string, projectRoot: string): string {
+function linkifyPlainSegment(
+  text: string,
+  workspaceRoot: string,
+  projectRoot: string,
+  candidates?: readonly string[]
+): string {
   let out = text.replace(TILDE_PATH_RE, (match, offset, whole) =>
-    tryLinkPath(match, whole, offset, match.length, workspaceRoot, projectRoot)
+    tryLinkPath(match, whole, offset, match.length, workspaceRoot, projectRoot, candidates)
   )
   out = out.replace(MULTI_SEGMENT_PATH_RE, (match, _dot, offset, whole) =>
-    tryLinkPath(match, whole, offset, match.length, workspaceRoot, projectRoot)
+    tryLinkPath(match, whole, offset, match.length, workspaceRoot, projectRoot, candidates)
   )
   out = out.replace(ABSOLUTE_PATH_RE, (match, offset, whole) =>
-    tryLinkPath(match, whole, offset, match.length, workspaceRoot, projectRoot)
+    tryLinkPath(match, whole, offset, match.length, workspaceRoot, projectRoot, candidates)
   )
   out = out.replace(SINGLE_FILE_RE, (match, offset, whole) =>
-    tryLinkPath(match, whole, offset, match.length, workspaceRoot, projectRoot)
+    tryLinkPath(match, whole, offset, match.length, workspaceRoot, projectRoot, candidates)
   )
   return out
 }
@@ -123,18 +191,19 @@ function linkifyPlainSegment(text: string, workspaceRoot: string, projectRoot: s
 export function linkifyFilePathsInMarkdown(
   markdown: string,
   workspaceRoot: string,
-  projectRoot: string
+  projectRoot: string,
+  candidates?: readonly string[]
 ): string {
   if (!workspaceRoot) return markdown
   const out: string[] = []
   let last = 0
   for (const m of markdown.matchAll(CODE_FENCE_RE)) {
     const idx = m.index ?? 0
-    out.push(linkifyPlainSegment(markdown.slice(last, idx), workspaceRoot, projectRoot))
+    out.push(linkifyPlainSegment(markdown.slice(last, idx), workspaceRoot, projectRoot, candidates))
     out.push(m[0])
     last = idx + m[0].length
   }
-  out.push(linkifyPlainSegment(markdown.slice(last), workspaceRoot, projectRoot))
+  out.push(linkifyPlainSegment(markdown.slice(last), workspaceRoot, projectRoot, candidates))
   return out.join('')
 }
 

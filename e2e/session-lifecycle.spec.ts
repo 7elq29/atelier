@@ -478,7 +478,7 @@ test.describe('02-session-lifecycle', () => {
     appendMainLog(userDataDir)
   })
 
-  test('connecting gate blocks switching to another session until connect finishes', async () => {
+  test('connecting session still allows switching to another session in the sidebar', async () => {
     const localRow = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
     await localRow.getByTestId('session-menu-button').click()
     await localRow.getByTestId('menu-close').click()
@@ -488,17 +488,12 @@ test.describe('02-session-lifecycle', () => {
     const remoteRow = page.locator(`[data-testid="session-row"][data-session-id="${remoteSessionId}"]`)
 
     await page.getByTestId('session-reconnect-button').click()
+    await expect(page.getByTestId('session-connecting-state')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('tab-strip')).toHaveCount(0)
 
-    // While panels are still gated (no tab strip), repeated clicks on another
-    // session must not change the active row — even if the connecting copy
-    // paints too briefly to catch in a single assertion.
-    for (let i = 0; i < 200; i++) {
-      if (await page.getByTestId('tab-strip').isVisible()) break
-      await remoteRow.click()
-      await expect(localRow).toHaveAttribute('data-active', 'true')
-      await page.waitForTimeout(25)
-    }
-
+    await remoteRow.click()
+    await expect(remoteRow).toHaveAttribute('data-active', 'true', { timeout: 5_000 })
+    await expect(localRow).not.toHaveAttribute('data-active', 'true')
     await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 90_000 })
   })
 
@@ -1266,7 +1261,7 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     await page.screenshot({ path: join(artifactsDir, '02-worktree-terminal-in-worktree.png') })
   })
 
-  test('use-worktree: closing session removes worktree and clears worktree_path', async () => {
+  test('use-worktree: closing session keeps worktree; reconnect after resume still uses worktree cwd', async () => {
     const projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-wt-close-'))
     execFileSync('git', ['init'], { cwd: projectDir })
     execFileSync(
@@ -1296,7 +1291,6 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     const worktreePath = sessionRows[0]!.worktree_path
     expect(worktreePath).toBeTruthy()
     expect(existsSync(worktreePath!)).toBe(true)
-    expect(execFileSync('git', ['-C', projectDir, 'worktree', 'list'], { encoding: 'utf8' })).toContain(worktreePath!)
 
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
     await row.click()
@@ -1315,23 +1309,25 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
         )
         return rows[0]
       })
-      .toEqual(expect.objectContaining({ worktree_path: null }))
-    const closedRow = await queryDb<{ closed_at: string | null }>(
-      page,
-      'SELECT closed_at FROM sessions WHERE id = ?',
-      [sessionId]
-    )
-    expect(closedRow[0]?.closed_at).toBeTruthy()
+      .toEqual(expect.objectContaining({ worktree_path: worktreePath, closed_at: expect.any(String) }))
+    expect(existsSync(worktreePath!), 'worktree directory must survive Close').toBe(true)
 
+    await reconnectClosedSessionFromHistory(page, sessionId)
     await expect
-      .poll(() => existsSync(worktreePath!), { timeout: 15_000, intervals: [500] })
-      .toBe(false)
-    expect(execFileSync('git', ['-C', projectDir, 'worktree', 'list'], { encoding: 'utf8' })).not.toContain(sessionId)
-    expect(
-      execFileSync('git', ['-C', projectDir, 'branch', '--list', `atelier-${sessionId.slice(0, 8)}`], {
-        encoding: 'utf8'
-      }).trim()
-    ).toBe('')
+      .poll(async () => {
+        const rows = await queryDb<{ worktree_path: string | null }>(
+          page,
+          'SELECT worktree_path FROM sessions WHERE id = ?',
+          [sessionId]
+        )
+        return rows[0]?.worktree_path
+      })
+      .toBe(worktreePath)
+    const activeComposer = page.locator('.composer-cache-entry.active')
+    await expect(activeComposer.getByTestId('composer-worktree-indicator')).toBeVisible({ timeout: 15_000 })
+    await expect(activeComposer.getByTestId('composer-context-claude-path')).toContainText(
+      worktreePath!.split('/').slice(-2).join('/')
+    )
   })
 
   test('use-worktree failure: non-git local path keeps session row with error', async () => {

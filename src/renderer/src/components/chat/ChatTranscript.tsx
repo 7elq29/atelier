@@ -120,6 +120,7 @@ export default function ChatTranscript({
   onOpenPlanFile,
   workspaceRoot,
   projectRoot,
+  filePathCandidates,
   onOpenFileInFiles,
   searchQuery,
   activeMatchIndex = -1,
@@ -137,6 +138,7 @@ export default function ChatTranscript({
   onOpenPlanFile?: (planFilePath: string) => void
   workspaceRoot?: string
   projectRoot?: string
+  filePathCandidates?: readonly string[]
   /** Opens a resolved absolute path in the Files tab (assistant markdown file links). */
   onOpenFileInFiles?: (absolutePath: string) => void
   /** Non-empty while the "Find in conversation" bar is active and has typed text. */
@@ -381,6 +383,7 @@ export default function ChatTranscript({
             }
             workspaceRoot={workspaceRoot}
             projectRoot={projectRoot}
+            filePathCandidates={filePathCandidates}
           />
         </div>
       )
@@ -570,6 +573,7 @@ export default function ChatTranscript({
               }
               workspaceRoot={workspaceRoot}
               projectRoot={projectRoot}
+              filePathCandidates={filePathCandidates}
             />
           </div>
         )
@@ -631,6 +635,7 @@ export default function ChatTranscript({
                 content={message.content}
                 workspaceRoot={workspaceRoot}
                 projectRoot={projectRoot}
+                filePathCandidates={filePathCandidates}
                 onOpenFileInFiles={onOpenFileInFiles}
               />
             )}

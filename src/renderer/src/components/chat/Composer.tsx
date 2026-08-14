@@ -688,6 +688,11 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       setFileList(mentionFilePaths)
       return undefined
     }
+    // Remote/devpod: never background-scan the workspace — wait for preload snapshot.
+    if (hostname) {
+      setFileList([])
+      return undefined
+    }
     let cancelled = false
     if (!projectPath) {
       setFileList([])

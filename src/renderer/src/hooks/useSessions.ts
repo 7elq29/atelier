@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type {
   CreateSessionOptions,
   ImageAttachment,
@@ -20,11 +20,16 @@ import type {
   SessionSdkChromeEvent,
   SessionToastEvent
 } from '../../../shared/harness-ui-types'
+import {
+  initSessionMessagesListeners,
+  patchSessionMessages,
+  removeSessionMessages,
+  setSessionMessages
+} from '../stores/session-messages-store'
 export interface UseSessionsResult {
   activeSessions: SessionRecord[]
   historySessions: SessionRecord[]
   hosts: RemoteHostOption[]
-  messagesBySession: Record<string, MessageRecord[]>
   groups: SessionGroupRecord[]
   statuses: Record<string, SessionStatus>
   allTags: string[]
@@ -74,6 +79,7 @@ export interface UseSessionsResult {
   exportTranscript: (sessionId: string, format: 'markdown' | 'json') => Promise<string | null>
   setColor: (sessionId: string, color: string) => Promise<void>
   setNotes: (sessionId: string, notes: string) => Promise<void>
+  setProjectPath: (sessionId: string, projectPath: string) => Promise<void>
   addTag: (sessionId: string, tag: string) => Promise<void>
   removeTag: (sessionId: string, tag: string) => Promise<void>
   setSessionGroup: (sessionId: string, groupId: string | null) => Promise<void>
@@ -95,7 +101,6 @@ export function useSessions(): UseSessionsResult {
   const [activeSessions, setActiveSessions] = useState<SessionRecord[]>([])
   const [historySessions, setHistorySessions] = useState<SessionRecord[]>([])
   const [hosts, setHosts] = useState<RemoteHostOption[]>([])
-  const [messagesBySession, setMessagesBySession] = useState<Record<string, MessageRecord[]>>({})
   const [groups, setGroups] = useState<SessionGroupRecord[]>([])
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>({})
   const [allTags, setAllTags] = useState<string[]>([])
@@ -112,8 +117,6 @@ export function useSessions(): UseSessionsResult {
   const [hookLogBySession, setHookLogBySession] = useState<Record<string, string[]>>({})
   const [worktreeProgressBySession, setWorktreeProgressBySession] = useState<Record<string, number>>({})
   const [staleSessionIds, setStaleSessionIds] = useState<Set<string>>(new Set())
-  const messagesRef = useRef(messagesBySession)
-  messagesRef.current = messagesBySession
 
   const refresh = useCallback(async () => {
     const [active, history, tags] = await Promise.all([
@@ -136,43 +139,7 @@ export function useSessions(): UseSessionsResult {
     window.atelier.listHosts().then(setHosts)
     window.atelier.listSessionStatuses().then(setStatuses)
 
-    const offMessage = window.atelier.onSessionMessage(({ sessionId, message }) => {
-      setMessagesBySession((prev) => {
-        const list = prev[sessionId] ?? []
-        const idx = list.findIndex((m) => m.id === message.id)
-        if (idx === -1) return { ...prev, [sessionId]: [...list, message] }
-        // Same id as an existing row (streamed-text finalization, or a
-        // tool-call flipping from running -> completed/error): replace in
-        // place rather than append, so the transcript never shows a
-        // duplicate row for what is still "one row per message" in SQLite.
-        const next = [...list]
-        next[idx] = message
-        return { ...prev, [sessionId]: next }
-      })
-    })
-    const offMessageRemoved = window.atelier.onSessionMessageRemoved(({ sessionId, messageId }) => {
-      setMessagesBySession((prev) => {
-        const list = prev[sessionId]
-        if (!list) return prev
-        const next = list.filter((m) => m.id !== messageId)
-        if (next.length === list.length) return prev
-        return { ...prev, [sessionId]: next }
-      })
-    })
-    const offDelta = window.atelier.onSessionStreamDelta(({ sessionId, messageId, text }) => {
-      // Token-level live render: patches the in-progress message's content
-      // directly in renderer state on every delta, without a DB round-trip
-      // — the eventual `session:message` push above commits the final text.
-      setMessagesBySession((prev) => {
-        const list = prev[sessionId]
-        if (!list) return prev
-        const idx = list.findIndex((m) => m.id === messageId)
-        if (idx === -1) return prev
-        const next = [...list]
-        next[idx] = { ...next[idx], content: text }
-        return { ...prev, [sessionId]: next }
-      })
-    })
+    const offMessages = initSessionMessagesListeners()
     const offLifecycle = window.atelier.onSessionLifecycle((event) => {
       if (event.type === 'session.deleted') {
         setHarnessCwdBySession((prev) => {
@@ -303,9 +270,7 @@ export function useSessions(): UseSessionsResult {
       setStaleSessionIds((prev) => { const next = new Set(prev); next.add(sessionId); return next })
     })
     return () => {
-      offMessage()
-      offMessageRemoved()
-      offDelta()
+      offMessages()
       offLifecycle()
       offStatus()
       offGroup()
@@ -345,12 +310,12 @@ export function useSessions(): UseSessionsResult {
     const { messages } = await window.atelier.resumeSession(sessionId)
     // Full stored transcript rendered immediately; the live reconnect (main
     // process) streams any NEW events in over session:message afterward.
-    setMessagesBySession((prev) => ({ ...prev, [sessionId]: messages }))
+    setSessionMessages(sessionId, messages)
   }, [])
 
   const loadSessionMessages = useCallback(async (sessionId: string): Promise<void> => {
     const messages = await window.atelier.listSessionMessages(sessionId)
-    setMessagesBySession((prev) => ({ ...prev, [sessionId]: messages }))
+    setSessionMessages(sessionId, messages)
   }, [])
 
   const reconnectSession = useCallback(async (sessionId: string): Promise<void> => {
@@ -370,12 +335,9 @@ export function useSessions(): UseSessionsResult {
   }, [])
 
   const addLocalMessage = useCallback((sessionId: string, content: string): void => {
-    setMessagesBySession((prev) => {
+    patchSessionMessages((prev) => {
       const list = prev[sessionId] ?? []
       const message: MessageRecord = {
-        // Negative id keeps this row out of the way of real DB-issued
-        // positive ids, which `onSessionMessage`'s dedup-by-id check above
-        // relies on to distinguish "new row" from "update existing row".
         id: -Date.now(),
         sessionId,
         role: 'system',
@@ -411,14 +373,14 @@ export function useSessions(): UseSessionsResult {
   const forkSession = useCallback(async (sessionId: string): Promise<SessionRecord> => {
     const forked = await window.atelier.forkSession(sessionId)
     const messages = await window.atelier.listSessionMessages(forked.id)
-    setMessagesBySession((prev) => ({ ...prev, [forked.id]: messages }))
+    setSessionMessages(forked.id, messages)
     return forked
   }, [])
 
   const restartSession = useCallback(async (sessionId: string): Promise<SessionRecord> => {
     const forked = await window.atelier.restartSession(sessionId)
     const messages = await window.atelier.listSessionMessages(forked.id)
-    setMessagesBySession((prev) => ({ ...prev, [forked.id]: messages }))
+    setSessionMessages(forked.id, messages)
     return forked
   }, [])
 
@@ -464,11 +426,7 @@ export function useSessions(): UseSessionsResult {
 
   const deleteSession = useCallback(async (sessionId: string): Promise<void> => {
     await window.atelier.deleteSession(sessionId)
-    setMessagesBySession((prev) => {
-      const next = { ...prev }
-      delete next[sessionId]
-      return next
-    })
+    removeSessionMessages(sessionId)
   }, [])
 
   const renameSession = useCallback(async (sessionId: string, name: string): Promise<void> => {
@@ -492,6 +450,10 @@ export function useSessions(): UseSessionsResult {
 
   const setNotes = useCallback(async (sessionId: string, notes: string): Promise<void> => {
     await window.atelier.setSessionNotes(sessionId, notes)
+  }, [])
+
+  const setProjectPath = useCallback(async (sessionId: string, projectPath: string): Promise<void> => {
+    await window.atelier.setSessionProjectPath(sessionId, projectPath)
   }, [])
 
   const addTag = useCallback(async (sessionId: string, tag: string): Promise<void> => {
@@ -543,7 +505,6 @@ export function useSessions(): UseSessionsResult {
     activeSessions,
     historySessions,
     hosts,
-    messagesBySession,
     groups,
     statuses,
     allTags,
@@ -582,6 +543,7 @@ export function useSessions(): UseSessionsResult {
     exportTranscript,
     setColor,
     setNotes,
+    setProjectPath,
     addTag,
     removeTag,
     setSessionGroup,

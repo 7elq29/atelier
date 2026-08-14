@@ -5,6 +5,7 @@ import type { AppNoteRecord } from '../../../shared/app-note-types'
 import { parseStructuredContent } from '../../../shared/chat-content'
 import SpendStatusChip from './SpendStatusChip'
 import { handleEmacsTextareaKeyDown } from '../palette-input-keys'
+import { useSessionMessagesMap } from '../hooks/useSessionMessages'
 
 interface SidebarProps {
   collapsed: boolean
@@ -26,9 +27,9 @@ interface SidebarProps {
   groups: SessionGroupRecord[]
   statuses: Record<string, SessionStatus>
   staleSessionIds: Set<string>
-  messagesBySession: Record<string, MessageRecord[]>
   onSetColor: (sessionId: string, color: string) => void
   onSetNotes: (sessionId: string, notes: string) => void
+  onSetProjectPath: (sessionId: string, projectPath: string) => void
   onAddTag: (sessionId: string, tag: string) => void
   onRemoveTag: (sessionId: string, tag: string) => void
   onReorderSessions: (groupId: string | null | undefined, orderedIds: string[]) => void
@@ -156,6 +157,7 @@ type SessionDetailPopoverProps = {
   onRemoveTag: (tag: string) => void
   onSetNotes: (notes: string) => void
   onSetColor: (color: string) => void
+  onSetProjectPath: (projectPath: string) => void
   onClose: () => void
 }
 
@@ -166,12 +168,18 @@ const SessionDetailPopover = forwardRef<HTMLDivElement, SessionDetailPopoverProp
     onRemoveTag,
     onSetNotes,
     onSetColor,
+    onSetProjectPath,
     onClose
   },
   ref
 ): JSX.Element {
   const [tagDraft, setTagDraft] = useState('')
   const [notesDraft, setNotesDraft] = useState(session.notes ?? '')
+  const [pathDraft, setPathDraft] = useState(session.projectPath)
+
+  useEffect(() => {
+    setPathDraft(session.projectPath)
+  }, [session.projectPath])
 
   function commitTag(): void {
     const trimmed = tagDraft.trim()
@@ -186,6 +194,36 @@ const SessionDetailPopover = forwardRef<HTMLDivElement, SessionDetailPopoverProp
       data-testid="session-detail-popover"
       onClick={(e) => e.stopPropagation()}
     >
+      <div className="sdp-section">
+        <div className="sdp-label">Project path</div>
+        <input
+          className="input project-path-input"
+          data-testid="session-project-path"
+          spellCheck={false}
+          value={pathDraft}
+          onChange={(e) => setPathDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              onSetProjectPath(pathDraft.trim())
+              onClose()
+            }
+          }}
+        />
+        <button
+          className="btn btn-sm btn-primary"
+          data-testid="apply-project-path-button"
+          style={{ marginTop: 6 }}
+          disabled={!pathDraft.trim() || pathDraft.trim() === session.projectPath}
+          onClick={() => {
+            onSetProjectPath(pathDraft.trim())
+            onClose()
+          }}
+        >
+          Apply
+        </button>
+      </div>
+
       <div className="sdp-section">
         <div className="sdp-label">Color</div>
         <div className="sdp-colors">
@@ -414,6 +452,7 @@ function SessionRow({
   onRemoveTag,
   onSetNotes,
   onSetColor,
+  onSetProjectPath,
   onDragStart,
   onDragOver,
   onDrop,
@@ -438,6 +477,7 @@ function SessionRow({
   onRemoveTag: (tag: string) => void
   onSetNotes: (notes: string) => void
   onSetColor: (color: string) => void
+  onSetProjectPath: (projectPath: string) => void
   onDragStart: (e: React.DragEvent) => void
   onDragOver: (e: React.DragEvent) => void
   onDrop: (e: React.DragEvent) => void
@@ -674,6 +714,7 @@ function SessionRow({
           onRemoveTag={onRemoveTag}
           onSetNotes={onSetNotes}
           onSetColor={onSetColor}
+          onSetProjectPath={onSetProjectPath}
           onClose={() => setDetailOpen(false)}
         />
       )}
@@ -705,9 +746,9 @@ export default function Sidebar({
   groups,
   statuses,
   staleSessionIds,
-  messagesBySession,
   onSetColor,
   onSetNotes,
+  onSetProjectPath,
   onAddTag,
   onRemoveTag,
   onReorderSessions,
@@ -735,6 +776,7 @@ export default function Sidebar({
   onRenameAppNote,
   onDeleteAppNote
 }: SidebarProps): JSX.Element {
+  const messagesBySession = useSessionMessagesMap()
   const [newGroupOpen, setNewGroupOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
@@ -923,6 +965,7 @@ export default function Sidebar({
         onRemoveTag={(tag) => onRemoveTag(session.id, tag)}
         onSetNotes={(notes) => onSetNotes(session.id, notes)}
         onSetColor={(color) => onSetColor(session.id, color)}
+        onSetProjectPath={(projectPath) => onSetProjectPath(session.id, projectPath)}
         worktreeProgress={worktreeProgressBySession[session.id]}
         shellRemoteHost={terminalShellHostBySessionId[session.id]}
         {...dragHandlers}

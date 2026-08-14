@@ -971,16 +971,17 @@ type: daily
 
 })
 
-// ── Carry-over on note creation (UC-2) ──────────────────────────────────
+// ── Carry suggestions after note creation ───────────────────────────────
 //
 // Own launch + own fixture vault (like the describe blocks above), since the
 // displayed date is fixed per-Electron-session via ATELIER_TEST_DATE and
 // this scenario inherently needs two dates: a prior day with an existing
 // note (seeded on disk) and a not-yet-existing "today" whose creation should
-// pull that prior day's still-open tasks forward. Both dates stay in ISO
-// week 31 (same as the main suite's 2026-07-31 fixture) to keep
+// scaffold an empty note and surface the prior day's open tasks in the carry
+// suggestions panel — not auto-copy them into the new file. Both dates stay
+// in ISO week 31 (same as the main suite's 2026-07-31 fixture) to keep
 // resolveNotePath's path segment predictable.
-test.describe('carry-over on note creation (UC-2)', () => {
+test.describe('carry suggestions after note creation', () => {
   const PRIOR_DATE = '2026-07-28'
   const NEW_DATE = '2026-07-29'
   const GID_CARRY_OPEN = '66666666-6666-4666-8666-666666666666'
@@ -1048,7 +1049,7 @@ type: daily
     await carryApp.close()
   })
 
-  test('creating a not-yet-existing note carries forward open/in-progress non-tracker tasks from the most recent prior note', async () => {
+  test('creating a not-yet-existing note scaffolds empty sections and lists prior open tasks as carry suggestions', async () => {
     // NEW_DATE's note doesn't exist yet, so the panel is in its empty/"create
     // note" state (DailyNotesSidebar.tsx renders `data-testid="create-daily-note"`
     // when `exists` is false) — drive the real UI affordance rather than
@@ -1062,52 +1063,33 @@ type: daily
 
     const content = readFileSync(newNotePath, 'utf-8')
 
-    // Carried tasks live under the new note's Tasks section, before Backlog.
-    const lines = content.split('\n')
-    const tasksHeaderIdx = lines.findIndex((l) => /^##\s+.*Tasks/i.test(l))
-    const backlogHeaderIdx = lines.findIndex((l) => /^###\s+.*Backlog/i.test(l))
-    expect(tasksHeaderIdx).toBeGreaterThanOrEqual(0)
-    expect(backlogHeaderIdx).toBeGreaterThan(tasksHeaderIdx)
-
-    const carryOpenLine = lines.find((l) => l.includes(GID_CARRY_OPEN))
-    const carryInProgressLine = lines.find((l) => l.includes(GID_CARRY_IN_PROGRESS))
-    expect(carryOpenLine, 'originally-open task should carry over').toBeTruthy()
-    expect(carryInProgressLine, 'originally-in-progress task should carry over').toBeTruthy()
-
-    // Both land under Tasks (before Backlog), preserve their original gid,
-    // and are normalized to open ("- [ ]") regardless of original status.
-    expect(lines.indexOf(carryOpenLine!)).toBeGreaterThan(tasksHeaderIdx)
-    expect(lines.indexOf(carryOpenLine!)).toBeLessThan(backlogHeaderIdx)
-    expect(carryOpenLine).toMatch(/^\s*-\s*\[ \]/)
-    expect(carryOpenLine).toContain(`[gid:: ${GID_CARRY_OPEN}]`)
-
-    expect(lines.indexOf(carryInProgressLine!)).toBeGreaterThan(tasksHeaderIdx)
-    expect(lines.indexOf(carryInProgressLine!)).toBeLessThan(backlogHeaderIdx)
-    expect(carryInProgressLine).toMatch(/^\s*-\s*\[ \]/)
-    expect(carryInProgressLine).toContain(`[gid:: ${GID_CARRY_IN_PROGRESS}]`)
-
-    // A done task and a tracker task must NOT carry forward.
+    // New note should come from the template only — no bulk copy from the prior day.
+    expect(content).not.toContain(GID_CARRY_OPEN)
+    expect(content).not.toContain(GID_CARRY_IN_PROGRESS)
     expect(content).not.toContain(GID_DONE_NOT_CARRIED)
     expect(content).not.toContain(GID_TRACKER_NOT_CARRIED)
 
-    // The carried task that already had a time block is also reflected in
-    // the live Timeline UI, since that's where the new note places it.
+    await expect(carryPage.locator('[data-testid="timeline-task"]')).toHaveCount(0)
+    await expect(carryPage.locator('[data-testid="carry-section"]')).toBeVisible()
+    await expect(carryPage.locator('[data-testid="carry-section-head"]')).toHaveText(`From ${PRIOR_DATE}`)
+    await expect(carryPage.locator('[data-testid="carry-suggestion-item"]')).toHaveCount(2)
     await expect(
-      carryPage.locator('[data-testid="timeline-task"]', { hasText: 'Standup carryover check' })
+      carryPage.locator('[data-testid="carry-suggestion-item"]', { hasText: 'Standup carryover check' })
+    ).toBeVisible()
+    await expect(
+      carryPage.locator('[data-testid="carry-suggestion-item"]', { hasText: 'In-progress backlog task' })
     ).toBeVisible()
 
-    // The originally-unscheduled ("In-progress backlog task") carry has no
-    // time block, so per UC-4's documented alternate flow — unchanged by the
-    // 54a grid rewrite, and matching the reference implementation's own
-    // behavior — a day-plan task with no parseable time block is excluded
-    // from the visual grid even though it's present in the note's data (and
-    // on disk, asserted above). It's not rendered as an "unscheduled-task"
-    // either, since its section is now 'day-plan' per where the new note
-    // places carried-forward tasks. This is a known UX gap (an untimed
-    // carried task is temporarily invisible until the user schedules or
-    // otherwise edits it) inherited from the reference design, not a defect
-    // introduced by this carry-over feature — asserting the disk state above
-    // is what actually proves UC-2 carry-over works.
+    const item = carryPage.locator('[data-testid="carry-suggestion-item"]', {
+      hasText: 'Standup carryover check'
+    })
+    await item.locator('[data-testid="carry-add-today"]').click()
+    await expect(item).toHaveCount(0)
+    await expect(
+      carryPage.locator('[data-testid="unscheduled-task"]', { hasText: 'Standup carryover check' })
+    ).toBeVisible()
+    expect(readFileSync(newNotePath, 'utf-8')).toContain(GID_CARRY_OPEN)
+    expect(readFileSync(priorNotePath, 'utf-8')).not.toContain(GID_CARRY_OPEN)
   })
 })
 

@@ -58,6 +58,20 @@ export function computePlanReviewDiff(previousText: string, currentText: string)
   return raw
 }
 
+/** Count line adds/dels for session changes cap — matches Plan review pane stats. */
+export function countPlanReviewDiffStats(
+  previousText: string,
+  currentText: string
+): { additions: number; deletions: number } {
+  let additions = 0
+  let deletions = 0
+  for (const line of computePlanReviewDiff(previousText, currentText)) {
+    if (line.kind === 'add') additions += 1
+    if (line.kind === 'del') deletions += 1
+  }
+  return { additions, deletions }
+}
+
 /** Plain read-only lines when there is no previous edition to diff against. */
 export function planReviewPlainLines(text: string): PlanReviewDiffLine[] {
   return splitPlanLines(text)

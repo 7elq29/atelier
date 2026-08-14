@@ -5,7 +5,8 @@
  * worktree at `<worktreeRoot>/<sessionId>` (default `~/.atelier/worktrees/<id>`)
  * on a fresh branch `atelier-<sessionId-prefix>`. Claude Code runs inside
  * that path instead of the main project root. The worktree and its branch
- * are cleaned up when the session is closed or deleted.
+ * are cleaned up when the session is deleted (Close keeps the worktree so
+ * Resume/Reconnect can return to the same checkout).
  *
  * For remote (devpod) sessions, git commands run over SSH using the same
  * `cd $HOME/... && git …` shell pattern as git-core (tilde paths must not
@@ -187,7 +188,7 @@ export async function removeWorktree(
 
   if (hostname) {
     try {
-      const remoteCmd = `git worktree remove ${shQuote(worktreePath)} --force`
+      const remoteCmd = `cd ${remoteCdTarget(repoPath)} && git worktree remove ${shQuote(worktreePath)} --force`
       await execFile('ssh', [...SSH_GIT_OPTS, hostname, '--', remoteCmd], {
         encoding: 'utf8',
         timeout: SSH_QUICK_TIMEOUT_MS
@@ -232,4 +233,19 @@ export async function removeWorktree(
   }
 
   logger.info('worktree: removal complete', { worktreePath, branch })
+}
+
+/** Whether a session worktree checkout directory still exists (local or remote). */
+export async function worktreePathExists(worktreePath: string, hostname?: string): Promise<boolean> {
+  if (!hostname) return existsSync(worktreePath)
+  try {
+    await execFile(
+      'ssh',
+      [...SSH_GIT_OPTS, hostname, '--', `test -d ${shQuote(worktreePath)}`],
+      { encoding: 'utf8', timeout: SSH_QUICK_TIMEOUT_MS }
+    )
+    return true
+  } catch {
+    return false
+  }
 }

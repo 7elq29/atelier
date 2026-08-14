@@ -127,6 +127,10 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
 
   ipcMain.handle('session:setNotes', (_event, sessionId: string, notes: string) => manager.setNotes(sessionId, notes))
 
+  ipcMain.handle('session:setProjectPath', async (_event, sessionId: string, projectPath: string) =>
+    manager.setProjectPath(sessionId, projectPath)
+  )
+
   ipcMain.handle('session:addTag', (_event, sessionId: string, tag: string) => manager.addTag(sessionId, tag))
 
   ipcMain.handle('session:removeTag', (_event, sessionId: string, tag: string) => manager.removeTag(sessionId, tag))
@@ -207,6 +211,12 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
     'session:capOutsideFileDiff',
     (_event, sessionId: string, workspacePath: string, capPath: string) =>
       manager.getCapOutsideFileDiff(sessionId, workspacePath, capPath)
+  )
+
+  ipcMain.handle(
+    'session:capGitFileDiff',
+    (_event, sessionId: string, workspacePath: string, capPath: string) =>
+      manager.getCapGitFileDiff(sessionId, workspacePath, capPath)
   )
 
   ipcMain.handle(

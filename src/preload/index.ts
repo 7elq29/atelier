@@ -186,6 +186,12 @@ const api = {
     capPath: string
   ): Promise<{ file: DiffFileChange; pair: DiffFileContentPair } | null> =>
     ipcRenderer.invoke('session:capOutsideFileDiff', sessionId, workspacePath, capPath),
+  capGitFileDiff: (
+    sessionId: string,
+    workspacePath: string,
+    capPath: string
+  ): Promise<DiffFileChange | null> =>
+    ipcRenderer.invoke('session:capGitFileDiff', sessionId, workspacePath, capPath),
   touchSessionActive: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:touchActive', sessionId),
   isSessionStartupIdle: (sessionId: string): Promise<boolean> => ipcRenderer.invoke('session:isStartupIdle', sessionId),
   sendSessionMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment): Promise<void> =>
@@ -214,6 +220,8 @@ const api = {
     ipcRenderer.invoke('session:setColor', sessionId, color),
   setSessionNotes: (sessionId: string, notes: string): Promise<SessionRecord> =>
     ipcRenderer.invoke('session:setNotes', sessionId, notes),
+  setSessionProjectPath: (sessionId: string, projectPath: string): Promise<SessionRecord> =>
+    ipcRenderer.invoke('session:setProjectPath', sessionId, projectPath),
   addSessionTag: (sessionId: string, tag: string): Promise<SessionRecord> =>
     ipcRenderer.invoke('session:addTag', sessionId, tag),
   removeSessionTag: (sessionId: string, tag: string): Promise<SessionRecord> =>

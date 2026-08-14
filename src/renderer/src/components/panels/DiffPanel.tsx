@@ -264,11 +264,13 @@ export default function DiffPanel({
   revealChangePath,
   revealChangeSeq = 0,
   onRevealChangeHandled,
+  injectDiffFile,
+  injectDiffFileSeq = 0,
   revealCommitHash,
   revealCommitSeq = 0,
   onRevealCommitHandled,
   workspaceDiff,
-  onRefreshWorkspace
+  onRefreshWorkspace: _onRefreshWorkspace
 }: {
   /** Git cwd for changes, file diffs, and commits (session worktree when set). */
   workspacePath: string
@@ -285,6 +287,9 @@ export default function DiffPanel({
   revealChangePath?: string
   revealChangeSeq?: number
   onRevealChangeHandled?: () => void
+  /** Cap file preloaded from its own git repo (nested repo when session cwd is `~`). */
+  injectDiffFile?: DiffFileChange
+  injectDiffFileSeq?: number
   /** Full commit hash to open on Commits (from chat changes cap). */
   revealCommitHash?: string
   revealCommitSeq?: number
@@ -314,6 +319,7 @@ export default function DiffPanel({
   const [changesViewMode, setChangesViewMode] = useState<DiffFileViewMode>('hunks')
   const [commitViewMode, setCommitViewMode] = useState<DiffFileViewMode>('hunks')
   const loadedHunksRef = useRef<Set<string>>(new Set())
+  const summaryRef = useRef<DiffSummary | null>(null)
   const commitLoadedHunksRef = useRef<Set<string>>(new Set())
   type CommitDetailSnapshot = {
     files: DiffFileChange[]
@@ -407,8 +413,26 @@ export default function DiffPanel({
     })
   }, [])
 
+  const mergeIncomingSummary = useCallback((diff: DiffSummary, prev: DiffSummary | null): DiffSummary => {
+    if (!prev?.isRepo) return diff
+    return {
+      ...diff,
+      files: diff.files.map((f) => {
+        if (f.hunks.length > 0) return f
+        const old = prev.files.find((o) => o.path === f.path)
+        if (old?.hunks.length) return { ...f, hunks: old.hunks }
+        return f
+      })
+    }
+  }, [])
+
   const loadFileHunks = useCallback(
     async (filePath: string, force = false): Promise<void> => {
+      const cached = summaryRef.current?.files.find((f) => f.path === filePath)
+      if (!force && cached?.hunks.length) {
+        loadedHunksRef.current.add(filePath)
+        return
+      }
       if (!force && loadedHunksRef.current.has(filePath)) return
       setFileDiffLoading(true)
       try {
@@ -424,31 +448,26 @@ export default function DiffPanel({
     [workspacePath, hostname, mergeFileIntoSummary]
   )
 
-  const mergeIncomingSummary = useCallback((diff: DiffSummary, prev: DiffSummary | null): DiffSummary => {
-    if (!prev?.isRepo) return diff
-    return {
-      ...diff,
-      files: diff.files.map((f) => {
-        const old = prev.files.find((o) => o.path === f.path)
-        if (old && old.hunks.length > 0 && loadedHunksRef.current.has(f.path)) {
-          return { ...f, hunks: old.hunks }
-        }
-        return f
-      })
-    }
-  }, [])
-
   const applySummary = useCallback(
     (diff: DiffSummary) => {
-      setSummary((prev) => mergeIncomingSummary(diff, prev))
+      summaryRef.current = diff
+      for (const f of diff.files) {
+        if (f.hunks.length > 0) loadedHunksRef.current.add(f.path)
+      }
+      setSummary((prev) => {
+        const merged = mergeIncomingSummary(diff, prev)
+        summaryRef.current = merged
+        return merged
+      })
       if (diff.files.length === 0) {
         setSelectedFile(null)
         loadedHunksRef.current.clear()
         return
       }
       setSelectedFile((prev) => {
-        const next = prev && diff.files.some((f) => f.path === prev) ? prev : diff.files[0].path
-        if (next && !loadedHunksRef.current.has(next)) {
+        const next = prev && diff.files.some((f) => f.path === prev) ? prev : diff.files[0]!.path
+        const file = diff.files.find((f) => f.path === next)
+        if (next && !loadedHunksRef.current.has(next) && !file?.hunks.length) {
           void loadFileHunks(next)
         }
         return next
@@ -470,9 +489,20 @@ export default function DiffPanel({
     applySummary(workspaceDiff)
   }, [workspaceDiff, applySummary])
 
+  // When the Diff tab becomes visible before workspace push arrives, bootstrap from IPC.
+  useEffect(() => {
+    if (!active || summaryRef.current != null) return
+    if (workspaceDiff != null) {
+      applySummary(workspaceDiff)
+      return
+    }
+    void refreshChanges(true)
+  }, [active, workspaceDiff, applySummary, refreshChanges])
+
   // Reset local UI when repo identity changes; fetch only if workspace push hasn't arrived yet.
   useEffect(() => {
     loadedHunksRef.current.clear()
+    summaryRef.current = null
     setSummary(null)
     setCommits(null)
     setWorktrees(null)
@@ -522,10 +552,32 @@ export default function DiffPanel({
   }, [commitSelectedFile])
 
   useEffect(() => {
+    if (!injectDiffFile || !injectDiffFileSeq) return
+    loadedHunksRef.current.add(injectDiffFile.path)
+    const prev = summaryRef.current
+    const base: DiffSummary =
+      prev?.isRepo === true
+        ? prev
+        : { isRepo: true, branch: prev?.branch ?? null, files: prev?.files ?? [] }
+    const exists = base.files.some((f) => f.path === injectDiffFile.path)
+    const files = exists
+      ? base.files.map((f) => (f.path === injectDiffFile.path ? injectDiffFile : f))
+      : [...base.files, injectDiffFile]
+    const merged = { ...base, files }
+    summaryRef.current = merged
+    setSummary(merged)
+  }, [injectDiffFile, injectDiffFileSeq])
+
+  useEffect(() => {
     if (!revealChangePath || !revealChangeSeq) return
     setSub('changes')
     setSelectedFile(revealChangePath)
-    void loadFileHunks(revealChangePath, true)
+    const cached = summaryRef.current?.files.find((f) => f.path === revealChangePath)
+    if (!cached?.hunks.length && !loadedHunksRef.current.has(revealChangePath)) {
+      void loadFileHunks(revealChangePath)
+    } else {
+      loadedHunksRef.current.add(revealChangePath)
+    }
     onRevealChangeHandled?.()
   }, [revealChangeSeq, revealChangePath, loadFileHunks, onRevealChangeHandled])
 
@@ -573,9 +625,6 @@ export default function DiffPanel({
 
   function selectSub(next: DiffSubTab): void {
     if (next !== sub && next === 'commits') showCommitList()
-    if (next === 'changes' && sub !== 'changes') {
-      onRefreshWorkspace?.()
-    }
     setSub(next)
   }
 

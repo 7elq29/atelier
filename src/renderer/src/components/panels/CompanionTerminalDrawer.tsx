@@ -44,6 +44,7 @@ export default function CompanionTerminalDrawer({
       <div className="drawer-handle" onMouseDown={startResize} data-testid="companion-drawer-handle" />
       <div className="drawer" style={{ height }}>
         <TerminalWithToolbox
+          key={cwd}
           ptyId={`${sessionId}:companion`}
           cwd={cwd}
           hostname={hostname}

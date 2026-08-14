@@ -263,6 +263,11 @@ export class SessionStore {
     return this.getSession(id)
   }
 
+  setProjectPath(id: string, projectPath: string): SessionRecord | undefined {
+    this.db.prepare('UPDATE sessions SET project_path = ? WHERE id = ?').run(projectPath, id)
+    return this.getSession(id)
+  }
+
   setWorktreePath(id: string, worktreePath: string | null): SessionRecord | undefined {
     this.db.prepare('UPDATE sessions SET worktree_path = ? WHERE id = ?').run(worktreePath, id)
     return this.getSession(id)

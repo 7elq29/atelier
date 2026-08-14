@@ -1,6 +1,8 @@
 /**
- * Session workspace preload + background git refresh (Features/session-workspace-preload).
+ * Session workspace preload + background git/cap refresh (Features/session-workspace-preload).
  * Runs in main: initial load before session:openReady; monitor while session is live.
+ * Background poll refreshes diff + changes cap only — not the file tree/list (those load
+ * once at open, or on explicit force refresh).
  */
 import { watch, type FSWatcher } from 'node:fs'
 import { join } from 'node:path'
@@ -10,7 +12,7 @@ import type { SessionWorkspacePayload } from '../../shared/session-workspace-typ
 import type { DiffSummary } from '../../shared/panel-types'
 import type { SessionChangesCap } from '../../shared/session-changes-cap'
 import { sessionChangesCapSignature } from '../../shared/session-changes-cap'
-import { getDiffSummary } from '../panels/git'
+import { getDiffSummary, getDiffSummaryWithHunks } from '../panels/git'
 import { resolveGitRepoRoot } from '../panels/git-core'
 import { walkFileTree, listWorkspaceFiles } from '../panels/files'
 import type { PtyManager } from '../panels/pty'
@@ -32,6 +34,43 @@ function diffListSignature(diff: DiffSummary): string {
   const branch = diff.branch ?? ''
   const files = diff.files.map((f) => `${f.path}:${f.additions}:${f.deletions}:${f.status}`).join('|')
   return `${branch}|${files}`
+}
+
+/** Keep hydrated hunks when a numstat-only refresh runs (background poll, hydrateSnapshot). */
+function mergeDiffHunks(prev: DiffSummary | undefined, next: DiffSummary): DiffSummary {
+  if (!prev?.isRepo || !next.isRepo) return next
+  return {
+    ...next,
+    files: next.files.map((f) => {
+      if (f.hunks.length > 0) return f
+      const old = prev.files.find((o) => o.path === f.path)
+      if (old?.hunks.length) return { ...f, hunks: old.hunks }
+      return f
+    })
+  }
+}
+
+const PRELOAD_DIFF_HUNKS_TIMEOUT_MS = 120_000
+
+async function loadPreloadDiff(
+  workspacePath: string,
+  hostname: string | null,
+  sessionId: string
+): Promise<DiffSummary> {
+  try {
+    return await Promise.race([
+      getDiffSummaryWithHunks(workspacePath, hostname, false),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('preload diff hunks timed out')), PRELOAD_DIFF_HUNKS_TIMEOUT_MS)
+      )
+    ])
+  } catch (err) {
+    logger.warn('workspace preload: diff hunk hydration failed, using file list only', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err)
+    })
+    return getDiffSummary(workspacePath, hostname, true)
+  }
 }
 
 export class WorkspaceService {
@@ -64,6 +103,7 @@ export class WorkspaceService {
     logger.info('session:openReady', {
       sessionId: payload.sessionId,
       diffFiles: payload.diff.files?.length ?? 0,
+      diffHunksLoaded: payload.diff.files?.filter((f) => f.hunks.length > 0).length ?? 0,
       capItems: payload.sessionChangesCap.items.length,
       treeEntries: payload.filesTree.length
     })
@@ -105,7 +145,7 @@ export class WorkspaceService {
     }
 
     const [diff, filesTree, filesList, sessionChangesCap] = await Promise.all([
-      getDiffSummary(workspacePath, hostname, false),
+      loadPreloadDiff(workspacePath, hostname, session.id),
       Promise.resolve(walkFileTree(workspacePath, hostname)).then((r) => (Array.isArray(r) ? r : [])),
       Promise.resolve(listWorkspaceFiles(workspacePath, hostname)).then((r) => (Array.isArray(r) ? r : [])),
       this.buildSessionChangesCap(session.id, { processHead: true })
@@ -132,17 +172,31 @@ export class WorkspaceService {
     this.startMonitor(session)
   }
 
-  async refreshWorkspace(session: SessionRecord, force: boolean): Promise<SessionWorkspacePayload> {
+  async refreshWorkspace(
+    session: SessionRecord,
+    force: boolean,
+    opts?: { includeFiles?: boolean }
+  ): Promise<SessionWorkspacePayload> {
     const workspacePath = workspacePathFor(session)
     const prev = this.cache.get(session.id)
-    const [diff, filesTree, filesList, sessionChangesCap] = await Promise.all([
-      getDiffSummary(workspacePath, session.hostname, force),
-      Promise.resolve(walkFileTree(workspacePath, session.hostname)).then((r) =>
-        Array.isArray(r) ? r : []
-      ),
-      Promise.resolve(listWorkspaceFiles(workspacePath, session.hostname)).then((r) =>
-        Array.isArray(r) ? r : []
-      ),
+    // File tree/list load once at session open (preloadSession). Background refresh
+    // never re-scans unless the caller explicitly opts in (e.g. worktree created).
+    const includeFiles = opts?.includeFiles === true
+    const diffRaw = force
+      ? await getDiffSummaryWithHunks(workspacePath, session.hostname, true)
+      : await getDiffSummary(workspacePath, session.hostname, force)
+    const diff = mergeDiffHunks(prev?.diff, diffRaw)
+    const [filesTree, filesList, sessionChangesCap] = await Promise.all([
+      includeFiles
+        ? Promise.resolve(walkFileTree(workspacePath, session.hostname)).then((r) =>
+            Array.isArray(r) ? r : []
+          )
+        : Promise.resolve(prev?.filesTree ?? []),
+      includeFiles
+        ? Promise.resolve(listWorkspaceFiles(workspacePath, session.hostname)).then((r) =>
+            Array.isArray(r) ? r : []
+          )
+        : Promise.resolve(prev?.filesList ?? []),
       this.buildSessionChangesCap(session.id, { processHead: true })
     ])
     const payload: SessionWorkspacePayload = {
@@ -158,11 +212,10 @@ export class WorkspaceService {
     }
     const prevDiffSig = prev ? diffListSignature(prev.diff) : ''
     const nextDiffSig = diffListSignature(diff)
-    const treeChanged = JSON.stringify(prev?.filesTree) !== JSON.stringify(filesTree)
     const capChanged =
       sessionChangesCapSignature(prev?.sessionChangesCap ?? { items: [] }) !==
       sessionChangesCapSignature(sessionChangesCap)
-    if (prevDiffSig !== nextDiffSig || treeChanged || capChanged || force) {
+    if (prevDiffSig !== nextDiffSig || capChanged || force) {
       this.sendUpdated(payload)
     } else {
       this.cache.set(session.id, payload)

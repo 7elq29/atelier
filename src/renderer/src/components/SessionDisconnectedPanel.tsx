@@ -19,12 +19,12 @@ export default function SessionDisconnectedPanel({
               Connecting…
             </div>
             <p className="session-disconnected-body">
-              Establishing a connection to this session. Chat, diff, files, and terminal will open when
-              ready — switch to another session after this finishes.
+              Loading diff and workspace panels for this session. Chat, diff, files, and terminal will
+              open when ready — switch to another session after this finishes.
             </p>
             <div className="session-connecting-status" aria-live="polite">
               <span className="spinner" aria-hidden />
-              <span>Please wait</span>
+              <span>Loading diff…</span>
             </div>
           </>
         ) : (

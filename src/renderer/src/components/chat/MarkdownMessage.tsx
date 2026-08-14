@@ -13,6 +13,7 @@ import {
 export type MarkdownLinkOptions = {
   workspaceRoot?: string
   projectRoot?: string
+  filePathCandidates?: readonly string[]
   onOpenFileInFiles?: (absolutePath: string) => void
 }
 
@@ -45,7 +46,7 @@ export type MarkdownLinkOptions = {
  * Files tab when `onOpenFileInFiles` is provided.
  */
 export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Components {
-  const { workspaceRoot = '', projectRoot = '', onOpenFileInFiles } = options
+  const { workspaceRoot = '', projectRoot = '', filePathCandidates, onOpenFileInFiles } = options
 
   return {
     a: ({ href, children, ...props }) => {
@@ -91,7 +92,7 @@ export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Com
         )
       }
       const text = String(children).replace(/\n$/, '')
-      const resolved = resolveSessionFilePath(text, workspaceRoot, projectRoot)
+      const resolved = resolveSessionFilePath(text, workspaceRoot, projectRoot, filePathCandidates)
       if (!resolved || !looksLikeFilePath(text)) {
         return (
           <code className={className} {...props}>
@@ -125,26 +126,34 @@ export default function MarkdownMessage({
   content,
   workspaceRoot,
   projectRoot,
+  filePathCandidates,
   onOpenFileInFiles
 }: {
   content: string
   workspaceRoot?: string
   projectRoot?: string
+  filePathCandidates?: readonly string[]
   onOpenFileInFiles?: (absolutePath: string) => void
 }): JSX.Element {
   const processed = useMemo(() => {
     if (!workspaceRoot || !onOpenFileInFiles) return content
-    return linkifyFilePathsInMarkdown(content, workspaceRoot, projectRoot ?? workspaceRoot)
-  }, [content, workspaceRoot, projectRoot, onOpenFileInFiles])
+    return linkifyFilePathsInMarkdown(
+      content,
+      workspaceRoot,
+      projectRoot ?? workspaceRoot,
+      filePathCandidates
+    )
+  }, [content, workspaceRoot, projectRoot, filePathCandidates, onOpenFileInFiles])
 
   const components = useMemo(
     () =>
       createMarkdownComponents({
         workspaceRoot,
         projectRoot: projectRoot ?? workspaceRoot,
+        filePathCandidates,
         onOpenFileInFiles
       }),
-    [workspaceRoot, projectRoot, onOpenFileInFiles]
+    [workspaceRoot, projectRoot, filePathCandidates, onOpenFileInFiles]
   )
 
   return (

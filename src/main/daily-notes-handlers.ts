@@ -359,10 +359,12 @@ function sleep(ms: number): Promise<void> {
  * extracted here so the move-task path doesn't duplicate/diverge from normal
  * note-creation behavior.
  *
- * `carryOver` (default `true`) controls whether that scan runs when the note
- * has to be created. `daily-note:create` always wants it (that's the
- * existing, correct UC-2 behavior for "navigate to a date"). `daily-note:move-task`
- * passes `{ carryOver: false }`: per
+ * `carryOver` (default `false`) controls whether that scan runs when the note
+ * has to be created. Normal note creation (`daily-note:create`, notes-slice
+ * scaffold) leaves the new note on the template only — incomplete tasks from
+ * the prior day surface in the carry suggestions panel instead. Pass
+ * `{ carryOver: true }` only when a caller explicitly wants UC-2 bulk copy.
+ * `daily-note:move-task` always passes `{ carryOver: false }`: per
  * fix-move-task-creates-note-with-carryover, creating a target note purely to
  * receive one explicitly-moved task must NOT also drag forward every other
  * open task from the source note — the user only asked to move the one task
@@ -374,7 +376,7 @@ async function ensureNoteExists(
   settings: VaultSettings,
   options?: { carryOver?: boolean }
 ): Promise<{ note: DailyNote; raw: RawSections; path: string; created: boolean }> {
-  const carryOver = options?.carryOver ?? true
+  const carryOver = options?.carryOver ?? false
   const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
   if (existsSync(path)) {
     const content = await readFile(path, 'utf-8')
@@ -432,7 +434,7 @@ async function readNotesSliceForDate(
     if (!createIfMissing) {
       return { exists: false, notesBody: '', vaultRelativePath: rel, created: false, notesSectionHeading: DEFAULT_NOTES_SECTION_HEADING }
     }
-    await ensureNoteExists(date, settings)
+    await ensureNoteExists(date, settings, { carryOver: false })
     created = true
   }
 
@@ -537,7 +539,7 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
   ipcMain.handle('daily-note:create', async (_event, date: string) => {
     const settings = resolveVaultSettings()
     if (!settings) throw new Error('no vault root configured (ATELIER_VAULT_ROOT / ATELIER_TEST_VAULT_ROOT / Settings → Vault)')
-    const { note, raw } = await ensureNoteExists(date, settings)
+    const { note, raw } = await ensureNoteExists(date, settings, { carryOver: false })
     return { note, raw, exists: true }
   })
 

@@ -34,12 +34,26 @@ const muxReadyHosts = new Set<string>()
 /** Dedupes concurrent warm attempts so a burst of parallel ssh calls shares one handshake. */
 const muxWarmInFlight = new Map<string, Promise<void>>()
 
+/** Kill hung remote git/file ops instead of leaving the Diff panel on "Loading diff…" forever. */
+const SSH_EXEC_TIMEOUT_MS = 90_000
+
 function sshExecRaw(sshHost: string, remoteCmd: string, maxBuffer = 1024 * 1024 * 32): Promise<ExecResult> {
   return new Promise((resolve) => {
-    execFile('ssh', [...SSH_REMOTE_OPTS, sshHost, '--', remoteCmd], { maxBuffer }, (err, stdout, stderr) => {
-      const code = (err as NodeJS.ErrnoException & { code?: number })?.code
-      resolve({ stdout, stderr, code: typeof code === 'number' ? code : err ? 1 : 0 })
-    })
+    execFile(
+      'ssh',
+      [...SSH_REMOTE_OPTS, sshHost, '--', remoteCmd],
+      { maxBuffer, timeout: SSH_EXEC_TIMEOUT_MS, killSignal: 'SIGTERM' },
+      (err, stdout, stderr) => {
+        const errno = err as NodeJS.ErrnoException & { code?: number | string }
+        if (errno?.code === 'ETIMEDOUT') {
+          logger.warn('ssh exec timed out', { sshHost, remoteCmd: remoteCmd.slice(0, 120) })
+          resolve({ stdout: '', stderr: stderr || 'ssh timed out', code: 124 })
+          return
+        }
+        const code = typeof errno?.code === 'number' ? errno.code : err ? 1 : 0
+        resolve({ stdout, stderr, code })
+      }
+    )
   })
 }
 

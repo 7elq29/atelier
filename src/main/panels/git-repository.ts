@@ -4,6 +4,7 @@
  * commits/worktrees. Remote devpod sessions use multiplexed SSH via ssh-exec.ts.
  */
 import type { CommitInfo, DiffFileChange, DiffFileContentPair, DiffFileStatus, DiffSummary, WorktreeInfo } from '../../shared/panel-types'
+import { countPlanReviewDiffStats } from '../../shared/plan-review-diff'
 import { readFileForPreview } from './files'
 import { isAbsolute, join, resolve } from 'node:path'
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -30,6 +31,7 @@ const EMPTY_TREE = '4b825dc642cb6eb6a060e54bf8d69288fbee4904'
 
 /** Commits with at most this many files use one full `git show -U3` on open (typical agent commits). */
 const COMMIT_OPEN_FULL_PATCH_MAX_FILES = 40
+const WORKING_TREE_FULL_PATCH_MAX_FILES = COMMIT_OPEN_FULL_PATCH_MAX_FILES
 
 function repoKey(projectPath: string, sshHost?: string | null): string {
   return `${sshHost ?? 'local'}\0${projectPath}`
@@ -241,6 +243,74 @@ class GitRepositoryManager {
     }
   }
 
+  /**
+   * Fill working-tree file hunks — one full patch when the changeset is small,
+   * otherwise parallel per-file loads (untracked files still need per-path diff).
+   */
+  async hydrateWorkingTreeHunks(
+    projectPath: string,
+    sshHost?: string | null,
+    baseSummary?: DiffSummary
+  ): Promise<DiffSummary> {
+    const key = repoKey(projectPath, sshHost)
+    const entry = this.cache.get(key)
+    const base = baseSummary ?? entry?.summary
+    if (!base?.isRepo || base.files.length === 0) {
+      return base ?? { isRepo: false, branch: null, files: [] }
+    }
+    if (base.files.every((f) => f.hunks.length > 0)) return base
+
+    const hasHead = entry?.hasHead ?? (await runGitAtRepoRoot(projectPath, ['rev-parse', '--verify', 'HEAD'], sshHost)).code === 0
+    const target = hasHead ? 'HEAD' : EMPTY_TREE
+
+    let files = base.files
+
+    if (files.length <= WORKING_TREE_FULL_PATCH_MAX_FILES) {
+      const patch = await runGitDiffPatch(projectPath, ['--no-color', '-U3', target], sshHost)
+      if (gitPatchOutputUsable(patch.code, patch.stdout)) {
+        const parsed = parseUnifiedDiff(patch.stdout)
+        files = files.map((f) => {
+          const withHunks = pickParsedDiffFile(parsed, f.path, f.path)
+          if (!withHunks?.hunks.length) return f
+          return {
+            ...f,
+            ...withHunks,
+            path: f.path,
+            status: f.status,
+            additions: f.additions || withHunks.additions,
+            deletions: f.deletions || withHunks.deletions
+          }
+        })
+      }
+    }
+
+    const needsLoad = files.filter((f) => f.hunks.length === 0)
+    if (needsLoad.length > 0) {
+      const loaded = await Promise.all(
+        needsLoad.map(async (f) => {
+          const detail = await this.loadFileDiff(projectPath, f.path, sshHost)
+          return detail ?? f
+        })
+      )
+      const byPath = new Map(loaded.map((f) => [f.path, f]))
+      files = files.map((f) => byPath.get(f.path) ?? f)
+    }
+
+    const hydrated: DiffSummary = { ...base, files }
+    if (entry) {
+      entry.summary = hydrated
+    } else {
+      this.cache.set(key, {
+        summary: hydrated,
+        hasHead,
+        commits: null,
+        worktrees: null,
+        fetchedAt: Date.now()
+      })
+    }
+    return hydrated
+  }
+
   /** File list for a single commit (numstat; empty hunks until loadCommitFileDiff). */
   async loadCommitDiff(projectPath: string, commit: string, sshHost?: string | null): Promise<DiffSummary> {
     const cacheKey = `${this.commitCachePrefix(projectPath, sshHost)}${commit}`
@@ -378,18 +448,19 @@ class GitRepositoryManager {
       return stub ? { ...stub, hunks: [] } : null
     }
     const parsed = parseUnifiedDiff(diff.stdout)
-    const file = parsed[0]
-    if (!file) {
+    const file = pickParsedDiffFile(parsed, filePath, filePath) ?? parsed[0]
+    if (!file?.hunks.length) {
       const stub = entry?.summary.files.find((f) => f.path === filePath)
       return stub ? { ...stub, hunks: [] } : null
     }
+    const merged = { ...file, path: filePath }
     if (entry) {
       entry.summary = {
         ...entry.summary,
-        files: entry.summary.files.map((f) => (f.path === filePath ? { ...file, hunks: file.hunks } : f))
+        files: entry.summary.files.map((f) => (f.path === filePath ? { ...merged, hunks: merged.hunks } : f))
       }
     }
-    return file
+    return merged
   }
 
   async listCommits(projectPath: string, limit: number, sshHost?: string | null, force = false): Promise<CommitInfo[]> {
@@ -513,6 +584,17 @@ class GitRepositoryManager {
 
 export const gitRepositories = new GitRepositoryManager()
 
+/** Working-tree snapshot with hunks hydrated (used at session open). */
+export async function getDiffSummaryWithHunks(
+  projectPath: string,
+  sshHost?: string | null,
+  force = false
+): Promise<DiffSummary> {
+  const summary = await gitRepositories.refreshChanges(projectPath, sshHost, force)
+  if (!summary.isRepo || summary.files.length === 0) return summary
+  return gitRepositories.hydrateWorkingTreeHunks(projectPath, sshHost, summary)
+}
+
 /** Back-compat: changes snapshot (file list, empty hunks until gitFileDiff). */
 export async function getDiffSummary(projectPath: string, sshHost?: string | null, force = false): Promise<DiffSummary> {
   return gitRepositories.refreshChanges(projectPath, sshHost, force)
@@ -630,28 +712,36 @@ export async function getOutsideWorkspaceCapFileDiff(
 ): Promise<{ file: DiffFileChange; pair: DiffFileContentPair } | null> {
   const read = await readFileForPreview(absPath, sshHost)
   if (read.kind !== 'text' && read.kind !== 'html') return null
-  const modified = read.content
+  return getOutsideWorkspaceCapTextPairDiff(absPath, baseline, read.content, sshHost)
+}
+
+/** Diff two in-memory text editions (plan review: previous vs latest transcript). */
+export async function getOutsideWorkspaceCapTextPairDiff(
+  displayPath: string,
+  baseline: string,
+  modified: string,
+  sshHost?: string | null
+): Promise<{ file: DiffFileChange; pair: DiffFileContentPair } | null> {
   const pair: DiffFileContentPair = { original: baseline, modified }
 
   if (sshHost) {
+    const stats = countPlanReviewDiffStats(baseline, modified)
     const file: DiffFileChange = {
-      path: absPath,
+      path: displayPath,
       status: baseline.length === 0 ? 'added' : 'modified',
-      additions: 0,
-      deletions: 0,
+      additions: stats.additions,
+      deletions: stats.deletions,
       hunks: []
-    }
-    for (const line of modified.split('\n')) {
-      if (baseline.split('\n').includes(line)) continue
-      file.additions += 1
     }
     return { file, pair }
   }
 
   const dir = await mkdtemp(join(tmpdir(), 'atelier-outside-diff-'))
   const baseFile = join(dir, 'baseline')
+  const modifiedFile = join(dir, 'modified')
   try {
     await writeFile(baseFile, baseline, 'utf8')
+    await writeFile(modifiedFile, modified, 'utf8')
     const patch = await runGit(
       dir,
       [
@@ -662,7 +752,7 @@ export async function getOutsideWorkspaceCapFileDiff(
         '-U3',
         '--no-index',
         baseFile,
-        absPath
+        modifiedFile
       ],
       sshHost
     )
@@ -671,7 +761,7 @@ export async function getOutsideWorkspaceCapFileDiff(
     if (gitPatchOutputUsable(patch.code, patch.stdout)) {
       const parsed = parseUnifiedDiff(patch.stdout)[0]
       file = parsed ?? {
-        path: absPath,
+        path: displayPath,
         status: baseline.length === 0 ? 'added' : 'modified',
         additions: 0,
         deletions: 0,
@@ -679,24 +769,17 @@ export async function getOutsideWorkspaceCapFileDiff(
       }
     } else {
       file = {
-        path: absPath,
+        path: displayPath,
         status: baseline.length === 0 ? 'added' : 'modified',
         additions: 0,
         deletions: 0,
         hunks: []
       }
     }
-    file.path = absPath
-    let additions = 0
-    let deletions = 0
-    for (const hunk of file.hunks) {
-      for (const line of hunk.lines) {
-        if (line.kind === 'add') additions += 1
-        if (line.kind === 'del') deletions += 1
-      }
-    }
-    file.additions = additions
-    file.deletions = deletions
+    file.path = displayPath
+    const stats = countPlanReviewDiffStats(baseline, modified)
+    file.additions = stats.additions
+    file.deletions = stats.deletions
     return { file, pair }
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -711,7 +794,7 @@ export async function getPathWorkingTreeNumstat(
 ): Promise<{ additions: number; deletions: number } | null> {
   if (isAbsolute(filePath)) return null
 
-  const hasHead = (await runGit(projectPath, ['rev-parse', '--verify', 'HEAD'], sshHost)).code === 0
+  const hasHead = (await runGitAtRepoRoot(projectPath, ['rev-parse', '--verify', 'HEAD'], sshHost)).code === 0
   const target = hasHead ? 'HEAD' : EMPTY_TREE
   let additions = 0
   let deletions = 0
@@ -719,7 +802,7 @@ export async function getPathWorkingTreeNumstat(
     ['diff', '--no-color', '--numstat', target, '--', filePath],
     ['diff', '--no-color', '--numstat', '--cached', '--', filePath]
   ]) {
-    const r = await runGit(projectPath, args, sshHost)
+    const r = await runGitAtRepoRoot(projectPath, args, sshHost)
     if (r.code !== 0) continue
     for (const f of parseNumstatLines(r.stdout.split('\n'))) {
       additions += f.additions
@@ -727,7 +810,8 @@ export async function getPathWorkingTreeNumstat(
     }
   }
   if (additions === 0 && deletions === 0) {
-    const absFile = join(resolve(projectPath), filePath)
+    const repoRoot = await resolveGitRepoRoot(projectPath, sshHost)
+    const absFile = join(resolve(repoRoot), filePath)
     let onDisk = false
     try {
       await access(absFile)
@@ -735,12 +819,16 @@ export async function getPathWorkingTreeNumstat(
     } catch {
       /* file not present at workspace-relative path */
     }
-    const untracked = await runGit(projectPath, ['ls-files', '--others', '--exclude-standard', '--', filePath], sshHost)
+    const untracked = await runGitAtRepoRoot(
+      projectPath,
+      ['ls-files', '--others', '--exclude-standard', '--', filePath],
+      sshHost
+    )
     const listed = untracked.code === 0 && untracked.stdout.trim().length > 0
     // Plans live under `.claude/plans/` which is often gitignored — still show cap stats when the file exists on disk.
     if (onDisk || listed) {
       const diffPath = onDisk ? absFile : filePath
-      const diff = await runGit(
+      const diff = await runGitAtRepoRoot(
         projectPath,
         [
           '-c',

@@ -21,6 +21,7 @@ export default function PlanProposedCard({
   reviewActive,
   workspaceRoot,
   projectRoot,
+  filePathCandidates,
   embedded = false
 }: {
   content: PlanProposedContent
@@ -30,6 +31,7 @@ export default function PlanProposedCard({
   reviewActive?: boolean
   workspaceRoot?: string
   projectRoot?: string
+  filePathCandidates?: readonly string[]
   embedded?: boolean
 }): JSX.Element {
   const [open, setOpen] = useState(false)
@@ -37,6 +39,7 @@ export default function PlanProposedCard({
   const planMarkdownComponents = createMarkdownComponents({
     workspaceRoot,
     projectRoot,
+    filePathCandidates,
     onOpenFileInFiles: onOpenPlanFile
   })
 

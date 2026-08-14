@@ -1,12 +1,13 @@
 import {
   getOutsideWorkspaceCapFileDiff,
+  getOutsideWorkspaceCapTextPairDiff,
   getPathWorkingTreeNumstat,
   latestReflogSubject,
   listCommitChangedPaths,
   listCommitsInRange,
-  resolveHead
+  resolveHead,
+  getFileDiff
 } from '../panels/git'
-import { resolveActualGitRepoRoot } from '../panels/git-core'
 import {
   filePathsForFileEditTool,
   isSessionFileEditTool,
@@ -14,48 +15,32 @@ import {
 } from '../../shared/session-file-edits'
 import type { SessionChangesCap, SessionChangesCapItem } from '../../shared/session-changes-cap'
 import { parseStructuredContent, type ToolCallContent } from '../../shared/chat-content'
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import { readFile } from 'node:fs/promises'
-import { realpath } from 'node:fs/promises'
-import { mkdir } from 'node:fs/promises'
 import type { SessionStore } from './store'
 import {
+  normalizeCapStoragePath,
   normalizeToRepoRelativePath,
-  resolveSessionTouchedAbsolutePath
+  resolveCapGitContext,
+  resolveCapPathAbsolute,
+  resolveSessionTouchedAbsolutePath,
+  resolveToolFileAbsolutePath
 } from './session-file-edits'
 import { isCapPathOutsideWorkspace } from '../../shared/session-touched-path'
 import { isClaudePlanPath } from '../../shared/claude-plan-path'
+import { findPlanCapEdition, planCapReviewDiffStats } from '../../shared/plan-cap-editions'
+import {
+  normalizePlanPathForWorkspace,
+  resolveSessionWorkspaceRoot,
+  resolveWorkspacePlanMirrorPath
+} from '../../shared/plan-mirror-path'
 import type { DiffFileChange, DiffFileContentPair } from '../../shared/panel-types'
-import { expandTildePath } from '../../shared/project-path-autocomplete'
-import { logger } from '../logger'
 
-export function resolveSessionWorkspaceRoot(workspaceRoot: string): string {
-  return resolve(expandTildePath(workspaceRoot, homedir()))
-}
-
-/** Normalize SDK plan paths (including home-dir `.claude/plans/*`) to a workspace-relative path. */
-export function normalizePlanPathForWorkspace(
-  raw: string | undefined,
-  workspaceRoot: string
-): string | null {
-  if (!raw?.trim()) return null
-  const root = resolveSessionWorkspaceRoot(workspaceRoot)
-  let trimmed = raw.trim().replace(/\\/g, '/')
-  const home = homedir().replace(/\\/g, '/')
-  if (!trimmed.startsWith('/') && trimmed.startsWith(home.replace(/^\//, ''))) {
-    trimmed = `/${trimmed}`
-  }
-  const abs = isAbsolute(trimmed) ? resolve(trimmed) : resolve(root, trimmed.replace(/^\.\//, ''))
-  if (abs !== root && !abs.startsWith(`${root}/`)) {
-    const base = basename(trimmed)
-    if (!base || base === '.' || base === '..') return null
-    return `.claude/plans/${base}`
-  }
-  const rel = relative(root, abs).split(/\\/g).join('/')
-  if (!rel || rel.startsWith('..')) return null
-  return rel
-}
+export {
+  normalizePlanPathForWorkspace,
+  resolveSessionWorkspaceRoot,
+  resolveWorkspacePlanMirrorPath
+} from '../../shared/plan-mirror-path'
 
 const MARKDOWN_LINK_RE = /\[[^\]]*\]\(([^)]+)\)/g
 const SKIP_LINK_SCHEME = /^(https?|mailto|#):/i
@@ -81,55 +66,6 @@ export function collectPlanCandidatePaths(
   return [...out]
 }
 
-/** Repo-relative path for mirroring inline ExitPlanMode plan text into the session workspace. */
-export function resolveWorkspacePlanMirrorPath(
-  workspaceRoot: string,
-  planFilePath: string | undefined,
-  planMarkdown: string,
-  toolUseId: string
-): string {
-  if (planFilePath?.trim()) {
-    const normalized = normalizePlanPathForWorkspace(planFilePath, workspaceRoot)
-    if (normalized) return normalized
-  }
-  const slug = slugFromPlanTitle(planMarkdown)
-  const fileName = slug ? `${slug}.md` : `plan-${toolUseId.slice(0, 8)}.md`
-  return `.claude/plans/${fileName}`
-}
-
-function slugFromPlanTitle(plan: string): string | null {
-  const title =
-    plan.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? plan.match(/^Plan:\s*(.+)$/im)?.[1]?.trim()
-  if (!title) return null
-  const slug = title
-    .toLowerCase()
-    .replace(/[^\w]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80)
-  return slug || null
-}
-
-async function mirrorPlanMarkdownToWorkspace(
-  workspaceRoot: string,
-  relPath: string,
-  planMarkdown: string,
-  hostname: string | null
-): Promise<void> {
-  const abs = join(resolveSessionWorkspaceRoot(workspaceRoot), relPath)
-  if (hostname) {
-    const { sshExec } = await import('../ssh-exec')
-    const { shQuote } = await import('../shell-quote')
-    await sshExec(hostname, `mkdir -p ${shQuote(dirname(abs))}`)
-  } else {
-    await mkdir(dirname(abs), { recursive: true })
-  }
-  const { writeFileContent } = await import('../panels/files')
-  const result = await writeFileContent(abs, planMarkdown, hostname)
-  if (!result.ok) {
-    throw new Error(result.error ?? 'Failed to mirror plan file')
-  }
-}
-
 export function registerTouchedPathFromPlanFile(
   store: SessionStore,
   sessionId: string,
@@ -151,15 +87,7 @@ export async function registerPlanFileInSessionChangesCap(
   workspacePath: string,
   hostname: string | null
 ): Promise<SessionChangesCap> {
-  let cap = await refreshSessionChangesCap(store, sessionId, workspacePath, hostname, { processHead: false })
-  if (cap.items.some((i) => i.kind === 'file')) return cap
-
-  for (const delayMs of [500, 1000, 2000, 3000]) {
-    await new Promise((r) => setTimeout(r, delayMs))
-    cap = await refreshSessionChangesCap(store, sessionId, workspacePath, hostname, { processHead: false })
-    if (cap.items.some((i) => i.kind === 'file')) break
-  }
-  return cap
+  return refreshSessionChangesCap(store, sessionId, workspacePath, hostname, { processHead: false })
 }
 
 /** Drop malformed plan paths (e.g. `Users/me/.claude/plans/foo.md`) and re-register normalized ones. */
@@ -185,12 +113,12 @@ function pruneAndNormalizePlanTouchedPaths(
   }
 }
 
-/** Mirror every `plan_proposed` message in the transcript to workspace files + touched paths. */
+/** Register touched paths for `plan_proposed` messages. Claude owns on-disk plan files. */
 export async function syncSessionPlansFromMessages(
   store: SessionStore,
   sessionId: string,
   workspaceRoot: string,
-  hostname: string | null
+  _hostname: string | null
 ): Promise<void> {
   pruneAndNormalizePlanTouchedPaths(store, sessionId, workspaceRoot)
   const messages = store.listMessages(sessionId)
@@ -201,24 +129,15 @@ export async function syncSessionPlansFromMessages(
     const plan = structured.plan
     if (!plan?.trim()) continue
     const toolUseId = structured.toolUseId || String(message.id)
-    try {
-      const mirrorPath = resolveWorkspacePlanMirrorPath(
-        workspaceRoot,
-        structured.planFilePath,
-        plan,
-        toolUseId
-      )
-      await mirrorPlanMarkdownToWorkspace(workspaceRoot, mirrorPath, plan, hostname)
-      registerTouchedPathFromPlanFile(store, sessionId, workspaceRoot, mirrorPath)
-      for (const raw of collectPlanCandidatePaths(structured.planFilePath, plan, workspaceRoot)) {
-        if (raw !== mirrorPath) registerTouchedPathFromPlanFile(store, sessionId, workspaceRoot, raw)
-      }
-    } catch (err) {
-      logger.warn('syncSessionPlansFromMessages: failed to mirror plan', {
-        sessionId,
-        messageId: message.id,
-        error: err instanceof Error ? err.message : String(err)
-      })
+    const planPath = resolveWorkspacePlanMirrorPath(
+      workspaceRoot,
+      structured.planFilePath,
+      plan,
+      toolUseId
+    )
+    registerTouchedPathFromPlanFile(store, sessionId, workspaceRoot, planPath)
+    for (const raw of collectPlanCandidatePaths(structured.planFilePath, plan, workspaceRoot)) {
+      if (raw !== planPath) registerTouchedPathFromPlanFile(store, sessionId, workspaceRoot, raw)
     }
   }
 }
@@ -241,6 +160,24 @@ export function registerTouchedPathFromToolCall(
   const now = new Date().toISOString()
   for (const rawPath of filePathsForFileEditTool(toolName, input)) {
     const path = normalizeToRepoRelativePath(rawPath, workspaceRoot)
+    if (!path) continue
+    store.registerSessionTouchedPath(sessionId, path, now)
+  }
+}
+
+export async function registerTouchedPathFromToolCallAsync(
+  store: SessionStore,
+  sessionId: string,
+  workspacePath: string,
+  hostname: string | null,
+  toolName: string,
+  input: unknown,
+  projectPath: string
+): Promise<void> {
+  if (!isSessionFileEditTool(toolName)) return
+  const now = new Date().toISOString()
+  for (const rawPath of filePathsForFileEditTool(toolName, input)) {
+    const path = await normalizeCapStoragePath(rawPath, workspacePath, hostname, projectPath)
     if (!path) continue
     store.registerSessionTouchedPath(sessionId, path, now)
   }
@@ -306,12 +243,10 @@ export async function processHeadAdvanceIfNeeded(
 
 async function fallbackFileStats(
   workspaceRoot: string,
-  relPath: string,
+  capPath: string,
   hostname: string | null
 ): Promise<{ additions: number; deletions: number } | null> {
-  const abs = isCapPathOutsideWorkspace(relPath)
-    ? resolveSessionTouchedAbsolutePath(relPath, workspaceRoot)
-    : join(resolveSessionWorkspaceRoot(workspaceRoot), relPath)
+  const abs = await resolveCapPathAbsolute(capPath, workspaceRoot, hostname)
   try {
     if (hostname) {
       const { readFileForPreview } = await import('../panels/files')
@@ -333,13 +268,15 @@ function asToolInputRecord(value: unknown): Record<string, unknown> {
 }
 
 /** Content before the session's first completed file-edit tool call on `capPath`. */
-export function sessionFileBaselineFromMessages(
+export async function sessionFileBaselineFromMessages(
   store: SessionStore,
   sessionId: string,
-  workspaceRoot: string,
-  capPath: string
-): string {
-  const targetAbs = resolveSessionTouchedAbsolutePath(capPath, workspaceRoot)
+  workspacePath: string,
+  capPath: string,
+  hostname: string | null,
+  projectPath: string
+): Promise<string> {
+  const targetAbs = resolve(await resolveCapPathAbsolute(capPath, workspacePath, hostname))
   for (const message of store.listMessages(sessionId)) {
     if (message.role !== 'assistant') continue
     const structured = parseStructuredContent(message.content)
@@ -347,10 +284,8 @@ export function sessionFileBaselineFromMessages(
     const content = structured as ToolCallContent
     if (content.status !== 'completed' || !isSessionFileEditTool(content.name)) continue
     for (const rawPath of filePathsForFileEditTool(content.name, content.input)) {
-      const normalized = normalizeToRepoRelativePath(rawPath, workspaceRoot)
-      if (!normalized) continue
-      const editAbs = resolveSessionTouchedAbsolutePath(normalized, workspaceRoot)
-      if (editAbs !== targetAbs) continue
+      const toolAbs = resolveToolFileAbsolutePath(rawPath, workspacePath, projectPath)
+      if (!toolAbs || resolve(toolAbs) !== targetAbs) continue
       const obj = asToolInputRecord(content.input)
       if (content.name === 'Write') return ''
       if (content.name === 'Edit' && typeof obj.old_string === 'string') return obj.old_string
@@ -363,17 +298,80 @@ export function sessionFileBaselineFromMessages(
   return ''
 }
 
+async function readCapPathText(
+  capPath: string,
+  workspacePath: string,
+  hostname: string | null
+): Promise<string | null> {
+  const absPath = await resolveCapPathAbsolute(capPath, workspacePath, hostname)
+  if (hostname) {
+    const { readFileForPreview } = await import('../panels/files')
+    const result = await readFileForPreview(absPath, hostname)
+    if (result.kind !== 'text' && result.kind !== 'html') return null
+    return result.content
+  }
+  try {
+    return await readFile(absPath, 'utf8')
+  } catch {
+    return null
+  }
+}
+
 export async function getSessionCapOutsideFileDiff(
   store: SessionStore,
   sessionId: string,
   workspacePath: string,
   capPath: string,
-  hostname: string | null
+  hostname: string | null,
+  projectPath?: string
 ): Promise<{ file: DiffFileChange; pair: DiffFileContentPair } | null> {
+  const projectRoot = projectPath ?? workspacePath
+  if (isClaudePlanPath(capPath)) {
+    const absPath = await resolveCapPathAbsolute(capPath, workspacePath, hostname)
+    const onDisk = await readCapPathText(capPath, workspacePath, hostname)
+    if (onDisk !== null) {
+      const baseline = await sessionFileBaselineFromMessages(
+        store,
+        sessionId,
+        workspacePath,
+        capPath,
+        hostname,
+        projectRoot
+      )
+      return getOutsideWorkspaceCapTextPairDiff(absPath, baseline, onDisk, hostname)
+    }
+    const edition = findPlanCapEdition(store.listMessages(sessionId), capPath)
+    if (edition) {
+      return getOutsideWorkspaceCapTextPairDiff(
+        absPath,
+        edition.previous ?? '',
+        edition.current,
+        hostname
+      )
+    }
+  }
   if (await isCapPathInGitRepo(workspacePath, capPath, hostname)) return null
-  const absPath = resolveSessionTouchedAbsolutePath(capPath, workspacePath)
-  const baseline = sessionFileBaselineFromMessages(store, sessionId, workspacePath, capPath)
+  const absPath = await resolveCapPathAbsolute(capPath, workspacePath, hostname)
+  const baseline = await sessionFileBaselineFromMessages(
+    store,
+    sessionId,
+    workspacePath,
+    capPath,
+    hostname,
+    projectRoot
+  )
   return getOutsideWorkspaceCapFileDiff(absPath, baseline, hostname)
+}
+
+/** Working-tree diff for a cap file in git (including nested repos when session cwd is `~`). */
+export async function getSessionCapGitFileDiff(
+  workspacePath: string,
+  capPath: string,
+  hostname: string | null
+): Promise<DiffFileChange | null> {
+  const ctx = await resolveCapGitContext(capPath, workspacePath, hostname)
+  if (!ctx) return null
+  return getFileDiff(ctx.repoRoot, ctx.gitRelative, hostname)
 }
 
 async function capPathWorkingTreeStats(
@@ -381,42 +379,33 @@ async function capPathWorkingTreeStats(
   sessionId: string,
   workspacePath: string,
   capPath: string,
-  hostname: string | null
+  hostname: string | null,
+  projectPath: string
 ): Promise<{ additions: number; deletions: number } | null> {
+  if (isClaudePlanPath(capPath)) {
+    const diskStats = await fallbackFileStats(workspacePath, capPath, hostname)
+    if (diskStats) return diskStats
+    const planStats = planCapReviewDiffStats(store.listMessages(sessionId), capPath)
+    if (planStats) return planStats
+  }
   if (!(await isCapPathInGitRepo(workspacePath, capPath, hostname))) {
-    const diff = await getSessionCapOutsideFileDiff(store, sessionId, workspacePath, capPath, hostname)
+    const diff = await getSessionCapOutsideFileDiff(
+      store,
+      sessionId,
+      workspacePath,
+      capPath,
+      hostname,
+      projectPath
+    )
     if (diff) return { additions: diff.file.additions, deletions: diff.file.deletions }
     return fallbackFileStats(workspacePath, capPath, hostname)
   }
-  const resolvedWorkspace = resolveSessionWorkspaceRoot(workspacePath)
-  let stats = await getPathWorkingTreeNumstat(resolvedWorkspace, capPath, hostname)
-  if (!stats && isCapPathOutsideWorkspace(capPath)) {
-    const rel = await capPathToGitRelative(workspacePath, capPath, hostname)
-    if (rel) stats = await getPathWorkingTreeNumstat(resolvedWorkspace, rel, hostname)
-  }
+  const ctx = await resolveCapGitContext(capPath, workspacePath, hostname)
+  const gitPath = ctx?.gitRelative ?? capPath
+  const numstatRoot = ctx?.repoRoot ?? resolveSessionWorkspaceRoot(workspacePath)
+  let stats = await getPathWorkingTreeNumstat(numstatRoot, gitPath, hostname)
   if (!stats) stats = await fallbackFileStats(workspacePath, capPath, hostname)
   return stats
-}
-
-async function isCapPathInGitRepo(
-  workspacePath: string,
-  capPath: string,
-  hostname: string | null
-): Promise<boolean> {
-  try {
-    const repoRootRaw = await resolveActualGitRepoRoot(workspacePath, hostname)
-    if (!repoRootRaw) return false
-    const repoRoot = resolve(await realpath(repoRootRaw))
-    let abs = resolve(resolveSessionTouchedAbsolutePath(capPath, workspacePath))
-    try {
-      abs = resolve(await realpath(abs))
-    } catch {
-      /* cap file may not exist on disk yet */
-    }
-    return abs === repoRoot || abs.startsWith(`${repoRoot}/`)
-  } catch {
-    return false
-  }
 }
 
 async function capPathToGitRelative(
@@ -424,22 +413,18 @@ async function capPathToGitRelative(
   capPath: string,
   hostname: string | null
 ): Promise<string | null> {
-  if (!(await isCapPathInGitRepo(workspacePath, capPath, hostname))) return null
-  try {
-    const repoRootRaw = await resolveActualGitRepoRoot(workspacePath, hostname)
-    if (!repoRootRaw) return null
-    const repoRoot = resolve(await realpath(repoRootRaw))
-    let abs = resolve(resolveSessionTouchedAbsolutePath(capPath, workspacePath))
-    try {
-      abs = resolve(await realpath(abs))
-    } catch {
-      /* cap file may not exist on disk yet */
-    }
-    const rel = relative(repoRoot, abs).split(/\\/g).join('/')
-    return rel && !rel.startsWith('..') ? rel : null
-  } catch {
-    return null
-  }
+  if (isClaudePlanPath(capPath)) return null
+  const ctx = await resolveCapGitContext(capPath, workspacePath, hostname)
+  return ctx?.gitRelative ?? null
+}
+
+async function isCapPathInGitRepo(
+  workspacePath: string,
+  capPath: string,
+  hostname: string | null
+): Promise<boolean> {
+  if (isClaudePlanPath(capPath)) return false
+  return (await capPathToGitRelative(workspacePath, capPath, hostname)) !== null
 }
 
 async function capPathOpensInFilesTab(
@@ -450,13 +435,41 @@ async function capPathOpensInFilesTab(
   return !(await isCapPathInGitRepo(workspacePath, capPath, hostname))
 }
 
+async function canonicalizeStoredCapPath(
+  storedPath: string,
+  workspacePath: string,
+  hostname: string | null,
+  projectPath: string
+): Promise<string> {
+  if (isClaudePlanPath(storedPath)) return storedPath
+
+  const abs = await resolveCapPathAbsolute(storedPath, workspacePath, hostname)
+  const fromAbs = await normalizeCapStoragePath(abs, workspacePath, hostname, projectPath)
+  if (fromAbs) return fromAbs
+
+  const fromRaw = await normalizeCapStoragePath(storedPath, workspacePath, hostname, projectPath)
+  if (fromRaw) return fromRaw
+
+  if (projectPath !== workspacePath) {
+    const fromProject = await normalizeCapStoragePath(
+      resolveSessionTouchedAbsolutePath(storedPath, projectPath),
+      workspacePath,
+      hostname,
+      projectPath
+    )
+    if (fromProject) return fromProject
+  }
+
+  return storedPath
+}
+
 async function capItemPathForNavigation(
   workspacePath: string,
   capPath: string,
   hostname: string | null
 ): Promise<string> {
-  const rel = await capPathToGitRelative(workspacePath, capPath, hostname)
-  return rel ?? capPath
+  if (isClaudePlanPath(capPath)) return capPath
+  return (await capPathToGitRelative(workspacePath, capPath, hostname)) ?? capPath
 }
 
 export async function buildSessionChangesCap(
@@ -465,21 +478,38 @@ export async function buildSessionChangesCap(
   workspacePath: string,
   hostname: string | null
 ): Promise<SessionChangesCap> {
+  const session = store.getSession(sessionId)
+  const projectPath = session?.projectPath ?? workspacePath
   const paths = store.listSessionTouchedPaths(sessionId)
   const now = new Date().toISOString()
   const fileItems: SessionChangesCapItem[] = []
 
   for (const row of paths) {
-    const stats = await capPathWorkingTreeStats(store, sessionId, workspacePath, row.path, hostname)
+    const capPath = await canonicalizeStoredCapPath(row.path, workspacePath, hostname, projectPath)
+    if (capPath !== row.path) {
+      store.deleteSessionTouchedPath(sessionId, row.path)
+      store.registerSessionTouchedPath(sessionId, capPath, row.firstTouchedAt)
+      if (row.lastPendingAt) {
+        store.updateSessionTouchedPathPendingAt(sessionId, capPath, row.lastPendingAt)
+      }
+    }
+    const stats = await capPathWorkingTreeStats(
+      store,
+      sessionId,
+      workspacePath,
+      capPath,
+      hostname,
+      projectPath
+    )
     if (!stats) continue
     const sortAt = now
-    store.updateSessionTouchedPathPendingAt(sessionId, row.path, sortAt)
+    store.updateSessionTouchedPathPendingAt(sessionId, capPath, sortAt)
     fileItems.push({
       kind: 'file',
-      path: await capItemPathForNavigation(workspacePath, row.path, hostname),
+      path: await capItemPathForNavigation(workspacePath, capPath, hostname),
       additions: stats.additions,
       deletions: stats.deletions,
-      opensInFilesTab: await capPathOpensInFilesTab(workspacePath, row.path, hostname),
+      opensInFilesTab: await capPathOpensInFilesTab(workspacePath, capPath, hostname),
       sortAt
     })
   }
@@ -522,12 +552,22 @@ export async function handleFileEditToolCompleted(
   workspacePath: string,
   hostname: string | null,
   toolName: string,
-  input: unknown
+  input: unknown,
+  projectPath?: string
 ): Promise<SessionChangesCap> {
-  registerTouchedPathFromToolCall(store, sessionId, workspaceRoot, toolName, input)
+  const project = projectPath ?? workspaceRoot
+  await registerTouchedPathFromToolCallAsync(
+    store,
+    sessionId,
+    workspacePath,
+    hostname,
+    toolName,
+    input,
+    project
+  )
   const now = new Date().toISOString()
   for (const rawPath of filePathsForFileEditTool(toolName, input)) {
-    const path = normalizeToRepoRelativePath(rawPath, workspaceRoot)
+    const path = await normalizeCapStoragePath(rawPath, workspacePath, hostname, project)
     if (!path) continue
     store.updateSessionTouchedPathPendingAt(sessionId, path, now)
   }

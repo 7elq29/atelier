@@ -64,6 +64,15 @@ async function expandCap(page: Page): Promise<void> {
   }
 }
 
+async function collapseCap(page: Page): Promise<void> {
+  const cap = page.getByTestId('chat-uncommitted-changes')
+  if ((await cap.count()) === 0) return
+  const toggle = cap.locator('.chat-changes-toggle')
+  if ((await toggle.getAttribute('aria-expanded')) === 'true') {
+    await toggle.click()
+  }
+}
+
 async function waitForTurnIdle(page: Page, timeoutMs = 90_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -192,6 +201,50 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('tab-strip')).toBeVisible()
   })
 
+  test('session detail: changing project path reloads diff and terminal cwd', async () => {
+    const altProjectPath = mkdtempSync(join(tmpdir(), 'atelier-e2e-path-change-'))
+    writeFileSync(join(altProjectPath, 'marker.txt'), 'relocated\n')
+
+    const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+    await row.getByTestId('session-menu-button').click()
+    await row.getByTestId('menu-details').click()
+    const popover = row.getByTestId('session-detail-popover')
+    await expect(popover).toBeVisible()
+    await popover.getByTestId('session-project-path').fill(altProjectPath)
+    await popover.getByTestId('apply-project-path-button').click()
+
+    await expect
+      .poll(async () => {
+        const rows = await page.evaluate(
+          ({ id }) =>
+            window.atelier.debugQueryDb<{ project_path: string }>(
+              'SELECT project_path FROM sessions WHERE id = ?',
+              [id]
+            ),
+          { id: sessionId }
+        )
+        return rows[0]?.project_path
+      })
+      .toBe(altProjectPath)
+
+    await expect
+      .poll(async () => {
+        const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
+        return snap?.workspacePath ?? null
+      }, { timeout: 15_000 })
+      .toBe(altProjectPath)
+
+    await page.getByTestId('tab-diff').click()
+    await expect(page.getByTestId('diff-empty-not-repo')).toBeVisible({ timeout: 15_000 })
+
+    await page.getByTestId('tab-terminal').click()
+    const altBasename = altProjectPath.split('/').filter(Boolean).pop() ?? altProjectPath
+    await expect(page.getByTestId('terminal-cwd-chip')).toContainText(altBasename, { timeout: 15_000 })
+
+    await page.screenshot({ path: join(artifactsDir, '07-session-project-path-reload.png') })
+    log(`project path changed to ${altProjectPath}`)
+  })
+
   test('chat: untracked plan file appears in session changes cap', async () => {
     test.setTimeout(60_000)
     await page.getByTestId('tab-chat').click()
@@ -223,12 +276,13 @@ test.describe('07-secondary-panels', () => {
     log('untracked plan file in session changes cap OK')
   })
 
-  test('chat: inline ExitPlanMode plan mirrors to .claude/plans and appears in cap', async () => {
+  test('chat: inline ExitPlanMode plan registers in cap without writing file', async () => {
     test.setTimeout(60_000)
     await page.getByTestId('tab-chat').click()
     await waitForTurnIdle(page, 60_000)
     const planRel = '.claude/plans/plan-logging-failover-runbook-log-1167.md'
     const planBody = '# Plan: Logging Failover Runbook — LOG-1167\n\n1. First step\n'
+    const planAbs = join(sessionProjectPath, planRel)
     await page.evaluate(
       ({ id, plan, toolUseId }) => window.atelier.debugRegisterPlanInCap(id, { plan, toolUseId }),
       { id: sessionId, plan: planBody, toolUseId: 'e2e-exit-plan-mode' }
@@ -240,11 +294,12 @@ test.describe('07-secondary-panels', () => {
         return snap?.sessionChangesCap?.items.some((i) => i.kind === 'file' && i.path === planRel) ?? false
       }, { timeout: 15_000 })
       .toBe(true)
+    expect(existsSync(planAbs)).toBe(false)
     const cap = page.getByTestId('chat-uncommitted-changes')
     await expect(cap).toBeVisible()
     await expandCap(page)
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'plan-logging-failover-runbook-log-1167.md' })).toBeVisible()
-    log('inline plan mirrored into session changes cap OK')
+    log('inline plan registered in session changes cap without mirroring OK')
   })
 
   test('chat: plan file in cap shows Plan tag and opens review pane', async () => {
@@ -302,12 +357,56 @@ test.describe('07-secondary-panels', () => {
     log('plan cap row opens plan review pane OK')
   })
 
+  test('chat: plan cap +/- reflects plan review diff between transcript editions', async () => {
+    test.setTimeout(60_000)
+    await page.getByTestId('tab-chat').click()
+    await waitForTurnIdle(page, 60_000)
+    const planRel = '.claude/plans/plan-e2e-editions.md'
+    await page.evaluate(
+      ({ id, planRel: rel }) =>
+        window.atelier.debugRegisterPlanInCap(id, {
+          plan: '# Plan\n\nAlpha\n',
+          toolUseId: 'e2e-plan-v1',
+          planFilePath: rel
+        }),
+      { id: sessionId, planRel }
+    )
+    await page.evaluate(
+      ({ id, planRel: rel }) =>
+        window.atelier.debugRegisterPlanInCap(id, {
+          plan: '# Plan\n\nAlpha\nBeta\nGamma\n',
+          toolUseId: 'e2e-plan-v2',
+          planFilePath: rel
+        }),
+      { id: sessionId, planRel }
+    )
+    await page.evaluate((id) => window.atelier.refreshSessionWorkspace(id, true), sessionId)
+    await expect
+      .poll(async () => {
+        const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
+        const item = snap?.sessionChangesCap?.items.find(
+          (i) => i.kind === 'file' && i.path.endsWith('plan-e2e-editions.md')
+        )
+        return item?.kind === 'file' ? item.additions : null
+      }, { timeout: 15_000 })
+      .toBe(2)
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect(cap).toBeVisible({ timeout: 15_000 })
+    await expandCap(page)
+    const planRow = cap.getByTestId('chat-changes-file').filter({ hasText: 'plan-e2e-editions.md' })
+    await expect(planRow.getByTestId('chat-changes-plan-tag')).toHaveText('Plan')
+    await expect(planRow.locator('.chat-changes-add')).toHaveText('+2')
+    await expect(planRow.locator('.chat-changes-del')).toHaveCount(0)
+    log('plan cap stats match plan review diff OK')
+  })
+
   test('chat: session changes cap — file row, git stats, diff navigation', async () => {
     test.setTimeout(120_000)
     await page.getByTestId('tab-chat').click()
     await waitForTurnIdle(page, 60_000)
     const cap = page.getByTestId('chat-uncommitted-changes')
-    await expect(cap).toHaveCount(0)
+    await collapseCap(page)
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(0)
 
     await page.getByTestId('composer-input').click()
     await ensureAcceptEditsMode(page, sessionId)
@@ -662,6 +761,10 @@ test.describe('07-secondary-panels', () => {
     await expect(files.getByTestId('files-tree')).toContainText('src')
     await expect(files.getByTestId('files-tree')).toContainText('logo.png')
     await expect(files.getByTestId('files-tree')).toContainText('page.html')
+    // Symlinks follow their target type in the tree (dir link → folder icon, file link → file icon).
+    await expect(files.locator('[data-testid="file-tree-dir"][data-path="src"]')).toBeVisible()
+    await expect(files.locator('[data-testid="file-tree-file"][data-path="logo.png"]')).toBeVisible()
+    await expect(files.locator('[data-testid="file-tree-file"][data-path="page.html"]')).toBeVisible()
 
     const indexJs = files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')
     if (!(await indexJs.isVisible())) {
@@ -784,6 +887,33 @@ test.describe('07-secondary-panels', () => {
     await expect(page.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 15_000 })
     await page.screenshot({ path: join(artifactsDir, '07-file-quick-open.png') })
     log('file quick open: split dir/search OK')
+  })
+
+  test('file quick open: Ctrl+X Ctrl+F from Files Monaco editor opens palette', async () => {
+    await page.getByTestId('tab-files').click()
+    const files = page.getByTestId('files-panel-active')
+    await expect(files.getByTestId('files-tree')).toBeVisible({ timeout: 15_000 })
+    await expect(files.locator('[data-testid="file-tree-dir"][data-path="src"]')).toBeVisible({ timeout: 15_000 })
+
+    const indexJs = files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')
+    if (!(await indexJs.isVisible())) {
+      await files.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
+    }
+    await indexJs.click()
+    await expect(files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')).toHaveClass(/active/)
+    await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 15_000 })
+    await files.locator('.view-line').first().click()
+
+    await page.keyboard.down('Control')
+    await page.keyboard.press('KeyX')
+    await page.keyboard.press('KeyF')
+    await page.keyboard.up('Control')
+
+    await expect(page.getByTestId('file-quick-open')).toBeVisible()
+    await expect(page.getByTestId('file-quick-open-input')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('file-quick-open')).toHaveCount(0)
+    log('file quick open: Files editor chord OK')
   })
 
   // ── 4. Worktree create/list/remove round trip against real disk state ──

@@ -6,7 +6,7 @@ import { registerEmacsMonacoKeybindings } from '../../editor/emacs-monaco-keybin
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
 import { ensureAtelierMonacoThemes, monacoThemeId } from '../../editor/atelier-monaco-theme'
 import { detectLanguage } from '../../editor/monaco-language'
-import { expandTildePath } from '../../../../shared/project-path-autocomplete'
+import { expandTildePath, REMOTE_SESSION_HOME } from '../../../../shared/project-path-autocomplete'
 
 ensureAtelierMonacoThemes()
 
@@ -21,20 +21,12 @@ function basenamePath(p: string): string {
   return i >= 0 ? p.slice(i + 1) : p
 }
 
-function sessionHomeFromRoot(workspaceRoot: string): string {
-  const remoteHome = workspaceRoot.match(/^(\/home\/[^/]+)/)
-  if (remoteHome) return remoteHome[1]!
-  const localHome = workspaceRoot.match(/^(\/Users\/[^/]+)/)
-  if (localHome) return localHome[1]!
-  return workspaceRoot.replace(/\/$/, '') || workspaceRoot
-}
-
 /** Resolve location-bar / listing paths against the session workspace root. */
-function resolveBrowsePath(inputPath: string, workspaceRoot: string): string {
+function resolveBrowsePath(inputPath: string, workspaceRoot: string, homeDir: string): string {
   const trimmed = inputPath.trim().replace(/\/$/, '')
   if (!trimmed) return workspaceRoot
   if (trimmed.startsWith('~')) {
-    return expandTildePath(trimmed, sessionHomeFromRoot(workspaceRoot))
+    return expandTildePath(trimmed, homeDir)
   }
   if (trimmed.startsWith('/')) return trimmed
   const root = workspaceRoot.replace(/\/$/, '')
@@ -45,12 +37,13 @@ function resolveBrowsePath(inputPath: string, workspaceRoot: string): string {
 /** Parent directory + final path segment for location-bar completion queries. */
 function resolveLocationCompletionQuery(
   inputPath: string,
-  workspaceRoot: string
+  workspaceRoot: string,
+  homeDir: string
 ): { dir: string; prefix: string } {
   const trimmed = inputPath.trim()
   if (!trimmed) return { dir: workspaceRoot, prefix: '' }
   const endsWithSlash = trimmed.endsWith('/')
-  const resolved = resolveBrowsePath(trimmed, workspaceRoot)
+  const resolved = resolveBrowsePath(trimmed, workspaceRoot, homeDir)
   const normalized = resolved.replace(/\/$/, '')
   const lastSlash = normalized.lastIndexOf('/')
   if (endsWithSlash) {
@@ -96,6 +89,15 @@ function treePathMatches(selected: string | null, candidate: string): boolean {
 function serializeFileTreeRoots(roots: FileTreeRoot[] | null | undefined): string {
   if (!roots?.length) return ''
   return roots.map((r) => `${r.label}\0${r.path}`).join('\n')
+}
+
+function deserializeFileTreeRoots(key: string): FileTreeRoot[] {
+  if (!key) return []
+  return key.split('\n').map((line) => {
+    const sep = line.indexOf('\0')
+    if (sep < 0) return { label: line, path: line }
+    return { label: line.slice(0, sep), path: line.slice(sep + 1) }
+  })
 }
 
 function treeWorkspaceRootForPath(
@@ -274,9 +276,11 @@ export default function FilesPanel({
   revealFileDiffSeq = 0,
   onRevealFileDiffHandled,
   onAddComment,
+  onOpenFileQuickOpen,
   initialFilesTree,
   profileBar = null,
-  fileTreeRoots = null
+  fileTreeRoots = null,
+  pathResolutionRoot
 }: {
   projectPath: string
   sessionId?: string
@@ -295,11 +299,22 @@ export default function FilesPanel({
   onRevealFileDiffHandled?: () => void
   /** Push an inline file-line comment into the session composer (same as Diff panel). */
   onAddComment?: (note: string) => void
+  /** Ctrl+X Ctrl+F from the Monaco editor — opens the file quick open palette. */
+  onOpenFileQuickOpen?: () => void
   /** Preloaded one-level tree from session workspace (main process). */
   initialFilesTree?: FileTreeNode[] | null
   profileBar?: ProfileBarInfo | null
   fileTreeRoots?: FileTreeRoot[] | null
+  /** Monorepo root for resolving relative paths (profile sessions use projectPath, not worktree). */
+  pathResolutionRoot?: string
 }): JSX.Element {
+  const browseRoot = pathResolutionRoot ?? projectPath
+  const [localHomeDir, setLocalHomeDir] = useState<string | null>(null)
+  useEffect(() => {
+    if (hostname) return
+    void window.atelier.getHomedir().then(setLocalHomeDir)
+  }, [hostname])
+  const homeDir = hostname ? REMOTE_SESSION_HOME : (localHomeDir ?? '/')
   const [tree, setTree] = useState<FileTreeNode[] | null>(null)
   const [profileRootTrees, setProfileRootTrees] = useState<Map<string, FileTreeNode[]>>(new Map())
   const [openTabs, setOpenTabs] = useState<OpenEditorTab[]>([])
@@ -318,6 +333,8 @@ export default function FilesPanel({
   const locationInputRef = useRef<HTMLInputElement | null>(null)
   const openTabsRef = useRef(openTabs)
   const activeTabIdRef = useRef<string | null>(null)
+  const onOpenFileQuickOpenRef = useRef(onOpenFileQuickOpen)
+  onOpenFileQuickOpenRef.current = onOpenFileQuickOpen
 
   function newEditorTabId(): string {
     nextTabIdRef.current += 1
@@ -377,6 +394,7 @@ export default function FilesPanel({
 
   // ── Load file tree ─────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!active) return
     setTree(null)
     setOpenTabs([])
     setActiveTabId(null)
@@ -402,16 +420,18 @@ export default function FilesPanel({
     }
     // fileTreeRootsKey is content-stable; parent passes a new array ref every render during streaming.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- workspace tree syncs via dedicated effect below
-  }, [projectPath, hostname, fileTreeRootsKey, initialFilesTree])
+  }, [active, projectPath, hostname, fileTreeRootsKey, initialFilesTree])
 
   useEffect(() => {
-    if (!fileTreeRootsKey || !fileTreeRoots?.length) {
+    if (!active || !fileTreeRootsKey) {
+      if (!active) return
       setProfileRootTrees(new Map())
       return undefined
     }
+    const roots = deserializeFileTreeRoots(fileTreeRootsKey)
     let cancelled = false
     void Promise.all(
-      fileTreeRoots.map(async (root) => {
+      roots.map(async (root) => {
         const children = await window.atelier.filesDir(root.path, root.path, hostname)
         return [root.path, children] as const
       })
@@ -422,7 +442,9 @@ export default function FilesPanel({
     return () => {
       cancelled = true
     }
-  }, [fileTreeRootsKey, hostname, fileTreeRoots])
+    // Only fileTreeRootsKey — parent passes a new array ref every render during streaming.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, fileTreeRootsKey, hostname])
 
   useEffect(() => {
     if (initialFilesTree == null || fileTreeRootsKey) return
@@ -503,7 +525,9 @@ export default function FilesPanel({
       suggest: { showWords: false },
     })
     editorRef.current = editor
-    registerEmacsMonacoKeybindings(editor)
+    registerEmacsMonacoKeybindings(editor, {
+      onFileQuickOpen: () => onOpenFileQuickOpenRef.current?.()
+    })
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       void saveCurrentFileRef.current?.()
     })
@@ -621,8 +645,8 @@ export default function FilesPanel({
     if (completionTimerRef.current) clearTimeout(completionTimerRef.current)
     completionTimerRef.current = setTimeout(async () => {
       if (!input) { setCompletions([]); return }
-      const { dir, prefix } = resolveLocationCompletionQuery(input, projectPath)
-      const listRoot = filesDirListRootForPath(dir, projectPath, fileTreeRoots)
+      const { dir, prefix } = resolveLocationCompletionQuery(input, browseRoot, homeDir)
+      const listRoot = filesDirListRootForPath(dir, browseRoot, fileTreeRoots)
       try {
         const children = await window.atelier.filesDir(listRoot, dir || listRoot, hostname)
         const lower = prefix.toLowerCase()
@@ -649,12 +673,12 @@ export default function FilesPanel({
   // ── Reveal a file path in the tree (expand all ancestor dirs) ────────────
   async function revealInTree(focusPath: string): Promise<void> {
     const normalized = normalizeTreePath(focusPath)
-    const treeRoot = treeWorkspaceRootForPath(normalized, projectPath, fileTreeRoots)
+    const treeRoot = treeWorkspaceRootForPath(normalized, browseRoot, fileTreeRoots)
     const ancestors = collectAncestorDirs(normalized, treeRoot)
     const fetched = new Map<string, FileTreeNode[]>()
     await Promise.all(ancestors.map(async (dir) => {
       if (!dirChildrenRef.current.has(dir)) {
-        const listRoot = treeWorkspaceRootForPath(dir, projectPath, fileTreeRoots)
+        const listRoot = treeWorkspaceRootForPath(dir, browseRoot, fileTreeRoots)
         const children = await window.atelier.filesDir(listRoot, dir, hostname)
         fetched.set(dir, children)
       }
@@ -698,7 +722,7 @@ export default function FilesPanel({
 
   // ── Open a directory in the content pane ───────────────────────────────────
   async function openDirectoryInView(inputPath: string, seq?: number): Promise<void> {
-    const dirPath = resolveBrowsePath(inputPath, projectPath)
+    const dirPath = resolveBrowsePath(inputPath, browseRoot, homeDir)
     const mySeq = seq ?? ++openSeqRef.current
     setBrowseDirLoading(true)
     setBrowseDirPath(dirPath)
@@ -707,7 +731,7 @@ export default function FilesPanel({
     setCapDiff(null)
     try {
       const cached = dirChildrenRef.current.get(dirPath)
-      const listRoot = filesDirListRootForPath(dirPath, projectPath, fileTreeRoots)
+      const listRoot = filesDirListRootForPath(dirPath, browseRoot, fileTreeRoots)
       const children = cached ?? await window.atelier.filesDir(listRoot, dirPath, hostname)
       if (mySeq !== openSeqRef.current) return
       setBrowseDirChildren(children)
@@ -834,7 +858,7 @@ export default function FilesPanel({
   async function handleLocationCommit(inputPath: string): Promise<void> {
     const path = inputPath.trim()
     if (!path) return
-    const resolvedPath = resolveBrowsePath(path, projectPath)
+    const resolvedPath = resolveBrowsePath(path, browseRoot, homeDir)
     const mySeq = ++openSeqRef.current
     locationCommitInFlightRef.current = true
     setLocationInput(resolvedPath)
@@ -843,7 +867,7 @@ export default function FilesPanel({
       if (await window.atelier.filesIsDirectory(resolvedPath, hostname)) {
         if (mySeq !== openSeqRef.current) return
         setLocationEditing(false)
-        await openDirectoryInView(path, mySeq)
+        await openDirectoryInView(resolvedPath, mySeq)
         return
       }
       const result = await window.atelier.filesRead(resolvedPath, hostname)
@@ -855,7 +879,7 @@ export default function FilesPanel({
       const parentDir = dirnamePath(resolvedPath)
       if (
         parentDir !== resolvedPath &&
-        canBrowseDirectoryInSession(parentDir, projectPath, fileTreeRoots)
+        canBrowseDirectoryInSession(parentDir, browseRoot, fileTreeRoots)
       ) {
         try {
           setLocationEditing(false)
@@ -914,7 +938,7 @@ export default function FilesPanel({
     setExpanded((prev) => new Set(prev).add(node.path))
     if (!dirChildren.has(node.path)) {
       setLoadingDirs((prev) => new Set(prev).add(node.path))
-      const listRoot = treeWorkspaceRootForPath(node.path, projectPath, fileTreeRoots)
+      const listRoot = treeWorkspaceRootForPath(node.path, browseRoot, fileTreeRoots)
       const children = await window.atelier.filesDir(listRoot, node.path, hostname)
       setDirChildren((prev) => new Map(prev).set(node.path, children))
       setLoadingDirs((prev) => { const s = new Set(prev); s.delete(node.path); return s })

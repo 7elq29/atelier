@@ -84,6 +84,7 @@ function walkLocalDir(root: string, dir: string, matchers: ReturnType<typeof loa
     const rel = relative(root, full)
     let stat
     try {
+      // statSync follows symlinks: link→dir is a dir, link→file is a file.
       stat = statSync(full)
     } catch {
       continue
@@ -152,7 +153,8 @@ function listLocalWorkspaceFiles(workspaceRoot: string, underDir?: string): Work
 // ── Remote helpers ───────────────────────────────────────────────────────────
 
 /**
- * Parses `find . -printf '%y %P\n'` output (relative paths, Linux/devpod).
+ * Parses `find . -printf '%Y %P\n'` output (relative paths, Linux/devpod).
+ * %Y is the target type: symlink→dir reports `d`, symlink→file reports `f`.
  * Lines look like: `f src/index.ts` or `d src`. Empty path = starting point, skipped.
  */
 function buildRemoteTree(root: string, findOutput: string): FileTreeNode[] {
@@ -206,7 +208,7 @@ function buildRemoteTree(root: string, findOutput: string): FileTreeNode[] {
 
 async function walkRemote(root: string, sshHost: string): Promise<FileTreeNode[]> {
   const ignoredNames = [...ALWAYS_IGNORED].map((n) => `-name ${shQuote(n)}`).join(' -o ')
-  const cmd = `cd ${remoteCdTarget(root)} && find . -maxdepth 1 \\( ${ignoredNames} \\) -prune -o -printf '%y %P\\n' 2>/dev/null`
+  const cmd = `cd ${remoteCdTarget(root)} && find . -maxdepth 1 \\( ${ignoredNames} \\) -prune -o -printf '%Y %P\\n' 2>/dev/null`
   const { stdout, code } = await sshExec(sshHost, cmd)
   logger.info('files:tree:remote:done', { root, sshHost, code, lines: stdout.split('\n').length })
   return buildRemoteTree(root, stdout)
@@ -214,7 +216,7 @@ async function walkRemote(root: string, sshHost: string): Promise<FileTreeNode[]
 
 async function walkRemoteChildren(root: string, dir: string, sshHost: string): Promise<FileTreeNode[]> {
   const ignoredNames = [...ALWAYS_IGNORED].map((n) => `-name ${shQuote(n)}`).join(' -o ')
-  const cmd = `cd ${remoteCdTarget(dir)} && find . -maxdepth 1 \\( ${ignoredNames} \\) -prune -o -printf '%y %P\\n' 2>/dev/null`
+  const cmd = `cd ${remoteCdTarget(dir)} && find . -maxdepth 1 \\( ${ignoredNames} \\) -prune -o -printf '%Y %P\\n' 2>/dev/null`
   const { stdout, code } = await sshExec(sshHost, cmd)
   logger.info('files:dir:remote:done', { root, dir, sshHost, code })
   return buildRemoteTree(dir, stdout)

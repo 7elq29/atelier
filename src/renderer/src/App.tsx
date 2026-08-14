@@ -8,16 +8,11 @@ import NewSessionModal from './components/NewSessionModal'
 import SettingsPanel from './components/SettingsPanel'
 import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
 import { DeleteSessionLinkedTaskDialog, TaskSessionReplaceDialog } from './components/daily-notes/TaskSessionLinkDialogs'
-import ChatTranscript from './components/chat/ChatTranscript'
-import ResponseReviewPanel from './components/chat/ResponseReviewPanel'
 import TranscriptSearchBar from './components/chat/TranscriptSearchBar'
 import Composer, { type ComposerHandle } from './components/chat/Composer'
-import TrackerRail from './components/chat/TrackerRail'
 import SdkToastStack from './components/chat/SdkToastStack'
 import ExportMenu from './components/chat/ExportMenu'
 import TabBar, { type SessionTab } from './components/panels/TabBar'
-import DiffPanel from './components/panels/DiffPanel'
-import FilesPanel from './components/panels/FilesPanel'
 import AppNotesPanel from './components/panels/AppNotesPanel'
 import DailyNoteEditorPanel from './components/panels/DailyNoteEditorPanel'
 import WeeklyPlanWizardPanel from './components/panels/WeeklyPlanWizardPanel'
@@ -27,6 +22,10 @@ import TerminalWithToolbox from './components/panels/TerminalWithToolbox'
 import CompanionTerminalDrawer from './components/panels/CompanionTerminalDrawer'
 import TitleBar from './components/TitleBar'
 import SessionDisconnectedPanel from './components/SessionDisconnectedPanel'
+import { SessionWorkspacePanels } from './components/session/SessionWorkspacePanels'
+import { SessionChatSurface } from './components/session/SessionChatSurface'
+import { SessionMessagesHydrator } from './components/session/SessionMessagesHydrator'
+import { getSessionMessages, hasSessionMessages } from './stores/session-messages-store'
 import { useConfig } from './hooks/useConfig'
 import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig, type AtelierConfig } from '../../shared/config'
 import { useSessions } from './hooks/useSessions'
@@ -50,16 +49,42 @@ import type {
 } from '../../shared/session-types'
 import { FTS_SNIPPET_START, FTS_SNIPPET_END, parseStructuredContent } from '../../shared/chat-content'
 import { isClaudePlanPath } from '../../shared/claude-plan-path'
-import { resolveSessionProfileFileTree } from '../../shared/session-profile-resolve'
-import { resolveSessionFilePath } from './components/chat/file-path-links'
+import { findPlanCapEdition } from '../../shared/plan-cap-editions'
+import { resolveSessionFilePath, collectFilePathCandidates, sessionFileLinkWorkspaceRoot } from './components/chat/file-path-links'
+import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
+import type { DiffSummary, DiffFileChange } from '../../shared/panel-types'
 
-function resolveOpenFilePath(rawPath: string, session: SessionRecord | null | undefined): string {
+function filePathCandidatesForSession(ws: SessionWorkspacePayload | undefined): string[] {
+  if (!ws) return []
+  return collectFilePathCandidates({
+    capPaths: ws.sessionChangesCap.items.filter((i) => i.kind === 'file').map((i) => i.path),
+    filesList: ws.filesList,
+    diffPaths: ws.diff.files.map((f) => f.path)
+  })
+}
+
+function revealPathInDiffSummary(path: string, diff?: DiffSummary | null): string {
+  if (!diff?.isRepo) return path
+  const norm = path.replace(/\\/g, '/')
+  const exact = diff.files.find((f) => f.path === norm)
+  if (exact) return exact.path
+  const base = norm.split('/').filter(Boolean).pop()
+  if (!base) return path
+  const matches = diff.files.filter((f) => f.path === base || f.path.endsWith(`/${base}`))
+  return matches.length === 1 ? matches[0]!.path : path
+}
+
+function resolveOpenFilePath(
+  rawPath: string,
+  session: SessionRecord | null | undefined,
+  candidates: readonly string[] = []
+): string {
   const trimmed = rawPath.trim()
   if (!trimmed || trimmed.startsWith('/') || trimmed.startsWith('~')) return trimmed
-  const workspaceRoot = session?.worktreePath ?? session?.projectPath ?? ''
+  const workspaceRoot = session ? sessionFileLinkWorkspaceRoot(session) : ''
   const projectRoot = session?.projectPath ?? workspaceRoot
   if (!workspaceRoot) return trimmed
-  return resolveSessionFilePath(trimmed, workspaceRoot, projectRoot) ?? trimmed
+  return resolveSessionFilePath(trimmed, workspaceRoot, projectRoot, candidates) ?? trimmed
 }
 
 function findPreviousPlanMarkdown(messages: { content: string }[]): string | undefined {
@@ -172,6 +197,9 @@ export default function App(): JSX.Element {
   const [revealFileSeq, setRevealFileSeq] = useState(0)
   const [revealFileDiffPath, setRevealFileDiffPath] = useState<string | undefined>()
   const [revealFileDiffSeq, setRevealFileDiffSeq] = useState(0)
+  const [injectDiffBySession, setInjectDiffBySession] = useState<
+    Record<string, { file: DiffFileChange; seq: number }>
+  >({})
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerHeight, setDrawerHeight] = useState(240)
   /** Per-session FIFO queue while that session is busy (message-queue). */
@@ -468,16 +496,6 @@ export default function App(): JSX.Element {
   )
 
   async function selectSession(session: SessionRecord): Promise<void> {
-    if (activeSessionId && session.id !== activeSessionId) {
-      const current = allSessions.find((s) => s.id === activeSessionId)
-      if (
-        current?.mode === 'claude-code' &&
-        !current.closedAt &&
-        sessions.statuses[activeSessionId] === 'connecting'
-      ) {
-        return
-      }
-    }
     setActiveAppNoteId(null)
     setActiveDailyNoteDate(null)
     setActiveWeeklyPlanOpen(false)
@@ -500,7 +518,7 @@ export default function App(): JSX.Element {
     // Reload transcript + reconnect for active sessions missing cached messages
     // (common after app relaunch). Closed / startup-idle / connecting: no reconnect on select —
     // user must wait or use Reconnect on the disconnected gate.
-    if (!disconnectedGate && !sessions.messagesBySession[session.id]) {
+    if (!disconnectedGate && !hasSessionMessages(session.id)) {
       await sessions.resumeSession(session.id)
     }
     sessionWorkspace.hydrateSnapshot(session.id)
@@ -513,7 +531,7 @@ export default function App(): JSX.Element {
       await sessions.resumeSession(activeSessionId)
       return
     }
-    if (!sessions.messagesBySession[activeSessionId]) {
+    if (!hasSessionMessages(activeSessionId)) {
       await sessions.loadSessionMessages(activeSessionId)
     }
     await sessions.reconnectSession(activeSessionId)
@@ -663,13 +681,14 @@ export default function App(): JSX.Element {
     (path: string) => {
       const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
       if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
-      const absolutePath = resolveOpenFilePath(path, session)
+      const ws = activeSessionId ? sessionWorkspace.workspaceBySession[activeSessionId] : undefined
+      const absolutePath = resolveOpenFilePath(path, session, filePathCandidatesForSession(ws))
       setRevealFileDiffPath(absolutePath)
       setRevealFileDiffSeq((n) => n + 1)
       setActiveTab('files')
       setVisitedTabs((prev) => (prev.has('files') ? prev : new Set(prev).add('files')))
     },
-    [activeSessionId, allSessions, sessions.statuses]
+    [activeSessionId, allSessions, sessions.statuses, sessionWorkspace.workspaceBySession]
   )
 
   const openCommitInDiff = useCallback(
@@ -688,13 +707,14 @@ export default function App(): JSX.Element {
     (rawPath: string) => {
       const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
       if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
-      const absolutePath = resolveOpenFilePath(rawPath, session)
+      const ws = activeSessionId ? sessionWorkspace.workspaceBySession[activeSessionId] : undefined
+      const absolutePath = resolveOpenFilePath(rawPath, session, filePathCandidatesForSession(ws))
       setRevealFilePath(absolutePath)
       setRevealFileSeq((n) => n + 1)
       setActiveTab('files')
       setVisitedTabs((prev) => (prev.has('files') ? prev : new Set(prev).add('files')))
     },
-    [activeSessionId, allSessions, sessions.statuses]
+    [activeSessionId, allSessions, sessions.statuses, sessionWorkspace.workspaceBySession]
   )
 
   useEffect(() => {
@@ -705,7 +725,7 @@ export default function App(): JSX.Element {
       next.set(activeSession.id, { cwd: activeSession.projectPath, hostname: activeSession.hostname })
       return next
     })
-  }, [activeSession?.id, activeSession?.mode])
+  }, [activeSession?.id, activeSession?.mode, activeSession?.projectPath])
 
   // Tab-terminal + composer registration when main finishes workspace preload.
   useEffect(() => {
@@ -762,18 +782,6 @@ export default function App(): JSX.Element {
   // Consumes `pendingJumpMessageId` the moment the target row exists in the
   // real DOM: real `scrollIntoView` (not a mocked scroll) plus a brief
   // `.msg-jump-highlight` flash so the destination is visually obvious.
-  const activeMessagesForJump = activeSessionId ? sessions.messagesBySession[activeSessionId] ?? [] : []
-  useEffect(() => {
-    if (pendingJumpMessageId == null) return
-    const el = document.querySelector<HTMLElement>(`[data-testid="transcript-message"][data-message-id="${pendingJumpMessageId}"]`)
-    if (!el) return
-    el.scrollIntoView({ block: 'center' })
-    el.classList.add('msg-jump-highlight')
-    const timer = setTimeout(() => el.classList.remove('msg-jump-highlight'), 1600)
-    setPendingJumpMessageId(null)
-    return () => clearTimeout(timer)
-  }, [pendingJumpMessageId, activeMessagesForJump.length])
-
   // "Focus jumped to that session": move real DOM focus to the row, not just
   // a CSS highlight — provable from Playwright via document.activeElement.
   useEffect(() => {
@@ -901,14 +909,31 @@ export default function App(): JSX.Element {
     await sessions.exportTranscript(activeSessionId, format)
   }
 
-  const activeMessages = activeSessionId ? sessions.messagesBySession[activeSessionId] ?? [] : []
-
   const openChangedFileFromCap = useCallback(
     async (path: string, opensInFilesTab: boolean) => {
       const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
       if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
+      if (!session || !activeSessionId) return
+      const ws = sessionWorkspace.workspaceBySession[activeSessionId]
+      const pathCandidates = filePathCandidatesForSession(ws)
+      const activeMessages = getSessionMessages(activeSessionId)
       if (isClaudePlanPath(path)) {
-        const absPath = resolveOpenFilePath(path, session)
+        const edition = findPlanCapEdition(activeMessages, path)
+        if (edition) {
+          const planMessages = activeMessages.filter(
+            (m) => parseStructuredContent(m.content)?.kind === 'plan_proposed'
+          )
+          setActiveTab('chat')
+          setReviewTarget({
+            sourceId: planMessages[planMessages.length - 1]?.id ?? -1,
+            kind: 'plan',
+            content: edition.current,
+            previousContent: edition.previous,
+            capFilePath: path
+          })
+          return
+        }
+        const absPath = resolveOpenFilePath(path, session, pathCandidates)
         const result = await window.atelier.filesRead(absPath, session?.hostname ?? null)
         if (result.kind !== 'text' && result.kind !== 'html') return
         const planMessages = activeMessages.filter(
@@ -928,9 +953,30 @@ export default function App(): JSX.Element {
         openChangedFileInFilesWithDiff(path)
         return
       }
-      openChangedFileInDiff(path)
+      const workspacePath = session.worktreePath ?? session.projectPath
+      const revealed = revealPathInDiffSummary(path, ws?.diff)
+      const inSummary = ws?.diff?.files.some((f) => f.path === revealed || f.path === path)
+      let diffPath = revealed
+      if (!inSummary) {
+        const file = await window.atelier.capGitFileDiff(activeSessionId, workspacePath, path)
+        if (file) {
+          setInjectDiffBySession((prev) => ({
+            ...prev,
+            [activeSessionId]: { file, seq: (prev[activeSessionId]?.seq ?? 0) + 1 }
+          }))
+          diffPath = file.path
+        }
+      }
+      openChangedFileInDiff(diffPath)
     },
-    [activeSessionId, allSessions, sessions.statuses, activeMessages, openChangedFileInDiff, openChangedFileInFilesWithDiff]
+    [
+      activeSessionId,
+      allSessions,
+      sessions.statuses,
+      sessionWorkspace.workspaceBySession,
+      openChangedFileInDiff,
+      openChangedFileInFilesWithDiff
+    ]
   )
 
   const activeSessionDisconnected = claudeCodeSessionDisconnected(
@@ -939,21 +985,48 @@ export default function App(): JSX.Element {
     sessions.statuses
   )
 
-  // If the user stays on a session through its connect/reconnect gap,
-  // `selectSession()` skips transcript hydration while the disconnected gate
-  // is up — reload from SQLite the moment the session becomes interactive.
-  useEffect(() => {
-    if (!activeSessionId || !activeSession || activeSession.mode !== 'claude-code') return
-    if (activeSessionDisconnected) return
-    if (sessions.messagesBySession[activeSessionId]) return
-    void sessions.loadSessionMessages(activeSessionId)
-  }, [
-    activeSessionId,
-    activeSession,
-    activeSessionDisconnected,
-    sessions.messagesBySession,
-    sessions.loadSessionMessages
-  ])
+  const reloadSessionPanelsForPathChange = useCallback((id: string) => {
+    sessionWorkspace.evictSession(id)
+    setAliveTabTerminals((prev) => {
+      const ptyId = `${id}:tab-terminal`
+      if (!prev.has(ptyId)) return prev
+      const next = new Map(prev)
+      next.delete(ptyId)
+      return next
+    })
+    setAliveTerminals((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Map(prev)
+      next.delete(id)
+      return next
+    })
+    void window.atelier.ptyKill(`${id}:tab-terminal`)
+    void window.atelier.ptyKill(`${id}:companion`)
+    void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`)
+    void window.atelier.ptyKillTmuxSession(`${id}:companion`)
+  }, [sessionWorkspace])
+
+  const handleSetProjectPath = useCallback(
+    async (id: string, projectPath: string) => {
+      reloadSessionPanelsForPathChange(id)
+      await sessions.setProjectPath(id, projectPath)
+    },
+    [reloadSessionPanelsForPathChange, sessions]
+  )
+
+  const handleRefreshWorkspace = useCallback((sessionId: string) => {
+    void window.atelier.refreshSessionWorkspace(sessionId, true)
+  }, [])
+
+  const openFileQuickOpen = useCallback(() => {
+    if (activeSession?.mode === 'claude-code' && !activeAppNote) {
+      setFileQuickOpenOpen(true)
+    }
+  }, [activeSession?.mode, activeAppNote])
+
+  const handleJumpHandled = useCallback(() => {
+    setPendingJumpMessageId(null)
+  }, [])
 
   const workspacePanelSessionIds = useMemo(() => {
     const ids = new Set<string>()
@@ -1129,9 +1202,9 @@ export default function App(): JSX.Element {
           groups={sessions.groups}
           statuses={sessions.statuses}
           staleSessionIds={sessions.staleSessionIds}
-          messagesBySession={sessions.messagesBySession}
           onSetColor={(id, color) => void sessions.setColor(id, color)}
           onSetNotes={(id, notes) => void sessions.setNotes(id, notes)}
+          onSetProjectPath={(id, projectPath) => void handleSetProjectPath(id, projectPath)}
           onAddTag={(id, tag) => void sessions.addTag(id, tag)}
           onRemoveTag={(id, tag) => void sessions.removeTag(id, tag)}
           onReorderSessions={(groupId, orderedIds) => void sessions.reorderSessions(groupId, orderedIds)}
@@ -1266,7 +1339,7 @@ export default function App(): JSX.Element {
                     activeTab === 'terminal' &&
                     !activeSessionDisconnected
                   return (
-                    <div key={ptyId} className={`terminal-cache-entry${isActive ? ' active' : ''}`}>
+                    <div key={`${ptyId}:${info.cwd}`} className={`terminal-cache-entry${isActive ? ' active' : ''}`}>
                       <TerminalWithToolbox
                         ptyId={ptyId}
                         cwd={info.cwd}
@@ -1333,55 +1406,49 @@ export default function App(): JSX.Element {
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                   <div className={`tab-content${activeTab === 'chat' ? '' : ' hidden'}`} data-tab="chat">
                     <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
+                      <SessionMessagesHydrator
+                        sessionId={activeSession.id}
+                        enabled={!activeSessionDisconnected}
+                        loadSessionMessages={sessions.loadSessionMessages}
+                      />
                       <SdkToastStack toasts={sessions.sdkToastsBySession[activeSession.id] ?? []} />
-                      <div className={`chat-body-row${reviewTarget ? ' response-review-open' : ''}`}>
-                        <div className="chat-main-col">
-                          <ChatTranscript
-                            messages={activeMessages}
-                            onRespond={(requestId, decision) => void sessions.respondToPrompt(activeSession.id, requestId, decision)}
-                            searchQuery={transcriptSearchOpen ? transcriptSearchQuery : ''}
-                            activeMatchIndex={activeMatchIndex}
-                            onMatchCount={setMatchCount}
-                            onOpenPlanFile={openFileInFiles}
-                            workspaceRoot={activeSession.worktreePath ?? activeSession.projectPath}
-                            projectRoot={activeSession.projectPath}
-                            onOpenFileInFiles={openFileInFiles}
-                            sdkChrome={sessions.sdkChromeBySession[activeSession.id] ?? null}
-                            backgroundTasks={sessions.backgroundTasksBySession[activeSession.id] ?? []}
-                            onReviewMessage={(message) =>
-                              setReviewTarget({
-                                sourceId: message.id,
-                                kind: 'response',
-                                content: message.content
-                              })
-                            }
-                            onReviewPlan={(message, planMarkdown, previousPlanMarkdown) =>
-                              setReviewTarget({
-                                sourceId: message.id,
-                                kind: 'plan',
-                                content: planMarkdown,
-                                previousContent: previousPlanMarkdown
-                              })
-                            }
-                            reviewTarget={reviewTarget}
-                          />
-                        </div>
-                        <TrackerRail
-                          messages={activeMessages}
-                          backgroundTasks={sessions.backgroundTasksBySession[activeSession.id] ?? []}
-                        />
-                        {reviewTarget ? (
-                          <ResponseReviewPanel
-                            target={reviewTarget}
-                            onClose={() => setReviewTarget(null)}
-                            onAddComment={appendToActiveComposer}
-                            onUpdateComment={replaceInActiveComposer}
-                            workspaceRoot={activeSession.worktreePath ?? activeSession.projectPath}
-                            projectRoot={activeSession.projectPath}
-                            onOpenFileInFiles={openFileInFiles}
-                          />
-                        ) : null}
-                      </div>
+                      <SessionChatSurface
+                        session={activeSession}
+                        pendingJumpMessageId={pendingJumpMessageId}
+                        onJumpHandled={handleJumpHandled}
+                        transcriptSearchOpen={transcriptSearchOpen}
+                        transcriptSearchQuery={transcriptSearchQuery}
+                        activeMatchIndex={activeMatchIndex}
+                        onMatchCount={setMatchCount}
+                        onOpenFileInFiles={openFileInFiles}
+                        filePathCandidates={filePathCandidatesForSession(
+                          sessionWorkspace.workspaceBySession[activeSession.id]
+                        )}
+                        sdkChrome={sessions.sdkChromeBySession[activeSession.id] ?? null}
+                        backgroundTasks={sessions.backgroundTasksBySession[activeSession.id] ?? []}
+                        onRespondToPrompt={(requestId, decision) =>
+                          void sessions.respondToPrompt(activeSession.id, requestId, decision)
+                        }
+                        reviewTarget={reviewTarget}
+                        onReviewMessage={(message) =>
+                          setReviewTarget({
+                            sourceId: message.id,
+                            kind: 'response',
+                            content: message.content
+                          })
+                        }
+                        onReviewPlan={(message, planMarkdown, previousPlanMarkdown) =>
+                          setReviewTarget({
+                            sourceId: message.id,
+                            kind: 'plan',
+                            content: planMarkdown,
+                            previousContent: previousPlanMarkdown
+                          })
+                        }
+                        onCloseReview={() => setReviewTarget(null)}
+                        onAddComment={appendToActiveComposer}
+                        onUpdateComment={replaceInActiveComposer}
+                      />
                       <div className="composer-cache">
                         {[...aliveChatComposers].map((sessionId) => {
                           const session = allSessions.find((s) => s.id === sessionId)
@@ -1454,68 +1521,32 @@ export default function App(): JSX.Element {
                     </div>
                   </div>
 
-                  {[...workspacePanelSessionIds].map((sessionId) => {
-                    const session = allSessions.find((s) => s.id === sessionId)
-                    const ws = sessionWorkspace.workspaceBySession[sessionId]
-                    if (!session || session.mode !== 'claude-code') return null
-                    const panelsVisible = activeSessionId === sessionId && !activeSessionDisconnected
-                    const workspacePath = session.worktreePath ?? session.projectPath
-                    const profileFileTree = resolveSessionProfileFileTree(session, config.sessionProfiles ?? [])
-                    return (
-                      <div
-                        key={`workspace-panels-${sessionId}`}
-                        style={{ display: panelsVisible ? 'contents' : 'none' }}
-                      >
-                        <div className={`tab-content${activeTab === 'diff' ? '' : ' hidden'}`} data-tab="diff">
-                          <DiffPanel
-                            workspacePath={workspacePath}
-                            repoRoot={session.projectPath}
-                            hostname={session.hostname}
-                            effectiveTheme={effectiveTheme}
-                            panelScopeKey={session.id}
-                            active={panelsVisible && activeTab === 'diff'}
-                            workspaceDiff={ws?.diff}
-                            onRefreshWorkspace={() => void window.atelier.refreshSessionWorkspace(sessionId, true)}
-                            revealChangePath={panelsVisible ? revealChangePath : undefined}
-                            revealChangeSeq={panelsVisible ? revealChangeSeq : 0}
-                            onRevealChangeHandled={() => setRevealChangePath(undefined)}
-                            revealCommitHash={panelsVisible ? revealCommitHash : undefined}
-                            revealCommitSeq={panelsVisible ? revealCommitSeq : 0}
-                            onRevealCommitHandled={() => setRevealCommitHash(undefined)}
-                            onAddComment={appendToActiveComposer}
-                          />
-                        </div>
-
-                        <div className={`tab-content${activeTab === 'files' ? '' : ' hidden'}`} data-tab="files">
-                          <FilesPanel
-                            projectPath={workspacePath}
-                            sessionId={sessionId}
-                            hostname={session.hostname}
-                            effectiveTheme={effectiveTheme}
-                            active={panelsVisible && activeTab === 'files'}
-                            initialFilesTree={profileFileTree ? null : ws?.filesTree}
-                            profileBar={
-                              profileFileTree
-                                ? {
-                                    name: profileFileTree.profileName,
-                                    workspacePath: profileFileTree.workspacePath,
-                                    dirCount: profileFileTree.roots.length
-                                  }
-                                : null
-                            }
-                            fileTreeRoots={profileFileTree?.roots ?? null}
-                            revealFilePath={panelsVisible ? revealFilePath : undefined}
-                            revealFileSeq={panelsVisible ? revealFileSeq : 0}
-                            onRevealFileHandled={() => setRevealFilePath(undefined)}
-                            revealFileDiffPath={panelsVisible ? revealFileDiffPath : undefined}
-                            revealFileDiffSeq={panelsVisible ? revealFileDiffSeq : 0}
-                            onRevealFileDiffHandled={() => setRevealFileDiffPath(undefined)}
-                            onAddComment={appendToActiveComposer}
-                          />
-                        </div>
-                      </div>
-                    )
-                  })}
+                  <SessionWorkspacePanels
+                    sessionIds={workspacePanelSessionIds}
+                    allSessions={allSessions}
+                    workspaceBySession={sessionWorkspace.workspaceBySession}
+                    sessionProfiles={config.sessionProfiles}
+                    activeSessionId={activeSessionId}
+                    activeTab={activeTab}
+                    activeSessionDisconnected={activeSessionDisconnected}
+                    effectiveTheme={effectiveTheme}
+                    revealChangePath={revealChangePath}
+                    revealChangeSeq={revealChangeSeq}
+                    revealCommitHash={revealCommitHash}
+                    revealCommitSeq={revealCommitSeq}
+                    revealFilePath={revealFilePath}
+                    revealFileSeq={revealFileSeq}
+                    revealFileDiffPath={revealFileDiffPath}
+                    revealFileDiffSeq={revealFileDiffSeq}
+                    injectDiffBySession={injectDiffBySession}
+                    onRevealChangeHandled={() => setRevealChangePath(undefined)}
+                    onRevealCommitHandled={() => setRevealCommitHash(undefined)}
+                    onRevealFileHandled={() => setRevealFilePath(undefined)}
+                    onRevealFileDiffHandled={() => setRevealFileDiffPath(undefined)}
+                    onAddComment={appendToActiveComposer}
+                    onOpenFileQuickOpen={openFileQuickOpen}
+                    onRefreshWorkspace={handleRefreshWorkspace}
+                  />
 
                   <div className={`tab-content${activeTab === 'terminal' ? '' : ' hidden'}`} data-tab="terminal">
                     {/* TerminalPanel lives in the terminal-cache-layer above this session subtree.

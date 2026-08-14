@@ -44,9 +44,10 @@ import type { SessionStore } from './store'
 import { suggestProjectPaths as computeProjectPathSuggestions } from './project-path-suggest'
 import { worktreeRootFromConfig, sessionWorktreePath } from '../../shared/worktree-path'
 import { homeDirForWorktreeHost } from './worktree-home'
-import { createWorktree, removeWorktree } from './worktree'
+import { createWorktree, removeWorktree, worktreePathExists } from './worktree'
 import { warmRemoteGitHost } from '../panels/git'
-import { handleFileEditToolCompleted, getSessionCapOutsideFileDiff, registerPlanFileInSessionChangesCap } from './session-changes-cap'
+import { invalidateGitRepository } from '../panels/git-repository'
+import { handleFileEditToolCompleted, getSessionCapOutsideFileDiff, getSessionCapGitFileDiff, registerPlanFileInSessionChangesCap } from './session-changes-cap'
 import { WorkspaceService } from './workspace-service'
 import { applyBashCdCommands } from './harness-cwd'
 import { SessionHarnessUiState } from './session-harness-ui'
@@ -234,6 +235,8 @@ export class SessionManager {
   private readonly startupIdle = new Set<string>()
   /** After reconnect(), the first harness event triggers panel preload in the renderer. */
   private readonly pendingPanelPreload = new Set<string>()
+  /** `completeSessionOpen()` in flight — keep `connecting` until diff/workspace preload finishes. */
+  private readonly workspacePreloadInFlight = new Set<string>()
   /** startupReconnect() paths — must not bump last_active_at when the harness connects. */
   private readonly startupAutoReconnect = new Set<string>()
   /**
@@ -286,9 +289,8 @@ export class SessionManager {
     if (!this.workspace) return
     if (this.workspace.getCached(sessionId)) {
       this.workspace.patchSessionChangesCap(sessionId, cap)
-    } else {
-      void this.refreshSessionWorkspace(sessionId, true)
     }
+    // No cache yet — preloadSession will include cap; avoid force-refreshing files.
   }
 
   constructor(
@@ -341,10 +343,14 @@ export class SessionManager {
     return this.workspace?.getCached(sessionId) ?? null
   }
 
-  async refreshSessionWorkspace(sessionId: string, force: boolean): Promise<SessionWorkspacePayload | null> {
+  async refreshSessionWorkspace(
+    sessionId: string,
+    force: boolean,
+    opts?: { includeFiles?: boolean }
+  ): Promise<SessionWorkspacePayload | null> {
     const session = this.getSession(sessionId)
     if (!session || session.mode !== 'claude-code' || !this.workspace) return null
-    return this.workspace.refreshWorkspace(session, force)
+    return this.workspace.refreshWorkspace(session, force, opts)
   }
 
   getCapOutsideFileDiff(
@@ -354,7 +360,24 @@ export class SessionManager {
   ): Promise<{ file: DiffFileChange; pair: DiffFileContentPair } | null> {
     const session = this.getSession(sessionId)
     if (!session) return Promise.resolve(null)
-    return getSessionCapOutsideFileDiff(this.store, sessionId, workspacePath, capPath, session.hostname)
+    return getSessionCapOutsideFileDiff(
+      this.store,
+      sessionId,
+      workspacePath,
+      capPath,
+      session.hostname,
+      session.projectPath
+    )
+  }
+
+  getCapGitFileDiff(
+    sessionId: string,
+    workspacePath: string,
+    capPath: string
+  ): Promise<DiffFileChange | null> {
+    const session = this.getSession(sessionId)
+    if (!session) return Promise.resolve(null)
+    return getSessionCapGitFileDiff(workspacePath, capPath, session.hostname)
   }
 
   /** Test-only: feed harness UI events through the real apply/send path (e2e). */
@@ -365,7 +388,7 @@ export class SessionManager {
     }
   }
 
-  /** Test-only: mirror inline plan markdown into workspace + session changes cap (e2e). */
+  /** Test-only: register inline plan in session changes cap (e2e). Does not write plan files. */
   async debugRegisterPlanInCap(
     sessionId: string,
     args: { plan: string; planFilePath?: string; toolUseId: string }
@@ -765,8 +788,39 @@ export class SessionManager {
       }
     }
     if (opts?.clearStoredPath !== false && session.worktreePath) {
-      this.store.setWorktreePath(session.id, null)
+      const stillExists = await worktreePathExists(session.worktreePath, hostname)
+      if (!stillExists) {
+        this.store.setWorktreePath(session.id, null)
+      } else {
+        logger.warn('cleanupSessionWorktree: worktree still present after removal attempt — keeping worktree_path', {
+          sessionId: session.id,
+          worktreePath: session.worktreePath
+        })
+      }
     }
+  }
+
+  /**
+   * After Close mistakenly cleared `worktree_path` (or a failed remote remove
+   * left the checkout on disk), re-bind the session to its expected worktree
+   * directory so Reconnect resumes in the right cwd.
+   */
+  private async ensureSessionWorktreePath(session: SessionRecord): Promise<SessionRecord> {
+    if (session.worktreePath) return session
+    const homeDir = this.homeDirForStoredSession(session)
+    const worktreeRoot = worktreeRootFromConfig(loadConfig())
+    const expected = sessionWorktreePath(worktreeRoot, session.id, homeDir)
+    const hostname = session.hostname ? this.hosts.resolveByHostname(session.hostname)?.sshHost : undefined
+    if (!(await worktreePathExists(expected, hostname))) return session
+    logger.info('ensureSessionWorktreePath: re-binding orphan worktree directory', {
+      sessionId: session.id,
+      worktreePath: expected
+    })
+    this.store.setWorktreePath(session.id, expected)
+    const updated = this.decorate(this.store.getSession(session.id)!)
+    this.sendLifecycle({ type: 'session.updated', session: updated })
+    this.sendHarnessCwd(session.id, expected)
+    return updated
   }
 
   // ── Create ──────────────────────────────────────────────────────────
@@ -920,6 +974,12 @@ export class SessionManager {
     this.live.set(session.id, newLiveStream())
     this.resetHarnessUiForSession(session.id)
     this.pendingPanelPreload.add(session.id)
+    if (session.mode === 'claude-code') {
+      this.connecting.add(session.id)
+      if (!opts.prompt) {
+        this.sendStatus(session.id)
+      }
+    }
     // A real turn is about to run only if there's an initial prompt to
     // process — an empty-prompt create just opens the connection.
     if (opts.prompt) {
@@ -989,7 +1049,7 @@ export class SessionManager {
       const withWorktree = this.decorate(this.store.getSession(sessionId)!)
       this.sendLifecycle({ type: 'session.updated', session: withWorktree })
       this.sendHarnessCwd(sessionId, worktreePath)
-      if (this.workspace) void this.workspace.refreshWorkspace(withWorktree, true)
+      if (this.workspace) void this.workspace.refreshWorkspace(withWorktree, true, { includeFiles: true })
 
       const harnessOpts = {
         cwd: worktreePath,
@@ -1011,6 +1071,7 @@ export class SessionManager {
       this.live.set(sessionId, newLiveStream())
       this.resetHarnessUiForSession(sessionId)
       this.pendingPanelPreload.add(sessionId)
+      this.connecting.add(sessionId)
       if (opts.prompt) {
         this.live.get(sessionId)!.busy = true
       }
@@ -1222,8 +1283,9 @@ export class SessionManager {
 
   /** Reconnects the live harness session on top of the already-rendered transcript. No-op for terminal sessions. */
   async reconnect(sessionId: string): Promise<void> {
-    const session = this.store.getSession(sessionId)
+    let session = this.store.getSession(sessionId)
     if (!session || session.mode !== 'claude-code') return
+    session = await this.ensureSessionWorktreePath(session)
     // Don't race with setupWorktreeAsync — while the worktree is being created
     // the harness will be started by that path once creation completes.
     if (this.creatingWorktree.has(sessionId)) return
@@ -1255,8 +1317,8 @@ export class SessionManager {
       })
       // NOT cleared here — `harness.resume()` resolving only means the SDK
       // `query()` call was constructed, not that the subprocess has actually
-      // spawned/handshaken yet. `connecting` is cleared in applyEvent() the
-      // moment the first real harness event arrives (see its comment).
+      // spawned/handshaken yet. `connecting` stays until workspace diff preload
+      // finishes in `applyEvent()` → `completeSessionOpen()`.
       this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
       this.resetHarnessUiForSession(sessionId)
       this.sendStatus(sessionId)
@@ -1264,6 +1326,7 @@ export class SessionManager {
     } catch (err) {
       this.connecting.delete(sessionId)
       this.pendingPanelPreload.delete(sessionId)
+      this.workspacePreloadInFlight.delete(sessionId)
       // A genuine reconnect failure must still surface distinctly — this is
       // unrelated to Part A's fix above (which only suppresses the bogus
       // error a graceful CLOSE causes); reportHarnessFailure logs it AND
@@ -1304,8 +1367,9 @@ export class SessionManager {
    * close or a real app relaunch.
    */
   async sendUserMessage(sessionId: string, text: string, override?: ModelSelection, image?: ImageAttachment): Promise<void> {
-    const session = this.store.getSession(sessionId)
+    let session = this.store.getSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
+    session = await this.ensureSessionWorktreePath(session)
     // Persisted content is the plain-text string in the common (no image)
     // case, unchanged from before this task. With an image attached, it's
     // JSON-encoded as an ImageAttachmentContent instead — same
@@ -1647,8 +1711,6 @@ export class SessionManager {
     this.markInterruptedTurnNoticeIfBusy(sessionId)
     const beforeClose = this.store.getSession(sessionId)
     if (!beforeClose) throw new Error(`Unknown session: ${sessionId}`)
-    const hadWorktreeSetup =
-      !!beforeClose.worktreePath || this.creatingWorktree.has(sessionId)
     // Never block Close on harness teardown — same fire-and-forget pattern as
     // the pre-async closeSession; interrupt can hang on mid-stream turns.
     void this.harness.interrupt(sessionId).catch(() => undefined)
@@ -1661,6 +1723,7 @@ export class SessionManager {
     this.connecting.delete(sessionId)
     this.creatingWorktree.delete(sessionId)
     this.pendingPanelPreload.delete(sessionId)
+    this.workspacePreloadInFlight.delete(sessionId)
     this.workspace?.evictSession(sessionId)
     this.sendTurnState(sessionId, false)
     this.resetHarnessUiForSession(sessionId)
@@ -1668,11 +1731,6 @@ export class SessionManager {
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
     this.sendStatus(sessionId)
     this.sendLifecycle({ type: 'session.closed', session })
-    // Worktree removal can take minutes on large remote repos — never block
-    // Close on it (same fire-and-forget pattern as deleteSession).
-    if (hadWorktreeSetup) {
-      void this.cleanupSessionWorktree(beforeClose).catch(() => undefined)
-    }
     return session
   }
 
@@ -1701,6 +1759,8 @@ export class SessionManager {
     this.live.delete(sessionId)
     this.connecting.delete(sessionId)
     this.creatingWorktree.delete(sessionId)
+    this.pendingPanelPreload.delete(sessionId)
+    this.workspacePreloadInFlight.delete(sessionId)
     this.workspace?.evictSession(sessionId)
     this.store.deleteSession(sessionId)
     this.sendLifecycle({ type: 'session.deleted', sessionId })
@@ -1732,6 +1792,54 @@ export class SessionManager {
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
     this.sendLifecycle({ type: 'session.updated', session })
     return session
+  }
+
+  /** Updates persisted project path and reloads workspace panels (diff/files/terminal cwd). */
+  async setProjectPath(sessionId: string, projectPath: string): Promise<SessionRecord> {
+    const trimmed = projectPath.trim()
+    if (!trimmed) throw new Error('Project path is required')
+
+    let session = this.store.getSession(sessionId)
+    if (!session) throw new Error(`Unknown session: ${sessionId}`)
+
+    if (session.projectPath === trimmed && !session.worktreePath) {
+      return this.decorate(session)
+    }
+
+    const oldPath = session.projectPath
+    const hostname = session.hostname
+
+    if (session.worktreePath) {
+      this.store.setWorktreePath(sessionId, null)
+      session = { ...session, worktreePath: null }
+    }
+
+    session = this.store.setProjectPath(sessionId, trimmed)!
+    const hostId = session.hostname
+      ? (this.hosts.resolveByHostname(session.hostname)?.id ?? session.hostname)
+      : 'local'
+    this.store.recordProjectPathUsage(hostId, trimmed)
+
+    invalidateGitRepository(oldPath, hostname)
+    invalidateGitRepository(trimmed, hostname)
+
+    this.workspace?.stopMonitor(sessionId)
+    this.workspace?.evictSession(sessionId)
+
+    const newCwd = this.resolveHarnessCwd(session.projectPath, session.hostname, session.worktreePath)
+    const live = this.live.get(sessionId)
+    if (live) {
+      live.harnessCwd = newCwd
+      this.sendHarnessCwd(sessionId, newCwd)
+    }
+
+    if (session.mode === 'claude-code' && this.workspace) {
+      await this.workspace.completeSessionOpen(session)
+    }
+
+    const decorated = this.decorate(session)
+    this.sendLifecycle({ type: 'session.updated', session: decorated })
+    return decorated
   }
 
   addTag(sessionId: string, tag: string): SessionRecord {
@@ -1845,36 +1953,33 @@ export class SessionManager {
   private applyEvent(sessionId: string, event: HarnessEvent): void {
     const live = this.live.get(sessionId) ?? newLiveStream()
     this.live.set(sessionId, live)
-    // Any real event arriving from the harness means the live connection is
-    // genuinely established — clears the 'connecting' status (and its
-    // topbar pill) here rather than the instant `harness.resume()`'s promise
-    // resolves in reconnect(), since that resolves as soon as the SDK's
-    // `query()` call is constructed, well before the underlying subprocess
-    // has actually spawned/handshaken (verified for real: `session_started`
-    // — from the SDK's own system/init message — routinely arrives 1-3s
-    // after `resume()` returns). Clearing on the FIRST event of ANY type
-    // (not just 'session_started') is also a safety net against a session
-    // that fails before ever producing one.
-    if (this.connecting.has(sessionId)) {
-      this.connecting.delete(sessionId)
-      this.sendStatus(sessionId)
-    }
-
     const needsWorkspacePreload = this.pendingPanelPreload.delete(sessionId)
     if (needsWorkspacePreload) {
       this.startupAutoReconnect.delete(sessionId)
       const row = this.store.getSession(sessionId)
       if (this.workspace && row?.mode === 'claude-code') {
-        this.connecting.add(sessionId)
+        if (!this.connecting.has(sessionId)) {
+          this.connecting.add(sessionId)
+        }
+        this.workspacePreloadInFlight.add(sessionId)
         this.sendStatus(sessionId)
         void this.workspace.completeSessionOpen(this.decorate(row)).finally(() => {
+          this.workspacePreloadInFlight.delete(sessionId)
           this.connecting.delete(sessionId)
           this.sendStatus(sessionId)
           this.sendReconnectComplete(sessionId)
         })
       } else {
+        if (this.connecting.has(sessionId)) {
+          this.connecting.delete(sessionId)
+          this.sendStatus(sessionId)
+        }
         this.sendReconnectComplete(sessionId)
       }
+    } else if (this.connecting.has(sessionId) && !this.workspacePreloadInFlight.has(sessionId)) {
+      // Harness is live and no workspace preload is running for this session.
+      this.connecting.delete(sessionId)
+      this.sendStatus(sessionId)
     }
 
     switch (event.type) {
@@ -2070,7 +2175,8 @@ export class SessionManager {
               workspacePath,
               session.hostname,
               pending.content.name,
-              pending.content.input
+              pending.content.input,
+              session.projectPath
             ).then((cap) => {
               this.publishSessionChangesCap(sessionId, cap)
             })
@@ -2614,6 +2720,7 @@ export class SessionManager {
         void this.consume(sessionId, harnessSession.events)
       }).catch(() => {
         this.pendingPanelPreload.delete(sessionId)
+        this.workspacePreloadInFlight.delete(sessionId)
         this.startupAutoReconnect.delete(sessionId)
         // Don't mark as stale — transient startup failures are common (timing,
         // SSH mux not ready, etc.). Revert to idle so the user can click to retry.

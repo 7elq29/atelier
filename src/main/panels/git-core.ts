@@ -2,7 +2,9 @@
  * Low-level git process execution + diff parsing shared by git-repository.ts.
  */
 import { execFile } from 'node:child_process'
+import { homedir } from 'node:os'
 import type { DiffFileChange, DiffFileStatus, DiffHunk, DiffLine } from '../../shared/panel-types'
+import { expandTildePath } from '../../shared/project-path-autocomplete'
 import { remoteCdTarget, shQuote } from '../shell-quote'
 import { sshExec, warmSshMux } from '../ssh-exec'
 
@@ -11,15 +13,16 @@ export function runGit(
   args: string[],
   sshHost?: string | null
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  const resolvedCwd = expandTildePath(cwd.trim(), homedir())
   if (sshHost) {
     return (async () => {
       await warmSshMux(sshHost)
-      const remote = `cd ${remoteCdTarget(cwd)} && git ${args.map(shQuote).join(' ')}`
+      const remote = `cd ${remoteCdTarget(resolvedCwd)} && git ${args.map(shQuote).join(' ')}`
       return sshExec(sshHost, remote)
     })()
   }
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, maxBuffer: 1024 * 1024 * 32 }, (err, stdout, stderr) => {
+    execFile('git', args, { cwd: resolvedCwd, maxBuffer: 1024 * 1024 * 32 }, (err, stdout, stderr) => {
       const code = (err as NodeJS.ErrnoException & { code?: number })?.code
       resolve({ stdout, stderr, code: typeof code === 'number' ? code : err ? 1 : 0 })
     })
