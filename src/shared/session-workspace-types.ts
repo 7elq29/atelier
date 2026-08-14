@@ -23,3 +23,8 @@ export interface SessionWorkspaceUpdatedEvent {
   sessionId: string
   workspace: SessionWorkspacePayload
 }
+
+export interface SessionWorkspaceRefreshingEvent {
+  sessionId: string
+  refreshing: boolean
+}

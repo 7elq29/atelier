@@ -56,7 +56,8 @@ import type { ProjectPathSuggestion } from '../shared/project-path-autocomplete'
 import type {
   SessionOpenReadyEvent,
   SessionWorkspacePayload,
-  SessionWorkspaceUpdatedEvent
+  SessionWorkspaceUpdatedEvent,
+  SessionWorkspaceRefreshingEvent
 } from '../shared/session-workspace-types'
 import type { SessionChangesCap } from '../shared/session-changes-cap'
 import type {
@@ -363,6 +364,11 @@ const api = {
     const listener = (_event: unknown, payload: SessionWorkspaceUpdatedEvent): void => callback(payload)
     ipcRenderer.on('session:workspaceUpdated', listener)
     return () => ipcRenderer.removeListener('session:workspaceUpdated', listener)
+  },
+  onSessionWorkspaceRefreshing: (callback: (event: SessionWorkspaceRefreshingEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionWorkspaceRefreshingEvent): void => callback(payload)
+    ipcRenderer.on('session:workspaceRefreshing', listener)
+    return () => ipcRenderer.removeListener('session:workspaceRefreshing', listener)
   },
   /** Test-only: raw read-only SQL query against the real SQLite DB (see session:debugQueryDb handler). */
   debugQueryDb: <T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> =>

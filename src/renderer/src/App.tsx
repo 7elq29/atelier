@@ -1083,6 +1083,11 @@ export default function App(): JSX.Element {
     })
   }, [activeSessionId, activeSession, sessions.statuses, sessionWorkspace.readySessionIds])
 
+  const activeDiffChangedCount =
+    activeSessionId && sessionWorkspace.workspaceBySession[activeSessionId]?.diff.isRepo
+      ? sessionWorkspace.workspaceBySession[activeSessionId]!.diff.files.length
+      : null
+
   const appendToActiveComposer = useCallback((note: string) => {
     const sid = activeSessionIdRef.current
     if (!sid) return
@@ -1308,7 +1313,12 @@ export default function App(): JSX.Element {
             </div>
             {activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanSurface && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
               <>
-                <TabBar activeTab={activeTab} onSelect={selectTab} showPorts={Boolean(activeSession.hostname)} />
+                <TabBar
+                  activeTab={activeTab}
+                  onSelect={selectTab}
+                  showPorts={Boolean(activeSession.hostname)}
+                  diffChangedCount={activeDiffChangedCount}
+                />
                 <div className="topbar-spacer" />
                 <span className="topbar-chip" data-testid="cost-chip">
                   ${activeSession.totalCostUsd.toFixed(2)}
@@ -1571,6 +1581,7 @@ export default function App(): JSX.Element {
                     onAddComment={appendToActiveComposer}
                     onOpenFileQuickOpen={openFileQuickOpen}
                     onRefreshWorkspace={handleRefreshWorkspace}
+                    refreshingBySession={sessionWorkspace.refreshingBySession}
                   />
 
                   <div className={`tab-content${activeTab === 'terminal' ? '' : ' hidden'}`} data-tab="terminal">

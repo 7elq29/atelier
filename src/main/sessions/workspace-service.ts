@@ -21,7 +21,7 @@ import { warmSshMux } from '../ssh-exec'
 import { ensureUssh } from '../uber-auth'
 
 export const DEVPOD_GIT_POLL_MS = 15_000
-const LOCAL_GIT_DEBOUNCE_MS = 400
+export const LOCAL_GIT_DEBOUNCE_MS = 400
 const DEFAULT_PTY_COLS = 80
 const DEFAULT_PTY_ROWS = 24
 
@@ -76,6 +76,7 @@ async function loadPreloadDiff(
 export class WorkspaceService {
   private readonly cache = new Map<string, SessionWorkspacePayload>()
   private readonly monitors = new Map<string, { stop: () => void }>()
+  private readonly refreshInFlight = new Map<string, number>()
   private ptyManager: PtyManager | null = null
 
   constructor(
@@ -115,6 +116,26 @@ export class WorkspaceService {
       sessionId: payload.sessionId,
       workspace: payload
     })
+  }
+
+  private sendRefreshing(sessionId: string, refreshing: boolean): void {
+    this.getWindow()?.webContents.send('session:workspaceRefreshing', { sessionId, refreshing })
+  }
+
+  private beginRefresh(sessionId: string): void {
+    const next = (this.refreshInFlight.get(sessionId) ?? 0) + 1
+    this.refreshInFlight.set(sessionId, next)
+    if (next === 1) this.sendRefreshing(sessionId, true)
+  }
+
+  private endRefresh(sessionId: string): void {
+    const next = (this.refreshInFlight.get(sessionId) ?? 1) - 1
+    if (next <= 0) {
+      this.refreshInFlight.delete(sessionId)
+      this.sendRefreshing(sessionId, false)
+    } else {
+      this.refreshInFlight.set(sessionId, next)
+    }
   }
 
   async preloadSession(session: SessionRecord): Promise<SessionWorkspacePayload> {
@@ -177,50 +198,55 @@ export class WorkspaceService {
     force: boolean,
     opts?: { includeFiles?: boolean }
   ): Promise<SessionWorkspacePayload> {
-    const workspacePath = workspacePathFor(session)
-    const prev = this.cache.get(session.id)
-    // File tree/list load once at session open (preloadSession). Background refresh
-    // never re-scans unless the caller explicitly opts in (e.g. worktree created).
-    const includeFiles = opts?.includeFiles === true
-    const diffRaw = force
-      ? await getDiffSummaryWithHunks(workspacePath, session.hostname, true)
-      : await getDiffSummary(workspacePath, session.hostname, force)
-    const diff = mergeDiffHunks(prev?.diff, diffRaw)
-    const [filesTree, filesList, sessionChangesCap] = await Promise.all([
-      includeFiles
-        ? Promise.resolve(walkFileTree(workspacePath, session.hostname)).then((r) =>
-            Array.isArray(r) ? r : []
-          )
-        : Promise.resolve(prev?.filesTree ?? []),
-      includeFiles
-        ? Promise.resolve(listWorkspaceFiles(workspacePath, session.hostname)).then((r) =>
-            Array.isArray(r) ? r : []
-          )
-        : Promise.resolve(prev?.filesList ?? []),
-      this.buildSessionChangesCap(session.id, { processHead: true })
-    ])
-    const payload: SessionWorkspacePayload = {
-      sessionId: session.id,
-      workspacePath,
-      hostname: session.hostname,
-      diff,
-      sessionChangesCap,
-      filesTree,
-      filesList,
-      tabTerminalPtyId: prev?.tabTerminalPtyId ?? `${session.id}:tab-terminal`,
-      loadedAt: Date.now()
+    this.beginRefresh(session.id)
+    try {
+      const workspacePath = workspacePathFor(session)
+      const prev = this.cache.get(session.id)
+      // File tree/list load once at session open (preloadSession). Background refresh
+      // never re-scans unless the caller explicitly opts in (e.g. worktree created).
+      const includeFiles = opts?.includeFiles === true
+      const diffRaw = force
+        ? await getDiffSummaryWithHunks(workspacePath, session.hostname, true)
+        : await getDiffSummary(workspacePath, session.hostname, force)
+      const diff = mergeDiffHunks(prev?.diff, diffRaw)
+      const [filesTree, filesList, sessionChangesCap] = await Promise.all([
+        includeFiles
+          ? Promise.resolve(walkFileTree(workspacePath, session.hostname)).then((r) =>
+              Array.isArray(r) ? r : []
+            )
+          : Promise.resolve(prev?.filesTree ?? []),
+        includeFiles
+          ? Promise.resolve(listWorkspaceFiles(workspacePath, session.hostname)).then((r) =>
+              Array.isArray(r) ? r : []
+            )
+          : Promise.resolve(prev?.filesList ?? []),
+        this.buildSessionChangesCap(session.id, { processHead: true })
+      ])
+      const payload: SessionWorkspacePayload = {
+        sessionId: session.id,
+        workspacePath,
+        hostname: session.hostname,
+        diff,
+        sessionChangesCap,
+        filesTree,
+        filesList,
+        tabTerminalPtyId: prev?.tabTerminalPtyId ?? `${session.id}:tab-terminal`,
+        loadedAt: Date.now()
+      }
+      const prevDiffSig = prev ? diffListSignature(prev.diff) : ''
+      const nextDiffSig = diffListSignature(diff)
+      const capChanged =
+        sessionChangesCapSignature(prev?.sessionChangesCap ?? { items: [] }) !==
+        sessionChangesCapSignature(sessionChangesCap)
+      if (prevDiffSig !== nextDiffSig || capChanged || force) {
+        this.sendUpdated(payload)
+      } else {
+        this.cache.set(session.id, payload)
+      }
+      return payload
+    } finally {
+      this.endRefresh(session.id)
     }
-    const prevDiffSig = prev ? diffListSignature(prev.diff) : ''
-    const nextDiffSig = diffListSignature(diff)
-    const capChanged =
-      sessionChangesCapSignature(prev?.sessionChangesCap ?? { items: [] }) !==
-      sessionChangesCapSignature(sessionChangesCap)
-    if (prevDiffSig !== nextDiffSig || capChanged || force) {
-      this.sendUpdated(payload)
-    } else {
-      this.cache.set(session.id, payload)
-    }
-    return payload
   }
 
   patchSessionChangesCap(sessionId: string, cap: SessionChangesCap): void {

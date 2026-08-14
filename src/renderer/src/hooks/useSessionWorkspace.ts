@@ -4,11 +4,13 @@ import type { SessionWorkspacePayload } from '../../../shared/session-workspace-
 export function useSessionWorkspace(): {
   workspaceBySession: Record<string, SessionWorkspacePayload>
   readySessionIds: Set<string>
+  refreshingBySession: Record<string, boolean>
   hydrateSnapshot: (sessionId: string) => void
   evictSession: (sessionId: string) => void
 } {
   const [workspaceBySession, setWorkspaceBySession] = useState<Record<string, SessionWorkspacePayload>>({})
   const [readySessionIds, setReadySessionIds] = useState<Set<string>>(() => new Set())
+  const [refreshingBySession, setRefreshingBySession] = useState<Record<string, boolean>>({})
   const hydrateGenerationRef = useRef(new Map<string, number>())
 
   const mergeWorkspace = useCallback((sessionId: string, workspace: SessionWorkspacePayload) => {
@@ -44,6 +46,12 @@ export function useSessionWorkspace(): {
       next.delete(sessionId)
       return next
     })
+    setRefreshingBySession((prev) => {
+      if (!(sessionId in prev)) return prev
+      const next = { ...prev }
+      delete next[sessionId]
+      return next
+    })
   }, [])
 
   useEffect(() => {
@@ -58,5 +66,20 @@ export function useSessionWorkspace(): {
     })
   }, [])
 
-  return { workspaceBySession, readySessionIds, hydrateSnapshot, evictSession }
+  useEffect(() => {
+    return window.atelier.onSessionWorkspaceRefreshing(({ sessionId, refreshing }) => {
+      setRefreshingBySession((prev) => {
+        if (refreshing) {
+          if (prev[sessionId]) return prev
+          return { ...prev, [sessionId]: true }
+        }
+        if (!prev[sessionId]) return prev
+        const next = { ...prev }
+        delete next[sessionId]
+        return next
+      })
+    })
+  }, [])
+
+  return { workspaceBySession, readySessionIds, refreshingBySession, hydrateSnapshot, evictSession }
 }

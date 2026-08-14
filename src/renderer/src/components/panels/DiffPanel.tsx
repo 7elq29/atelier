@@ -270,7 +270,8 @@ export default function DiffPanel({
   revealCommitSeq = 0,
   onRevealCommitHandled,
   workspaceDiff,
-  onRefreshWorkspace: _onRefreshWorkspace
+  workspaceRefreshing = false,
+  onRefreshWorkspace
 }: {
   /** Git cwd for changes, file diffs, and commits (session worktree when set). */
   workspacePath: string
@@ -296,6 +297,8 @@ export default function DiffPanel({
   onRevealCommitHandled?: () => void
   /** Preloaded / pushed diff summary from main workspace service. */
   workspaceDiff?: DiffSummary | null
+  /** Main-process workspace diff refresh in flight for this session. */
+  workspaceRefreshing?: boolean
   /** Request immediate git refresh in main (Diff › Changes). */
   onRefreshWorkspace?: () => void
 }): JSX.Element {
@@ -488,6 +491,12 @@ export default function DiffPanel({
     if (workspaceDiff == null) return
     applySummary(workspaceDiff)
   }, [workspaceDiff, applySummary])
+
+  // Spec: Diff › Changes requests immediate refresh when the tab becomes visible.
+  useEffect(() => {
+    if (!active) return
+    onRefreshWorkspace?.()
+  }, [active, onRefreshWorkspace])
 
   // When the Diff tab becomes visible before workspace push arrives, bootstrap from IPC.
   useEffect(() => {
@@ -727,6 +736,12 @@ export default function DiffPanel({
           Worktrees
         </button>
       </div>
+
+      {workspaceRefreshing && (
+        <div className="diff-refreshing-banner" data-testid="diff-refreshing">
+          Refreshing diff…
+        </div>
+      )}
 
       {sub === 'changes' &&
         (summary.files.length === 0 ? (

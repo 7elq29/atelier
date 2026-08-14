@@ -48,7 +48,7 @@ import { createWorktree, removeWorktree, worktreePathExists } from './worktree'
 import { warmRemoteGitHost } from '../panels/git'
 import { invalidateGitRepository } from '../panels/git-repository'
 import { handleFileEditToolCompleted, getSessionCapOutsideFileDiff, getSessionCapGitFileDiff, registerPlanFileInSessionChangesCap } from './session-changes-cap'
-import { WorkspaceService } from './workspace-service'
+import { WorkspaceService, LOCAL_GIT_DEBOUNCE_MS } from './workspace-service'
 import { applyBashCdCommands } from './harness-cwd'
 import { SessionHarnessUiState } from './session-harness-ui'
 import type {
@@ -277,6 +277,9 @@ export class SessionManager {
   /** Bumped on close/delete to drop stale `consume()` loops (pty generation pattern). */
   private readonly consumeGeneration = new Map<string, number>()
 
+  /** Debounced diff refresh after file-edit tools — coalesces rapid Edit/Write bursts. */
+  private readonly diffRefreshDebounce = new Map<string, ReturnType<typeof setTimeout>>()
+
   private readonly harnessUi = new SessionHarnessUiState()
 
   private workspace: WorkspaceService | null = null
@@ -317,6 +320,24 @@ export class SessionManager {
       this.workspace.patchSessionChangesCap(sessionId, cap)
     }
     // No cache yet — preloadSession will include cap; avoid force-refreshing files.
+  }
+
+  private scheduleDiffRefreshAfterFileEdit(sessionId: string): void {
+    const existing = this.diffRefreshDebounce.get(sessionId)
+    if (existing) clearTimeout(existing)
+    this.diffRefreshDebounce.set(
+      sessionId,
+      setTimeout(() => {
+        this.diffRefreshDebounce.delete(sessionId)
+        void this.refreshSessionWorkspace(sessionId, false).catch(() => undefined)
+      }, LOCAL_GIT_DEBOUNCE_MS)
+    )
+  }
+
+  private clearDiffRefreshDebounce(sessionId: string): void {
+    const existing = this.diffRefreshDebounce.get(sessionId)
+    if (existing) clearTimeout(existing)
+    this.diffRefreshDebounce.delete(sessionId)
   }
 
   constructor(
@@ -1768,6 +1789,7 @@ export class SessionManager {
     this.creatingWorktree.delete(sessionId)
     this.pendingPanelPreload.delete(sessionId)
     this.workspacePreloadInFlight.delete(sessionId)
+    this.clearDiffRefreshDebounce(sessionId)
     this.workspace?.evictSession(sessionId)
     this.sendTurnState(sessionId, false)
     this.resetHarnessUiForSession(sessionId)
@@ -1810,6 +1832,7 @@ export class SessionManager {
     this.creatingWorktree.delete(sessionId)
     this.pendingPanelPreload.delete(sessionId)
     this.workspacePreloadInFlight.delete(sessionId)
+    this.clearDiffRefreshDebounce(sessionId)
     this.workspace?.evictSession(sessionId)
     this.portForwards?.removeAllForSession(sessionId)
     this.sendTurnState(sessionId, false)
@@ -2241,6 +2264,7 @@ export class SessionManager {
               session.projectPath
             ).then((cap) => {
               this.publishSessionChangesCap(sessionId, cap)
+              this.scheduleDiffRefreshAfterFileEdit(sessionId)
             })
           }
         }
