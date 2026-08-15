@@ -6,6 +6,8 @@ import type { PromptDecision } from '../../../../shared/session-types'
 import { createMarkdownComponents } from './MarkdownMessage'
 import ReviewPaneIconButton from './ReviewPaneIconButton'
 import ResolvedPromptFold from './ResolvedPromptFold'
+import TranscriptInlineComments from './TranscriptInlineComments'
+import type { ReviewComposerComment } from '../../../../shared/review-pane-types'
 import { planFoldSummary } from './resolved-prompt-fold'
 
 /**
@@ -19,6 +21,11 @@ export default function PlanProposedCard({
   onOpenPlanFile,
   onReviewPlan,
   reviewActive,
+  messageId,
+  onAddComment,
+  onUpdateComment,
+  onDeleteComment,
+  reviewComments = [],
   workspaceRoot,
   projectRoot,
   filePathCandidates,
@@ -29,6 +36,11 @@ export default function PlanProposedCard({
   onOpenPlanFile?: (planFilePath: string) => void
   onReviewPlan?: () => void
   reviewActive?: boolean
+  messageId: number
+  onAddComment?: (note: string) => void
+  onUpdateComment?: (oldNote: string, newNote: string) => void
+  onDeleteComment?: (composerNote: string) => void
+  reviewComments?: readonly ReviewComposerComment[]
   workspaceRoot?: string
   projectRoot?: string
   filePathCandidates?: readonly string[]
@@ -43,14 +55,32 @@ export default function PlanProposedCard({
     onOpenFileInFiles: onOpenPlanFile
   })
 
+  const planMarkdown = (
+    <div className="md-body">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={planMarkdownComponents}>
+        {content.plan}
+      </ReactMarkdown>
+    </div>
+  )
+
   const planBody = (
     <>
       <div className="plan-body" data-testid="plan-body">
-        <div className="md-body">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={planMarkdownComponents}>
-            {content.plan}
-          </ReactMarkdown>
-        </div>
+        {onAddComment ? (
+          <TranscriptInlineComments
+            messageId={messageId}
+            sourceContent={content.plan}
+            commentPrefix="Re plan"
+            onAddComment={onAddComment}
+            onUpdateComment={onUpdateComment}
+            onDeleteComment={onDeleteComment}
+            reviewComments={reviewComments}
+          >
+            {planMarkdown}
+          </TranscriptInlineComments>
+        ) : (
+          planMarkdown
+        )}
       </div>
       <div className="plan-resolved-note" data-testid="plan-resolved-note">
         {content.status === 'accepted' && 'Plan accepted — Claude is proceeding.'}

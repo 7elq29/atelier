@@ -16,7 +16,7 @@ import type {
 import type { DiffSummary } from '../../shared/panel-types'
 import type { SessionChangesCap } from '../../shared/session-changes-cap'
 import { sessionChangesCapSignature } from '../../shared/session-changes-cap'
-import { getDiffSummary, getDiffSummaryWithHunks, probeGitRepo } from '../panels/git'
+import { getDiffSummary, getDiffSummaryWithHunks, onWorkingTreeUpdated, probeGitRepo } from '../panels/git'
 import { resolveGitRepoRoot } from '../panels/git-core'
 import { walkFileTree, listWorkspaceFiles } from '../panels/files'
 import type { PtyManager } from '../panels/pty'
@@ -103,7 +103,25 @@ export class WorkspaceService {
   constructor(
     private readonly getWindow: () => BrowserWindow | null,
     private readonly buildSessionChangesCap: (sessionId: string) => Promise<SessionChangesCap>
-  ) {}
+  ) {
+    onWorkingTreeUpdated((workspacePath, hostname, diff) => {
+      this.applyUntrackedDiffUpdate(workspacePath, hostname ?? null, diff)
+    })
+  }
+
+  /** Merge deferred untracked paths from background ls-files into open session workspaces. */
+  private applyUntrackedDiffUpdate(
+    workspacePath: string,
+    hostname: string | null,
+    diff: DiffSummary
+  ): void {
+    for (const payload of this.cache.values()) {
+      if (payload.workspacePath !== workspacePath || payload.hostname !== hostname) continue
+      const merged = mergeDiffHunks(payload.diff, diff)
+      if (diffListSignature(payload.diff) === diffListSignature(merged)) continue
+      this.sendUpdated({ ...payload, diff: merged, loadedAt: Date.now() })
+    }
+  }
 
   setPtyManager(pty: PtyManager): void {
     this.ptyManager = pty

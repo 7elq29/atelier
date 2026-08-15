@@ -26,7 +26,11 @@ import { registerSpendStatusHandlers } from './spend-status-ipc'
 import type { PtyManager } from './panels/pty'
 import type { PortForwardManager } from './panels/ports'
 
-const isDev = !app.isPackaged
+/** Dev worktree runs via a copied .app bundle, so `app.isPackaged` alone is unreliable. */
+const isDev =
+  process.env['ATELIER_DEV'] === '1' ||
+  process.env['ELECTRON_RENDERER_URL'] != null ||
+  !app.isPackaged
 let mainWindow: BrowserWindow | null = null
 let ptyManager: PtyManager | null = null
 let portManager: PortForwardManager | null = null
@@ -42,7 +46,7 @@ function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: 'Atelier',
+    title: isDev ? 'Atelier [DEV]' : 'Atelier',
     icon: icon && !icon.isEmpty() ? icon : undefined,
     // Match --bg-app so the window is not pure black while the renderer loads.
     backgroundColor: '#1c1a16',
@@ -181,10 +185,13 @@ app.whenReady().then(() => {
   manager.markStartupIdleSessions()
   registerIpcHandlers(manager)
 
-  logger.info('app ready', { version: app.getVersion(), platform: process.platform })
+  logger.info('app ready', { version: app.getVersion(), platform: process.platform, dev: isDev })
 
   mainWindow = createWindow()
   applyDockIconWhenReady()
+  if (isDev && process.platform === 'darwin') {
+    app.dock?.setBadge('DEV')
+  }
 
   // Fire-and-forget: probe each session's recoverability in the background
   // and push session:stale events to the renderer for any that can't resume.

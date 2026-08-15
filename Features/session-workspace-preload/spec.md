@@ -5,7 +5,7 @@
 1. User creates, resumes, or reconnects a claude-code session (local or devpod).
 2. Main area for **that session** shows **Connecting…** only while **essential** workspace preload runs: SSH warm (devpod), files tree/list, tab-terminal PTY, and a **fast git repo probe** (rev-parse + branch — no full numstat/`ls-files` scan). Full git diff + changes cap load **in the background after** panels unlock.
 3. User may switch to other sessions or use global UI during connect; only the opening session’s content is gated. **Preload on one session must not block unrelated sessions or global app operations** — remote preloads on the same devpod host are queued (one at a time per host).
-4. On **`session:openReady`**, Chat/Diff/Files/Terminal for that session are hydrated immediately with essential data. Diff may show branch + empty changes until background git finishes; tab switches are visibility-only (no forced full git rescan on Diff open).
+4. On **`session:openReady`**, Chat/Diff/Files/Terminal for that session are hydrated immediately with essential data. Diff shows tracked changes from background git quickly; **`git ls-files --others`** runs non-blocking and merges untracked paths when ready. Tab switches are visibility-only (no forced full git rescan on Diff open).
 5. While session is live, main refreshes git in the background (local: watch `.git/index`; devpod: **15s** poll) and pushes **`session:workspaceUpdated`**.
 6. If connect takes longer than a few seconds, the connecting gate shows **which essential step** is running (SSH, files, terminal, git probe). Main logs **`session:openTiming`** with per-step ms for essential and background phases.
 

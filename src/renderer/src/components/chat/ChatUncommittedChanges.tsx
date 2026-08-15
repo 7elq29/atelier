@@ -62,12 +62,10 @@ function ChatChangesFileRow({
 
 export default function ChatUncommittedChanges({
   items,
-  onOpenFile,
-  onOpenCommit
+  onOpenFile
 }: {
   items: SessionChangesCapItem[] | null | undefined
   onOpenFile: (path: string, opensInFilesTab: boolean) => void
-  onOpenCommit: (hash: string) => void
 }): JSX.Element | null {
   const [collapsed, setCollapsed] = useState(true)
 
@@ -96,36 +94,16 @@ export default function ChatUncommittedChanges({
       </div>
       {!collapsed && (
         <div className="chat-changes-body">
-          {rows.map((row) =>
-            row.kind === 'file' ? (
-              <ChatChangesFileRow
-                key={`file:${row.path}`}
-                path={row.path}
-                additions={row.additions}
-                deletions={row.deletions}
-                opensInFilesTab={row.opensInFilesTab}
-                onOpen={onOpenFile}
-              />
-            ) : (
-              <div
-                key={`commit:${row.hash}`}
-                className="chat-changes-commit"
-                role="button"
-                tabIndex={0}
-                data-testid="chat-changes-commit"
-                data-hash={row.hash}
-                onClick={() => onOpenCommit(row.hash)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    onOpenCommit(row.hash)
-                  }
-                }}
-              >
-                <span className="chat-changes-commit-label">{row.subject}</span>
-              </div>
-            )
-          )}
+          {rows.map((row) => (
+            <ChatChangesFileRow
+              key={`file:${row.path}`}
+              path={row.path}
+              additions={row.additions}
+              deletions={row.deletions}
+              opensInFilesTab={row.opensInFilesTab}
+              onOpen={onOpenFile}
+            />
+          ))}
         </div>
       )}
     </div>

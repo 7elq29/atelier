@@ -3,6 +3,7 @@ import {
   type PlanReviewDisplayLine,
   type PlanReviewRenderBlock
 } from '../../../../shared/plan-review-render-blocks'
+import { sourceLineNumberForQuote } from '../../../../shared/review-pane-types'
 
 /** Character offsets within a review block's rendered text (stable across re-layout). */
 export interface ReviewSelectionAnchor {
@@ -10,6 +11,8 @@ export interface ReviewSelectionAnchor {
   start: number
   end: number
 }
+
+export const TRANSCRIPT_COMMENT_BLOCK_KEY = 'root'
 
 interface LineTextSpan {
   sourceLineNumber: number
@@ -148,6 +151,26 @@ export function captureReviewSelectionAnchor(
   return {
     anchor: { blockKey: block.key, start, end },
     sourceLineNumber: sourceLineNumberForOffset(blockEl, block.lines, start)
+  }
+}
+
+/** Selection anchor for inline comments on transcript markdown (single root block). */
+export function captureTranscriptSelectionAnchor(
+  contentRoot: HTMLElement,
+  range: Range,
+  sourceContent: string
+): { anchor: ReviewSelectionAnchor; sourceLineNumber: number } | null {
+  const blockEl = contentRoot.querySelector('.response-review-block[data-block-key="root"]')
+  if (!blockEl || !blockEl.contains(range.commonAncestorContainer)) return null
+
+  const start = textLengthBefore(blockEl, range.startContainer, range.startOffset)
+  const end = textLengthBefore(blockEl, range.endContainer, range.endOffset)
+  if (end <= start) return null
+
+  const quote = range.toString().trim()
+  return {
+    anchor: { blockKey: TRANSCRIPT_COMMENT_BLOCK_KEY, start, end },
+    sourceLineNumber: sourceLineNumberForQuote(sourceContent, quote)
   }
 }
 

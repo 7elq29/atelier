@@ -22,6 +22,7 @@ export {
   listCommits,
   listWorktrees,
   mergeWorktreeBranch,
+  onWorkingTreeUpdated,
   probeGitRepo,
   removeWorktree,
   resolveHead,

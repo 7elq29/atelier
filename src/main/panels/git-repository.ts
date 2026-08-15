@@ -37,8 +37,20 @@ function repoKey(projectPath: string, sshHost?: string | null): string {
   return `${sshHost ?? 'local'}\0${projectPath}`
 }
 
-/** Working tree vs HEAD at the git toplevel (not scoped to session projectPath). */
-async function fetchWorkingTreeChanges(
+function mergeUntrackedPaths(files: DiffFileChange[], untrackedStdout: string): DiffFileChange[] {
+  const seen = new Set(files.map((f) => f.path))
+  const merged = [...files]
+  for (const line of untrackedStdout.split('\n')) {
+    const path = line.trim()
+    if (!path || seen.has(path)) continue
+    seen.add(path)
+    merged.push({ path, status: 'added', additions: 0, deletions: 0, hunks: [] })
+  }
+  return merged
+}
+
+/** Tracked working-tree changes vs HEAD — excludes untracked scan (slow on large repos). */
+async function fetchTrackedWorkingTreeChanges(
   projectPath: string,
   sshHost?: string | null
 ): Promise<{ isRepo: boolean; branch: string | null; hasHead: boolean; files: DiffFileChange[] }> {
@@ -56,20 +68,6 @@ async function fetchWorkingTreeChanges(
   const numstat = await runGitAtRepoRoot(projectPath, ['diff', '--no-color', '--numstat', diffTarget], sshHost)
 
   const files = parseNumstatLines(numstat.stdout.split('\n'))
-  const seen = new Set(files.map((f) => f.path))
-
-  const untracked = await runGitAtRepoRoot(
-    projectPath,
-    ['ls-files', '--others', '--exclude-standard'],
-    sshHost
-  )
-  for (const line of untracked.stdout.split('\n')) {
-    const path = line.trim()
-    if (!path || seen.has(path)) continue
-    seen.add(path)
-    files.push({ path, status: 'added', additions: 0, deletions: 0, hunks: [] })
-  }
-
   return { isRepo: true, branch, hasHead, files }
 }
 
@@ -83,9 +81,18 @@ interface RepoCache {
 
 type CommitDiffCacheKey = string
 
+export type WorkingTreeUpdateListener = (
+  projectPath: string,
+  sshHost: string | null | undefined,
+  summary: DiffSummary
+) => void
+
 class GitRepositoryManager {
   private readonly cache = new Map<string, RepoCache>()
   private readonly inFlight = new Map<string, Promise<DiffSummary>>()
+  private readonly untrackedInFlight = new Map<string, Promise<void>>()
+  private readonly untrackedGeneration = new Map<string, number>()
+  private readonly workingTreeListeners = new Set<WorkingTreeUpdateListener>()
   private readonly commitDiffCache = new Map<CommitDiffCacheKey, DiffSummary>()
   private readonly commitFileDiffCache = new Map<CommitDiffCacheKey, DiffFileChange>()
 
@@ -104,9 +111,60 @@ class GitRepositoryManager {
   }
 
   invalidate(projectPath: string, sshHost?: string | null): void {
+    const key = repoKey(projectPath, sshHost)
     clearGitRepoRootCache(projectPath, sshHost)
-    this.cache.delete(repoKey(projectPath, sshHost))
+    this.cache.delete(key)
+    this.untrackedGeneration.set(key, (this.untrackedGeneration.get(key) ?? 0) + 1)
     this.dropCommitCachesForRepo(projectPath, sshHost)
+  }
+
+  onWorkingTreeUpdated(listener: WorkingTreeUpdateListener): () => void {
+    this.workingTreeListeners.add(listener)
+    return () => this.workingTreeListeners.delete(listener)
+  }
+
+  private notifyWorkingTreeUpdated(
+    projectPath: string,
+    sshHost: string | null | undefined,
+    summary: DiffSummary
+  ): void {
+    for (const listener of this.workingTreeListeners) {
+      listener(projectPath, sshHost, summary)
+    }
+  }
+
+  private scheduleUntrackedFetch(projectPath: string, sshHost?: string | null): void {
+    const key = repoKey(projectPath, sshHost)
+    const gen = (this.untrackedGeneration.get(key) ?? 0) + 1
+    this.untrackedGeneration.set(key, gen)
+    if (this.untrackedInFlight.has(key)) return
+
+    const work = (async (): Promise<void> => {
+      try {
+        const untracked = await runGitAtRepoRoot(
+          projectPath,
+          ['ls-files', '--others', '--exclude-standard'],
+          sshHost
+        )
+        if (this.untrackedGeneration.get(key) !== gen) {
+          this.scheduleUntrackedFetch(projectPath, sshHost)
+          return
+        }
+        const entry = this.cache.get(key)
+        if (!entry?.summary.isRepo) return
+
+        const mergedFiles = mergeUntrackedPaths(entry.summary.files, untracked.stdout)
+        if (mergedFiles.length === entry.summary.files.length) return
+
+        entry.summary = { ...entry.summary, files: mergedFiles }
+        entry.fetchedAt = Date.now()
+        this.notifyWorkingTreeUpdated(projectPath, sshHost, entry.summary)
+      } finally {
+        this.untrackedInFlight.delete(key)
+      }
+    })()
+
+    this.untrackedInFlight.set(key, work)
   }
 
   async warmRemote(sshHost: string): Promise<void> {
@@ -214,7 +272,7 @@ class GitRepositoryManager {
     if (pending) return pending
 
     const work = (async (): Promise<DiffSummary> => {
-      const parsed = await fetchWorkingTreeChanges(projectPath, sshHost)
+      const parsed = await fetchTrackedWorkingTreeChanges(projectPath, sshHost)
       if (!parsed.isRepo) {
         const summary: DiffSummary = { isRepo: false, branch: null, files: [] }
         this.cache.set(key, { summary, hasHead: false, commits: null, worktrees: null, fetchedAt: Date.now() })
@@ -232,6 +290,7 @@ class GitRepositoryManager {
         worktrees: cached?.worktrees ?? null,
         fetchedAt: Date.now()
       })
+      this.scheduleUntrackedFetch(projectPath, sshHost)
       return summary
     })()
 
@@ -587,6 +646,10 @@ class GitRepositoryManager {
 }
 
 export const gitRepositories = new GitRepositoryManager()
+
+export function onWorkingTreeUpdated(listener: WorkingTreeUpdateListener): () => void {
+  return gitRepositories.onWorkingTreeUpdated(listener)
+}
 
 /** Fast repo probe for session open — branch only, no numstat/ls-files scan. */
 export async function probeGitRepo(

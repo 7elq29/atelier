@@ -1,6 +1,8 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import ChatUncommittedChanges from './ChatUncommittedChanges'
+import ReviewComposerCommentList from './ReviewComposerCommentList'
 import type { DiffSummary } from '../../../../shared/panel-types'
+import { buildComposerSendText, type ReviewComposerComment } from '../../../../shared/review-pane-types'
 import type { SessionChangesCap } from '../../../../shared/session-changes-cap'
 import { truncateContextPath } from '../../utils/truncateContextPath'
 import { sessionWorktreeBranch } from '../../../../shared/worktree-path'
@@ -341,9 +343,8 @@ interface ComposerProps {
   gitWorkspacePath?: string
   /** Preloaded git summary for branch refresh when Claude cwd matches workspace. */
   diffSummary?: DiffSummary | null
-  /** Pending files + session commits for the chat changes cap. */
+  /** Pending files for the chat changes cap. */
   sessionChangesCap?: SessionChangesCap | null
-  onOpenCommitInDiff?: (hash: string) => void
   /** Preloaded workspace file paths for @-mentions (relative paths). */
   mentionFilePaths?: string[]
   /** Chat changes cap: open Diff › Changes for this repo-relative path. */
@@ -371,6 +372,10 @@ interface ComposerProps {
   onCycleMode: () => void
   /** Messages queued while the session was busy (message-queue). Rendered as `.queued-strip` rows inside `.composer-box`. Empty when idle or no queue. */
   queuedMessages?: string[]
+  /** Pending review comments (display cards only — full notes merged on send). */
+  reviewComments?: ReviewComposerComment[]
+  onUpdateReviewCommentBody?: (commentId: string, body: string) => void
+  onDeleteReviewComment?: (commentId: string) => void
   /** Cancels the queued message at `index` (0-based). Wired to the ✕ button in each `.queued-strip` row. */
   onCancelQueued?: (index: number) => void
   /**
@@ -494,18 +499,10 @@ async function readAttachedImage(file: File | Blob): Promise<AttachedImage | nul
  * client-side action, never sent as text) or forwarded (dispatched as a
  * real prompt turn) — see `selectSlash` below.
  *
- * Sending while `busy` is intentionally NOT held back client-side: per
- * spec.md/e2e-test-plan.md this must inject live into the still-streaming
- * turn (`SessionManager.sendUserMessage` -> `harness.streamInput()` on the
- * turn's still-open input queue, verified for real against the SDK — see
- * that function's doc comment), not queue-and-wait. The mock's own
- * `sendMessage()` shows a "queued — will be delivered..." card while
- * working; that's superseded here by the real live-injection behavior this
- * task requires, so a follow-up sent while busy renders as an ordinary
- * message immediately, just like an idle send. The Send button itself is
- * hidden while busy (matching the mock's `setWorking()` toggle exactly),
- * but Enter still submits — same as the mock's `onComposerKeydown`, which
- * calls `sendMessage()` unconditionally regardless of working state.
+ * Sending while `busy` queues the message for automatic dispatch when the
+ * current turn finishes (message-queue). While busy the send control stays an
+ * up-arrow icon (tooltip "Queue"); `.queued-strip` rows show pending messages.
+ * Image attachments can't be queued and fall through to the normal send path.
  *
  * Image attachment (10g-enrichment-image-attachment): dropping or pasting an
  * image renders a real thumbnail chip in `.attach-row`/`.attach-thumb`
@@ -559,7 +556,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   gitWorkspacePath,
   diffSummary,
   sessionChangesCap,
-  onOpenCommitInDiff,
   mentionFilePaths,
   onOpenChangedFile,
   onFork,
@@ -569,6 +565,9 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   mode,
   onCycleMode,
   queuedMessages = [],
+  reviewComments = [],
+  onUpdateReviewCommentBody,
+  onDeleteReviewComment,
   onCancelQueued,
   tokenUsage,
   promptSuggestion,
@@ -791,7 +790,8 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
 
   async function handleSend(): Promise<void> {
     const text = resolveSendText(value, largePastesRef.current).trim()
-    if (!text && !attachedImage) return
+    const sendText = buildComposerSendText(text, reviewComments)
+    if (!sendText && !attachedImage) return
     // `/model <model-id>` validates against the SDK's own live acceptance
     // logic (calls `Query.setModel()` on the connected session and checks
     // whether it threw) rather than any static/curated list — verified for
@@ -1036,7 +1036,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           <ChatUncommittedChanges
             items={sessionChangesCap?.items}
             onOpenFile={onOpenChangedFile}
-            onOpenCommit={(hash) => onOpenCommitInDiff?.(hash)}
           />
         )}
       <div
@@ -1152,6 +1151,11 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             </div>
           </div>
         )}
+        <ReviewComposerCommentList
+          comments={reviewComments}
+          onUpdateCommentBody={onUpdateReviewCommentBody ?? (() => undefined)}
+          onDeleteComment={onDeleteReviewComment ?? (() => undefined)}
+        />
         <textarea
           ref={textareaRef}
           data-testid="composer-input"
@@ -1257,26 +1261,36 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             onOpenChange={setModelPickerOpen}
           />
           {busy ? (
-            <button className="stop-btn" data-testid="stop-button" onClick={onInterrupt}>
-              ⏹ Stop
+            <button
+              className="stop-btn"
+              data-testid="stop-button"
+              type="button"
+              title="Stop"
+              aria-label="Stop"
+              onClick={onInterrupt}
+            >
+              <svg className="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" />
+              </svg>
             </button>
           ) : null}
           <button
             className="send-btn"
             data-testid="send-button"
+            type="button"
             disabled={
               harnessDisconnected ||
               rateLimit?.sendBlocked ||
-              (!value.trim() && !attachedImage)
+              (!buildComposerSendText(value, reviewComments).trim() && !attachedImage)
             }
-            title={busy ? 'Send while busy (Enter)' : 'Send (Enter)'}
+            title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
+            aria-label={busy ? 'Queue' : 'Send'}
             onClick={() => void handleSend()}
           >
-            <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <line x1="12" y1="19" x2="12" y2="5" />
               <polyline points="6 11 12 5 18 11" />
             </svg>
-            {busy ? 'Send anyway' : 'Send'}
           </button>
         </div>
       </div>

@@ -12,10 +12,11 @@ import { promptFoldSummary } from './resolved-prompt-fold'
 import MarkdownMessage from './MarkdownMessage'
 import Linkify from '../panels/Linkify'
 import MessageActions from './MessageActions'
+import TranscriptInlineComments from './TranscriptInlineComments'
 import ConversationStatusCard from './ConversationStatusCard'
 import BackgroundTasksConversationCard from './BackgroundTasksConversationCard'
 import type { BackgroundTaskRow, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
-import type { ReviewPaneTarget } from '../../../../shared/review-pane-types'
+import type { ReviewPaneTarget, ReviewComposerComment } from '../../../../shared/review-pane-types'
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
@@ -130,6 +131,10 @@ export default function ChatTranscript({
   onReviewMessage,
   onReviewPlan,
   reviewTarget = null,
+  onAddComment,
+  onUpdateComment,
+  onDeleteComment,
+  reviewComments = [],
 }: {
   messages: MessageRecord[]
   /** Resolves a permission/AskUserQuestion/plan card by requestId (05-interactive-prompts). */
@@ -157,6 +162,10 @@ export default function ChatTranscript({
   onReviewPlan?: (message: MessageRecord, planMarkdown: string, previousPlanMarkdown?: string) => void
   /** Active review pane target (highlights source row/card). */
   reviewTarget?: ReviewPaneTarget | null
+  onAddComment?: (note: string) => void
+  onUpdateComment?: (oldNote: string, newNote: string) => void
+  onDeleteComment?: (composerNote: string) => void
+  reviewComments?: readonly ReviewComposerComment[]
 }): JSX.Element {
   function findPreviousPlanMarkdown(currentMessageId: number): string | undefined {
     const idx = messages.findIndex((m) => m.id === currentMessageId)
@@ -381,6 +390,11 @@ export default function ChatTranscript({
             reviewActive={
               reviewTarget?.kind === 'plan' && reviewTarget.sourceId === message.id
             }
+            messageId={message.id}
+            onAddComment={onAddComment}
+            onUpdateComment={onUpdateComment}
+            onDeleteComment={onDeleteComment}
+            reviewComments={reviewComments}
             workspaceRoot={workspaceRoot}
             projectRoot={projectRoot}
             filePathCandidates={filePathCandidates}
@@ -571,6 +585,11 @@ export default function ChatTranscript({
               reviewActive={
                 reviewTarget?.kind === 'plan' && reviewTarget.sourceId === message.id
               }
+              messageId={message.id}
+              onAddComment={onAddComment}
+              onUpdateComment={onUpdateComment}
+              onDeleteComment={onDeleteComment}
+              reviewComments={reviewComments}
               workspaceRoot={workspaceRoot}
               projectRoot={projectRoot}
               filePathCandidates={filePathCandidates}
@@ -630,6 +649,24 @@ export default function ChatTranscript({
           <div className="msg-assistant" data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
             {query ? (
               highlightMatches(message.content, query, matchCounter, activeMatchIndex)
+            ) : onAddComment ? (
+              <TranscriptInlineComments
+                messageId={message.id}
+                sourceContent={message.content}
+                commentPrefix="Re response"
+                onAddComment={onAddComment}
+                onUpdateComment={onUpdateComment}
+                onDeleteComment={onDeleteComment}
+                reviewComments={reviewComments}
+              >
+                <MarkdownMessage
+                  content={message.content}
+                  workspaceRoot={workspaceRoot}
+                  projectRoot={projectRoot}
+                  filePathCandidates={filePathCandidates}
+                  onOpenFileInFiles={onOpenFileInFiles}
+                />
+              </TranscriptInlineComments>
             ) : (
               <MarkdownMessage
                 content={message.content}
