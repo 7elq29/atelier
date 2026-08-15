@@ -4,7 +4,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  --wp-cal-timeline-height: 560px;
+  --wp-cal-timeline-height: 720px;
   --wp-cal-unsched-collapsed-height: 52px;
 }
 .weekly-plan-scope-bar {

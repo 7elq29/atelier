@@ -1,5 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { commentOnReviewSelection, e2eConfigPath as configPath, openReviewCommentPopover, seedE2eConfig, seedSkipOnboarding, selectReviewPaneText } from './e2e-config'
+import { commentOnReviewSelection, commentOnTranscriptSelection, e2eConfigPath as configPath, openReviewCommentPopover, seedE2eConfig, seedSkipOnboarding, selectReviewPaneText, selectTranscriptCommentText } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -289,6 +289,19 @@ test.describe('05-interactive-prompts', () => {
     await expect(planCard1.getByTestId('plan-body')).toContainText('atelier-plan-test.txt')
     await page.screenshot({ path: join(artifactsDir, '05-plan.png') })
 
+    const planHost = planCard1.getByTestId('transcript-comment-host')
+    await expect(planHost).toBeVisible()
+    await selectTranscriptCommentText(planHost, 'atelier-plan-test.txt')
+    await commentOnTranscriptSelection(planHost, 'Inline plan comment in transcript')
+    await expect(page.getByTestId('review-composer-comment-list')).toBeVisible()
+    const inlineCommentRow = page.getByTestId('review-composer-comment-card').last()
+    await expect(inlineCommentRow.getByTestId('review-composer-comment-quote')).toContainText('atelier-plan-test.txt')
+    await expect(inlineCommentRow.getByTestId('review-composer-comment-line')).toHaveText(/line \d+/)
+    await expect(inlineCommentRow.getByTestId('review-composer-comment-body')).toHaveValue('Inline plan comment in transcript')
+    await expect(activeComposer(page)).toHaveValue('')
+    await expect(activeComposer(page)).not.toContainText(/Re plan/)
+    await expect(page.getByTestId('response-review-pane')).toHaveCount(0)
+
     await planCard1.getByTestId('plan-review-button').click()
     const reviewPane = page.getByTestId('response-review-pane')
     await expect(reviewPane).toBeVisible()
@@ -302,8 +315,13 @@ test.describe('05-interactive-prompts', () => {
     await expect(reviewPane.getByTestId('response-review-saved-body')).toHaveText(
       'Please add rollback steps'
     )
-    await expect(activeComposer(page)).toContainText(/Re plan \(line \d+\):/)
-    await expect(activeComposer(page)).toContainText('atelier-plan-test.txt')
+    await expect(page.getByTestId('review-composer-comment-list')).toBeVisible()
+    const reviewCommentRow = page.getByTestId('review-composer-comment-card').last()
+    await expect(reviewCommentRow.getByTestId('review-composer-comment-quote')).toContainText('atelier-plan-test.txt')
+    await expect(reviewCommentRow.getByTestId('review-composer-comment-line')).toHaveText(/line \d+/)
+    await expect(reviewCommentRow.getByTestId('review-composer-comment-body')).toHaveValue('Please add rollback steps')
+    await expect(activeComposer(page)).toHaveValue('')
+    await expect(activeComposer(page)).not.toContainText(/Re plan/)
     await page.getByTestId('response-review-close').click()
     await expect(reviewPane).toHaveCount(0)
 

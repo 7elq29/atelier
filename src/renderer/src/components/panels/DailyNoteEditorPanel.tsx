@@ -96,27 +96,6 @@ export default function DailyNoteEditorPanel({
       data-effective-theme={effectiveTheme}
       style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}
     >
-      <div className="daily-note-scope-bar">
-        <span className="daily-note-live-badge">Live preview</span>
-        <span>
-          Editing vault slice <strong>{slice.notesSectionHeading}</strong> through end of file — Timeline / Trackers stay in Obsidian.
-        </span>
-        {slice.createdBanner && (
-          <span className="daily-note-created-banner" data-testid="daily-note-created-banner">
-            Created from Obsidian template
-          </span>
-        )}
-        <span className="daily-note-vault-path" data-testid="daily-note-vault-path" title={slice.vaultRelativePath}>
-          {slice.vaultRelativePath || '—'}
-        </span>
-        <span
-          className={`daily-sync-chip${slice.syncState === 'synced' ? ' synced' : slice.syncState === 'external' ? ' external' : ''}`}
-          data-testid="daily-note-sync-chip"
-        >
-          {syncLabel}
-        </span>
-      </div>
-
       <div className="daily-note-editor-toolbar">
         <div className="daily-date-nav" aria-label="Daily note date">
           <button type="button" title="Previous day" data-testid="daily-note-prev-day" onClick={() => slice.shiftDate(-1)}>
@@ -132,8 +111,11 @@ export default function DailyNoteEditorPanel({
             {formatDailyNoteLabel(slice.viewDate)}
           </span>
         </div>
-        <span className="daily-note-section-heading" data-testid="daily-note-section-heading">
-          {slice.notesSectionHeading}
+        <span
+          className={`daily-sync-chip${slice.syncState === 'synced' ? ' synced' : slice.syncState === 'external' ? ' external' : ''}`}
+          data-testid="daily-note-sync-chip"
+        >
+          {syncLabel}
         </span>
       </div>
 

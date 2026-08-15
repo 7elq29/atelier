@@ -20,6 +20,7 @@ import {
   reviewPaneHasDiff,
   reviewPaneSubtitle,
   reviewPaneTitle,
+  type ReviewComposerComment,
   type ReviewPaneTarget
 } from '../../../../shared/review-pane-types'
 import {
@@ -35,12 +36,17 @@ import {
 } from './review-selection-anchor'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
 import { createMarkdownComponents } from './MarkdownMessage'
+import InlineCommentActions from './InlineCommentActions'
+import ReviewCommentDisplay from './ReviewCommentDisplay'
+import ReviewSelectionBubble from './ReviewSelectionBubble'
 
 interface ResponseReviewPanelProps {
   target: ReviewPaneTarget
   onClose: () => void
   onAddComment: (note: string) => void
   onUpdateComment?: (oldNote: string, newNote: string) => void
+  onDeleteComment?: (composerNote: string) => void
+  reviewComments?: readonly ReviewComposerComment[]
   workspaceRoot?: string
   projectRoot?: string
   onOpenFileInFiles?: (relativePath: string) => void
@@ -59,6 +65,7 @@ interface SelectionToolbarState {
   quote: string
   top: number
   left: number
+  bubbleLeft: number
   sourceLineNumber: number
   anchor: ReviewSelectionAnchor
 }
@@ -75,7 +82,8 @@ function nextCommentId(): string {
 }
 
 function buildReviewBlocks(target: ReviewPaneTarget): PlanReviewRenderBlock[] {
-  const previous = target.kind === 'plan' ? target.previousContent : undefined
+  const previous =
+    target.kind === 'plan' || target.kind === 'file' ? target.previousContent : undefined
   return buildPlanReviewRenderBlocks(target.content, previous)
 }
 
@@ -134,6 +142,8 @@ export default function ResponseReviewPanel({
   onClose,
   onAddComment,
   onUpdateComment,
+  onDeleteComment,
+  reviewComments = [],
   workspaceRoot,
   projectRoot,
   onOpenFileInFiles
@@ -141,6 +151,7 @@ export default function ResponseReviewPanel({
   const paneRef = useRef<HTMLElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const commentInputRef = useRef<HTMLTextAreaElement>(null)
   const [paneWidthPx, setPaneWidthPx] = useState<number | null>(null)
   const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null)
   const [commentDraftOpen, setCommentDraftOpen] = useState(false)
@@ -158,6 +169,25 @@ export default function ResponseReviewPanel({
     () => savedComments.map((comment) => ({ id: comment.id, anchor: comment.anchor })),
     [commentAnchorKey]
   )
+  const pendingNotesKey = reviewComments.map((c) => c.composerNote).join('\0')
+
+  useEffect(() => {
+    const notes = new Set(reviewComments.map((c) => c.composerNote))
+    setSavedComments((prev) => {
+      const next = prev.filter((c) => notes.has(c.composerNote))
+      return next.length === prev.length ? prev : next
+    })
+  }, [pendingNotesKey, reviewComments])
+
+  useEffect(() => {
+    if (!openCommentId) return
+    if (!savedComments.some((c) => c.id === openCommentId)) {
+      setOpenCommentId(null)
+      setEditingCommentId(null)
+      setEditCommentText('')
+    }
+  }, [openCommentId, savedComments])
+
   const commentPrefix = reviewPaneCommentPrefix(target.kind)
   const hasDiff = reviewPaneHasDiff(target)
   const openComment = savedComments.find((comment) => comment.id === openCommentId) ?? null
@@ -225,9 +255,15 @@ export default function ResponseReviewPanel({
     })
   }, [commentAnchorKey, savedComments.length, openCommentId, paneWidthPx])
 
+  useLayoutEffect(() => {
+    if (!commentDraftOpen) return
+    commentInputRef.current?.focus()
+  }, [commentDraftOpen])
+
   useEffect(() => {
     function onDocumentMouseDown(e: MouseEvent): void {
       const targetEl = e.target as HTMLElement
+      if (targetEl.closest?.('.response-review-selection-bubble')) return
       if (targetEl.closest?.('.response-review-selection-chip')) return
       if (targetEl.closest?.('.response-review-inline-comment')) return
       if (targetEl.closest?.('.response-review-comment-popover')) return
@@ -379,6 +415,14 @@ export default function ResponseReviewPanel({
     clearSelectionUi()
   }
 
+  function deleteComment(comment: SavedComment): void {
+    setSavedComments((prev) => prev.filter((c) => c.id !== comment.id))
+    onDeleteComment?.(comment.composerNote)
+    setOpenCommentId(null)
+    setEditingCommentId(null)
+    setEditCommentText('')
+  }
+
   function saveEditedComment(comment: SavedComment): void {
     if (!editCommentText.trim()) return
     const body = editCommentText.trim()
@@ -417,7 +461,7 @@ export default function ResponseReviewPanel({
         style={paneWidthPx != null ? { width: paneWidthPx, flex: '0 0 auto' } : { width: `${DEFAULT_PANE_FRACTION * 100}%` }}
       >
         <div className="response-review-head">
-          <span data-testid="response-review-title">{reviewPaneTitle(target.kind)}</span>
+          <span data-testid="response-review-title">{reviewPaneTitle(target)}</span>
           <span className="response-review-sub">{reviewPaneSubtitle(target)}</span>
           <button
             type="button"
@@ -499,61 +543,50 @@ export default function ResponseReviewPanel({
                       )
                     }
                   />
-                  <div className="inline-comment-actions">
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      data-testid="response-review-comment-submit"
-                      onClick={() => saveEditedComment(openComment)}
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => {
-                        setEditingCommentId(null)
-                        setEditCommentText('')
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                  <InlineCommentActions
+                    submitTitle="Save comment"
+                    onSubmit={() => saveEditedComment(openComment)}
+                    onDelete={() => deleteComment(openComment)}
+                    onCancel={() => {
+                      setEditingCommentId(null)
+                      setEditCommentText('')
+                    }}
+                  />
                 </div>
               ) : (
-                <button
-                  type="button"
-                  className="response-review-saved-comment"
-                  data-testid="response-review-saved-comment"
-                  title="Click to edit"
-                  onClick={() => {
-                    setEditingCommentId(openComment.id)
-                    setEditCommentText(openComment.text)
-                  }}
-                >
-                  <div className="response-review-saved-body" data-testid="response-review-saved-body">
-                    {openComment.text}
-                  </div>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="response-review-saved-comment"
+                    data-testid="response-review-saved-comment"
+                    title="Click to edit"
+                    onClick={() => {
+                      setEditingCommentId(openComment.id)
+                      setEditCommentText(openComment.text)
+                    }}
+                  >
+                    <ReviewCommentDisplay
+                      sourceLineLabel={String(openComment.sourceLineNumber)}
+                      quote={openComment.quote}
+                      body={openComment.text}
+                      headTestId="response-review-saved-head"
+                      quoteTestId="response-review-saved-quote"
+                      lineTestId="response-review-saved-line"
+                      bodyTestId="response-review-saved-body"
+                    />
+                  </button>
+                  <InlineCommentActions onDelete={() => deleteComment(openComment)} />
+                </>
               )}
             </div>
           ) : null}
 
           {selectionToolbar && !commentDraftOpen ? (
-            <div
-              className="response-review-selection-chip"
-              data-testid="response-review-selection-ui"
-              style={{ top: selectionToolbar.top, left: selectionToolbar.left }}
-            >
-              <button
-                type="button"
-                title="Comment on selection"
-                data-testid="response-review-comment-btn"
-                onClick={() => setCommentDraftOpen(true)}
-              >
-                💬
-              </button>
-            </div>
+            <ReviewSelectionBubble
+              top={selectionToolbar.top}
+              left={selectionToolbar.bubbleLeft}
+              onComment={() => setCommentDraftOpen(true)}
+            />
           ) : null}
 
           {selectionToolbar && commentDraftOpen ? (
@@ -563,6 +596,7 @@ export default function ResponseReviewPanel({
               style={{ top: selectionToolbar.top, left: COMMENT_GUTTER_WIDTH, right: 12 }}
             >
               <textarea
+                ref={commentInputRef}
                 rows={2}
                 placeholder="Comment on this selection…"
                 value={commentText}
@@ -573,19 +607,7 @@ export default function ResponseReviewPanel({
                   handleCommentKeyDown(e, commentText, setCommentText, submitSelectionComment, clearSelectionUi)
                 }
               />
-              <div className="inline-comment-actions">
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  data-testid="response-review-comment-submit"
-                  onClick={submitSelectionComment}
-                >
-                  Add to next message
-                </button>
-                <button type="button" className="btn btn-sm" onClick={clearSelectionUi}>
-                  Cancel
-                </button>
-              </div>
+              <InlineCommentActions onSubmit={submitSelectionComment} onCancel={clearSelectionUi} />
             </div>
           ) : null}
         </div>

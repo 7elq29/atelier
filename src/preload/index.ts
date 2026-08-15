@@ -54,7 +54,9 @@ import type { SpendStatus } from '../shared/spend-status-types'
 import type { AppNoteRecord, AppNoteUpdate } from '../shared/app-note-types'
 import type { ProjectPathSuggestion } from '../shared/project-path-autocomplete'
 import type {
+  SessionConnectProgressEvent,
   SessionOpenReadyEvent,
+  SessionOpenTimingEvent,
   SessionWorkspacePayload,
   SessionWorkspaceUpdatedEvent,
   SessionWorkspaceRefreshingEvent
@@ -72,6 +74,9 @@ import type {
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 const api = {
+  /** True when running from `npm run dev` (Vite live reload), not a packaged build. */
+  isDev:
+    process.env['ATELIER_DEV'] === '1' || process.env['ELECTRON_RENDERER_URL'] != null,
   /** Host OS id (`darwin` | `win32` | `linux`) — used for platform-specific chrome. */
   platform: process.platform,
   /** Round-trip IPC call to main: asks for the real app version string. */
@@ -359,6 +364,16 @@ const api = {
     const listener = (_event: unknown, payload: SessionOpenReadyEvent): void => callback(payload)
     ipcRenderer.on('session:openReady', listener)
     return () => ipcRenderer.removeListener('session:openReady', listener)
+  },
+  onSessionConnectProgress: (callback: (event: SessionConnectProgressEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionConnectProgressEvent): void => callback(payload)
+    ipcRenderer.on('session:connectProgress', listener)
+    return () => ipcRenderer.removeListener('session:connectProgress', listener)
+  },
+  onSessionOpenTiming: (callback: (event: SessionOpenTimingEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionOpenTimingEvent): void => callback(payload)
+    ipcRenderer.on('session:openTiming', listener)
+    return () => ipcRenderer.removeListener('session:openTiming', listener)
   },
   onSessionWorkspaceUpdated: (callback: (event: SessionWorkspaceUpdatedEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: SessionWorkspaceUpdatedEvent): void => callback(payload)

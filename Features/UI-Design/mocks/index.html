@@ -173,7 +173,7 @@
   .app-note-row--weekly.active { background: var(--bg-active); }
   #panel-weekly-plan, #panel-weekly-plan-view {
     flex: 1; min-height: 0; display: flex; flex-direction: column;
-    --wp-cal-timeline-height: 420px;
+    --wp-cal-timeline-height: 720px;
   }
   .weekly-plan-scope-bar {
     padding: 10px 20px; border-bottom: 1px solid var(--border-subtle);
@@ -2012,21 +2012,11 @@ On branch main. nothing to commit, working tree clean.
             <span class="daily-date-label" id="dailyNoteDateLabel">—</span>
           </div>
           <div class="topbar-spacer"></div>
-          <span class="topbar-chip" id="dailyNotePathChip" style="font-family:var(--font-mono);font-size:12px;max-width:min(420px,40vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">—</span>
           <span class="daily-sync-chip synced" id="dailyNoteSyncChip">Synced</span>
-        </div>
-        <div class="daily-note-scope-bar">
-          <span class="live-badge">Live preview</span>
-          <span>Editing vault slice <strong>## Notes</strong> through end of file — Timeline / Trackers above stay in Obsidian only.</span>
-          <code id="dailyNoteTemplateHint">Template: 92.templates/Daily Note Template.md</code>
         </div>
         <div class="tab-content" data-tab="editor">
           <div class="daily-note-layout" data-testid="daily-note-panel">
             <div class="daily-note-editor-col">
-              <div class="daily-note-live-toolbar">
-                <span id="dailyNoteCreateBanner" class="hidden" style="color:var(--accent);">Created today’s note from Obsidian template.</span>
-                <span style="margin-left:auto;font-family:var(--font-mono);font-size:12px;" id="dailyNoteSectionHeading">## Notes</span>
-              </div>
               <div
                 class="daily-note-live-body"
                 id="dailyNoteLiveBody"

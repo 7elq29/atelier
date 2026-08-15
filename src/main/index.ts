@@ -26,7 +26,11 @@ import { registerSpendStatusHandlers } from './spend-status-ipc'
 import type { PtyManager } from './panels/pty'
 import type { PortForwardManager } from './panels/ports'
 
-const isDev = !app.isPackaged
+/** Dev worktree runs via a copied .app bundle, so `app.isPackaged` alone is unreliable. */
+const isDev =
+  process.env['ATELIER_DEV'] === '1' ||
+  process.env['ELECTRON_RENDERER_URL'] != null ||
+  !app.isPackaged
 let mainWindow: BrowserWindow | null = null
 let ptyManager: PtyManager | null = null
 let portManager: PortForwardManager | null = null
@@ -42,7 +46,7 @@ function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: 'Atelier',
+    title: isDev ? 'Atelier [DEV]' : 'Atelier',
     icon: icon && !icon.isEmpty() ? icon : undefined,
     // Match --bg-app so the window is not pure black while the renderer loads.
     backgroundColor: '#1c1a16',
@@ -170,21 +174,24 @@ app.whenReady().then(() => {
   // re-created per IPC call.
   const harness = new ClaudeAgentSdkHarness()
   sessionManager = new SessionManager(sessionStore, harness, createStaticHostResolver(), () => mainWindow)
-  workspaceService = new WorkspaceService(() => mainWindow, async (sessionId, opts) => {
+  workspaceService = new WorkspaceService(() => mainWindow, async (sessionId) => {
     const session = sessionStore.getSession(sessionId)
     if (!session) return { items: [] }
     const workspacePath = session.worktreePath ?? session.projectPath
-    return refreshSessionChangesCap(sessionStore, sessionId, workspacePath, session.hostname, opts)
+    return refreshSessionChangesCap(sessionStore, sessionId, workspacePath, session.hostname)
   })
   sessionManager.setWorkspaceService(workspaceService)
   const manager = sessionManager
   manager.markStartupIdleSessions()
   registerIpcHandlers(manager)
 
-  logger.info('app ready', { version: app.getVersion(), platform: process.platform })
+  logger.info('app ready', { version: app.getVersion(), platform: process.platform, dev: isDev })
 
   mainWindow = createWindow()
   applyDockIconWhenReady()
+  if (isDev && process.platform === 'darwin') {
+    app.dock?.setBadge('DEV')
+  }
 
   // Fire-and-forget: probe each session's recoverability in the background
   // and push session:stale events to the renderer for any that can't resume.

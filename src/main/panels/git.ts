@@ -13,6 +13,8 @@ export {
   getOutsideWorkspaceCapTextPairDiff,
   getWorkingTreeFilePair,
   getPathWorkingTreeNumstat,
+  getWorkingTreeNumstatMap,
+  type WorkingTreeNumstat,
   invalidateGitRepository,
   latestReflogSubject,
   listCommitChangedPaths,
@@ -20,6 +22,8 @@ export {
   listCommits,
   listWorktrees,
   mergeWorktreeBranch,
+  onWorkingTreeUpdated,
+  probeGitRepo,
   removeWorktree,
   resolveHead,
   warmRemoteGitHost

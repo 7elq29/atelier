@@ -1,5 +1,5 @@
 /**
- * Chat changes cap payload — pending files (git-reconciled) + session-attributed commits.
+ * Chat changes cap payload — pending files reconciled from git diff HEAD per touched path.
  */
 
 export interface SessionChangesCapFileItem {
@@ -13,14 +13,7 @@ export interface SessionChangesCapFileItem {
   sortAt: string
 }
 
-export interface SessionChangesCapCommitItem {
-  kind: 'commit'
-  hash: string
-  subject: string
-  sortAt: string
-}
-
-export type SessionChangesCapItem = SessionChangesCapFileItem | SessionChangesCapCommitItem
+export type SessionChangesCapItem = SessionChangesCapFileItem
 
 export interface SessionChangesCap {
   items: SessionChangesCapItem[]
@@ -28,10 +21,8 @@ export interface SessionChangesCap {
 
 export function sessionChangesCapSignature(cap: SessionChangesCap): string {
   return cap.items
-    .map((i) =>
-      i.kind === 'file'
-        ? `f:${i.path}:${i.additions}:${i.deletions}:${i.opensInFilesTab ? 1 : 0}:${i.sortAt}`
-        : `c:${i.hash}:${i.subject}:${i.sortAt}`
+    .map(
+      (i) => `f:${i.path}:${i.additions}:${i.deletions}:${i.opensInFilesTab ? 1 : 0}:${i.sortAt}`
     )
     .join('|')
 }

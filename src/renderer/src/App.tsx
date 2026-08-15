@@ -32,8 +32,13 @@ import { useSessions } from './hooks/useSessions'
 import { useSessionWorkspace } from './hooks/useSessionWorkspace'
 import { truncateContextPath } from './utils/truncateContextPath'
 import { useAppNotes } from './hooks/useAppNotes'
+import {
+  COLLAPSED_SIDEBAR_WIDTH,
+  useAppPanelWidths
+} from './hooks/useAppPanelWidths'
 import type { DailyTask } from '../../shared/daily-note-types'
-import type { ReviewPaneTarget } from '../../shared/review-pane-types'
+import { buildComposerSendText, formatReviewComposerNote, parseReviewComposerNote } from '../../shared/review-pane-types'
+import type { ReviewComposerComment, ReviewPaneTarget } from '../../shared/review-pane-types'
 import type {
   WeeklyPlanStatus,
   WeeklyPlanViewResult,
@@ -208,6 +213,10 @@ export default function App(): JSX.Element {
   const [drawerHeight, setDrawerHeight] = useState(240)
   /** Per-session FIFO queue while that session is busy (message-queue). */
   const [queuedMessagesBySession, setQueuedMessagesBySession] = useState<Record<string, string[]>>({})
+  const [reviewCommentsBySession, setReviewCommentsBySession] = useState<
+    Record<string, ReviewComposerComment[]>
+  >({})
+  const reviewCommentIdSeq = useRef(0)
   const queuedMessagesBySessionRef = useRef(queuedMessagesBySession)
   queuedMessagesBySessionRef.current = queuedMessagesBySession
 
@@ -543,7 +552,9 @@ export default function App(): JSX.Element {
     if (!disconnectedGate && !hasSessionMessages(session.id)) {
       await sessions.resumeSession(session.id)
     }
-    sessionWorkspace.hydrateSnapshot(session.id)
+    if (!disconnectedGate) {
+      sessionWorkspace.hydrateSnapshot(session.id)
+    }
   }
 
   const reconnectSessionById = useCallback(
@@ -727,18 +738,6 @@ export default function App(): JSX.Element {
     [activeSessionId, allSessions, sessions.statuses, sessionWorkspace.workspaceBySession]
   )
 
-  const openCommitInDiff = useCallback(
-    (hash: string) => {
-      const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
-      if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
-      setRevealCommitHash(hash)
-      setRevealCommitSeq((n) => n + 1)
-      setActiveTab('diff')
-      setVisitedTabs((prev) => (prev.has('diff') ? prev : new Set(prev).add('diff')))
-    },
-    [activeSessionId, allSessions, sessions.statuses]
-  )
-
   const openFileInFiles = useCallback(
     (rawPath: string) => {
       const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
@@ -910,11 +909,29 @@ export default function App(): JSX.Element {
   }
 
   async function handleSend(sessionId: string, text: string, image?: ImageAttachment): Promise<void> {
-    if (!text.trim() && !image) return
+    const reviewComments = reviewCommentsBySession[sessionId] ?? []
+    const mergedText = buildComposerSendText(text, reviewComments)
+    if (!mergedText && !image) return
     if (sessions.rateLimitBySession[sessionId]?.sendBlocked) return
+    const busy = sessions.busyBySession[sessionId] ?? false
+    if (busy && !image) {
+      // Session is in flight — queue for automatic dispatch when busy → idle.
+      // Image attachments can't be queued (queued-strip only shows text).
+      setQueuedMessagesBySession((prev) => ({
+        ...prev,
+        [sessionId]: [...(prev[sessionId] ?? []), mergedText]
+      }))
+      if (reviewComments.length > 0) {
+        setReviewCommentsBySession((prev) => ({ ...prev, [sessionId]: [] }))
+      }
+      return
+    }
     const session = allSessions.find((s) => s.id === sessionId)
     const model = modelSelectionForSession(sessionId, session, modelSelectionBySession, config)
-    await sessions.sendMessage(sessionId, text.trim(), model, image)
+    await sessions.sendMessage(sessionId, mergedText, model, image)
+    if (reviewComments.length > 0) {
+      setReviewCommentsBySession((prev) => ({ ...prev, [sessionId]: [] }))
+    }
   }
 
   async function handleInterrupt(sessionId: string): Promise<void> {
@@ -951,6 +968,7 @@ export default function App(): JSX.Element {
       if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
       if (!session || !activeSessionId) return
       const ws = sessionWorkspace.workspaceBySession[activeSessionId]
+      const workspacePath = session.worktreePath ?? session.projectPath
       const pathCandidates = filePathCandidatesForSession(ws)
       const activeMessages = getSessionMessages(activeSessionId)
       if (isClaudePlanPath(path)) {
@@ -986,32 +1004,41 @@ export default function App(): JSX.Element {
         return
       }
       if (opensInFilesTab) {
-        openChangedFileInFilesWithDiff(path)
+        const result = await window.atelier.capOutsideFileDiff(activeSessionId, workspacePath, path)
+        if (!result) return
+        setActiveTab('chat')
+        setReviewTarget({
+          sourceId: -1,
+          kind: 'file',
+          content: result.pair.modified,
+          previousContent: result.pair.original,
+          capFilePath: path
+        })
         return
       }
-      const workspacePath = session.worktreePath ?? session.projectPath
-      const revealed = revealPathInDiffSummary(path, ws?.diff)
-      const inSummary = ws?.diff?.files.some((f) => f.path === revealed || f.path === path)
-      let diffPath = revealed
-      if (!inSummary) {
-        const file = await window.atelier.capGitFileDiff(activeSessionId, workspacePath, path)
-        if (file) {
-          setInjectDiffBySession((prev) => ({
-            ...prev,
-            [activeSessionId]: { file, seq: (prev[activeSessionId]?.seq ?? 0) + 1 }
-          }))
-          diffPath = file.path
-        }
-      }
-      openChangedFileInDiff(diffPath)
+      const file = await window.atelier.capGitFileDiff(activeSessionId, workspacePath, path)
+      if (!file) return
+      const pair = await window.atelier.gitWorkingTreeFilePair(
+        workspacePath,
+        file.path,
+        file.status,
+        session.hostname ?? null
+      )
+      if (!pair) return
+      setActiveTab('chat')
+      setReviewTarget({
+        sourceId: -1,
+        kind: 'file',
+        content: pair.modified,
+        previousContent: pair.original,
+        capFilePath: path
+      })
     },
     [
       activeSessionId,
       allSessions,
       sessions.statuses,
-      sessionWorkspace.workspaceBySession,
-      openChangedFileInDiff,
-      openChangedFileInFilesWithDiff
+      sessionWorkspace.workspaceBySession
     ]
   )
 
@@ -1051,7 +1078,7 @@ export default function App(): JSX.Element {
   )
 
   const handleRefreshWorkspace = useCallback((sessionId: string) => {
-    void window.atelier.refreshSessionWorkspace(sessionId, true)
+    void window.atelier.refreshSessionWorkspace(sessionId, false)
   }, [])
 
   const openFileQuickOpen = useCallback(() => {
@@ -1103,8 +1130,49 @@ export default function App(): JSX.Element {
     const sid = activeSessionIdRef.current
     if (!sid) return
     const composer = composerRefs.current.get(sid)
+    const parsed = parseReviewComposerNote(note)
+    if (parsed) {
+      reviewCommentIdSeq.current += 1
+      const comment: ReviewComposerComment = {
+        id: `review-composer-comment-${reviewCommentIdSeq.current}`,
+        ...parsed,
+        composerNote: note
+      }
+      setReviewCommentsBySession((prev) => ({
+        ...prev,
+        [sid]: [...(prev[sid] ?? []), comment]
+      }))
+      return
+    }
     const prev = composer?.getValue() ?? ''
     composer?.setValue(prev ? `${prev}\n\n${note}` : note)
+  }, [])
+
+  const updateReviewCommentBody = useCallback((sessionId: string, commentId: string, body: string) => {
+    setReviewCommentsBySession((prev) => ({
+      ...prev,
+      [sessionId]: (prev[sessionId] ?? []).map((c) => {
+        if (c.id !== commentId) return c
+        const composerNote = formatReviewComposerNote(c.prefix, c.sourceLineLabel, c.quote, body)
+        return { ...c, body, composerNote }
+      })
+    }))
+  }, [])
+
+  const deleteReviewComment = useCallback((sessionId: string, commentId: string) => {
+    setReviewCommentsBySession((prev) => ({
+      ...prev,
+      [sessionId]: (prev[sessionId] ?? []).filter((c) => c.id !== commentId)
+    }))
+  }, [])
+
+  const deleteReviewCommentByNote = useCallback((composerNote: string) => {
+    const sid = activeSessionIdRef.current
+    if (!sid) return
+    setReviewCommentsBySession((prev) => ({
+      ...prev,
+      [sid]: (prev[sid] ?? []).filter((c) => c.composerNote !== composerNote)
+    }))
   }, [])
 
   const replaceInActiveComposer = useCallback((oldNote: string, newNote: string) => {
@@ -1112,6 +1180,23 @@ export default function App(): JSX.Element {
     if (!sid) return
     const composer = composerRefs.current.get(sid)
     const prev = composer?.getValue() ?? ''
+    const oldParsed = parseReviewComposerNote(oldNote)
+    const newParsed = parseReviewComposerNote(newNote)
+    if (oldParsed && newParsed) {
+      setReviewCommentsBySession((prevState) => ({
+        ...prevState,
+        [sid]: (prevState[sid] ?? []).map((c) =>
+          c.composerNote === oldNote
+            ? {
+                ...c,
+                ...newParsed,
+                composerNote: newNote
+              }
+            : c
+        )
+      }))
+      return
+    }
     if (!prev.includes(oldNote)) return
     composer?.setValue(prev.replace(oldNote, newNote))
   }, [])
@@ -1152,6 +1237,10 @@ export default function App(): JSX.Element {
     replaceLinkedDialogOpen ||
     deleteLinkedPrompt !== null
   const appBodyRef = useRef<HTMLDivElement>(null)
+  const sidebarExpanded = !config.sidebarCollapsed
+  const dailyNotesOpen = date !== null
+  const { sidebarWidth, dailyNotesWidth, resizing, startSidebarResize, startDailyNotesResize } =
+    useAppPanelWidths(appBodyRef, { dailyNotesOpen, sidebarExpanded })
 
   // Refs used inside the stable global ESC keydown handler (registered once
   // with [] deps) to read current render-cycle values without re-registering
@@ -1221,8 +1310,13 @@ export default function App(): JSX.Element {
   return (
     <div className="app-root">
       {showIntegratedTitleBar ? <TitleBar /> : null}
-      <div id="app" className="app-body" ref={appBodyRef}>
-        <Sidebar
+      <div id="app" className={'app-body' + (resizing ? ' app-body--resizing-panels' : '')} ref={appBodyRef}>
+        <div
+          className="sidebar-shell"
+          data-testid="sidebar-shell"
+          style={{ width: sidebarExpanded ? sidebarWidth : COLLAPSED_SIDEBAR_WIDTH }}
+        >
+          <Sidebar
           collapsed={config.sidebarCollapsed}
           onToggleCollapse={() => updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })}
           activeSessions={sessions.activeSessions}
@@ -1273,7 +1367,16 @@ export default function App(): JSX.Element {
           onCreateAppNote={() => void createAppNote()}
           onRenameAppNote={(id, title) => void appNotes.updateNote(id, { title })}
           onDeleteAppNote={(id) => void deleteAppNote(id)}
-        />
+          />
+        </div>
+
+        {sidebarExpanded ? (
+          <div
+            className="app-panel-resize-handle"
+            data-testid="sidebar-resize-handle"
+            onMouseDown={startSidebarResize}
+          />
+        ) : null}
 
         <div className="main-area">
           <div
@@ -1447,6 +1550,11 @@ export default function App(): JSX.Element {
                 connecting={
                   !activeSession.closedAt && sessions.statuses[activeSession.id] === 'connecting'
                 }
+                connectStatusLabel={
+                  activeSessionId
+                    ? sessionWorkspace.connectProgressBySession[activeSessionId]?.label ?? null
+                    : null
+                }
               />
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -1495,6 +1603,8 @@ export default function App(): JSX.Element {
                         onCloseReview={() => setReviewTarget(null)}
                         onAddComment={appendToActiveComposer}
                         onUpdateComment={replaceInActiveComposer}
+                        onDeleteComment={deleteReviewCommentByNote}
+                        reviewComments={reviewCommentsBySession[activeSession.id] ?? []}
                       />
                       <div className="composer-cache">
                         {[...aliveChatComposers].map((sessionId) => {
@@ -1528,7 +1638,6 @@ export default function App(): JSX.Element {
                                 sessionChangesCap={ws?.sessionChangesCap}
                                 mentionFilePaths={mentionPaths}
                                 onOpenChangedFile={openChangedFileFromCap}
-                                onOpenCommitInDiff={openCommitInDiff}
                                 onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}
                                 modelSelection={modelSelectionForSession(sessionId, session, modelSelectionBySession, config)}
                                 onModelSelectionChange={(selection) => {
@@ -1539,6 +1648,11 @@ export default function App(): JSX.Element {
                                 mode={session.permissionMode}
                                 onCycleMode={() => void sessions.cycleMode(sessionId)}
                                 queuedMessages={queuedMessagesBySession[sessionId] ?? []}
+                                reviewComments={reviewCommentsBySession[sessionId] ?? []}
+                                onUpdateReviewCommentBody={(commentId, body) =>
+                                  updateReviewCommentBody(sessionId, commentId, body)
+                                }
+                                onDeleteReviewComment={(commentId) => deleteReviewComment(sessionId, commentId)}
                                 onCancelQueued={(index) =>
                                   setQueuedMessagesBySession((prev) => ({
                                     ...prev,
@@ -1642,14 +1756,27 @@ export default function App(): JSX.Element {
           </div>
         </div>
 
-        {date && (
-          <DailyNotesSidebar
-            date={date}
-            onClose={() => void toggleDailyNotesPanel()}
-            vaultRoot={config.vault.root || undefined}
-            onCreateSessionFromTask={handleCreateSessionFromTask}
-          />
-        )}
+        {dailyNotesOpen && date ? (
+          <>
+            <div
+              className="app-panel-resize-handle"
+              data-testid="daily-notes-resize-handle"
+              onMouseDown={startDailyNotesResize}
+            />
+            <div
+              className="daily-notes-panel-shell"
+              data-testid="daily-notes-panel-shell"
+              style={{ width: dailyNotesWidth }}
+            >
+              <DailyNotesSidebar
+                date={date}
+                onClose={() => void toggleDailyNotesPanel()}
+                vaultRoot={config.vault.root || undefined}
+                onCreateSessionFromTask={handleCreateSessionFromTask}
+              />
+            </div>
+          </>
+        ) : null}
       </div>
 
       <CommandPalette

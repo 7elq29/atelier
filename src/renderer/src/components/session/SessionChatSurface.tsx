@@ -3,7 +3,7 @@ import type { SessionRecord } from '../../../../shared/session-types'
 import type { SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import type { BackgroundTaskRow } from '../../../../shared/harness-ui-types'
 import type { PromptDecision } from '../../../../shared/session-types'
-import type { ReviewPaneTarget } from '../../../../shared/review-pane-types'
+import type { ReviewPaneTarget, ReviewComposerComment } from '../../../../shared/review-pane-types'
 import { useSessionMessages } from '../../hooks/useSessionMessages'
 import ChatTranscript from '../chat/ChatTranscript'
 import TrackerRail from '../chat/TrackerRail'
@@ -29,7 +29,9 @@ export function SessionChatSurface({
   onReviewPlan,
   onCloseReview,
   onAddComment,
-  onUpdateComment
+  onUpdateComment,
+  onDeleteComment,
+  reviewComments = []
 }: {
   session: SessionRecord
   pendingJumpMessageId: number | null
@@ -53,6 +55,8 @@ export function SessionChatSurface({
   onCloseReview: () => void
   onAddComment: (text: string) => void
   onUpdateComment: (oldNote: string, newNote: string) => void
+  onDeleteComment: (composerNote: string) => void
+  reviewComments?: readonly ReviewComposerComment[]
 }): JSX.Element {
   const messages = useSessionMessages(session.id)
   const workspaceRoot = sessionFileLinkWorkspaceRoot(session)
@@ -90,6 +94,10 @@ export function SessionChatSurface({
           onReviewMessage={onReviewMessage}
           onReviewPlan={onReviewPlan}
           reviewTarget={reviewTarget}
+          onAddComment={onAddComment}
+          onUpdateComment={onUpdateComment}
+          onDeleteComment={onDeleteComment}
+          reviewComments={reviewComments}
         />
       </div>
       <TrackerRail messages={messages} backgroundTasks={backgroundTasks} />
@@ -99,6 +107,8 @@ export function SessionChatSurface({
           onClose={onCloseReview}
           onAddComment={onAddComment}
           onUpdateComment={onUpdateComment}
+          onDeleteComment={onDeleteComment}
+          reviewComments={reviewComments}
           workspaceRoot={workspaceRoot}
           projectRoot={projectRoot}
           onOpenFileInFiles={onOpenFileInFiles}

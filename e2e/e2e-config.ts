@@ -2,6 +2,41 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, type Locator, type Page } from '@playwright/test'
 
+/** Select text inside a transcript inline-comment host and trigger the selection toolbar. */
+export async function selectTranscriptCommentText(host: Locator, text: string): Promise<void> {
+  const content = host.getByTestId('transcript-comment-content')
+  await content.evaluate((root, target) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    let node = walker.nextNode() as Text | null
+    while (node) {
+      const value = node.textContent ?? ''
+      const index = value.indexOf(target)
+      if (index >= 0) {
+        const range = document.createRange()
+        range.setStart(node, index)
+        range.setEnd(node, index + target.length)
+        const selection = window.getSelection()
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+        root.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+        return
+      }
+      node = walker.nextNode() as Text | null
+    }
+    throw new Error(`Transcript comment text not found: ${target}`)
+  }, text)
+  await expect(host.getByTestId('response-review-selection-ui')).toBeVisible()
+}
+
+/** Open the comment form for the current transcript text selection. */
+export async function commentOnTranscriptSelection(host: Locator, body: string): Promise<void> {
+  await host.getByTestId('response-review-comment-btn').click()
+  const input = host.getByTestId('response-review-comment-input')
+  await input.fill(body)
+  await input.press('Enter')
+  await expect(host.getByTestId('response-review-comment-icon').first()).toBeVisible()
+}
+
 /** Select text inside the review pane content and trigger the selection toolbar. */
 export async function selectReviewPaneText(reviewPane: Locator, text: string): Promise<void> {
   const content = reviewPane.getByTestId('response-review-content')

@@ -116,7 +116,7 @@ export function readSelectionQuote(contentRoot: HTMLElement): string | null {
 export function selectionToolbarPosition(
   contentRoot: HTMLElement,
   bodyRoot: HTMLElement
-): { top: number; left: number } | null {
+): { top: number; left: number; bubbleLeft: number } | null {
   const selection = window.getSelection()
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null
   const range = selection.getRangeAt(0)
@@ -125,8 +125,9 @@ export function selectionToolbarPosition(
   if (rect.width === 0 && rect.height === 0) return null
   const bodyRect = bodyRoot.getBoundingClientRect()
   return {
-    top: rect.bottom - bodyRect.top + bodyRoot.scrollTop + 6,
-    left: Math.max(36, rect.left - bodyRect.left)
+    top: rect.bottom - bodyRect.top + bodyRoot.scrollTop,
+    left: Math.max(36, rect.left - bodyRect.left),
+    bubbleLeft: rect.right - bodyRect.left
   }
 }
 

@@ -107,16 +107,66 @@ function shouldUseTerminalForInteractiveAuth(): boolean {
   return process.platform === 'darwin' && !process.stdin.isTTY
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function openTerminalScript(scriptPath: string): Promise<void> {
+  const escaped = scriptPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  await execFileAsync(
+    'osascript',
+    [
+      '-e',
+      'tell application "Terminal"',
+      '-e',
+      'activate',
+      '-e',
+      `do script "${escaped}"`,
+      '-e',
+      'end tell',
+    ],
+    { timeout: 30_000 },
+  )
+}
+
+async function pollUntil(timeoutMs: number, intervalMs: number, check: () => Promise<boolean>): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (await check()) return true
+    await sleep(intervalMs)
+  }
+  return false
+}
+
+function authBanner(title: string): string {
+  return `echo ""
+echo "════════════════════════════════════════════════════════════"
+echo "  Atelier — ${title}"
+echo "  Complete the login below, then return to Atelier."
+echo "════════════════════════════════════════════════════════════"
+echo ""`
+}
+
 async function runInteractiveAuthBootstrap(): Promise<void> {
   const usso = findUsso()
   const ussh = findUssh()
   const scriptBody = `#!/bin/zsh
-set -e
 ${PATH_EXPORT}
-if ! ${JSON.stringify(usso)} -ussh ${GENAI_API} -print 2>/dev/null | grep -q '^eyJ'; then
-  ${JSON.stringify(usso)} -fetch ${GENAI_API} -print >/dev/null 2>&1 || ${JSON.stringify(ussh)}
+${authBanner('Uber authentication required')}
+if ${JSON.stringify(usso)} -ussh ${GENAI_API} -print 2>/dev/null | grep -q '^eyJ'; then
+  echo "Already authenticated."
+else
+  if ! ${JSON.stringify(ussh)} -ussh-quiet 2>/dev/null; then
+    ${JSON.stringify(ussh)}
+  fi
+  if ! ${JSON.stringify(usso)} -ussh ${GENAI_API} -print 2>/dev/null | grep -q '^eyJ'; then
+    echo ""
+    echo "Fetching genai-api token (browser login may open)..."
+    ${JSON.stringify(usso)} -fetch ${GENAI_API} -print
+  fi
 fi
-echo "Atelier: Uber authentication finished."
+echo ""
+echo "Atelier: Uber authentication finished. You can close this window."
 `
   const dir = mkdtempSync(join(tmpdir(), 'atelier-uber-auth-'))
   const scriptPath = join(dir, 'bootstrap.sh')
@@ -125,27 +175,11 @@ echo "Atelier: Uber authentication finished."
 
   if (shouldUseTerminalForInteractiveAuth()) {
     logger.info('uber-auth: opening Terminal for interactive usso/ussh login')
-    const escaped = scriptPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    await execFileAsync(
-      'osascript',
-      [
-        '-e',
-        'tell application "Terminal"',
-        '-e',
-        'activate',
-        '-e',
-        `set w to do script "${escaped}"`,
-        '-e',
-        'repeat while busy of w',
-        '-e',
-        'delay 0.5',
-        '-e',
-        'end repeat',
-        '-e',
-        'end tell',
-      ],
-      { timeout: 600_000 },
-    )
+    await openTerminalScript(scriptPath)
+    const ready = await pollUntil(600_000, 2_000, async () => (await probeGenAiToken()).ok)
+    if (!ready) {
+      throw new Error('Uber authentication timed out. Run `ussh` in Terminal, then retry.')
+    }
     return
   }
 
@@ -163,41 +197,35 @@ let usshCertReady = false
 /** Dedupes concurrent ensureUssh() — quiet probe and bootstrap share one flight. */
 let usshEnsureInFlight: Promise<void> | undefined
 
+async function probeUsshQuiet(env: NodeJS.ProcessEnv): Promise<boolean> {
+  try {
+    await execFileAsync(findUssh(), ['-ussh-quiet'], { env, timeout: 30_000 })
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function runUsshInteractiveBootstrap(env: NodeJS.ProcessEnv): Promise<void> {
   logger.info('uber-auth: ussh cert missing, provisioning')
   if (shouldUseTerminalForInteractiveAuth()) {
     const ussh = findUssh()
     const scriptBody = `#!/bin/zsh
-set -e
 ${PATH_EXPORT}
+${authBanner('uSSH login required for devpod sessions')}
 ${JSON.stringify(ussh)}
-echo "Atelier: ussh finished."
+echo ""
+echo "Atelier: ussh finished. You can close this window."
 `
     const dir = mkdtempSync(join(tmpdir(), 'atelier-uber-auth-'))
     const scriptPath = join(dir, 'ussh.sh')
     writeFileSync(scriptPath, scriptBody, 'utf-8')
     chmodSync(scriptPath, 0o755)
-    const escaped = scriptPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    await execFileAsync(
-      'osascript',
-      [
-        '-e',
-        'tell application "Terminal"',
-        '-e',
-        'activate',
-        '-e',
-        `set w to do script "${escaped}"`,
-        '-e',
-        'repeat while busy of w',
-        '-e',
-        'delay 0.5',
-        '-e',
-        'end repeat',
-        '-e',
-        'end tell',
-      ],
-      { timeout: 600_000 },
-    )
+    await openTerminalScript(scriptPath)
+    const ready = await pollUntil(600_000, 2_000, () => probeUsshQuiet(env))
+    if (!ready) {
+      throw new Error('uSSH login timed out. Run `ussh` in Terminal, then retry.')
+    }
   } else {
     await execFileAsync(findUssh(), [], { env, timeout: 120_000 })
   }

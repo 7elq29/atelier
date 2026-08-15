@@ -20,6 +20,17 @@
   min-width: 0;
   min-height: 0;
 }
+.app-panel-resize-handle {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  align-self: stretch;
+  background: transparent;
+}
+.app-panel-resize-handle:hover,
+.app-body--resizing-panels .app-panel-resize-handle {
+  background: var(--accent);
+}
 
 /* ===== Integrated title bar (macOS hiddenInset — matches UI mock) ===== */
 .title-bar {
@@ -46,20 +57,33 @@
   color: var(--text-disabled);
   letter-spacing: 0.02em;
 }
+.title-bar-dev .title-bar-drag {
+  color: var(--accent);
+  font-weight: 700;
+}
 
 /* ===== Sidebar ===== */
+.sidebar-shell {
+  flex-shrink: 0;
+  height: 100%;
+  display: flex;
+  min-width: 0;
+  transition: width 0.15s ease;
+}
+.app-body--resizing-panels .sidebar-shell {
+  transition: none;
+}
 .sidebar {
-  width: 260px;
+  width: 100%;
   flex-shrink: 0;
   background: var(--bg-sidebar);
   display: flex;
   flex-direction: column;
-  transition: width 0.15s ease;
   font-size: var(--font-interface-size);
   overflow: hidden;
 }
 .sidebar.collapsed {
-  width: 56px;
+  width: 100%;
 }
 .sidebar.collapsed .hide-on-collapse {
   display: none;
@@ -1480,6 +1504,41 @@ input[type='range'] {
   outline: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
   outline-offset: 1px;
 }
+.response-review-selection-bubble {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  background: var(--bg-panel-raised);
+  border: 1px solid color-mix(in srgb, var(--border-default) 80%, transparent);
+  border-radius: 999px;
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--shadow-color, #000) 10%, transparent),
+    0 4px 12px color-mix(in srgb, var(--shadow-color, #000) 12%, transparent);
+}
+.response-review-selection-bubble-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.12s, color 0.12s;
+}
+.response-review-selection-bubble-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.response-review-selection-bubble-btn .icon {
+  flex-shrink: 0;
+}
+/* Legacy chip alias — kept for diff panel / mocks parity */
 .response-review-selection-chip {
   position: absolute;
   z-index: 3;
@@ -1525,6 +1584,17 @@ input[type='range'] {
 }
 .response-review-inline-comment .inline-comment-actions {
   justify-content: flex-end;
+  gap: 2px;
+}
+.inline-comment-actions .inline-comment-confirm {
+  color: var(--accent);
+}
+.inline-comment-actions .inline-comment-confirm:hover {
+  background: var(--accent-dim);
+  color: var(--accent-strong);
+}
+.inline-comment-actions .inline-comment-delete:hover {
+  color: var(--danger, #e06c75);
 }
 .response-review-comment-popover {
   position: absolute;
@@ -1546,6 +1616,134 @@ input[type='range'] {
   width: 100%;
 }
 .response-review-saved-body { white-space: pre-wrap; font-size: 14px; line-height: 1.45; color: var(--text-primary); }
+
+.review-comment-display-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.review-comment-display--inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.review-comment-display-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+.review-comment-display-quote {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+}
+.review-comment-display-line {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.review-comment-display--inline .review-comment-display-body {
+  flex: 1;
+  overflow: visible;
+  text-overflow: unset;
+  white-space: pre-wrap;
+}
+.review-composer-comment-body-input {
+  flex: 1;
+  min-width: 48px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  outline: none;
+}
+.review-composer-comment-body-input::placeholder {
+  color: var(--text-tertiary);
+}
+.review-comment-display:not(.review-comment-display--inline) .review-comment-display-quote {
+  flex: 1;
+}
+.review-comment-display:not(.review-comment-display--inline) .review-comment-display-body {
+  margin-top: 6px;
+  white-space: pre-wrap;
+  font-size: 14px;
+  overflow: visible;
+  text-overflow: unset;
+}
+.review-composer-comment-list {
+  padding: 0 12px 8px;
+}
+.review-composer-comment-panel {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  padding: 6px 0;
+  box-shadow: var(--shadow-panel);
+}
+.review-composer-comment-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+}
+.review-composer-comment-row .review-comment-display--inline {
+  flex: 1;
+  min-width: 0;
+}
+.review-composer-comment-delete {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-family: var(--font-ui);
+  transition: background 0.1s, color 0.1s;
+}
+.review-composer-comment-delete:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.review-composer-comment-row + .review-composer-comment-row {
+  border-top: 1px solid var(--border-subtle);
+}
+.response-review-comment-popover .review-comment-display-body,
+.response-review-saved-comment .review-comment-display-body {
+  margin-top: 8px;
+}
+
+.transcript-comment-host { position: relative; user-select: text; -webkit-user-select: text; }
+.transcript-comment-body { position: relative; }
+.transcript-comment-grid {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 0;
+  align-items: start;
+}
+.transcript-comment-content { padding: 0; user-select: text; -webkit-user-select: text; }
+.transcript-comment-content .response-review-block { background: transparent; padding: 0; }
+.transcript-comment-selection-bubble { z-index: 5; }
+.transcript-inline-comment,
+.transcript-comment-popover { position: absolute; z-index: 5; }
+.transcript-inline-comment,
+.transcript-comment-popover { left: 28px; right: 0; max-width: 340px; }
 
 .speaking-indicator { font-size: 12.5px; color: var(--accent); margin-top: 4px; display: flex; align-items: center; gap: 5px; }
 
@@ -2074,9 +2272,33 @@ input[type='range'] {
 .footer-btn { display: flex; align-items: center; gap: 6px; font-size: 14.5px; color: var(--text-tertiary); background: transparent; border: none; cursor: pointer; padding: 5px 8px; border-radius: 6px; }
 .footer-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
 .working-pill { font-size: 12.5px; color: var(--text-tertiary); display: flex; align-items: center; gap: 5px; }
-.stop-btn { display: flex; align-items: center; gap: 7px; background: var(--danger-dim); color: var(--danger); border: 1px solid var(--danger); border-radius: 100px; padding: 8px 18px; font-size: 14px; font-weight: 500; cursor: pointer; }
-.send-btn { display: flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-text-on); border: 1px solid var(--accent); border-radius: 100px; padding: 8px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.send-btn:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.stop-btn,
+.send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.stop-btn:hover {
+  background: var(--bg-active);
+  color: var(--danger);
+  border-color: var(--border-strong);
+}
+.send-btn:hover:not(:disabled) {
+  background: var(--bg-active);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.send-btn:disabled { opacity: .35; cursor: not-allowed; }
 /* Queued-message strip (message-queue) — sits between the textarea and
    .composer-footer inside .composer-box when pendingQueue.length > 0. Shows
    the pending message text (truncated) + a cancel (×) button per item. */
@@ -2099,7 +2321,6 @@ input[type='range'] {
 .slash-item .cmd { font-family: var(--font-mono); color: var(--accent); }
 .slash-item { flex-direction: column; align-items: flex-start; }
 .slash-item .cmddesc { color: var(--text-tertiary); font-size: 12.5px; }
-.send-btn:disabled { opacity: .4; cursor: not-allowed; }
 /* Image attachment (10g-enrichment-image-attachment) — `.attach-row`/
    `.attach-thumb`/`.attach-thumb .remove` quoted verbatim from mocks/
    index.html's Attach affordance (see `attachDemoImage()`). The mock's
@@ -2756,41 +2977,14 @@ input[type='range'] {
   color: var(--accent);
 }
 
-/* Daily note main editor (## Notes → EOF, Atomic live preview) */
-.daily-note-editor-panel .daily-note-scope-bar {
+.daily-note-editor-panel .daily-note-editor-toolbar {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 12px;
   padding: 8px 24px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-panel);
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-.daily-note-editor-panel .daily-note-live-badge {
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-weight: 600;
-  color: var(--accent);
-  padding: 2px 7px;
-  border-radius: 4px;
-  background: var(--accent-dim);
-}
-.daily-note-editor-panel .daily-note-created-banner {
-  font-size: 12px;
-  color: var(--success);
-}
-.daily-note-editor-panel .daily-note-vault-path {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-tertiary);
-  max-width: min(420px, 40vw);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .daily-note-editor-panel .daily-sync-chip {
   font-size: 12px;
@@ -2811,20 +3005,14 @@ input[type='range'] {
   color: var(--warning);
   background: rgba(224, 185, 92, 0.12);
 }
-.daily-note-editor-panel .daily-note-editor-toolbar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px 14px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-panel);
-}
-.daily-note-editor-panel .daily-note-section-heading {
+.daily-note-editor-panel .daily-note-vault-path {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-tertiary);
-  margin-left: auto;
+  max-width: min(420px, 40vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .daily-date-nav {
   display: inline-flex;

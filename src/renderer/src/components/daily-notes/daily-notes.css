@@ -2,8 +2,19 @@
    .daily-notes-panel / .dn-* rules (the "round 8" enlarged sizing/typography
    pass), rebuilt here as scoped classnames (dn-*) for the React tree. */
 
+.daily-notes-panel-shell {
+  flex-shrink: 0;
+  height: 100%;
+  display: flex;
+  min-width: 0;
+  transition: width 0.15s ease;
+}
+.app-body--resizing-panels .daily-notes-panel-shell {
+  transition: none;
+}
+
 .daily-notes-panel {
-  width: 350px;
+  width: 100%;
   flex-shrink: 0;
   height: 100%;
   background: var(--bg-sidebar);
