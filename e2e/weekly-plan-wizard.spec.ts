@@ -42,7 +42,7 @@ First review the projects under *03.projects* and *04.goals*.
 2. [Completion: %] 
 3. [Completion: %] 
 
-## What worked? What didn't? Why? How would you change
+## What worked? What didn't? Why? How would you change?
 
 > *(write something)*
 
@@ -202,12 +202,13 @@ test.describe.serial('weekly plan wizard', () => {
     await expect(context.locator('input')).toHaveCount(0)
 
     await page.getByTestId('weekly-plan-next').click()
-    await expect(page.locator('.wp-plain-field').first()).toHaveValue(REAL_BIG3)
+    await expect(page.locator('.wp-plain-field').first()).toHaveValue(WEEKLY_B3_SUGGEST)
+    await expect(page.getByText(REAL_BIG3)).toHaveCount(0)
     await expect(page.getByText(JUNK_BIG3)).toHaveCount(0)
 
     await page.getByTestId('weekly-plan-next').click()
-    await expect(page.getByTestId('weekly-plan-big3-carry').getByText(REAL_BIG3)).toBeVisible()
     await expect(page.getByTestId('weekly-plan-big3-carry').getByText(WEEKLY_B3_SUGGEST)).toBeVisible()
+    await expect(page.getByTestId('weekly-plan-big3-carry').getByText(REAL_BIG3)).toHaveCount(0)
     await expect(page.getByText(/\bn\/a\b/i)).toHaveCount(0)
 
     await page.getByTestId('weekly-plan-next').click()

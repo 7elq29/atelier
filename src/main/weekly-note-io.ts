@@ -54,7 +54,7 @@ First review the projects under *03.projects* and *04.goals*.
 2. [Completion: %] 
 3. [Completion: %] 
 
-## What worked? What didn't? Why? How would you change
+## What worked? What didn't? Why? How would you change?
 
 > *(write something)*
 
@@ -675,11 +675,10 @@ export async function loadWeeklyPlanWizardContext(
   if (existsSync(prevPath)) {
     const prevContent = await readFile(prevPath, 'utf-8')
     lastWeekWeeklyBigThree = parseWeeklyBigThreeFromMarkdown(prevContent)
+    // Retro step scores last week's planned outcomes (`## WEEKLY BIG THREE`), not the
+    // previous file's `## Last Week's Big Three` section (that section is *its* retro of
+    // the week before last).
     lastBigThree = lastWeekWeeklyBigThree.map((text) => ({ text, pct: '0' }))
-    const retro = parseLastBigThreeRetroFromMarkdown(prevContent).filter(
-      (r) => !isWeeklyPlanInstructionLine(r.text)
-    )
-    if (retro.some((r) => r.text.trim())) lastBigThree = retro
   }
 
   if (!lastWeekWeeklyBigThree.some((t) => t.trim())) {
