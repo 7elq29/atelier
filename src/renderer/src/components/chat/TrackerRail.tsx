@@ -9,15 +9,40 @@ import {
 } from '../../../../shared/background-tasks-ui'
 import BackgroundTaskRowView from './BackgroundTaskRowView'
 
-function TrackerCardHead({ title, count }: { title: string; count: string }): JSX.Element {
-  // Narrow 244px rail: multi-word labels (e.g. "Background jobs") use a
-  // slightly smaller single-line head so title + count don't wrap awkwardly.
+function splitTodoContent(content: string): { label: string; detail?: string } {
+  const trimmed = content.trim()
+  const paren = trimmed.match(/^(.+?)\s+(\([^)]+\))\s*$/)
+  if (paren) {
+    return { label: paren[1]!.trim(), detail: paren[2]!.trim() }
+  }
+  return { label: trimmed }
+}
+
+function TrackerCardHead({
+  title,
+  count,
+  collapsed,
+  onToggle,
+}: {
+  title: string
+  count: string
+  collapsed: boolean
+  onToggle: () => void
+}): JSX.Element {
   const longLabel = title.includes(' ')
   return (
-    <div className={`tracker-head${longLabel ? ' tracker-head--long-label' : ''}`}>
+    <button
+      type="button"
+      className={`tracker-head${longLabel ? ' tracker-head--long-label' : ''}`}
+      aria-expanded={!collapsed}
+      onClick={onToggle}
+    >
       <span className="tracker-head-title">{title}</span>
+      <span className="tracker-head-chevron" aria-hidden="true">
+        {collapsed ? '▸' : '▾'}
+      </span>
       <span className="count">{count}</span>
-    </div>
+    </button>
   )
 }
 
@@ -34,6 +59,7 @@ export default function TrackerRail({
   backgroundTasks?: BackgroundTaskRow[]
 }): JSX.Element | null {
   const [collapsed, setCollapsed] = useState(false)
+  const [collapsedCards, setCollapsedCards] = useState<Set<string>>(() => new Set())
   const [showCompleted, setShowCompleted] = useState(false)
   let todos: { content: string; status: string }[] = []
 
@@ -82,6 +108,19 @@ export default function TrackerRail({
     countActiveBackgroundTasks(sortedJobs) +
     countActiveBackgroundTasks(sortedShell)
 
+  function toggleCard(cardId: string): void {
+    setCollapsedCards((prev) => {
+      const next = new Set(prev)
+      if (next.has(cardId)) next.delete(cardId)
+      else next.add(cardId)
+      return next
+    })
+  }
+
+  function isCardCollapsed(cardId: string): boolean {
+    return collapsedCards.has(cardId)
+  }
+
   return (
     <div className={`tracker-rail${collapsed ? ' collapsed' : ''}`} data-testid="tracker-rail">
       <button
@@ -96,19 +135,30 @@ export default function TrackerRail({
       </button>
       {todos.length > 0 && (
         <div className="tracker-card" data-testid="todo-tracker-card">
-          <TrackerCardHead title="Todos" count={`${doneCount}/${todos.length}`} />
-          <div className="tracker-body">
-            {todos.filter((t) => showCompleted || t.status !== 'completed').map((t, i) => (
-              <div
-                key={i}
-                className={`todo-item${t.status === 'completed' ? ' done' : t.status === 'in_progress' ? ' active' : ''}`}
-                data-testid="todo-item"
-                data-status={t.status}
-              >
-                <div className="box" />
-                <span>{t.content}</span>
-              </div>
-            ))}
+          <TrackerCardHead
+            title="Todos"
+            count={`${doneCount}/${todos.length}`}
+            collapsed={isCardCollapsed('todos')}
+            onToggle={() => toggleCard('todos')}
+          />
+          <div className={`tracker-body${isCardCollapsed('todos') ? ' collapsed' : ''}`}>
+            {todos.filter((t) => showCompleted || t.status !== 'completed').map((t, i) => {
+              const { label, detail } = splitTodoContent(t.content)
+              return (
+                <div
+                  key={i}
+                  className={`todo-item${t.status === 'completed' ? ' done' : t.status === 'in_progress' ? ' active' : ''}`}
+                  data-testid="todo-item"
+                  data-status={t.status}
+                >
+                  <div className="box" aria-hidden="true" />
+                  <div className="todo-item-body">
+                    <span className="todo-item-label">{label}</span>
+                    {detail ? <span className="todo-item-detail">{detail}</span> : null}
+                  </div>
+                </div>
+              )
+            })}
             {doneCount > 0 && (
               <button
                 type="button"
@@ -126,8 +176,10 @@ export default function TrackerRail({
           <TrackerCardHead
             title="Subagents"
             count={subagentActive > 0 ? `${subagentActive} running` : `${sortedSubagents.length}`}
+            collapsed={isCardCollapsed('subagents')}
+            onToggle={() => toggleCard('subagents')}
           />
-          <div className="tracker-body">
+          <div className={`tracker-body${isCardCollapsed('subagents') ? ' collapsed' : ''}`}>
             {sortedSubagents.map((t) => (
               <BackgroundTaskRowView key={t.taskId} task={t} variant="rail" />
             ))}
@@ -143,8 +195,10 @@ export default function TrackerRail({
                 ? `${countActiveBackgroundTasks(sortedMonitors)} running`
                 : `${sortedMonitors.length}`
             }
+            collapsed={isCardCollapsed('monitors')}
+            onToggle={() => toggleCard('monitors')}
           />
-          <div className="tracker-body">
+          <div className={`tracker-body${isCardCollapsed('monitors') ? ' collapsed' : ''}`}>
             {sortedMonitors.map((t) => (
               <BackgroundTaskRowView key={t.taskId} task={t} variant="rail" />
             ))}
@@ -160,8 +214,10 @@ export default function TrackerRail({
                 ? `${countActiveBackgroundTasks(sortedJobs)} running`
                 : `${sortedJobs.length}`
             }
+            collapsed={isCardCollapsed('jobs')}
+            onToggle={() => toggleCard('jobs')}
           />
-          <div className="tracker-body">
+          <div className={`tracker-body${isCardCollapsed('jobs') ? ' collapsed' : ''}`}>
             {sortedJobs.map((t) => (
               <BackgroundTaskRowView key={t.taskId} task={t} variant="rail" />
             ))}
@@ -177,8 +233,10 @@ export default function TrackerRail({
                 ? `${countActiveBackgroundTasks(sortedShell)} running`
                 : `${sortedShell.length}`
             }
+            collapsed={isCardCollapsed('shell')}
+            onToggle={() => toggleCard('shell')}
           />
-          <div className="tracker-body">
+          <div className={`tracker-body${isCardCollapsed('shell') ? ' collapsed' : ''}`}>
             {sortedShell.map((t) => (
               <BackgroundTaskRowView key={t.taskId} task={t} variant="rail" />
             ))}

@@ -31,24 +31,35 @@ export default function BackgroundTaskRowView({
 
     return (
       <div
-        className={`background-rail-entry${failed ? ' background-rail-failed' : ''}${done ? ' background-rail-done' : ''}`}
+        className={`background-rail-entry${failed ? ' background-rail-failed' : ''}${done ? ' background-rail-done' : ''}${running ? ' background-rail-running' : ''}`}
         data-testid="background-rail-item"
         data-task-id={task.taskId}
         data-task-status={statusLabel}
       >
-        <div className="subagent-item background-rail-head">
-          {running && <span className="spinner" />}
-          {!running && done && !failed && <span className="background-rail-icon done">✓</span>}
-          {!running && failed && <span className="background-rail-icon failed">!</span>}
-          <span className="background-rail-title" title={fullTitle}>
-            {fullTitle}
-          </span>
-        </div>
-        {detailWithError && (
-          <div className="background-rail-detail" data-testid="background-rail-sub">
-            {detailWithError}
+        <div className="background-rail-head">
+          {running && <span className="spinner" aria-hidden="true" />}
+          {!running && done && !failed && (
+            <span className="background-rail-icon done" aria-hidden="true">
+              ✓
+            </span>
+          )}
+          {!running && failed && (
+            <span className="background-rail-icon failed" aria-hidden="true">
+              !
+            </span>
+          )}
+          {!running && !done && !failed && <span className="background-rail-icon idle" aria-hidden="true" />}
+          <div className="background-rail-body">
+            <span className="background-rail-title" title={fullTitle}>
+              {displayTitle}
+            </span>
+            {detailWithError ? (
+              <span className="background-rail-detail" data-testid="background-rail-sub">
+                {detailWithError}
+              </span>
+            ) : null}
           </div>
-        )}
+        </div>
       </div>
     )
   }

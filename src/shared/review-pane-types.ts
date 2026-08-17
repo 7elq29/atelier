@@ -20,8 +20,16 @@ export function reviewPaneTitle(target: ReviewPaneTarget): string {
 }
 
 export function reviewPaneSubtitle(target: ReviewPaneTarget): string {
+  if (target.kind === 'file' && !reviewPaneUsesMarkdown(target)) {
+    return reviewPaneHasDiff(target)
+      ? 'Syntax-highlighted · inline diff · select text to comment'
+      : 'Syntax-highlighted · select text to comment'
+  }
   if (target.kind === 'file' && reviewPaneHasDiff(target)) {
-    return 'Inline diff · select text to comment'
+    return 'Formatted · inline diff · select text to comment'
+  }
+  if (target.kind === 'file') {
+    return 'Formatted · select text to comment'
   }
   if (target.kind === 'plan' && target.previousContent != null && target.previousContent !== '') {
     return 'Formatted · inline diff · select text to comment'
@@ -32,6 +40,20 @@ export function reviewPaneSubtitle(target: ReviewPaneTarget): string {
 export function reviewPaneHasDiff(target: ReviewPaneTarget): boolean {
   if (target.kind === 'file') return true
   return target.kind === 'plan' && target.previousContent != null && target.previousContent !== ''
+}
+
+const MARKDOWN_REVIEW_EXTENSIONS = new Set(['md', 'mdx'])
+
+export function reviewFileExtension(filePath: string): string {
+  const base = filePath.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? filePath
+  const dot = base.lastIndexOf('.')
+  return dot >= 0 ? base.slice(dot + 1).toLowerCase() : ''
+}
+
+/** Markdown rendering for assistant/plan bodies and `.md`/`.mdx` cap files; Monaco for other paths. */
+export function reviewPaneUsesMarkdown(target: ReviewPaneTarget): boolean {
+  if (target.kind === 'response' || target.kind === 'plan') return true
+  return MARKDOWN_REVIEW_EXTENSIONS.has(reviewFileExtension(target.capFilePath ?? ''))
 }
 
 export function reviewPaneCommentPrefix(kind: ReviewPaneTarget['kind']): string {
