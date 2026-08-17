@@ -12,6 +12,7 @@ import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   buildPlanReviewRenderBlocks,
+  buildFileReviewRenderBlocks,
   type PlanReviewRenderBlock
 } from '../../../../shared/plan-review-render-blocks'
 import {
@@ -20,6 +21,7 @@ import {
   reviewPaneHasDiff,
   reviewPaneSubtitle,
   reviewPaneTitle,
+  reviewPaneUsesMarkdown,
   type ReviewComposerComment,
   type ReviewPaneTarget
 } from '../../../../shared/review-pane-types'
@@ -39,6 +41,10 @@ import { createMarkdownComponents } from './MarkdownMessage'
 import InlineCommentActions from './InlineCommentActions'
 import ReviewCommentDisplay from './ReviewCommentDisplay'
 import ReviewSelectionBubble from './ReviewSelectionBubble'
+import ReviewFileMonacoEditor, {
+  type ReviewFileMonacoEditorHandle,
+  type ReviewFileMonacoSelection
+} from './ReviewFileMonacoEditor'
 
 interface ResponseReviewPanelProps {
   target: ReviewPaneTarget
@@ -50,6 +56,7 @@ interface ResponseReviewPanelProps {
   workspaceRoot?: string
   projectRoot?: string
   onOpenFileInFiles?: (relativePath: string) => void
+  effectiveTheme: 'light' | 'dark'
 }
 
 interface SavedComment {
@@ -82,9 +89,32 @@ function nextCommentId(): string {
 }
 
 function buildReviewBlocks(target: ReviewPaneTarget): PlanReviewRenderBlock[] {
+  if (target.kind === 'file') {
+    if (reviewPaneUsesMarkdown(target)) {
+      return buildPlanReviewRenderBlocks(target.content, target.previousContent)
+    }
+    return buildFileReviewRenderBlocks(target.content, target.previousContent)
+  }
   const previous =
-    target.kind === 'plan' || target.kind === 'file' ? target.previousContent : undefined
+    target.kind === 'plan' ? target.previousContent : undefined
   return buildPlanReviewRenderBlocks(target.content, previous)
+}
+
+function monacoSelectionToToolbar(
+  selection: ReviewFileMonacoSelection,
+  bodyRoot: HTMLElement,
+  monacoHost: HTMLElement
+): SelectionToolbarState {
+  const bodyRect = bodyRoot.getBoundingClientRect()
+  const hostRect = monacoHost.getBoundingClientRect()
+  return {
+    quote: selection.quote,
+    sourceLineNumber: selection.sourceLineNumber,
+    anchor: selection.anchor,
+    top: hostRect.top - bodyRect.top + bodyRoot.scrollTop + selection.top,
+    left: Math.max(COMMENT_GUTTER_WIDTH, hostRect.left - bodyRect.left + selection.left),
+    bubbleLeft: hostRect.left - bodyRect.left + selection.bubbleLeft
+  }
 }
 
 function blockKindClass(kind: PlanReviewRenderBlock['kind']): string {
@@ -146,11 +176,13 @@ export default function ResponseReviewPanel({
   reviewComments = [],
   workspaceRoot,
   projectRoot,
-  onOpenFileInFiles
+  onOpenFileInFiles,
+  effectiveTheme
 }: ResponseReviewPanelProps): JSX.Element {
   const paneRef = useRef<HTMLElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const monacoRef = useRef<ReviewFileMonacoEditorHandle>(null)
   const commentInputRef = useRef<HTMLTextAreaElement>(null)
   const [paneWidthPx, setPaneWidthPx] = useState<number | null>(null)
   const [selectionToolbar, setSelectionToolbar] = useState<SelectionToolbarState | null>(null)
@@ -161,10 +193,22 @@ export default function ResponseReviewPanel({
   const [editCommentText, setEditCommentText] = useState('')
   const [savedComments, setSavedComments] = useState<SavedComment[]>([])
   const [commentIconTops, setCommentIconTops] = useState<Record<string, number>>({})
+  const [monacoScrollTick, setMonacoScrollTick] = useState(0)
+  const usesMonaco = target.kind === 'file' && !reviewPaneUsesMarkdown(target)
   const renderBlocks = buildReviewBlocks(target)
+  const monacoScopeKey = `${target.sourceId}-${target.capFilePath ?? 'file'}`
   const commentAnchorKey = savedComments
     .map((comment) => `${comment.id}:${comment.anchor.blockKey}:${comment.anchor.start}:${comment.anchor.end}`)
     .join('|')
+  const monacoCommentAnchors = useMemo(
+    () =>
+      savedComments.map((comment) => ({
+        id: comment.id,
+        anchor: comment.anchor,
+        active: openCommentId === comment.id
+      })),
+    [commentAnchorKey, openCommentId]
+  )
   const commentAnchorInputs = useMemo(
     () => savedComments.map((comment) => ({ id: comment.id, anchor: comment.anchor })),
     [commentAnchorKey]
@@ -221,6 +265,7 @@ export default function ResponseReviewPanel({
   }, [paneWidthPx, target.sourceId, target.kind])
 
   useLayoutEffect(() => {
+    if (usesMonaco) return
     const contentRoot = contentRef.current
     if (!contentRoot) return
 
@@ -234,12 +279,32 @@ export default function ResponseReviewPanel({
         .querySelectorAll(`[data-comment-id="${openCommentId}"]`)
         .forEach((element) => element.classList.add('active'))
     }
-  }, [commentAnchorInputs, commentAnchorKey, openCommentId, target.content, paneWidthPx])
+  }, [commentAnchorInputs, commentAnchorKey, openCommentId, target.content, paneWidthPx, usesMonaco])
 
   useLayoutEffect(() => {
-    const contentRoot = contentRef.current
     const bodyRoot = bodyRef.current
-    if (!contentRoot || !bodyRoot || savedComments.length === 0) return
+    if (!bodyRoot || savedComments.length === 0) return
+
+    if (usesMonaco) {
+      const monacoHandle = monacoRef.current
+      if (!monacoHandle) return
+      setCommentIconTops((prev) => {
+        let changed = false
+        const next = { ...prev }
+        for (const comment of savedComments) {
+          const iconTop = monacoHandle.anchorTopInBody(bodyRoot, comment.anchor)
+          if (iconTop == null) continue
+          if (Math.abs((prev[comment.id] ?? 0) - iconTop) < 1) continue
+          next[comment.id] = iconTop
+          changed = true
+        }
+        return changed ? next : prev
+      })
+      return
+    }
+
+    const contentRoot = contentRef.current
+    if (!contentRoot) return
 
     setCommentIconTops((prev) => {
       let changed = false
@@ -253,7 +318,7 @@ export default function ResponseReviewPanel({
       }
       return changed ? next : prev
     })
-  }, [commentAnchorKey, savedComments.length, openCommentId, paneWidthPx])
+  }, [commentAnchorKey, savedComments.length, openCommentId, paneWidthPx, usesMonaco, monacoScrollTick])
 
   useLayoutEffect(() => {
     if (!commentDraftOpen) return
@@ -269,6 +334,16 @@ export default function ResponseReviewPanel({
       if (targetEl.closest?.('.response-review-comment-popover')) return
       if (targetEl.closest?.('.response-review-comment-icon')) return
       if (targetEl.closest?.('.response-review-comment-highlight')) return
+      if (targetEl.closest?.('.response-review-file-monaco-host')) {
+        if (!targetEl.closest('.response-review-comment-highlight')) {
+          if (!commentDraftOpen) {
+            setSelectionToolbar(null)
+          }
+          setCommentDraftOpen(false)
+          setCommentText('')
+        }
+        return
+      }
       if (contentRef.current?.contains(targetEl)) {
         if (!targetEl.closest('.response-review-comment-highlight')) {
           setSelectionToolbar(null)
@@ -288,7 +363,22 @@ export default function ResponseReviewPanel({
     return () => document.removeEventListener('mousedown', onDocumentMouseDown)
   }, [])
 
+  function handleMonacoSelection(selection: ReviewFileMonacoSelection | null): void {
+    const bodyRoot = bodyRef.current
+    const monacoHost = monacoRef.current?.getHostElement()
+    if (!bodyRoot || !monacoHost || commentDraftOpen) {
+      if (!selection) setSelectionToolbar(null)
+      return
+    }
+    if (!selection) {
+      setSelectionToolbar(null)
+      return
+    }
+    setSelectionToolbar(monacoSelectionToToolbar(selection, bodyRoot, monacoHost))
+  }
+
   function handleContentMouseUp(): void {
+    if (usesMonaco) return
     const contentRoot = contentRef.current
     const bodyRoot = bodyRef.current
     if (!contentRoot || !bodyRoot || commentDraftOpen) return
@@ -371,26 +461,35 @@ export default function ResponseReviewPanel({
     setSelectionToolbar(null)
     setCommentDraftOpen(false)
     setCommentText('')
+    if (usesMonaco) {
+      monacoRef.current?.clearSelection()
+      return
+    }
     window.getSelection()?.removeAllRanges()
   }
 
   function submitSelectionComment(): void {
     if (!selectionToolbar || !commentText.trim()) return
     const body = commentText.trim()
-    const contentRoot = contentRef.current
     const bodyRoot = bodyRef.current
-    const selection = window.getSelection()
     let anchor = selectionToolbar.anchor
     let sourceLineNumber = selectionToolbar.sourceLineNumber
     let iconTop = selectionToolbar.top
-    if (contentRoot && bodyRoot && selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0)
-      const captured = captureReviewSelectionAnchor(contentRoot, range, renderBlocks)
-      if (captured) {
-        anchor = captured.anchor
-        sourceLineNumber = captured.sourceLineNumber
+    if (usesMonaco) {
+      iconTop =
+        monacoRef.current?.anchorTopInBody(bodyRoot!, anchor) ?? selectionToolbar.top
+    } else {
+      const contentRoot = contentRef.current
+      const selection = window.getSelection()
+      if (contentRoot && bodyRoot && selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0)
+        const captured = captureReviewSelectionAnchor(contentRoot, range, renderBlocks)
+        if (captured) {
+          anchor = captured.anchor
+          sourceLineNumber = captured.sourceLineNumber
+        }
+        iconTop = selectionIconTop(bodyRoot, range)
       }
-      iconTop = selectionIconTop(bodyRoot, range)
     }
     const composerNote = formatReviewComposerNote(
       commentPrefix,
@@ -476,8 +575,13 @@ export default function ResponseReviewPanel({
             </svg>
           </button>
         </div>
-        <div className="response-review-body" ref={bodyRef}>
-          <div className="response-review-content-grid">
+        <div
+          className={`response-review-body${usesMonaco ? ' response-review-body--monaco' : ''}`}
+          ref={bodyRef}
+        >
+          <div
+            className={`response-review-content-grid${usesMonaco ? ' response-review-content-grid--monaco' : ''}`}
+          >
             <div className="response-review-comment-gutter" aria-hidden={savedComments.length === 0}>
               {savedComments.map((comment) => (
                 <button
@@ -495,19 +599,34 @@ export default function ResponseReviewPanel({
               ))}
             </div>
             <div
-              className="response-review-rendered-lines"
+              className={`response-review-rendered-lines${usesMonaco ? ' response-review-rendered-lines--monaco' : ''}`}
               data-testid="response-review-content"
               ref={contentRef}
-              onMouseUp={handleContentMouseUp}
-              onClick={handleContentClick}
+              onMouseUp={usesMonaco ? undefined : handleContentMouseUp}
+              onClick={usesMonaco ? undefined : handleContentClick}
             >
-              {renderBlocks.map((block) => (
-                <ReviewMarkdownBlock
-                  key={block.key}
-                  block={block}
-                  markdownComponents={markdownComponents}
+              {usesMonaco ? (
+                <ReviewFileMonacoEditor
+                  ref={monacoRef}
+                  filePath={target.capFilePath ?? 'file'}
+                  content={target.content}
+                  previousContent={target.previousContent}
+                  effectiveTheme={effectiveTheme}
+                  scopeKey={monacoScopeKey}
+                  commentAnchors={monacoCommentAnchors}
+                  onSelection={handleMonacoSelection}
+                  onCommentAnchorClick={openCommentPopover}
+                  onScroll={() => setMonacoScrollTick((tick) => tick + 1)}
                 />
-              ))}
+              ) : (
+                renderBlocks.map((block) => (
+                  <ReviewMarkdownBlock
+                    key={block.key}
+                    block={block}
+                    markdownComponents={markdownComponents}
+                  />
+                ))
+              )}
             </div>
           </div>
 

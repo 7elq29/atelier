@@ -446,21 +446,19 @@ test.describe('audit: pass-2 per-card assertions (isolated app)', () => {
     const railWidth = await page.locator('.tracker-rail').evaluate((el) => el.getBoundingClientRect().width)
     expect(railWidth, `tracker-rail width should be 244px per global.css (bug #50 fix), got ${railWidth}`).toBeCloseTo(244, 0)
 
-    // tracker-head / tracker-body padding and font-size vs. global.css's own
-    // real values (12px/14px/6px padding, 15px font — NOT the 12-12.5px font
-    // range the task brief cited; see file header note above).
+    // tracker-head / tracker-body padding and font-size vs. global.css.
     const trackerHeadStyle = await page.locator('.tracker-rail .tracker-head').first().evaluate((el) => {
       const cs = getComputedStyle(el)
       return { padding: cs.padding, fontSize: cs.fontSize }
     })
-    expect(trackerHeadStyle.padding).toBe('12px 14px 6px')
+    expect(trackerHeadStyle.padding).toBe('10px 12px 8px')
     const trackerBodyStyle = await page.locator('.tracker-rail .tracker-body').first().evaluate((el) => {
       const cs = getComputedStyle(el)
       return { padding: cs.padding }
     })
-    expect(trackerBodyStyle.padding).toBe('8px 14px 14px')
-    const todoItemFontSize = await page.locator('.todo-item').first().evaluate((el) => getComputedStyle(el).fontSize)
-    expect(todoItemFontSize, 'todo-item font-size (real value, see file header note)').toBe('15px')
+    expect(trackerBodyStyle.padding).toBe('4px 10px 12px')
+    const todoItemFontSize = await page.locator('.todo-item-label').first().evaluate((el) => getComputedStyle(el).fontSize)
+    expect(todoItemFontSize, 'todo-item-label font-size should match background-rail-title (14px)').toBe('14px')
 
     // Composer max-grow height: MAX_TEXTAREA_HEIGHT = 160 in Composer.tsx —
     // verify it actually clamps, and the footer chip row isn't pushed off or

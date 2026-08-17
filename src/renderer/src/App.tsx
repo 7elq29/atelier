@@ -1605,6 +1605,7 @@ export default function App(): JSX.Element {
                           })
                         }
                         onCloseReview={() => setReviewTarget(null)}
+                        effectiveTheme={effectiveTheme}
                         onAddComment={appendToActiveComposer}
                         onUpdateComment={replaceInActiveComposer}
                         onDeleteComment={deleteReviewCommentByNote}

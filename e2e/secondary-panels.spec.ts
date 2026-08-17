@@ -448,6 +448,62 @@ test.describe('07-secondary-panels', () => {
     await page.getByTestId('tab-chat').click()
   })
 
+  test('chat: file review renders .py as source not markdown', async () => {
+    test.setTimeout(60_000)
+    const pyRel = 'mcp-script.py'
+    const pyAbs = join(repoDir, pyRel)
+    const pyContent = '#!/usr/bin/env python3\n# Step 1: Get all tool calls\nprint("ok")\n'
+    writeFileSync(pyAbs, pyContent)
+    await page.getByTestId('tab-chat').click()
+    await waitForTurnIdle(page, 60_000)
+
+    const toolContent = JSON.stringify({
+      kind: 'tool_call',
+      requestId: 'e2e-py-file-review',
+      toolUseId: 'e2e-py-file-review-edit',
+      name: 'Write',
+      status: 'completed',
+      input: {
+        file_path: pyAbs,
+        content: pyContent
+      }
+    })
+    await page.evaluate(
+      ({ id, path, content }) =>
+        window.atelier
+          .debugExecDb(
+            `INSERT INTO messages (session_id, role, content, created_at) VALUES (?, 'assistant', ?, datetime('now'))`,
+            [id, content]
+          )
+          .then(() =>
+            window.atelier.debugExecDb(
+              `INSERT OR REPLACE INTO session_touched_paths (session_id, path, first_touched_at, last_pending_at)
+               VALUES (?, ?, datetime('now'), datetime('now'))`,
+              [id, path]
+            )
+          )
+          .then(() => window.atelier.refreshSessionWorkspace(id, true)),
+      { id: sessionId, path: pyRel, content: toolContent }
+    )
+
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect
+      .poll(async () => {
+        const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
+        return snap?.sessionChangesCap?.items.some((i) => i.kind === 'file' && i.path === pyRel) ?? false
+      })
+      .toBe(true)
+    await expandCap(page)
+    await cap.getByTestId('chat-changes-file').filter({ hasText: pyRel }).click()
+    const reviewPane = page.getByTestId('response-review-pane')
+    await expect(reviewPane).toBeVisible({ timeout: 15_000 })
+    await expect(reviewPane).toHaveAttribute('data-review-kind', 'file')
+    await expect(reviewPane.getByTestId('response-review-file-monaco')).toBeVisible()
+    await expect(reviewPane.getByTestId('response-review-file-monaco-host')).toContainText('# Step 1: Get all tool calls')
+    await expect(reviewPane.locator('h1, h2, h3')).toHaveCount(0)
+    log('py file review renders as source OK')
+  })
+
   test('chat: outside-workspace cap file opens Files tab with inline diff', async () => {
     test.setTimeout(60_000)
     const outsidePath = join(tmpdir(), `atelier-e2e-outside-cap-${Date.now()}.json`)

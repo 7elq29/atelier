@@ -28,6 +28,7 @@ export function SessionChatSurface({
   onReviewMessage,
   onReviewPlan,
   onCloseReview,
+  effectiveTheme,
   onAddComment,
   onUpdateComment,
   onDeleteComment,
@@ -53,6 +54,7 @@ export function SessionChatSurface({
     previousPlanMarkdown: string | undefined
   ) => void
   onCloseReview: () => void
+  effectiveTheme: 'light' | 'dark'
   onAddComment: (text: string) => void
   onUpdateComment: (oldNote: string, newNote: string) => void
   onDeleteComment: (composerNote: string) => void
@@ -112,6 +114,7 @@ export function SessionChatSurface({
           workspaceRoot={workspaceRoot}
           projectRoot={projectRoot}
           onOpenFileInFiles={onOpenFileInFiles}
+          effectiveTheme={effectiveTheme}
         />
       ) : null}
     </div>

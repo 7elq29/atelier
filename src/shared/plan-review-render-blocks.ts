@@ -208,6 +208,16 @@ export function buildPlanReviewRenderBlocks(content: string, previousContent?: s
   return groupPlanReviewRenderBlocks(displayLines, content)
 }
 
+/** Source file review — one block per diff line, no markdown grouping/heuristics. */
+export function buildFileReviewRenderBlocks(content: string, previousContent?: string): PlanReviewRenderBlock[] {
+  return buildPlanReviewDisplayLines(content, previousContent).map((line) => ({
+    key: line.key,
+    lines: [line],
+    content: line.content,
+    kind: line.kind
+  }))
+}
+
 export function planReviewCommentKey(line: PlanReviewDisplayLine): string {
   return line.key
 }
