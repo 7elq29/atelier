@@ -737,13 +737,31 @@ export default function ChatTranscript({
     return transcript.closest<HTMLElement>('.chat-body-row')
   }
 
-  useLayoutEffect(() => {
+  function scrollToBottomIfPinned(): void {
     const el = getScrollContainer()
-    if (!el) return
-    if (isNearBottomRef.current) {
-      el.scrollTop = el.scrollHeight
-    }
+    if (!el || !isNearBottomRef.current) return
+    el.scrollTop = el.scrollHeight
+  }
+
+  useLayoutEffect(() => {
+    scrollToBottomIfPinned()
   }, [messages, reviewTarget])
+
+  // When the composer grows after submit (turn-status row, queued strip,
+  // changes card), `.chat-body-row` shrinks but scrollTop is unchanged —
+  // the last user message ends up clipped behind the taller composer.
+  useEffect(() => {
+    const transcript = containerRef.current
+    if (!transcript) return
+    const composer = transcript.closest('.chat-tab-wrap')?.querySelector('.composer-cache')
+    if (!composer) return
+    const observer = new ResizeObserver(() => {
+      scrollToBottomIfPinned()
+    })
+    observer.observe(composer)
+    return () => observer.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewTarget])
 
   function handleScroll(): void {
     const el = getScrollContainer()

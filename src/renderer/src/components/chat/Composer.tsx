@@ -771,6 +771,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const next = Math.min(Math.max(ta.scrollHeight, minContentHeight), MAX_TEXTAREA_HEIGHT)
     ta.style.height = `${next}px`
     ta.style.overflowY = capped ? 'auto' : 'hidden'
+    if (!value.trim()) ta.scrollTop = 0
   }, [value])
 
   const mentionMatches = useMemo(() => {

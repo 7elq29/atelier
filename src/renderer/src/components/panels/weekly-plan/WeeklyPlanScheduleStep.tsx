@@ -6,6 +6,7 @@ import {
   WP_SCHEDULE_START_HOUR,
   applyScheduleEntryText,
   addScheduleTask,
+  addScheduleTaskAt,
   removeScheduleEntry,
   splitScheduleEntry,
   syncScheduleEntries,
@@ -150,6 +151,10 @@ function CalBlock({
       onDoubleClick={(ev) => {
         ev.stopPropagation()
         onDoubleClick(entry.id)
+      }}
+      onContextMenu={(ev) => {
+        ev.preventDefault()
+        ev.stopPropagation()
       }}
       title={entry.slot}
     >
@@ -301,6 +306,51 @@ function TimelineDropPreview({ slot }: { slot: string }): JSX.Element {
   )
 }
 
+function TimelineCreateDraft({
+  slot,
+  text,
+  onChange,
+  onSubmit,
+  onCancel
+}: {
+  slot: string
+  text: string
+  onChange: (v: string) => void
+  onSubmit: () => void
+  onCancel: () => void
+}): JSX.Element {
+  return (
+    <>
+      <TimelineDropPreview slot={slot} />
+      <div
+        className="wp-cal-create-draft"
+        data-testid="weekly-plan-cal-create-draft"
+        style={wpTimelineBlockStyle(slot)}
+      >
+        <input
+          className="input wp-cal-block-edit"
+          data-testid="weekly-plan-cal-create-input"
+          value={text}
+          autoFocus
+          placeholder="New task…"
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onSubmit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              onSubmit()
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              onCancel()
+            }
+          }}
+        />
+      </div>
+    </>
+  )
+}
+
 export function WeeklyPlanScheduleStep({
   isoWeek,
   weekLabel,
@@ -319,6 +369,7 @@ export function WeeklyPlanScheduleStep({
   const [dropPreviewSlot, setDropPreviewSlot] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
+  const [createDraft, setCreateDraft] = useState<{ day: string; slot: string; text: string } | null>(null)
   const [unschedExpanded, setUnschedExpanded] = useState(false)
 
   const entries = useMemo(() => syncScheduleEntries(data), [data])
@@ -374,6 +425,34 @@ export function WeeklyPlanScheduleStep({
       }, 0)
       return next
     })
+  }
+
+  const submitCreateDraft = (): void => {
+    const draft = createDraft
+    if (!draft) return
+    const trimmed = draft.text.trim()
+    setCreateDraft(null)
+    if (!trimmed) return
+    onDataChange((prev) => addScheduleTaskAt(prev, draft.day, draft.slot, trimmed).data)
+  }
+
+  const startCreateDraft = (day: string, clientY: number, bodyEl: HTMLElement): void => {
+    if ((document.activeElement as HTMLElement | null)?.closest('.wp-cal-create-draft')) return
+    if (editingId) commitEdit()
+    if (createDraft?.text.trim()) {
+      const pending = createDraft
+      setCreateDraft(null)
+      onDataChange((prev) => addScheduleTaskAt(prev, pending.day, pending.slot, pending.text.trim()).data)
+    }
+    const slot = wpSlotFromDropY(bodyEl, clientY)
+    setCreateDraft({ day, slot, text: '' })
+  }
+
+  const handleTimelineContextMenu = (day: string, e: React.MouseEvent<HTMLDivElement>): void => {
+    e.preventDefault()
+    if ((e.target as HTMLElement).closest('.wp-cal-block')) return
+    if ((e.target as HTMLElement).closest('.wp-cal-create-draft')) return
+    startCreateDraft(day, e.clientY, e.currentTarget)
   }
 
   const pool = entries.filter(wpEntryInPool)
@@ -468,6 +547,7 @@ export function WeeklyPlanScheduleStep({
                 <div
                   key={key}
                   className={`wp-cal-matrix-timeline${dragOver === key ? ' drag-over' : ''}`}
+                  onContextMenu={(e) => handleTimelineContextMenu(day, e)}
                   onDragOver={(e) => {
                     e.preventDefault()
                     setDragOver(key)
@@ -489,6 +569,15 @@ export function WeeklyPlanScheduleStep({
                 >
                   {dragOver === key && dropPreviewSlot ? (
                     <TimelineDropPreview slot={dropPreviewSlot} />
+                  ) : null}
+                  {createDraft?.day === day ? (
+                    <TimelineCreateDraft
+                      slot={createDraft.slot}
+                      text={createDraft.text}
+                      onChange={(text) => setCreateDraft({ ...createDraft, text })}
+                      onSubmit={submitCreateDraft}
+                      onCancel={() => setCreateDraft(null)}
+                    />
                   ) : null}
                   {timed.map((e) => (
                     <CalBlock
@@ -549,7 +638,8 @@ export function WeeklyPlanScheduleStep({
         <div className="wp-inline-hint">
           Drag to a day&apos;s <strong>Unscheduled</strong> row or <strong>timeline</strong>. While dragging on
           the timeline, the dashed preview shows the <strong>time range</strong>. Drop on the pool to unassign.
-          <strong> +</strong> adds a task. Double-click to edit; ✕ removes.
+          <strong> +</strong> adds a task. Right-click the timeline to create at that time. Double-click to edit; ✕
+          removes.
         </div>
         <div
           className={`wp-sched-left-pool${dragOver === 'pool' ? ' drag-over' : ''}`}

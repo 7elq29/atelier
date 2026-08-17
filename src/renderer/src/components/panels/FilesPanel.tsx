@@ -390,10 +390,18 @@ export default function FilesPanel({
   }, [browseDirPath, selectedPath, projectPath])
 
   const fileTreeRootsKey = serializeFileTreeRoots(fileTreeRoots)
+  const workspaceScopeKey = `${projectPath}\0${hostname ?? ''}\0${fileTreeRootsKey}`
+  const workspaceScopeRef = useRef<string | null>(null)
 
-  // ── Load file tree ─────────────────────────────────────────────────────────
+  // Reset editor tabs only when the workspace scope changes — not when the
+  // session workspace snapshot refreshes (new filesTree array) or when the
+  // Files tab becomes visible again after viewing Chat.
   useEffect(() => {
     if (!active) return
+    const prevScope = workspaceScopeRef.current
+    if (prevScope === workspaceScopeKey) return
+    workspaceScopeRef.current = workspaceScopeKey
+
     setTree(null)
     setOpenTabs([])
     setActiveTabId(null)
@@ -410,15 +418,17 @@ export default function FilesPanel({
     setBrowseDirChildren(null)
     setBrowseDirLoading(false)
     setTreeFocusPath(null)
-    if (fileTreeRootsKey) {
-      setTree(null)
-    } else if (initialFilesTree != null) {
+  }, [active, workspaceScopeKey, projectPath])
+
+  // ── Load file tree ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!active) return
+    if (fileTreeRootsKey) return
+    if (initialFilesTree != null) {
       setTree(initialFilesTree)
-    } else {
-      void window.atelier.filesTree(projectPath, hostname).then(setTree)
+      return
     }
-    // fileTreeRootsKey is content-stable; parent passes a new array ref every render during streaming.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- workspace tree syncs via dedicated effect below
+    void window.atelier.filesTree(projectPath, hostname).then(setTree)
   }, [active, projectPath, hostname, fileTreeRootsKey, initialFilesTree])
 
   useEffect(() => {
@@ -444,11 +454,6 @@ export default function FilesPanel({
     // Only fileTreeRootsKey — parent passes a new array ref every render during streaming.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, fileTreeRootsKey, hostname])
-
-  useEffect(() => {
-    if (initialFilesTree == null || fileTreeRootsKey) return
-    setTree(initialFilesTree)
-  }, [initialFilesTree, fileTreeRootsKey])
 
   useEffect(() => {
     if (!active) return

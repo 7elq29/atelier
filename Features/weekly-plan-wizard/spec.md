@@ -22,7 +22,7 @@
 - **Side context panels** list checkbox **Tasks + Backlog** only (deduped). **Ideas carry** suggestions use plain **note bullets** from Tasks/Backlog only (not checkbox tasks).
 - **Last week Big Three** retro ignores template noise (`%%…`, empty `1. [ ]`, etc.); no n/a / Not applicable controls in the wizard UI.
 - On the **Weekly Big Three** plan step, carry suggestions omit any last-week outcome scored **100%** on the retro step (no Add button).
-- **Schedule** drag-over shows a dashed **drop preview** box on the day timeline; placed items render as **timeline blocks**.
+- **Schedule** drag-over shows a dashed **drop preview** box on the day timeline; placed items render as **timeline blocks**. Right-click empty timeline space to create a task at that time slot (same as daily timeline).
 
 ## Done criteria
 

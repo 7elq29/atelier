@@ -509,6 +509,32 @@ test.describe('04-composer-core', () => {
     await page.screenshot({ path: join(artifactsDir, 'composer-deferred-paste-placeholder.png') })
   })
 
+  test('submitted user message stays visible when composer grows', async ({}, testInfo) => {
+    testInfo.setTimeout(90_000)
+    if (!sessionId) sessionId = await createComposerSession(page, projectDir)
+    await expect(activeComposer(page).getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 90_000 })
+
+    const message =
+      'Submitted message visibility check — this bubble must stay fully in view after the composer shows turn status.'
+    await activeComposer(page).getByTestId('composer-input').fill(message)
+    await activeComposer(page).getByTestId('send-button').click()
+
+    const userMsg = page.locator('.msg-user[data-testid="transcript-message"]').last()
+    await expect
+      .poll(async () => userMsg.textContent(), { timeout: 15_000 })
+      .toContain('Submitted message visibility check')
+    await expect(activeComposer(page).getByTestId('composer-turn-status')).toBeVisible({ timeout: 15_000 })
+
+    const visible = await userMsg.evaluate((el) => {
+      const scroll = el.closest('.chat-body-row')
+      if (!scroll) return false
+      const msg = el.getBoundingClientRect()
+      const box = scroll.getBoundingClientRect()
+      return msg.top >= box.top - 1 && msg.bottom <= box.bottom + 1
+    })
+    expect(visible, 'last user message should not be clipped when composer grows after submit').toBe(true)
+  })
+
   test('small paste shows full text in composer', async ({}, testInfo) => {
     testInfo.setTimeout(90_000)
     if (!sessionId) sessionId = await createComposerSession(page, projectDir)

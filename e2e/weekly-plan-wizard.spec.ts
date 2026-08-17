@@ -319,6 +319,31 @@ test.describe.serial('weekly plan wizard', () => {
     await page.getByTestId('weekly-plan-close').click()
   })
 
+  test('schedule: right-click timeline creates task at slot', async () => {
+    const TASK = 'Right-click created schedule task'
+    await openWizard()
+    await goToStep(6)
+
+    const mondayTimeline = page.locator('.wp-cal-matrix-timeline').first()
+    await expect(mondayTimeline).toBeVisible()
+    const box = await mondayTimeline.boundingBox()
+    expect(box).toBeTruthy()
+    await mondayTimeline.click({
+      button: 'right',
+      position: { x: Math.floor(box!.width / 2), y: Math.floor(box!.height * 0.35) }
+    })
+
+    await expect(page.getByTestId('weekly-plan-cal-create-draft')).toBeVisible()
+    await expect(page.getByTestId('weekly-plan-cal-create-input')).toBeFocused()
+    await page.getByTestId('weekly-plan-cal-create-input').fill(TASK)
+    await page.getByTestId('weekly-plan-cal-create-input').press('Enter')
+
+    await expect(page.getByTestId('weekly-plan-cal-block').filter({ hasText: TASK })).toBeVisible()
+    await expect(page.locator('.wp-cal-chip').filter({ hasText: TASK })).toHaveCount(0)
+
+    await page.getByTestId('weekly-plan-close').click()
+  })
+
   test('draft persists when wizard closed before completion', async () => {
     const DRAFT = 'Weekly plan draft marker e2e'
     await page.evaluate(async () => {

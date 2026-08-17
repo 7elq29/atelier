@@ -113,6 +113,20 @@ export function syncScheduleEntries(data: WeeklyPlanWizardData): WeeklyPlanSched
   return entries
 }
 
+/** Append a schedulable task and place it on a day timeline slot. */
+export function addScheduleTaskAt(
+  data: WeeklyPlanWizardData,
+  day: string,
+  slot: string,
+  text = 'New task'
+): { data: WeeklyPlanWizardData; entryId: string } {
+  const { data: withTask, entryId } = addScheduleTask(data, text)
+  const entries = syncScheduleEntries(withTask).map((e) =>
+    e.id === entryId ? { ...e, day, slot } : e
+  )
+  return { data: { ...withTask, scheduleEntries: entries }, entryId }
+}
+
 /** Append a schedulable task (Ideas pool) and return the new primary entry id. */
 export function addScheduleTask(data: WeeklyPlanWizardData, text = 'New task'): { data: WeeklyPlanWizardData; entryId: string } {
   const ideas = [...data.ideas]

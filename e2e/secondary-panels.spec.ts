@@ -832,6 +832,10 @@ test.describe('07-secondary-panels', () => {
     const previewFrame = files.frameLocator('[data-testid="file-preview-html"]')
     await expect(previewFrame.locator('h1')).toHaveText('Fixture page')
 
+    await page.evaluate((id) => window.atelier.refreshSessionWorkspace(id, true), sessionId)
+    await files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]').click()
+    await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
+
     await page.screenshot({ path: join(artifactsDir, '07-files.png') })
     log('files panel: real tree + text/image/html preview OK')
   })
