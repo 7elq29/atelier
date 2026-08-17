@@ -723,6 +723,23 @@ export function defaultWizardData(lastBigThree: WeeklyPlanWizardData['lastBigThr
   }
 }
 
+/** Keep draft completion % for matching outcomes; always refresh retro text from vault. */
+export function mergeWeeklyPlanDraftRetro(
+  draft: WeeklyPlanWizardData,
+  freshLastBigThree: WeeklyPlanWizardData['lastBigThree']
+): WeeklyPlanWizardData['lastBigThree'] {
+  const pctByText = new Map<string, string>()
+  for (const row of draft.lastBigThree) {
+    const key = row.text.trim()
+    if (key) pctByText.set(key, row.pct)
+  }
+  return freshLastBigThree.map((row) => {
+    const key = row.text.trim()
+    const pct = key && pctByText.has(key) ? pctByText.get(key)! : row.pct
+    return { text: row.text, pct }
+  })
+}
+
 export function assertCreatePayload(payload: WeeklyPlanCreatePayload): void {
   if (!payload.isoWeek.match(/^\d{4}-W\d{2}$/)) {
     throw new Error('invalid isoWeek')

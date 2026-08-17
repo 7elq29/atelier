@@ -57,6 +57,27 @@ function parsePct(p: string): number | null {
   return Math.min(100, Math.max(0, n))
 }
 
+/** Outcomes scored 100% on the retro step cannot carry into this week's Big Three. */
+function lastBigThreeCompletionPctByText(
+  rows: WeeklyPlanWizardData['lastBigThree']
+): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const row of rows) {
+    const text = row.text.trim()
+    if (!text) continue
+    map.set(text, parsePct(row.pct) ?? 0)
+  }
+  return map
+}
+
+function canCarryLastBigThreeIntoPlan(text: string, completionPctByText: Map<string, number>): boolean {
+  const t = text.trim()
+  if (!t) return false
+  const pct = completionPctByText.get(t)
+  if (pct === undefined) return true
+  return pct < 100
+}
+
 function ObsidianTagText({ text }: { text: string }): JSX.Element {
   const parts = text.split(/(#(?:[a-zA-Z][\w/-]*))/g)
   return (
@@ -262,18 +283,23 @@ export default function WeeklyPlanWizardPanel({
     [context.lastWeekWeeklyBigThree]
   )
 
+  const lastBigThreeCompletionPct = useMemo(
+    () => lastBigThreeCompletionPctByText(data.lastBigThree),
+    [data.lastBigThree]
+  )
+
   const bigThreeCarryRows = useMemo(() => {
     const rows: { key: string; text: string; hint: string }[] = []
     const seen = new Set<string>()
     for (const text of lastWeekBigThreeSuggestions) {
       const t = text.trim()
-      if (!t || seen.has(t)) continue
+      if (!t || seen.has(t) || !canCarryLastBigThreeIntoPlan(t, lastBigThreeCompletionPct)) continue
       seen.add(t)
       rows.push({ key: `weekly-${t}`, text: t, hint: `${bigThreeSuggestionWeek} · Weekly Big Three` })
     }
     for (const row of incompleteLastBigThree) {
       const text = row.text.trim()
-      if (!text || seen.has(text)) continue
+      if (!text || seen.has(text) || !canCarryLastBigThreeIntoPlan(text, lastBigThreeCompletionPct)) continue
       seen.add(text)
       const p = parsePct(row.pct)
       const hint =
@@ -281,7 +307,13 @@ export default function WeeklyPlanWizardPanel({
       rows.push({ key: `retro-${text}`, text, hint })
     }
     return rows
-  }, [incompleteLastBigThree, lastWeekBigThreeSuggestions, prevWeek, bigThreeSuggestionWeek])
+  }, [
+    incompleteLastBigThree,
+    lastWeekBigThreeSuggestions,
+    lastBigThreeCompletionPct,
+    prevWeek,
+    bigThreeSuggestionWeek
+  ])
 
   const finish = useCallback(async () => {
     setCreating(true)

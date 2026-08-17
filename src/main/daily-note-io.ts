@@ -36,6 +36,7 @@ import type {
   ExternalLink,
   RawSections
 } from '../shared/daily-note-types'
+import { sortUnscheduledSubsection } from '../shared/daily-note-unscheduled-order'
 import { isDailyNoteBulletFromTags } from '../shared/daily-note-tags'
 
 // ── id minting ───────────────────────────────────────────────────
@@ -408,13 +409,17 @@ export function serializeDailyNote(note: DailyNote, raw: RawSections): string {
 
   sections.push('')
   sections.push('### ⚪ Backlog')
-  const backlog = note.tasks.filter((t) => t.section === 'unscheduled' && !t.tags.includes('#delegated'))
+  const backlog = sortUnscheduledSubsection(
+    note.tasks.filter((t) => t.section === 'unscheduled' && !t.tags.includes('#delegated'))
+  )
   if (backlog.length > 0) for (const task of backlog) sections.push(serializeTaskLine(task))
   else sections.push('- ')
 
   sections.push('')
   sections.push('### \u{1F91D} Delegated')
-  const delegated = note.tasks.filter((t) => t.section === 'unscheduled' && t.tags.includes('#delegated'))
+  const delegated = sortUnscheduledSubsection(
+    note.tasks.filter((t) => t.section === 'unscheduled' && t.tags.includes('#delegated'))
+  )
   if (delegated.length > 0) for (const task of delegated) sections.push(serializeTaskLine(task))
   else sections.push('- ')
 

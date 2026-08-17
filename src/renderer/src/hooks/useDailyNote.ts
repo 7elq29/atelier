@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { DailyTask, DailyNote, TaskSection } from '../../../shared/daily-note-types'
 import { isDailyNoteBulletFromTags, parseInlineTagsFromTaskText } from '../../../shared/daily-note-tags'
+import { reorderUnscheduledTasks } from '../../../shared/daily-note-unscheduled-order'
 import { parseTaskEditContent } from '../../../shared/task-priority'
 
 const WRITE_DEBOUNCE_MS = 500
@@ -204,14 +205,14 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
 
   const toggleTask = useCallback(
     (id: string) =>
-      mutate((prev) => ({
-        ...prev,
-        tasks: prev.tasks.map((t) => {
+      mutate((prev) => {
+        const tasks = prev.tasks.map((t) => {
           if (t.id !== id) return t
           const nextStatus = t.status === 'done' ? ('open' as const) : ('done' as const)
           return { ...t, status: nextStatus, completion: nextStatus === 'done' ? date : undefined }
         })
-      })),
+        return { ...prev, tasks: reorderUnscheduledTasks(tasks) }
+      }),
     [date, mutate]
   )
 
@@ -257,10 +258,12 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
 
   const moveTask = useCallback(
     (id: string, section: 'day-plan' | 'unscheduled', timeBlock?: string) =>
-      mutate((prev) => ({
-        ...prev,
-        tasks: prev.tasks.map((t) => (t.id === id ? { ...t, section, timeBlock } : t))
-      })),
+      mutate((prev) => {
+        const tasks = prev.tasks.map((t) => (t.id === id ? { ...t, section, timeBlock } : t))
+        return section === 'unscheduled'
+          ? { ...prev, tasks: reorderUnscheduledTasks(tasks) }
+          : { ...prev, tasks }
+      }),
     [mutate]
   )
 

@@ -184,6 +184,26 @@ test('seeded tasks render correctly in Timeline/Unscheduled/Trackers', async () 
   await page.screenshot({ path: join(artifactsDir, '09-timeline.png') })
 })
 
+test('completing an unscheduled task moves it to the bottom of Unscheduled', async () => {
+  const first = page.locator('[data-testid="unscheduled-task"]', { hasText: 'Write PR description' })
+  const second = page.locator('[data-testid="unscheduled-task"]', { hasText: 'Reply to design review comments' })
+  await first.locator('.dn-tbox').click()
+  await expect(first).toHaveClass(/done/)
+  await expect(second).toBeVisible()
+
+  const order = page.locator('[data-testid="unscheduled-task"]')
+  await expect(order.nth(0)).toContainText('Reply to design review comments')
+  await expect(order.nth(1)).toContainText('Write PR description')
+
+  await page.waitForTimeout(600)
+  const content = readFileSync(notePath, 'utf-8')
+  const backlogSection = content.split('### 🤝 Delegated')[0] ?? content
+  expect(backlogSection.indexOf('Reply to design review comments')).toBeLessThan(
+    backlogSection.indexOf('Write PR description')
+  )
+  expect(backlogSection).toMatch(/- \[x\] Write PR description/)
+})
+
 test.describe('carry-over suggestions from prior daily note', () => {
   test.beforeEach(async () => {
     const priorPath = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31', `${PRIOR_DATE}.md`)

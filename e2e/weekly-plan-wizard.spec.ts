@@ -211,6 +211,13 @@ test.describe.serial('weekly plan wizard', () => {
     await expect(page.getByTestId('weekly-plan-big3-carry').getByText(REAL_BIG3)).toHaveCount(0)
     await expect(page.getByText(/\bn\/a\b/i)).toHaveCount(0)
 
+    await page.getByTestId('weekly-plan-back').click()
+    await page.locator('.wp-completion-pct-input').first().fill('100')
+    await page.getByTestId('weekly-plan-next').click()
+    const carryPanel = page.getByTestId('weekly-plan-big3-carry')
+    await expect(carryPanel.getByText(WEEKLY_B3_SUGGEST)).toHaveCount(0)
+    await expect(carryPanel.getByText('Second planned outcome #q2')).toBeVisible()
+
     await page.getByTestId('weekly-plan-next').click()
     await expect(context.getByText(TASK_OPEN)).toBeVisible()
     await expect(context.getByText(BACKLOG_OPEN)).toBeVisible()

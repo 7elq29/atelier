@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DailyTask } from '../../../../shared/daily-note-types'
+import { sortUnscheduledTasksForDisplay } from '../../../../shared/daily-note-unscheduled-order'
 import { useDailyNote } from '../../hooks/useDailyNote'
 import { useCarrySuggestions } from '../../hooks/useCarrySuggestions'
 import { useSectionResize } from './section-resize'
@@ -164,7 +165,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
   const dayPlanTasks = note.tasks
     .filter((t) => t.section === 'day-plan')
     .sort((a, b) => (a.timeBlock ?? '').localeCompare(b.timeBlock ?? ''))
-  const unscheduledTasks = note.tasks.filter((t) => t.section === 'unscheduled')
+  const unscheduledTasks = sortUnscheduledTasksForDisplay(note.tasks)
   const trackerTasks = note.tasks.filter((t) => t.section === 'tracker')
 
   const totalActionable = note.tasks.filter(

@@ -14,6 +14,7 @@ import {
   formatIsoWeekKey,
   loadWeeklyPlanWizardContext,
   loadWeeklyTemplate,
+  mergeWeeklyPlanDraftRetro,
   resolveWeeklyNotePath,
   weeklyStatusForDate
 } from './weekly-note-io'
@@ -148,7 +149,10 @@ export function registerWeeklyPlanHandlers(): void {
     if (draft) {
       return {
         ...ctx,
-        initialData: draft.data,
+        initialData: {
+          ...draft.data,
+          lastBigThree: mergeWeeklyPlanDraftRetro(draft.data, ctx.initialData.lastBigThree)
+        },
         draftStep: draft.step
       }
     }
