@@ -47,7 +47,7 @@ import { homeDirForWorktreeHost } from './worktree-home'
 import { createWorktree, removeWorktree, worktreePathExists } from './worktree'
 import { warmRemoteGitHost } from '../panels/git'
 import { invalidateGitRepository } from '../panels/git-repository'
-import { getSessionCapOutsideFileDiff, getSessionCapGitFileDiff, registerPlanFileInSessionChangesCap, bashCommandMayAffectSessionChanges, registerFileEditToolTouchedPaths, refreshSessionChangesCap } from './session-changes-cap'
+import { getSessionCapOutsideFileDiff, getSessionCapGitFileDiff, registerPlanFileInSessionChangesCap, bashCommandMayAffectSessionChanges, registerFileEditToolTouchedPaths } from './session-changes-cap'
 import { isSessionFileEditTool } from '../../shared/session-file-edits'
 import { WorkspaceService, LOCAL_GIT_DEBOUNCE_MS } from './workspace-service'
 import { scheduleHostStartupReconnect } from './remote-preload-gate'
@@ -329,12 +329,6 @@ export class SessionManager {
     if (existing) clearTimeout(existing)
     const timer = setTimeout(() => {
       this.capRefreshDebounce.delete(sessionId)
-      const session = this.getSession(sessionId)
-      if (!session) return
-      const workspacePath = session.worktreePath ?? session.projectPath
-      void refreshSessionChangesCap(this.store, sessionId, workspacePath, session.hostname)
-        .then((cap) => this.publishSessionChangesCap(sessionId, cap))
-        .catch(() => undefined)
       void this.refreshSessionWorkspace(sessionId, false).catch(() => undefined)
     }, LOCAL_GIT_DEBOUNCE_MS)
     this.capRefreshDebounce.set(sessionId, timer)

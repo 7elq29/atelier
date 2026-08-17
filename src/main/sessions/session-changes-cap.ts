@@ -33,6 +33,8 @@ import {
   resolveWorkspacePlanMirrorPath
 } from '../../shared/plan-mirror-path'
 import type { DiffFileChange, DiffFileContentPair } from '../../shared/panel-types'
+import { remoteFilePath } from '../shell-quote'
+import { sshExec } from '../ssh-exec'
 import { logger } from '../logger'
 
 export {
@@ -202,6 +204,23 @@ export async function registerTouchedPathFromToolCallAsync(
   }
 }
 
+function isLocalMacAbsolutePath(path: string): boolean {
+  return /^\/Users\//.test(path) || /^\/private\/Users\//.test(path)
+}
+
+/** Devpod SSH cannot read macOS-local absolute paths — skip instead of spamming failed cats. */
+function capPathReadableViaRemoteSsh(absPath: string, hostname: string | null): boolean {
+  if (!hostname) return true
+  return !isLocalMacAbsolutePath(absPath)
+}
+
+async function remoteTextLineCount(absPath: string, hostname: string): Promise<number | null> {
+  const res = await sshExec(hostname, `wc -l < ${remoteFilePath(absPath)}`)
+  if (res.code !== 0) return null
+  const n = Number.parseInt(res.stdout.trim(), 10)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 async function fallbackFileStats(
   workspaceRoot: string,
   capPath: string,
@@ -210,15 +229,60 @@ async function fallbackFileStats(
   const abs = await resolveCapPathAbsolute(capPath, workspaceRoot, hostname)
   try {
     if (hostname) {
-      const { readFileForPreview } = await import('../panels/files')
-      const result = await readFileForPreview(abs, hostname)
-      if (result.kind !== 'text' && result.kind !== 'html') return null
-      const lines = result.content.split('\n').length
-      return lines > 0 ? { additions: lines, deletions: 0 } : null
+      if (!capPathReadableViaRemoteSsh(abs, hostname)) return null
+      const lines = await remoteTextLineCount(abs, hostname)
+      return lines && lines > 0 ? { additions: lines, deletions: 0 } : null
     }
     const content = await readFile(abs, 'utf8')
     const lines = content.split('\n').length
     return lines > 0 ? { additions: lines, deletions: 0 } : null
+  } catch {
+    return null
+  }
+}
+
+/** Cap list stats for outside-git paths — wc/git only; full file read is reserved for user-open diff. */
+async function cheapOutsideCapStats(
+  store: SessionStore,
+  sessionId: string,
+  workspacePath: string,
+  capPath: string,
+  hostname: string | null,
+  projectPath: string
+): Promise<{ additions: number; deletions: number } | null> {
+  if (isClaudePlanPath(capPath)) {
+    return planCapReviewDiffStats(store.listMessages(sessionId), capPath)
+  }
+  const absPath = await resolveCapPathAbsolute(capPath, workspacePath, hostname)
+  if (!capPathReadableViaRemoteSsh(absPath, hostname)) return null
+
+  const baseline = await sessionFileBaselineFromMessages(
+    store,
+    sessionId,
+    workspacePath,
+    capPath,
+    hostname,
+    projectPath
+  )
+  const baselineLines = baseline.length > 0 ? baseline.split('\n').length : 0
+
+  if (hostname) {
+    const lines = await remoteTextLineCount(absPath, hostname)
+    if (lines === null || lines === 0) return null
+    if (baselineLines === 0) return { additions: lines, deletions: 0 }
+    const additions = Math.max(0, lines - baselineLines)
+    const deletions = Math.max(0, baselineLines - lines)
+    return additions > 0 || deletions > 0 ? { additions, deletions } : null
+  }
+
+  try {
+    const content = await readFile(absPath, 'utf8')
+    const lines = content.split('\n').length
+    if (lines === 0) return null
+    if (baselineLines === 0) return { additions: lines, deletions: 0 }
+    const additions = Math.max(0, lines - baselineLines)
+    const deletions = Math.max(0, baselineLines - lines)
+    return additions > 0 || deletions > 0 ? { additions, deletions } : null
   } catch {
     return null
   }
@@ -267,6 +331,7 @@ async function readCapPathText(
   const absPath = await resolveCapPathAbsolute(capPath, workspacePath, hostname)
   try {
     if (hostname) {
+      if (!capPathReadableViaRemoteSsh(absPath, hostname)) return null
       const { readFileForPreview } = await import('../panels/files')
       const result = await readFileForPreview(absPath, hostname)
       if (result.kind !== 'text' && result.kind !== 'html') return null
@@ -351,7 +416,7 @@ async function capPathWorkingTreeStats(
     if (planStats) return planStats
   }
   if (!(await isCapPathInGitRepo(workspacePath, capPath, hostname))) {
-    const diff = await getSessionCapOutsideFileDiff(
+    const stats = await cheapOutsideCapStats(
       store,
       sessionId,
       workspacePath,
@@ -359,7 +424,7 @@ async function capPathWorkingTreeStats(
       hostname,
       projectPath
     )
-    if (diff) return { additions: diff.file.additions, deletions: diff.file.deletions }
+    if (stats) return stats
     return fallbackFileStats(workspacePath, capPath, hostname)
   }
   const ctx = await resolveCapGitContext(capPath, workspacePath, hostname)

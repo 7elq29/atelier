@@ -29,13 +29,54 @@ export const SSH_REMOTE_OPTS = [
 
 export type ExecResult = { stdout: string; stderr: string; code: number }
 
+/**
+ * Hard cap on concurrent non-interactive `ssh` client processes per devpod host.
+ * Interactive terminals (pty spawn) are separate but still multiplex when mux is healthy.
+ * With ControlMaster, these share one ussh proxy instead of one per exec.
+ */
+export const SSH_MAX_CONCURRENT_EXEC_PER_HOST = 6
+
 /** Hosts with an established ControlMaster socket — skip redundant warm probes. */
 const muxReadyHosts = new Set<string>()
 /** Dedupes concurrent warm attempts so a burst of parallel ssh calls shares one handshake. */
 const muxWarmInFlight = new Map<string, Promise<void>>()
 
+/** Per-host counting semaphore for sshExec — prevents mux saturation / ussh storms. */
+const execSlots = new Map<string, { inUse: number; waiters: Array<() => void> }>()
+
 /** Kill hung remote git/file ops instead of leaving the Diff panel on "Loading diff…" forever. */
 const SSH_EXEC_TIMEOUT_MS = 90_000
+
+function execSlotState(host: string): { inUse: number; waiters: Array<() => void> } {
+  let state = execSlots.get(host)
+  if (!state) {
+    state = { inUse: 0, waiters: [] }
+    execSlots.set(host, state)
+  }
+  return state
+}
+
+async function acquireExecSlot(host: string): Promise<void> {
+  const state = execSlotState(host)
+  if (state.inUse < SSH_MAX_CONCURRENT_EXEC_PER_HOST) {
+    state.inUse++
+    return
+  }
+  await new Promise<void>((resolve) => {
+    state.waiters.push(() => {
+      state.inUse++
+      resolve()
+    })
+  })
+}
+
+function releaseExecSlot(host: string): void {
+  const state = execSlots.get(host)
+  if (!state) return
+  state.inUse = Math.max(0, state.inUse - 1)
+  const next = state.waiters.shift()
+  if (next) next()
+}
 
 function sshExecRaw(sshHost: string, remoteCmd: string, maxBuffer = 1024 * 1024 * 32): Promise<ExecResult> {
   return new Promise((resolve) => {
@@ -59,7 +100,12 @@ function sshExecRaw(sshHost: string, remoteCmd: string, maxBuffer = 1024 * 1024 
 
 export async function sshExec(sshHost: string, remoteCmd: string, maxBuffer = 1024 * 1024 * 32): Promise<ExecResult> {
   await warmSshMux(sshHost)
-  return sshExecRaw(sshHost, remoteCmd, maxBuffer)
+  await acquireExecSlot(sshHost)
+  try {
+    return await sshExecRaw(sshHost, remoteCmd, maxBuffer)
+  } finally {
+    releaseExecSlot(sshHost)
+  }
 }
 
 /**

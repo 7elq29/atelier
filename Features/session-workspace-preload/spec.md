@@ -15,6 +15,7 @@
 - `session:openTiming` logged with `essentialMs`, optional `sshWarmMs`/`filesTreeMs`/`filesListMs`/`ptyMs`/`gitProbeMs`, and later `backgroundGitMs`/`backgroundCapMs` when background preload completes.
 - Session stays in `connecting` until essential preload completes (or times out to best-effort empty workspace + background refresh).
 - Remote devpod preloads on the same `hostname` run through a per-host queue; `startupReconnect` staggers harness starts per host.
+- Background git/cap refresh on the same `hostname` is serialized (`withRemoteBackgroundHostQueue`); non-interactive SSH exec is capped at **6 concurrent per host** (`SSH_MAX_CONCURRENT_EXEC_PER_HOST` in `ssh-exec.ts`).
 - Devpod uses same APIs with `hostname`; poll interval **15s**.
 - Chat/Diff/Files/Terminal visible immediately after openReady; Diff does not force-refresh on tab open when preloaded data exists.
 - Targeted e2e: clones the **exact** AI conformance session (`b986cbd0…`, 451+ messages) from the developer's production `atelier.sqlite` into an isolated userData dir (`session-lifecycle.spec.ts`), plus `secondary-panels.spec.ts`, `composer-core.spec.ts`; `npm run build` clean.

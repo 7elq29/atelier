@@ -21,3 +21,4 @@ Mock tokens: `.chat-changes-card`, `.chat-changes-file`, `.chat-changes-add`/`.c
 
 - E2e in `secondary-panels.spec.ts`: edit, revert, git checkout cap clear, resume snapshot.
 - `npm run build` clean; targeted `e2e/secondary-panels.spec.ts`.
+- **Remote SSH bounds:** cap rebuild uses `wc -l`/git numstat (not bulk `cat`); at most one cap rebuild per session; background refresh serialized per devpod host; non-interactive SSH exec capped at `SSH_MAX_CONCURRENT_EXEC_PER_HOST` (6) per host via `ssh-exec.ts`.

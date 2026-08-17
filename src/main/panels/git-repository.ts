@@ -9,7 +9,7 @@ import { readFileForPreview } from './files'
 import { isAbsolute, join, resolve } from 'node:path'
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { warmSshMux } from '../ssh-exec'
+import { warmSshMux, SSH_MAX_CONCURRENT_EXEC_PER_HOST } from '../ssh-exec'
 import {
   clearGitRepoRootCache,
   GIT_NO_EXTERNAL_DIFF,
@@ -32,6 +32,19 @@ const EMPTY_TREE = '4b825dc642cb6eb6a060e54bf8d69288fbee4904'
 /** Commits with at most this many files use one full `git show -U3` on open (typical agent commits). */
 const COMMIT_OPEN_FULL_PATCH_MAX_FILES = 40
 const WORKING_TREE_FULL_PATCH_MAX_FILES = COMMIT_OPEN_FULL_PATCH_MAX_FILES
+
+async function mapInConcurrentBatches<T, R>(
+  items: T[],
+  batchSize: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const out: R[] = []
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize)
+    out.push(...(await Promise.all(batch.map(fn))))
+  }
+  return out
+}
 
 function repoKey(projectPath: string, sshHost?: string | null): string {
   return `${sshHost ?? 'local'}\0${projectPath}`
@@ -345,11 +358,13 @@ class GitRepositoryManager {
 
     const needsLoad = files.filter((f) => f.hunks.length === 0)
     if (needsLoad.length > 0) {
-      const loaded = await Promise.all(
-        needsLoad.map(async (f) => {
+      const loaded = await mapInConcurrentBatches(
+        needsLoad,
+        SSH_MAX_CONCURRENT_EXEC_PER_HOST,
+        async (f) => {
           const detail = await this.loadFileDiff(projectPath, f.path, sshHost)
           return detail ?? f
-        })
+        }
       )
       const byPath = new Map(loaded.map((f) => [f.path, f]))
       files = files.map((f) => byPath.get(f.path) ?? f)
