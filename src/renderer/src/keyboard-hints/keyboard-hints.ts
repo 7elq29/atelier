@@ -21,11 +21,12 @@ export type HintEntry = {
 
 export function generateHintLabels(count: number): string[] {
   const chars = [...HINT_CHARS]
-  const labels: string[] = []
   if (count <= chars.length) {
-    for (let i = 0; i < count; i++) labels.push(chars[i]!)
-    return labels
+    return chars.slice(0, count)
   }
+  // More than 26 chrome targets: two-letter codes for all of them so no
+  // single-letter label is a prefix of another (e.g. "a" vs "aa").
+  const labels: string[] = []
   for (const a of chars) {
     for (const b of chars) {
       labels.push(a + b)
@@ -33,6 +34,13 @@ export function generateHintLabels(count: number): string[] {
     }
   }
   return labels
+}
+
+/** Badge shows the next key in the sequence, not the full multi-char label. */
+export function hintBadgeDisplayLabel(fullLabel: string, typedBuffer: string): string {
+  if (!fullLabel.startsWith(typedBuffer)) return fullLabel.charAt(0) ?? fullLabel
+  const remaining = fullLabel.slice(typedBuffer.length)
+  return remaining.charAt(0) ?? fullLabel.charAt(fullLabel.length - 1) ?? fullLabel
 }
 
 function isHintExcluded(el: Element): boolean {
@@ -79,12 +87,14 @@ function sortByVisualPosition(a: HTMLElement, b: HTMLElement): number {
   return ra.left - rb.left
 }
 
-export function collectSessionRowTargets(root: HTMLElement): HTMLElement[] {
-  const rows = [...root.querySelectorAll<HTMLElement>('[data-hint-session-row]')].filter((el) => {
-    if (isHintExcluded(el) || !isElementVisible(el)) return false
-    if (el.getAttribute('data-status') === 'creating-worktree') return false
-    return true
-  })
+export function collectNumberedRowTargets(root: HTMLElement): HTMLElement[] {
+  const rows = [...root.querySelectorAll<HTMLElement>('[data-hint-session-row], [data-hint-note-row]')].filter(
+    (el) => {
+      if (isHintExcluded(el) || !isElementVisible(el)) return false
+      if (el.getAttribute('data-status') === 'creating-worktree') return false
+      return true
+    }
+  )
   rows.sort(sortByVisualPosition)
   return rows
 }
@@ -94,7 +104,7 @@ export function collectHintTargets(root: HTMLElement): HTMLElement[] {
     (el) =>
       !isHintExcluded(el) &&
       isElementVisible(el) &&
-      !el.closest('[data-hint-session-row]')
+      !el.closest('[data-hint-session-row], [data-hint-note-row]')
   )
   const unique = dedupeNestedInteractives(found)
   unique.sort(sortByVisualPosition)
@@ -102,8 +112,8 @@ export function collectHintTargets(root: HTMLElement): HTMLElement[] {
 }
 
 export function buildHintEntries(root: HTMLElement): HintEntry[] {
-  const sessionRows = collectSessionRowTargets(root)
-  const sessionEntries: HintEntry[] = sessionRows.map((element, i) => ({
+  const numberedRows = collectNumberedRowTargets(root)
+  const sessionEntries: HintEntry[] = numberedRows.map((element, i) => ({
     element,
     label: String(i + 1)
   }))
@@ -196,12 +206,20 @@ export function normalizeHintKeyChar(key: string): string | null {
   return null
 }
 
-/** Don't treat editing chords as hint letters (Ctrl+C/V on macOS, ⌘C/V while hints are up). */
+/** Reserved ⌘+letter session tab shortcuts while hint mode is active. */
+export const SESSION_TAB_HINT_KEYS: Readonly<Record<string, 'chat' | 'diff' | 'files' | 'ports'>> = {
+  c: 'chat',
+  d: 'diff',
+  f: 'files',
+  p: 'ports'
+}
+
+/** Don't treat editing chords as hint letters (Ctrl+C/V on macOS). */
 export function shouldBypassHintKeydown(
   e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey'>
 ): boolean {
   if (e.ctrlKey) return true
   const k = e.key.toLowerCase()
-  if (e.metaKey && !e.altKey && (k === 'c' || k === 'v' || k === 'x' || k === 'a')) return true
+  if (e.metaKey && !e.altKey && (k === 'v' || k === 'x' || k === 'a')) return true
   return false
 }

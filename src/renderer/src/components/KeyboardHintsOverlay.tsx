@@ -5,11 +5,13 @@ import {
   buildHintEntries,
   clearHintLabelAttributes,
   findExactHintMatch,
+  hintBadgeDisplayLabel,
   type HintEntry,
   isMetaModifierDown,
   layoutHintBadge,
   matchHintEntries,
   normalizeHintKeyChar,
+  SESSION_TAB_HINT_KEYS,
   setHintLabelAttributes,
   shouldBypassHintKeydown
 } from '../keyboard-hints/keyboard-hints'
@@ -28,13 +30,19 @@ type Props = {
   disabled: boolean
   /** Root scanned for interactives (main app shell). */
   scanRootId?: string
+  /** ⌘+c/d/f/p while hints are active — reserved session tab shortcuts. */
+  onSessionTabShortcut?: (tab: 'chat' | 'diff' | 'files' | 'ports') => void
 }
 
 /**
  * Vimium-style keyboard hints: hold ⌘ to label visible controls, then press
  * the badge letter(s) while ⌘ is still held to focus or activate them.
  */
-export default function KeyboardHintsOverlay({ disabled, scanRootId = 'app' }: Props): JSX.Element | null {
+export default function KeyboardHintsOverlay({
+  disabled,
+  scanRootId = 'app',
+  onSessionTabShortcut
+}: Props): JSX.Element | null {
   const [active, setActive] = useState(false)
   const [buffer, setBuffer] = useState('')
   const [badges, setBadges] = useState<BadgeLayout[]>([])
@@ -66,9 +74,10 @@ export default function KeyboardHintsOverlay({ disabled, scanRootId = 'app' }: P
   const refreshBadges = useCallback(() => {
     const filtered = matchHintEntries(entriesRef.current, bufferRef.current)
     const next: BadgeLayout[] = filtered.map(({ element, label }) => {
+      const displayLabel = hintBadgeDisplayLabel(label, bufferRef.current)
       const rect = element.getBoundingClientRect()
-      const { top, left } = layoutHintBadge(rect, label)
-      return { label, top, left }
+      const { top, left } = layoutHintBadge(rect, displayLabel)
+      return { label: displayLabel, top, left }
     })
     setBadges(next)
   }, [])
@@ -164,6 +173,23 @@ export default function KeyboardHintsOverlay({ disabled, scanRootId = 'app' }: P
         return
       }
 
+      if (
+        entriesRef.current.length > 0 &&
+        onSessionTabShortcut &&
+        e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey
+      ) {
+        const tab = SESSION_TAB_HINT_KEYS[e.key.toLowerCase()]
+        if (tab) {
+          e.preventDefault()
+          e.stopPropagation()
+          onSessionTabShortcut(tab)
+          teardown()
+          return
+        }
+      }
+
       if (shouldBypassHintKeydown(e)) return
 
       if (tryConsumeHintKey(e.key)) {
@@ -219,7 +245,8 @@ export default function KeyboardHintsOverlay({ disabled, scanRootId = 'app' }: P
     refreshBadges,
     scheduleHintMode,
     teardown,
-    tryConsumeHintKey
+    tryConsumeHintKey,
+    onSessionTabShortcut
   ])
 
   useEffect(() => {

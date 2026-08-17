@@ -25,7 +25,7 @@ export default function TabBar({
     ...(showPorts ? [{ id: 'ports' as SessionTab, label: 'Ports' }] : [])
   ]
   return (
-    <div className="tab-strip" data-testid="tab-strip">
+    <div className="tab-strip" data-testid="tab-strip" data-hint-exclude-root="">
       {tabs.map((t) => (
         <button
           key={t.id}

@@ -345,6 +345,7 @@ function AppNoteRow({
     <div
       className={`session-row app-note-row${active ? ' active' : ''}`}
       data-testid="app-note-row"
+      data-hint-note-row=""
       data-note-id={note.id}
       data-active={active ? 'true' : 'false'}
       role="button"
@@ -1280,6 +1281,7 @@ export default function Sidebar({
             <div
               className={`session-row app-note-row app-note-row--daily hide-on-collapse${activeDailyNote ? ' active' : ''}`}
               data-testid="daily-note-row"
+              data-hint-note-row=""
               data-active={activeDailyNote ? 'true' : 'false'}
               role="button"
               tabIndex={0}
@@ -1307,6 +1309,7 @@ export default function Sidebar({
             <div
               className={`session-row app-note-row app-note-row--weekly hide-on-collapse${activeWeeklyPlan ? ' active' : ''}`}
               data-testid="weekly-plan-row"
+              data-hint-note-row=""
               role="button"
               tabIndex={0}
               onClick={onSelectWeeklyPlanRow}

@@ -19,7 +19,6 @@ import WeeklyPlanWizardPanel from './components/panels/WeeklyPlanWizardPanel'
 import WeeklyPlanViewPanel from './components/panels/WeeklyPlanViewPanel'
 import PortsPanel from './components/panels/PortsPanel'
 import TerminalWithToolbox from './components/panels/TerminalWithToolbox'
-import CompanionTerminalDrawer from './components/panels/CompanionTerminalDrawer'
 import TitleBar from './components/TitleBar'
 import SessionDisconnectedPanel from './components/SessionDisconnectedPanel'
 import { SessionWorkspacePanels } from './components/session/SessionWorkspacePanels'
@@ -209,8 +208,6 @@ export default function App(): JSX.Element {
   const [injectDiffBySession, setInjectDiffBySession] = useState<
     Record<string, { file: DiffFileChange; seq: number }>
   >({})
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [drawerHeight, setDrawerHeight] = useState(240)
   /** Per-session FIFO queue while that session is busy (message-queue). */
   const [queuedMessagesBySession, setQueuedMessagesBySession] = useState<Record<string, string[]>>({})
   const [reviewCommentsBySession, setReviewCommentsBySession] = useState<
@@ -535,7 +532,6 @@ export default function App(): JSX.Element {
     setActiveSessionId(session.id)
     setActiveTab('chat')
     setVisitedTabs(new Set(['chat']))
-    setDrawerOpen(false)
     const startupIdle =
       session.mode === 'claude-code' &&
       !session.closedAt &&
@@ -736,6 +732,17 @@ export default function App(): JSX.Element {
       setVisitedTabs((prev) => (prev.has('files') ? prev : new Set(prev).add('files')))
     },
     [activeSessionId, allSessions, sessions.statuses, sessionWorkspace.workspaceBySession]
+  )
+
+  const handleSessionTabHintShortcut = useCallback(
+    (tab: SessionTab) => {
+      if (tab === 'ports' && !activeSession?.hostname) return
+      if (tab === 'terminal') return
+      if (claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)) return
+      setActiveTab(tab)
+      setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)))
+    },
+    [activeSession, activeSessionId, sessions.statuses]
   )
 
   const openFileInFiles = useCallback(
@@ -1448,9 +1455,6 @@ export default function App(): JSX.Element {
                   onToggle={toggleTranscriptSearch}
                   onClose={toggleTranscriptSearch}
                 />
-                <button className="btn btn-sm" data-testid="toggle-companion-drawer" onClick={() => setDrawerOpen((o) => !o)}>
-                  ▤ Terminal
-                </button>
               </>
             )}
           </div>
@@ -1611,7 +1615,7 @@ export default function App(): JSX.Element {
                           const session = allSessions.find((s) => s.id === sessionId)
                           if (!session || session.mode !== 'claude-code') return null
                           const composerActive =
-                            composerDockVisible && !drawerOpen && activeSessionId === sessionId
+                            composerDockVisible && activeSessionId === sessionId
                           const ws = sessionWorkspace.workspaceBySession[sessionId]
                           const mentionPaths = ws?.filesList.map((e) => e.relativePath)
                           return (
@@ -1723,18 +1727,6 @@ export default function App(): JSX.Element {
                     </div>
                   )}
                 </div>
-
-                {drawerOpen && (
-                  <CompanionTerminalDrawer
-                    sessionId={activeSession.id}
-                    cwd={activeSession.worktreePath ?? activeSession.projectPath}
-                    hostname={activeSession.hostname}
-                    shellRemoteHost={terminalShellHostBySessionId[activeSession.id] ?? null}
-                    height={drawerHeight}
-                    onHeightChange={setDrawerHeight}
-                    onClose={() => setDrawerOpen(false)}
-                  />
-                )}
               </div>
             )
           ) : (
@@ -1799,7 +1791,11 @@ export default function App(): JSX.Element {
         />
       )}
 
-      <KeyboardHintsOverlay disabled={anyModalOpen} scanRootId="app" />
+      <KeyboardHintsOverlay
+        disabled={anyModalOpen}
+        scanRootId="app"
+        onSessionTabShortcut={handleSessionTabHintShortcut}
+      />
 
       <NewSessionModal
         isOpen={newSessionOpen}

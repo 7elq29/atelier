@@ -995,34 +995,6 @@ test.describe('07-secondary-panels', () => {
     log('terminal toolbox: paste + run OK')
   })
 
-  // ── 5b. Companion terminal drawer: independent shell, open/close ───────
-  test('companion terminal drawer: independent shell, open/close, does not affect agent session', async () => {
-    // Back to the claude-code session from setup.
-    const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
-    await row.click()
-    await expect(page.getByTestId('tab-strip')).toBeVisible()
-
-    await page.getByTestId('toggle-companion-drawer').click()
-    await expect(page.getByTestId('companion-drawer')).toBeVisible()
-
-    const drawerTerm = page.getByTestId('companion-drawer').getByTestId('terminal-body')
-    await drawerTerm.click()
-    await page.waitForTimeout(500)
-    await page.keyboard.type('echo companion-shell-hello')
-    await page.keyboard.press('Enter')
-    await expect.poll(async () => drawerTerm.textContent(), { timeout: 10_000 }).toContain('companion-shell-hello')
-
-    // Independence: the agent's own transcript is untouched by companion shell activity.
-    const transcriptText = await page.getByTestId('transcript').textContent()
-    expect(transcriptText).not.toContain('companion-shell-hello')
-
-    await page.screenshot({ path: join(artifactsDir, '07-companion-drawer.png') })
-
-    await page.getByTestId('companion-drawer-close').click()
-    await expect(page.getByTestId('companion-drawer')).toHaveCount(0)
-    log('companion terminal drawer: independent real shell, open/close OK')
-  })
-
   // ── 6. Ports panel (real devpod) ────────────────────────────────────────
   test('ports panel: real SSH local port forward against qingqin-go.devpod-us-or actually works', async ({}, testInfo) => {
     await page.getByTestId('new-session-button').click()
