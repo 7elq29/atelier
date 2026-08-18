@@ -455,6 +455,19 @@ test.describe('04-composer-core', () => {
     await expect(page.locator('.composer-cache-entry.active').getByTestId('composer-input')).toHaveValue(draftA)
   })
 
+  test('composer draft survives switching to an app note and back', async () => {
+    const draft = 'draft-kept-across-app-note-switch'
+    await activeComposer(page).getByTestId('composer-input').fill(draft)
+
+    await page.getByTestId('new-app-note-button').click()
+    await expect(page.getByTestId('app-note-editor')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.composer-cache-entry.active')).toHaveCount(0)
+    await expect(page.getByTestId('composer-cache')).toBeAttached()
+
+    await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
+    await expect(page.locator('.composer-cache-entry.active').getByTestId('composer-input')).toHaveValue(draft)
+  })
+
   test('large paste shows copied-characters summary in composer', async ({}, testInfo) => {
     testInfo.setTimeout(90_000)
     if (!sessionId) sessionId = await createComposerSession(page, projectDir)

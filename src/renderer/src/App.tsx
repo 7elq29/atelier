@@ -1119,14 +1119,13 @@ export default function App(): JSX.Element {
   useEffect(() => {
     if (!activeSessionId || !activeSession || activeSession.mode !== 'claude-code') return
     if (sessions.statuses[activeSessionId] === 'startup-idle' || activeSession?.closedAt) return
-    if (sessionWorkspace.readySessionIds.has(activeSessionId)) return
     setAliveChatComposers((prev) => {
       if (prev.has(activeSessionId)) return prev
       const next = new Set(prev)
       next.add(activeSessionId)
       return next
     })
-  }, [activeSessionId, activeSession, sessions.statuses, sessionWorkspace.readySessionIds])
+  }, [activeSessionId, activeSession, sessions.statuses])
 
   const activeDiffChangedCount =
     activeSessionId && sessionWorkspace.workspaceBySession[activeSessionId]?.diff.isRepo
@@ -1611,70 +1610,6 @@ export default function App(): JSX.Element {
                         onDeleteComment={deleteReviewCommentByNote}
                         reviewComments={reviewCommentsBySession[activeSession.id] ?? []}
                       />
-                      <div className="composer-cache">
-                        {[...aliveChatComposers].map((sessionId) => {
-                          const session = allSessions.find((s) => s.id === sessionId)
-                          if (!session || session.mode !== 'claude-code') return null
-                          const composerActive =
-                            composerDockVisible && activeSessionId === sessionId
-                          const ws = sessionWorkspace.workspaceBySession[sessionId]
-                          const mentionPaths = ws?.filesList.map((e) => e.relativePath)
-                          return (
-                            <div
-                              key={sessionId}
-                              className={`composer-cache-entry${composerActive ? ' active' : ''}`}
-                              data-session-id={sessionId}
-                            >
-                              <Composer
-                                ref={(handle) => {
-                                  if (handle) composerRefs.current.set(sessionId, handle)
-                                  else composerRefs.current.delete(sessionId)
-                                }}
-                                onSend={(text, image) => void handleSend(sessionId, text, image)}
-                                onInterrupt={() => void handleInterrupt(sessionId)}
-                                busy={sessions.busyBySession[sessionId] ?? false}
-                                sessionId={sessionId}
-                                projectPath={session.projectPath}
-                                worktreePath={session.worktreePath}
-                                harnessCwd={sessions.harnessCwdBySession[sessionId] ?? null}
-                                hostname={session.hostname}
-                                gitWorkspacePath={session.worktreePath ?? session.projectPath}
-                                diffSummary={ws?.diff}
-                                sessionChangesCap={ws?.sessionChangesCap}
-                                mentionFilePaths={mentionPaths}
-                                onOpenChangedFile={openChangedFileFromCap}
-                                onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}
-                                modelSelection={modelSelectionForSession(sessionId, session, modelSelectionBySession, config)}
-                                onModelSelectionChange={(selection) => {
-                                  setModelSelectionBySession((prev) => ({ ...prev, [sessionId]: selection }))
-                                  void window.atelier.setSessionModelSelection(sessionId, selection)
-                                }}
-                                liveSlashCommands={sessions.commandsBySession[sessionId] ?? []}
-                                mode={session.permissionMode}
-                                onCycleMode={() => void sessions.cycleMode(sessionId)}
-                                queuedMessages={queuedMessagesBySession[sessionId] ?? []}
-                                reviewComments={reviewCommentsBySession[sessionId] ?? []}
-                                onUpdateReviewCommentBody={(commentId, body) =>
-                                  updateReviewCommentBody(sessionId, commentId, body)
-                                }
-                                onDeleteReviewComment={(commentId) => deleteReviewComment(sessionId, commentId)}
-                                onCancelQueued={(index) =>
-                                  setQueuedMessagesBySession((prev) => ({
-                                    ...prev,
-                                    [sessionId]: (prev[sessionId] ?? []).filter((_, i) => i !== index)
-                                  }))
-                                }
-                                tokenUsage={sessions.tokenUsageBySession[sessionId]}
-                                promptSuggestion={sessions.promptSuggestionBySession[sessionId]}
-                                rateLimit={sessions.rateLimitBySession[sessionId] ?? null}
-                                sdkChrome={sessions.sdkChromeBySession[sessionId] ?? null}
-                                onAddLocalMessage={(content) => sessions.addLocalMessage(sessionId, content)}
-                                onValidateModel={(model) => sessions.validateModel(sessionId, model)}
-                              />
-                            </div>
-                          )
-                        })}
-                      </div>
                       {import.meta.env.DEV && (sessions.hookLogBySession[activeSession.id]?.length ?? 0) > 0 && (
                         <div className="sdk-debug-log" data-testid="sdk-debug-log">
                           {(sessions.hookLogBySession[activeSession.id] ?? []).map((line, i) => (
@@ -1746,6 +1681,75 @@ export default function App(): JSX.Element {
               </div>
             </div>
           )}
+          {aliveChatComposers.size > 0 ? (
+            <div className="composer-cache" data-testid="composer-cache">
+              {[...aliveChatComposers].map((sessionId) => {
+                const session = allSessions.find((s) => s.id === sessionId)
+                if (!session || session.mode !== 'claude-code') return null
+                const composerActive =
+                  composerDockVisible && activeSessionId === sessionId
+                const ws = sessionWorkspace.workspaceBySession[sessionId]
+                const mentionPaths = ws?.filesList.map((e) => e.relativePath)
+                return (
+                  <div
+                    key={sessionId}
+                    className={`composer-cache-entry${composerActive ? ' active' : ''}`}
+                    data-session-id={sessionId}
+                  >
+                    <Composer
+                      ref={(handle) => {
+                        if (handle) composerRefs.current.set(sessionId, handle)
+                        else composerRefs.current.delete(sessionId)
+                      }}
+                      onSend={(text, image) => void handleSend(sessionId, text, image)}
+                      onInterrupt={() => void handleInterrupt(sessionId)}
+                      busy={sessions.busyBySession[sessionId] ?? false}
+                      sessionId={sessionId}
+                      projectPath={session.projectPath}
+                      worktreePath={session.worktreePath}
+                      harnessCwd={sessions.harnessCwdBySession[sessionId] ?? null}
+                      hostname={session.hostname}
+                      gitWorkspacePath={session.worktreePath ?? session.projectPath}
+                      diffSummary={ws?.diff}
+                      sessionChangesCap={ws?.sessionChangesCap}
+                      mentionFilePaths={mentionPaths}
+                      onOpenChangedFile={openChangedFileFromCap}
+                      onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}
+                      modelSelection={modelSelectionForSession(sessionId, session, modelSelectionBySession, config)}
+                      onModelSelectionChange={(selection) => {
+                        setModelSelectionBySession((prev) => ({ ...prev, [sessionId]: selection }))
+                        void window.atelier.setSessionModelSelection(sessionId, selection)
+                      }}
+                      liveSlashCommands={sessions.commandsBySession[sessionId] ?? []}
+                      mode={session.permissionMode}
+                      onCycleMode={() => void sessions.cycleMode(sessionId)}
+                      queuedMessages={queuedMessagesBySession[sessionId] ?? []}
+                      reviewComments={reviewCommentsBySession[sessionId] ?? []}
+                      onUpdateReviewCommentBody={(commentId, body) =>
+                        updateReviewCommentBody(sessionId, commentId, body)
+                      }
+                      onDeleteReviewComment={(commentId) => deleteReviewComment(sessionId, commentId)}
+                      onCancelQueued={(index) =>
+                        setQueuedMessagesBySession((prev) => ({
+                          ...prev,
+                          [sessionId]: (prev[sessionId] ?? []).filter((_, i) => i !== index)
+                        }))
+                      }
+                      tokenUsage={sessions.tokenUsageBySession[sessionId]}
+                      promptSuggestion={sessions.promptSuggestionBySession[sessionId]}
+                      rateLimit={sessions.rateLimitBySession[sessionId] ?? null}
+                      sdkChrome={sessions.sdkChromeBySession[sessionId] ?? null}
+                      onAddLocalMessage={(content) => sessions.addLocalMessage(sessionId, content)}
+                      onValidateModel={(model) => sessions.validateModel(sessionId, model)}
+                      harnessDisconnected={
+                        sessions.statuses[sessionId] === 'startup-idle' || Boolean(session.closedAt)
+                      }
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
           </div>
         </div>
 
