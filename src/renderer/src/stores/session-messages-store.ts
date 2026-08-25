@@ -2,7 +2,15 @@ import type { MessageRecord } from '../../../shared/session-types'
 
 type MessagesBySession = Record<string, MessageRecord[]>
 
+export type TranscriptTruncationInfo = {
+  transcriptTruncated: boolean
+  hiddenTurnCount: number
+}
+
+type TruncationBySession = Record<string, TranscriptTruncationInfo>
+
 let messagesBySession: MessagesBySession = {}
+let truncationBySession: TruncationBySession = {}
 const listeners = new Set<() => void>()
 /** Stream deltas that arrived before the target message row was loaded. */
 const pendingStreamDeltas = new Map<string, Map<number, string>>()
@@ -30,8 +38,23 @@ export function hasSessionMessages(sessionId: string): boolean {
   return sessionId in messagesBySession
 }
 
-export function setSessionMessages(sessionId: string, messages: MessageRecord[]): void {
+export function getTranscriptTruncation(sessionId: string): TranscriptTruncationInfo | null {
+  return truncationBySession[sessionId] ?? null
+}
+
+export function setSessionMessages(
+  sessionId: string,
+  messages: MessageRecord[],
+  truncation?: TranscriptTruncationInfo
+): void {
   messagesBySession = { ...messagesBySession, [sessionId]: messages }
+  if (truncation) {
+    truncationBySession = { ...truncationBySession, [sessionId]: truncation }
+  } else {
+    const next = { ...truncationBySession }
+    delete next[sessionId]
+    truncationBySession = next
+  }
   emit()
 }
 
@@ -45,13 +68,18 @@ export function patchSessionMessages(
 }
 
 export function removeSessionMessages(sessionId: string): void {
-  if (!(sessionId in messagesBySession)) {
+  if (!(sessionId in messagesBySession) && !(sessionId in truncationBySession)) {
     pendingStreamDeltas.delete(sessionId)
     return
   }
   const next = { ...messagesBySession }
   delete next[sessionId]
   messagesBySession = next
+  if (sessionId in truncationBySession) {
+    const nextTrunc = { ...truncationBySession }
+    delete nextTrunc[sessionId]
+    truncationBySession = nextTrunc
+  }
   pendingStreamDeltas.delete(sessionId)
   emit()
 }

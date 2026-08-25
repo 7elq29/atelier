@@ -4,7 +4,7 @@ import type { SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import type { BackgroundTaskRow } from '../../../../shared/harness-ui-types'
 import type { PromptDecision } from '../../../../shared/session-types'
 import type { ReviewPaneTarget, ReviewComposerComment } from '../../../../shared/review-pane-types'
-import { useSessionMessages } from '../../hooks/useSessionMessages'
+import { useSessionMessages, useTranscriptTruncation } from '../../hooks/useSessionMessages'
 import ChatTranscript from '../chat/ChatTranscript'
 import TrackerRail from '../chat/TrackerRail'
 import ResponseReviewPanel from '../chat/ResponseReviewPanel'
@@ -61,6 +61,7 @@ export function SessionChatSurface({
   reviewComments?: readonly ReviewComposerComment[]
 }): JSX.Element {
   const messages = useSessionMessages(session.id)
+  const truncation = useTranscriptTruncation(session.id)
   const workspaceRoot = sessionFileLinkWorkspaceRoot(session)
   const projectRoot = session.worktreePath ?? session.projectPath
 
@@ -82,6 +83,8 @@ export function SessionChatSurface({
       <div className="chat-main-col">
         <ChatTranscript
           messages={messages}
+          transcriptTruncated={truncation?.transcriptTruncated}
+          hiddenTurnCount={truncation?.hiddenTurnCount ?? 0}
           onRespond={(requestId, decision) => onRespondToPrompt(requestId, decision)}
           searchQuery={transcriptSearchOpen ? transcriptSearchQuery : ''}
           activeMatchIndex={activeMatchIndex}

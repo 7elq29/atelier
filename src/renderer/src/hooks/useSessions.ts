@@ -56,7 +56,7 @@ export interface UseSessionsResult {
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
   /** Loads transcript from SQLite without reconnecting the harness (session-startup-idle). */
-  loadSessionMessages: (sessionId: string) => Promise<void>
+  loadSessionMessages: (sessionId: string, opts?: { includeMessageId?: number }) => Promise<void>
   reconnectSession: (sessionId: string) => Promise<void>
   sendMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment) => Promise<void>
   interrupt: (sessionId: string) => Promise<SessionInterruptResult>
@@ -332,16 +332,20 @@ export function useSessions(): UseSessionsResult {
       delete next[sessionId]
       return next
     })
-    const { messages } = await window.atelier.resumeSession(sessionId)
-    // Full stored transcript rendered immediately; the live reconnect (main
-    // process) streams any NEW events in over session:message afterward.
-    setSessionMessages(sessionId, messages)
+    const { messages, transcriptTruncated, hiddenTurnCount } = await window.atelier.resumeSession(sessionId)
+    setSessionMessages(sessionId, messages, { transcriptTruncated, hiddenTurnCount })
   }, [])
 
-  const loadSessionMessages = useCallback(async (sessionId: string): Promise<void> => {
-    const messages = await window.atelier.listSessionMessages(sessionId)
-    setSessionMessages(sessionId, messages)
-  }, [])
+  const loadSessionMessages = useCallback(
+    async (sessionId: string, opts?: { includeMessageId?: number }): Promise<void> => {
+      const { messages, transcriptTruncated, hiddenTurnCount } = await window.atelier.listSessionMessages(
+        sessionId,
+        opts
+      )
+      setSessionMessages(sessionId, messages, { transcriptTruncated, hiddenTurnCount })
+    },
+    []
+  )
 
   const reconnectSession = useCallback(async (sessionId: string): Promise<void> => {
     await window.atelier.reconnectSession(sessionId)
@@ -397,15 +401,15 @@ export function useSessions(): UseSessionsResult {
 
   const forkSession = useCallback(async (sessionId: string): Promise<SessionRecord> => {
     const forked = await window.atelier.forkSession(sessionId)
-    const messages = await window.atelier.listSessionMessages(forked.id)
-    setSessionMessages(forked.id, messages)
+    const { messages, transcriptTruncated, hiddenTurnCount } = await window.atelier.listSessionMessages(forked.id)
+    setSessionMessages(forked.id, messages, { transcriptTruncated, hiddenTurnCount })
     return forked
   }, [])
 
   const restartSession = useCallback(async (sessionId: string): Promise<SessionRecord> => {
     const forked = await window.atelier.restartSession(sessionId)
-    const messages = await window.atelier.listSessionMessages(forked.id)
-    setSessionMessages(forked.id, messages)
+    const { messages, transcriptTruncated, hiddenTurnCount } = await window.atelier.listSessionMessages(forked.id)
+    setSessionMessages(forked.id, messages, { transcriptTruncated, hiddenTurnCount })
     return forked
   }, [])
 

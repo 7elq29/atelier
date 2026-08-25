@@ -37,6 +37,7 @@ import type {
   SessionWorktreeProgressEvent,
   ModelValidationResult
 } from '../shared/session-types'
+import type { SessionMessagesResult } from '../shared/chat-transcript-window'
 import type {
   CommitInfo,
   DiffFileChange,
@@ -174,12 +175,14 @@ const api = {
     ipcRenderer.invoke('session:suggestProjectPaths', hostId, query),
   listActiveSessions: (): Promise<SessionRecord[]> => ipcRenderer.invoke('session:listActive'),
   listHistorySessions: (): Promise<SessionRecord[]> => ipcRenderer.invoke('session:listHistory'),
-  listSessionMessages: (sessionId: string): Promise<MessageRecord[]> =>
-    ipcRenderer.invoke('session:listMessages', sessionId),
+  listSessionMessages: (
+    sessionId: string,
+    opts?: { includeMessageId?: number }
+  ): Promise<SessionMessagesResult> => ipcRenderer.invoke('session:listMessages', sessionId, opts),
   /** Cross-session content search (10b-enrichment-full-text-search), backed by SQLite FTS5 over plain user/assistant message text. */
   searchMessages: (query: string): Promise<MessageSearchHit[]> => ipcRenderer.invoke('session:searchMessages', query),
   createSession: (opts: CreateSessionOptions): Promise<SessionRecord> => ipcRenderer.invoke('session:create', opts),
-  resumeSession: (sessionId: string): Promise<{ session: SessionRecord; messages: MessageRecord[] }> =>
+  resumeSession: (sessionId: string): Promise<SessionMessagesResult & { session: SessionRecord }> =>
     ipcRenderer.invoke('session:resume', sessionId),
   reconnectSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:reconnect', sessionId),
   getSessionWorkspaceSnapshot: (sessionId: string): Promise<SessionWorkspacePayload | null> =>

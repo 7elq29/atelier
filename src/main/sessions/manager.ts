@@ -25,6 +25,7 @@ import type { DiffFileChange, DiffFileContentPair } from '../../shared/panel-typ
 import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
 import type { SessionChangesCap } from '../../shared/session-changes-cap'
 import { TURN_INTERRUPTED_NOTICE } from '../../shared/session-types'
+import type { SessionMessagesResult } from '../../shared/chat-transcript-window'
 import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig, defaultClaudePermissionModeFromConfig } from '../../shared/config'
 import { expandTildePath } from '../../shared/project-path-autocomplete'
 import { loadConfig } from '../config'
@@ -374,6 +375,13 @@ export class SessionManager {
 
   listMessages(sessionId: string): MessageRecord[] {
     return this.store.listMessages(sessionId)
+  }
+
+  listMessagesForDisplay(
+    sessionId: string,
+    opts?: { includeMessageId?: number }
+  ): SessionMessagesResult {
+    return this.store.listMessagesForDisplay(sessionId, undefined, opts?.includeMessageId)
   }
 
   listSessionFileEdits(sessionId: string) {
@@ -1140,16 +1148,16 @@ export class SessionManager {
     }
   }
 
-  /** Reopens a closed session and returns it + its full stored transcript synchronously (renderer renders this BEFORE the live reconnect below happens). */
-  resumeSnapshot(sessionId: string): { session: SessionRecord; messages: MessageRecord[] } {
+  /** Reopens a closed session and returns it + the display-window transcript (renderer renders this BEFORE the live reconnect below happens). */
+  resumeSnapshot(sessionId: string): SessionMessagesResult & { session: SessionRecord } {
     const existing = this.store.getSession(sessionId)
     if (!existing) throw new Error(`Unknown session: ${sessionId}`)
     const session = this.decorate(this.store.reopenSession(sessionId) ?? existing)
     this.finalizeStaleRunningToolCalls(sessionId)
     this.deliverPendingTurnInterruptedNotice(sessionId)
-    const messages = this.store.listMessages(sessionId)
+    const display = this.store.listMessagesForDisplay(sessionId)
     this.sendLifecycle({ type: 'session.resumed', session })
-    return { session, messages }
+    return { session, ...display }
   }
 
   /**

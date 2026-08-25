@@ -17,6 +17,7 @@ import ConversationStatusCard from './ConversationStatusCard'
 import BackgroundTasksConversationCard from './BackgroundTasksConversationCard'
 import type { BackgroundTaskRow, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import type { ReviewPaneTarget, ReviewComposerComment } from '../../../../shared/review-pane-types'
+import { CHAT_TRANSCRIPT_MAX_TURNS } from '../../../../shared/chat-transcript-window'
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
@@ -135,6 +136,8 @@ export default function ChatTranscript({
   onUpdateComment,
   onDeleteComment,
   reviewComments = [],
+  transcriptTruncated = false,
+  hiddenTurnCount = 0,
 }: {
   messages: MessageRecord[]
   /** Resolves a permission/AskUserQuestion/plan card by requestId (05-interactive-prompts). */
@@ -166,6 +169,8 @@ export default function ChatTranscript({
   onUpdateComment?: (oldNote: string, newNote: string) => void
   onDeleteComment?: (composerNote: string) => void
   reviewComments?: readonly ReviewComposerComment[]
+  transcriptTruncated?: boolean
+  hiddenTurnCount?: number
 }): JSX.Element {
   function findPreviousPlanMarkdown(currentMessageId: number): string | undefined {
     const idx = messages.findIndex((m) => m.id === currentMessageId)
@@ -783,6 +788,15 @@ export default function ChatTranscript({
 
   return (
     <div className="transcript" data-testid="transcript" ref={containerRef}>
+      {transcriptTruncated && hiddenTurnCount > 0 ? (
+        <div
+          className="compaction-banner"
+          data-testid="transcript-history-truncated"
+          style={{ margin: '12px auto' }}
+        >
+          Showing last {CHAT_TRANSCRIPT_MAX_TURNS} conversations — {hiddenTurnCount} earlier hidden
+        </div>
+      ) : null}
       {rows}
       <BackgroundTasksConversationCard tasks={backgroundTasks} />
       {sdkChrome && (sdkChrome.status === 'compacting' || sdkChrome.compactFailed) && (

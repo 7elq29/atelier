@@ -3,8 +3,10 @@ import type { MessageRecord } from '../../../shared/session-types'
 import {
   getSessionMessages,
   getSessionMessagesSnapshot,
+  getTranscriptTruncation,
   hasSessionMessages,
-  subscribeSessionMessages
+  subscribeSessionMessages,
+  type TranscriptTruncationInfo
 } from '../stores/session-messages-store'
 
 const EMPTY_MESSAGES: MessageRecord[] = []
@@ -24,6 +26,14 @@ export function useSessionMessagesMap(): Record<string, MessageRecord[]> {
     subscribeSessionMessages,
     getSessionMessagesSnapshot,
     getSessionMessagesSnapshot
+  )
+}
+
+export function useTranscriptTruncation(sessionId: string | null): TranscriptTruncationInfo | null {
+  return useSyncExternalStore(
+    subscribeSessionMessages,
+    () => (sessionId ? getTranscriptTruncation(sessionId) : null),
+    () => (sessionId ? getTranscriptTruncation(sessionId) : null)
   )
 }
 

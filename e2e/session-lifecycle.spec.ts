@@ -502,8 +502,8 @@ test.describe('02-session-lifecycle', () => {
     await expect
       .poll(
         async () => {
-          const messages = await page.evaluate((id) => window.atelier.listSessionMessages(id), remoteSessionId)
-          return messages.some((m) => m.role === 'assistant' && m.content.includes('PONGREMOTE'))
+          const result = await page.evaluate((id) => window.atelier.listSessionMessages(id), remoteSessionId)
+          return result.messages.some((m) => m.role === 'assistant' && m.content.includes('PONGREMOTE'))
         },
         { timeout: 90_000 }
       )
@@ -592,8 +592,8 @@ test.describe('02-session-lifecycle', () => {
     await expect
       .poll(
         async () => {
-          const messages = await page.evaluate((id) => window.atelier.listSessionMessages(id), tildeSessionId)
-          return messages.some((m) => m.role === 'assistant' && m.content.includes('PONGTILDE'))
+          const result = await page.evaluate((id) => window.atelier.listSessionMessages(id), tildeSessionId)
+          return result.messages.some((m) => m.role === 'assistant' && m.content.includes('PONGTILDE'))
         },
         { timeout: 90_000 }
       )
@@ -1509,9 +1509,22 @@ test.describe('02-session-lifecycle — AI conformance connect', () => {
                 [AI_CONFORMANCE_SESSION_ID]
               )
             )[0]?.c ?? 0
-          const listCount = (
-            await page.evaluate((id) => window.atelier.listSessionMessages(id), AI_CONFORMANCE_SESSION_ID)
-          ).length
+          const userTurnCount =
+            (
+              await queryDb<{ c: number }>(
+                page,
+                `SELECT COUNT(*) AS c FROM messages WHERE session_id = ? AND role = 'user'`,
+                [AI_CONFORMANCE_SESSION_ID]
+              )
+            )[0]?.c ?? 0
+          const result = await page.evaluate(
+            (id) => window.atelier.listSessionMessages(id),
+            AI_CONFORMANCE_SESSION_ID
+          )
+          const listCount = result.messages.length
+          if (userTurnCount > 100) {
+            return result.transcriptTruncated && listCount < dbCount && listCount >= 100
+          }
           return dbCount === listCount && listCount >= clonedMessageCount
         },
         { timeout: 15_000 }

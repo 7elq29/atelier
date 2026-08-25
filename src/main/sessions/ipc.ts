@@ -48,7 +48,11 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
 
   ipcMain.handle('session:listHistory', () => manager.listHistory())
 
-  ipcMain.handle('session:listMessages', (_event, sessionId: string) => manager.listMessages(sessionId))
+  ipcMain.handle(
+    'session:listMessages',
+    (_event, sessionId: string, opts?: { includeMessageId?: number }) =>
+      manager.listMessagesForDisplay(sessionId, opts)
+  )
 
   // 10b-enrichment-full-text-search: cross-session content search via SQLite FTS5.
   ipcMain.handle('session:searchMessages', (_event, query: string) => manager.searchMessages(query))

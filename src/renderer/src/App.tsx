@@ -817,7 +817,10 @@ export default function App(): JSX.Element {
   // opens (or switches to) `sessionId`'s transcript, then requests a
   // scroll+flash on `messageId` once its row is actually rendered.
   async function jumpToMessage(session: SessionRecord, messageId: number): Promise<void> {
-    await selectSession(session)
+    if (session.id !== activeSessionId) {
+      await selectSession(session)
+    }
+    await sessions.loadSessionMessages(session.id, { includeMessageId: messageId })
     setPendingJumpMessageId(messageId)
   }
 

@@ -10,6 +10,10 @@ import type {
   SessionMode,
   SessionRecord
 } from '../../shared/session-types'
+import {
+  CHAT_TRANSCRIPT_MAX_TURNS,
+  type SessionMessagesResult
+} from '../../shared/chat-transcript-window'
 import { extractSearchableText, FTS_SNIPPET_START, FTS_SNIPPET_END } from '../../shared/chat-content'
 import type { SessionFileEdit } from '../../shared/session-file-edits'
 
@@ -644,6 +648,70 @@ export class SessionStore {
       .prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC')
       .all(sessionId) as MessageRow[]
     return rows.map(toMessageRecord)
+  }
+
+  countUserTurns(sessionId: string): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) as c FROM messages WHERE session_id = ? AND role = 'user'`)
+      .get(sessionId) as { c: number }
+    return row.c
+  }
+
+  private turnStartMessageId(sessionId: string, messageId: number): number {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM messages
+         WHERE session_id = ? AND role = 'user' AND id <= ?
+         ORDER BY id DESC LIMIT 1`
+      )
+      .get(sessionId, messageId) as { id: number } | undefined
+    return row?.id ?? messageId
+  }
+
+  private anchorIdForLastTurns(sessionId: string, maxTurns: number): number | null {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM messages
+         WHERE session_id = ? AND role = 'user'
+         ORDER BY id DESC
+         LIMIT 1 OFFSET ?`
+      )
+      .get(sessionId, maxTurns - 1) as { id: number } | undefined
+    return row?.id ?? null
+  }
+
+  listMessagesForDisplay(
+    sessionId: string,
+    maxTurns = CHAT_TRANSCRIPT_MAX_TURNS,
+    includeMessageId?: number
+  ): SessionMessagesResult {
+    const totalTurns = this.countUserTurns(sessionId)
+    let startId = this.anchorIdForLastTurns(sessionId, maxTurns)
+
+    if (includeMessageId != null) {
+      const turnStart = this.turnStartMessageId(sessionId, includeMessageId)
+      if (startId == null || turnStart < startId) {
+        startId = turnStart
+      }
+    }
+
+    const messages =
+      startId == null
+        ? this.listMessages(sessionId)
+        : (
+            this.db
+              .prepare('SELECT * FROM messages WHERE session_id = ? AND id >= ? ORDER BY id ASC')
+              .all(sessionId, startId) as MessageRow[]
+          ).map(toMessageRecord)
+
+    const displayedTurns = messages.filter((m) => m.role === 'user').length
+    const hiddenTurnCount = Math.max(0, totalTurns - displayedTurns)
+
+    return {
+      messages,
+      transcriptTruncated: hiddenTurnCount > 0,
+      hiddenTurnCount
+    }
   }
 
   countMessages(sessionId: string): number {
