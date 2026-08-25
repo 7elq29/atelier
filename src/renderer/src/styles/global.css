@@ -1128,9 +1128,7 @@ input[type='range'] {
   color: var(--text-primary);
 }
 .session-menu-popup {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 8px;
+  position: fixed;
   width: 190px;
   background: var(--bg-panel-raised);
   border: 1px solid var(--border-default);
@@ -1839,6 +1837,29 @@ input[type='range'] {
 .tool-badge.other { color: var(--text-secondary); }
 .tool-headline { font-family: var(--font-mono); font-size: 13.5px; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-status { font-size: 13.5px; color: var(--text-tertiary); }
+.tool-awaiting-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--warning);
+}
+.tool-awaiting-user .approval-needed-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+}
+.tool-awaiting-user .approval-needed-icon svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+.tool-awaiting-user-label {
+  font-size: 12.5px;
+  font-weight: 500;
+}
 .tool-elapsed { font-size: 13px; font-family: var(--font-mono); color: var(--text-disabled); flex-shrink: 0; }
 .tool-stream-hint { font-size: 12.5px; color: var(--text-disabled); flex-shrink: 0; }
 .thinking-inline { max-width: 84%; display: inline-flex; align-items: center; padding: 2px 0; flex-shrink: 0; }
@@ -2400,7 +2421,7 @@ input[type='range'] {
   white-space: nowrap;
   font-family: var(--font-ui);
 }
-.composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; overflow: visible; font-size: var(--composer-input-font-size); }
+.composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; overflow: visible; font-size: var(--composer-input-font-size); --composer-line-height: 1.35; }
 .composer-box textarea {
   display: block;
   box-sizing: border-box;
@@ -2417,7 +2438,7 @@ input[type='range'] {
   outline: none;
   min-height: 52px;
   max-height: 160px;
-  line-height: 1.35;
+  line-height: var(--composer-line-height);
   overflow-x: hidden;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -2441,7 +2462,7 @@ input[type='range'] {
 .composer-cursor {
   position: absolute;
   width: 0.5em;
-  height: 1em;
+  height: calc(1em * var(--composer-line-height));
   pointer-events: none;
   z-index: 5;
   border-radius: 1px;
@@ -2570,6 +2591,8 @@ input[type='range'] {
    from mocks/index.html's `.picker-pop`/`.picker-item` rules. */
 .picker-pop { position: absolute; bottom: 100%; right: 8px; margin-bottom: 6px; width: 190px; background: var(--bg-panel-raised); border: 1px solid var(--border-default); border-radius: var(--r-md); box-shadow: var(--shadow-popover); overflow: hidden; padding: 4px; z-index: 6; }
 .picker-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; font-size: 13.5px; border-radius: 6px; cursor: pointer; }
+.picker-item-meta { font-size: 12px; color: var(--text-tertiary); flex-shrink: 0; margin-left: 8px; }
+.picker-item.sel .picker-item-meta { color: var(--accent); opacity: 0.85; }
 .picker-item:hover { background: var(--bg-hover); }
 .picker-item.sel { color: var(--accent); }
 

@@ -207,7 +207,7 @@ test.describe('07-secondary-panels', () => {
 
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-details').click()
+    await page.getByTestId('menu-details').click()
     const popover = row.getByTestId('session-detail-popover')
     await expect(popover).toBeVisible()
     await popover.getByTestId('session-project-path').fill(altProjectPath)
@@ -1024,8 +1024,8 @@ test.describe('07-secondary-panels', () => {
     log('open local terminal: sidebar Local meta OK')
 
     await row.getByTestId('session-menu-button').click()
-    await expect(row.getByTestId('menu-fork')).toHaveCount(0)
-    await row.getByTestId('menu-delete').click()
+    await expect(page.getByTestId('menu-fork')).toHaveCount(0)
+    await page.getByTestId('menu-delete').click()
     await expect(page.locator(`[data-session-id="${sessionId}"]`)).toHaveCount(0)
     log('open local terminal: delete terminal row OK')
   })

@@ -94,6 +94,11 @@ export function e2eConfigPath(userDataDir: string): string {
   return join(userDataDir, 'data', 'config.json')
 }
 
+/** Session row menus portal to document.body — menu items are page-scoped, not row-scoped. */
+export function sessionMenuItem(page: Page, itemTestId: string): Locator {
+  return page.getByTestId(itemTestId)
+}
+
 /** Pre-seeds config.json before launching Electron (onboarding dismissed + e2e default model). */
 export function seedE2eConfig(userDataDir: string, extra: Record<string, unknown> = {}): void {
   mkdirSync(join(userDataDir, 'data'), { recursive: true })

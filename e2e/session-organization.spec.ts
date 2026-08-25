@@ -132,7 +132,7 @@ test.describe('06-session-organization', () => {
   test('tags: add/remove and filter by them', async () => {
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionA}"]`)
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-details').click()
+    await page.getByTestId('menu-details').click()
 
     const popover = row.getByTestId('session-detail-popover')
     await expect(popover).toBeVisible()
@@ -162,7 +162,7 @@ test.describe('06-session-organization', () => {
   test('notes: set a note and see it persist across relaunch', async () => {
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionB}"]`)
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-details').click()
+    await page.getByTestId('menu-details').click()
     const popover = row.getByTestId('session-detail-popover')
     await popover.getByTestId('notes-textarea').fill('Follow up with the reviewer before merging.')
     await popover.getByTestId('save-notes-button').click()
@@ -181,7 +181,7 @@ test.describe('06-session-organization', () => {
     const rowAfter = page.locator(`[data-testid="session-row"][data-session-id="${sessionB}"]`)
     await expect(rowAfter).toBeVisible({ timeout: 15_000 })
     await rowAfter.getByTestId('session-menu-button').click()
-    await rowAfter.getByTestId('menu-details').click()
+    await page.getByTestId('menu-details').click()
     await expect(rowAfter.getByTestId('notes-textarea')).toHaveValue('Follow up with the reviewer before merging.')
     await page.locator('body').click({ position: { x: 5, y: 5 } })
 
@@ -231,7 +231,7 @@ test.describe('06-session-organization', () => {
   test('color: set a color and confirm it persists + renders via a --sc-* token', async () => {
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionC}"]`)
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-details').click()
+    await page.getByTestId('menu-details').click()
     const popover = row.getByTestId('session-detail-popover')
     await popover.getByTestId('color-swatch-rose').click()
 
@@ -250,7 +250,7 @@ test.describe('06-session-organization', () => {
     await expect(dot).toHaveClass(/session-status-empty/)
 
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-details').click()
+    await page.getByTestId('menu-details').click()
     await expect(row.getByTestId('session-detail-popover').getByTestId('color-swatch-rose')).toHaveClass(/selected/)
     await page.locator('body').click({ position: { x: 5, y: 5 } })
 

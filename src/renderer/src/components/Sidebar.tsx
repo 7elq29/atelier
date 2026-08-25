@@ -1,8 +1,9 @@
 import { forwardRef, useEffect, useRef, useState } from 'react'
+import { SessionMenuPopup } from './SessionMenuPopup'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
 import type { MessageRecord, SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
 import type { AppNoteRecord } from '../../../shared/app-note-types'
-import { parseStructuredContent } from '../../../shared/chat-content'
+import { pendingInteractivePromptDotStatus } from './chat/interactive-prompt-status'
 import SpendStatusChip from './SpendStatusChip'
 import { handleEmacsTextareaKeyDown } from '../palette-input-keys'
 import { useSessionMessagesMap } from '../hooks/useSessionMessages'
@@ -97,22 +98,13 @@ function sessionMetaLabel(session: SessionRecord, shellRemoteHost: string | null
 
 /** Derives the CSS class suffix for the session indicator dot.
  *  When status is 'waiting', distinguishes input-wait (purple) from
- *  blocked-wait (orange) by inspecting the last assistant message. */
+ *  blocked-wait (orange) by inspecting the last assistant message.
+ *  While a turn is still `working`, pending permission/question/plan cards
+ *  also map to blocked-wait — the harness stays busy in canUseTool. */
 function dotStatusClass(status: SessionStatus, messages: MessageRecord[] | undefined): string {
+  const blocked = pendingInteractivePromptDotStatus(messages)
+  if (blocked) return blocked
   if (status !== 'waiting') return status
-  if (messages) {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i]
-      if (m.role === 'user') break
-      if (m.role === 'assistant') {
-        const parsed = parseStructuredContent(m.content)
-        if (parsed && (parsed.kind === 'permission_request' || parsed.kind === 'ask_user_question' || parsed.kind === 'plan_proposed')) {
-          return 'waiting-blocked'
-        }
-        break
-      }
-    }
-  }
   return 'waiting-input'
 }
 
@@ -318,6 +310,7 @@ function AppNoteRow({
   const [draftTitle, setDraftTitle] = useState(note.title)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const menuAnchorRef = useRef<HTMLDivElement>(null)
   const displayTitle = note.title.trim() || 'Untitled note'
 
   useEffect(() => {
@@ -343,6 +336,7 @@ function AppNoteRow({
 
   return (
     <div
+      ref={menuAnchorRef}
       className={`session-row app-note-row${active ? ' active' : ''}`}
       data-testid="app-note-row"
       data-hint-note-row=""
@@ -404,7 +398,12 @@ function AppNoteRow({
         ⋯
       </button>
       {menuOpen && (
-        <div ref={menuRef} className="session-menu-popup" data-testid="app-note-menu" onClick={(e) => e.stopPropagation()}>
+        <SessionMenuPopup
+          anchorRef={menuAnchorRef}
+          menuRef={menuRef}
+          testId="app-note-menu"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div
             className="smi"
             data-testid="app-note-menu-rename"
@@ -429,7 +428,7 @@ function AppNoteRow({
           >
             Delete
           </div>
-        </div>
+        </SessionMenuPopup>
       )}
     </div>
   )
@@ -493,6 +492,7 @@ function SessionRow({
   const [menuOpen, setMenuOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const menuAnchorRef = useRef<HTMLDivElement>(null)
   const detailRef = useRef<HTMLDivElement>(null)
 
   // Outside-click closes the row menu / detail popover. Must check
@@ -522,6 +522,7 @@ function SessionRow({
 
   return (
     <div
+      ref={menuAnchorRef}
       className={'session-row' + (active ? ' active' : '') + (closed ? ' closed' : '')}
       data-testid="session-row"
       data-hint-session-row=""
@@ -628,10 +629,10 @@ function SessionRow({
         ⋯
       </button>
       {menuOpen && (
-        <div
-          ref={menuRef}
-          className="session-menu-popup"
-          data-testid="session-menu"
+        <SessionMenuPopup
+          anchorRef={menuAnchorRef}
+          menuRef={menuRef}
+          testId="session-menu"
           onClick={(e) => e.stopPropagation()}
         >
           <div
@@ -722,7 +723,7 @@ function SessionRow({
           >
             Delete
           </div>
-        </div>
+        </SessionMenuPopup>
       )}
       {detailOpen && !isTerminal && (
         <SessionDetailPopover
@@ -800,6 +801,8 @@ export default function Sidebar({
   const [newGroupName, setNewGroupName] = useState('')
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
   const [groupMenuOpenId, setGroupMenuOpenId] = useState<string | null>(null)
+  const groupMenuAnchorRef = useRef<HTMLButtonElement>(null)
+  const groupMenuRef = useRef<HTMLDivElement>(null)
   const [dragSessionId, setDragSessionId] = useState<string | null>(null)
   const [dragGroupId, setDragGroupId] = useState<string | null>(null)
   const [agentClosedCollapsed, setAgentClosedCollapsed] = useState(() => {
@@ -884,7 +887,9 @@ export default function Sidebar({
 
   useEffect(() => {
     if (!groupMenuOpenId) return
-    function handleOutsideClick(): void {
+    function handleOutsideClick(e: MouseEvent): void {
+      if (groupMenuRef.current?.contains(e.target as Node)) return
+      if (groupMenuAnchorRef.current?.contains(e.target as Node)) return
       setGroupMenuOpenId(null)
     }
     document.addEventListener('click', handleOutsideClick)
@@ -1121,6 +1126,7 @@ export default function Sidebar({
                 )}
                 <span className="count hide-on-collapse">{sessions.length}</span>
                 <button
+                  ref={groupMenuOpenId === groupId ? groupMenuAnchorRef : undefined}
                   className="row-menu-btn hide-on-collapse"
                   data-testid={`group-menu-button-${groupId}`}
                   onClick={(e) => {
@@ -1131,7 +1137,12 @@ export default function Sidebar({
                   ⋯
                 </button>
                 {groupMenuOpenId === groupId && (
-                  <div className="session-menu-popup" data-testid="group-menu" onClick={(e) => e.stopPropagation()}>
+                  <SessionMenuPopup
+                    anchorRef={groupMenuAnchorRef}
+                    menuRef={groupMenuRef}
+                    testId="group-menu"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <div
                       className="smi"
                       data-testid="group-menu-rename"
@@ -1152,7 +1163,7 @@ export default function Sidebar({
                     >
                       Delete
                     </div>
-                  </div>
+                  </SessionMenuPopup>
                 )}
               </div>
               {!group.collapsed && (

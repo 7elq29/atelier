@@ -127,6 +127,16 @@ export interface HarnessSlashCommand {
   aliases?: string[]
 }
 
+/** One model row from `query.initializationResult().models` (sdk.d.ts ModelInfo). */
+export interface HarnessModelInfo {
+  value: string
+  displayName: string
+  description: string
+  resolvedModel?: string
+  supportsEffort?: boolean
+  supportedEffortLevels?: ('low' | 'medium' | 'high' | 'xhigh' | 'max')[]
+}
+
 /**
  * Interactive-prompt types (05-interactive-prompts). All three interaction
  * kinds below — permission prompts, `AskUserQuestion`, and plan-mode's
@@ -383,6 +393,13 @@ export type HarnessEvent =
       sessionId: string
       timestamp: string
       commands: HarnessSlashCommand[]
+    }
+  | {
+      /** Live model registry from `query.initializationResult().models`. Full replacement list. */
+      type: 'models_updated'
+      sessionId: string
+      timestamp: string
+      models: HarnessModelInfo[]
     }
   | {
       /**

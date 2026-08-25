@@ -151,7 +151,7 @@ test.describe('11-composer-mode-indicator', () => {
     // the pre-existing plan-mode persistence tests) — mode must still show
     // acceptEdits, not have reset to default.
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
     const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
     await expect(historyRow).toBeVisible({ timeout: 10_000 })
     await reconnectClosedSessionFromHistory(page, sessionId)

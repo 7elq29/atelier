@@ -108,7 +108,7 @@ test.describe('todo-session-link: task context menu creates linked session', () 
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
     await expect(row).toBeVisible()
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-delete').click()
+    await page.getByTestId('menu-delete').click()
 
     await expect(page.getByTestId('delete-session-linked-task-dialog')).toBeVisible()
     await page.getByTestId('delete-linked-confirm').click()

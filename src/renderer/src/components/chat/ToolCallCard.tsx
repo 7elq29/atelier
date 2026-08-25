@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ToolCallContent, ToolCallStatus } from '../../../../shared/chat-content'
+import { ApprovalNeededIcon } from '../SessionStatusIndicator'
 
 /** Maps a tool name to one of the mock's `.tool-badge` color classes (bash/read/edit are the ones defined verbatim in mocks/index.html; the rest extend that same token-driven pattern for tool types the mock didn't enumerate). Exported for reuse by `ToolCallSequence.tsx`'s aggregate-summary grouping (14-tool-call-sequence-collapse), which buckets by these same classes. */
 export function toolBadgeClass(name: string): string {
@@ -132,7 +133,14 @@ function outputText(output: unknown): string {
  * running. Markup/classes match `.tool-card`/`.tool-head`/etc. in
  * mocks/index.html exactly.
  */
-export default function ToolCallCard({ content }: { content: ToolCallContent }): JSX.Element {
+export default function ToolCallCard({
+  content,
+  awaitingUserApproval = false
+}: {
+  content: ToolCallContent
+  /** True when a pending permission/question/plan card is blocked on this toolUseId. */
+  awaitingUserApproval?: boolean
+}): JSX.Element {
   const [open, setOpen] = useState(false)
   const badge = toolBadgeClass(content.name)
   const running = content.status === 'running'
@@ -168,6 +176,16 @@ export default function ToolCallCard({ content }: { content: ToolCallContent }):
           </span>
         )}
         {running ? (
+          awaitingUserApproval ? (
+            <span
+              className="tool-awaiting-user"
+              data-testid="tool-awaiting-user-indicator"
+              title="Needs your answer"
+            >
+              <ApprovalNeededIcon />
+              <span className="tool-awaiting-user-label">Needs you</span>
+            </span>
+          ) : (
           <>
             {content.inputStreamJson && (
               <span className="tool-stream-hint" data-testid="tool-input-stream-hint">
@@ -181,6 +199,7 @@ export default function ToolCallCard({ content }: { content: ToolCallContent }):
             )}
             <span className="spinner" data-testid="tool-running-indicator" />
           </>
+          )
         ) : (
           <span
             className={`tool-status ${

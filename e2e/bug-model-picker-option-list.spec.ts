@@ -112,16 +112,19 @@ test.describe('bug-fix: model picker now surfaces the full verified catalog (fab
 
     await page.screenshot({ path: join(artifactsDir, 'fix-model-picker-option-list.png') })
 
-    // Fixed state: the full verified 5-model catalog, fable/mythos included.
+    // Fixed state: verified catalog with context-window variants (200k + 1M where supported).
     expect(modelOptionIds.sort()).toEqual(
       [
         'model-option-claude-opus-4-8',
         'model-option-claude-sonnet-5',
         'model-option-claude-haiku-4-5',
+        'model-option-claude-haiku-4-5[1m]',
         'model-option-claude-fable-5',
         'model-option-claude-mythos-5'
       ].sort()
     )
+    await expect(popover.locator('.picker-item-meta', { hasText: '1M' }).first()).toBeVisible()
+    await expect(popover.locator('.picker-item-meta', { hasText: '200k' }).first()).toBeVisible()
     // No invented id anywhere in the catalog (the unverified aifx screenshot's
     // "Opus 5" claim) and no stale/legacy generation snuck in either.
     expect(modelOptionIds).not.toContain('model-option-claude-opus-5')

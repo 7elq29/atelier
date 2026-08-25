@@ -3,6 +3,7 @@ import type { MessageRecord } from '../../../../shared/session-types'
 import type { PromptDecision } from '../../../../shared/session-types'
 import { parseStructuredContent, type ToolCallContent, type ThinkingBlockContent, type TranscriptNoticeContent, type LocalCommandOutputContent } from '../../../../shared/chat-content'
 import ToolCallCard, { toolHeadline } from './ToolCallCard'
+import { isToolAwaitingUserApproval } from './interactive-prompt-status'
 import ThinkingBlockInline from './ThinkingBlockInline'
 import ToolCallSequence, { type SidecarSequenceEntry, type ToolCallSequenceEntry } from './ToolCallSequence'
 import AskUserQuestionCard from './AskUserQuestionCard'
@@ -218,7 +219,10 @@ export default function ChatTranscript({
       <Fragment key={message.id}>
         <div className="msg-wrap" data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
           <MessageActions text={`${tool.name}: ${toolHeadline(tool.name, tool.input)}`} />
-          <ToolCallCard content={tool} />
+          <ToolCallCard
+            content={tool}
+            awaitingUserApproval={isToolAwaitingUserApproval(tool.toolUseId, messages)}
+          />
         </div>
         {children && children.length > 0 && (
           <div
@@ -242,7 +246,10 @@ export default function ChatTranscript({
                     data-message-id={child.message.id}
                     key={child.message.id}
                   >
-                    <ToolCallCard content={child.tool!} />
+                    <ToolCallCard
+                      content={child.tool!}
+                      awaitingUserApproval={isToolAwaitingUserApproval(child.tool!.toolUseId, messages)}
+                    />
                   </div>
                 )
               }))}

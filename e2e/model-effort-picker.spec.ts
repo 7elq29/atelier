@@ -96,6 +96,8 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     await expect(page.getByTestId('model-option-claude-opus-4-8')).toBeVisible()
     await expect(page.getByTestId('model-option-claude-sonnet-5')).toBeVisible()
     await expect(page.getByTestId('model-option-claude-haiku-4-5')).toBeVisible()
+    await expect(page.getByTestId('model-option-claude-haiku-4-5[1m]')).toBeVisible()
+    await expect(popover.locator('.picker-item-meta', { hasText: '1M' }).first()).toBeVisible()
     await expect(page.getByTestId('effort-option-low')).toBeVisible()
     await expect(page.getByTestId('effort-option-medium')).toBeVisible()
     await expect(page.getByTestId('effort-option-high')).toBeVisible()

@@ -392,6 +392,21 @@ export interface SessionCommandsEvent {
   commands: SlashCommandInfo[]
 }
 
+/** Live model list from the SDK's `initializationResult().models`. */
+export interface ModelInfo {
+  value: string
+  displayName: string
+  description: string
+  resolvedModel?: string
+  supportsEffort?: boolean
+  supportedEffortLevels?: ('low' | 'medium' | 'high' | 'xhigh' | 'max')[]
+}
+
+export interface SessionModelsEvent {
+  sessionId: string
+  models: ModelInfo[]
+}
+
 /** Live Claude Code working directory (composer context bar). From the SDK's `system`/`init` `cwd` and updated on Bash `cd` when inferrable. */
 export interface SessionHarnessCwdEvent {
   sessionId: string

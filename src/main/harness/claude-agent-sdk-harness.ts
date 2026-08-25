@@ -641,6 +641,19 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
             aliases: c.aliases,
           })),
         })
+        active.eventQueue.push({
+          type: 'models_updated',
+          sessionId,
+          timestamp: new Date().toISOString(),
+          models: initResult.models.map((m) => ({
+            value: m.value,
+            displayName: m.displayName,
+            description: m.description,
+            resolvedModel: m.resolvedModel,
+            supportsEffort: m.supportsEffort,
+            supportedEffortLevels: m.supportedEffortLevels,
+          })),
+        })
       })
       .catch((err) => {
         logger.warn('initializationResult() failed; live slash-command list unavailable for this session', {

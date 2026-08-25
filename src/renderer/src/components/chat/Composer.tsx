@@ -6,7 +6,8 @@ import { buildComposerSendText, type ReviewComposerComment } from '../../../../s
 import type { SessionChangesCap } from '../../../../shared/session-changes-cap'
 import { truncateContextPath } from '../../utils/truncateContextPath'
 import { sessionWorktreeBranch } from '../../../../shared/worktree-path'
-import type { ImageAttachment, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
+import type { ImageAttachment, ModelInfo, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
+import { modelLabelForSelection, resolveModelPickerOptions } from './model-picker-options'
 import type { SessionRateLimitEvent, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
 
@@ -133,66 +134,6 @@ const MODE_LABEL: Record<PermissionModeValue, string> = {
 }
 
 /**
- * Model/effort options for the picker (10f-enrichment-model-effort-picker),
- * re-derived (bug #53) from the installed
- * `@anthropic-ai/claude-agent-sdk@0.3.212` package's OWN hand-maintained
- * model catalog — the literal object in `sdk.mjs` whose own inline comment
- * reads "Hand-maintained baked-in model catalog — the source of truth for
- * per-model provider IDs and metadata" — not the previous 3-entry snapshot,
- * and NOT the unverified aifx `/model` screenshot this task started from
- * (that screenshot's "Opus 5" does not correspond to any id anywhere in the
- * catalog; grepping the whole file for it turns up nothing, so it's treated
- * as unreliable rather than a ground truth to chase). Per-model facts, all
- * read directly out of that catalog object:
- *   - claude-opus-4-8:   display_name "Opus 4.8",   family "opus",   the
- *     catalog's own `aliases.opus.default` / `latest_per_family.opus`.
- *   - claude-sonnet-5:   display_name "Sonnet 5",   family "sonnet", the
- *     catalog's own `aliases.sonnet.default` / `latest_per_family.sonnet`.
- *     Its `context` is already `{ window: 1e6, native_1m: true, ... }` —
- *     natively 1M, not a toggle — so there is no separate "Sonnet 5 (1M
- *     context)" id/entry to add; the aifx screenshot's extra row for that
- *     doesn't map onto anything the catalog or `HarnessStartOptions`
- *     (main/harness/types.ts) exposes (no context-window field there at
- *     all), so it's left out rather than invented.
- *   - claude-haiku-4-5:  display_name "Haiku 4.5",  family "haiku",  the
- *     catalog's own `aliases.haiku.default` / `latest_per_family.haiku`.
- *   - claude-fable-5:    display_name "Fable 5",    family "fable",  the
- *     catalog's own `aliases.fable.default` / `latest_per_family.fable` —
- *     and the catalog's own top-level `best: "fable"` flag, i.e. the SDK
- *     considers this (not opus) its single best model overall.
- *   - claude-mythos-5:   display_name "Mythos 5",   family "mythos". Present
- *     in `models[]` with a real 1M-native context block but absent from
- *     `aliases`/`latest_per_family` (no `mythos:` entry in either) — i.e. it
- *     has no short alias, but it's still a real, resolvable id the catalog
- *     lists, not a legacy/removed one. Included because it's exactly the
- *     other family the picker was previously and silently omitting (see the
- *     pre-existing `e2e/bug-model-picker-option-list.spec.ts`, whose
- *     baseline assertions this fix is a deliberate diff against).
- * Every other id families/generations that appear in the same catalog
- * (claude-3-5-haiku, claude-3-5-sonnet, claude-3-7-sonnet, claude-sonnet-4-0/
- * -4-5/-4-6, claude-opus-4-0/-4-1/-4-5/-4-6/-4-7) are deliberately left out:
- * they're older generations within a family already represented by its own
- * `latest_per_family` entry above, not distinct current options a picker
- * needs to surface. This is still a hand-picked-at-fix-time snapshot (see
- * this file's `slashCommands`/bug #56 for the live-registry alternative
- * pattern) rather than a live catalog fetch — the SDK does expose a live
- * alternative here too (`supportedModels(): Promise<ModelInfo[]>` /
- * `SDKControlInitializeResponse.models`, sdk.d.ts ~1193/~3398), but wiring
- * that through the harness was scoped OUT of this fix (unlike bug #56's
- * slash commands) since the task's own ground truth explicitly frames this
- * one as "update MODEL_OPTIONS to the verified real set", not as a live-list
- * migration — left as a natural follow-up given the plumbing bug #56 adds is
- * directly reusable for it.
- */
-const MODEL_OPTIONS: { id: string; label: string }[] = [
-  { id: 'claude-opus-4-8', label: 'Opus 4.8' },
-  { id: 'claude-sonnet-5', label: 'Sonnet 5' },
-  { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
-  { id: 'claude-fable-5', label: 'Fable 5' },
-  { id: 'claude-mythos-5', label: 'Mythos 5' }
-]
-
-/**
  * Effort options shown in the picker. The full SDK-supported union is
  * `'low' | 'medium' | 'high' | 'xhigh' | 'max'` (verified against `sdk.d.ts`'s
  * `EffortLevel`), but the mock's own picker only ever lists Low/Medium/High
@@ -205,12 +146,15 @@ const EFFORT_OPTIONS: { id: NonNullable<ModelSelection['effort']>; label: string
   { id: 'high', label: 'High' }
 ]
 
-/** Fallback label only reached if `modelSelection` is ever `null` (defensive — `App.tsx` now always initializes it to Sonnet 5 · High, the app's real default, so this normally never renders). */
+/** Fallback label only reached if `modelSelection` is ever `null`. */
 const DEFAULT_LABEL = 'Sonnet 5 · High'
 
-function labelFor(selection: ModelSelection | null): string {
+function labelFor(
+  selection: ModelSelection | null,
+  modelOptions: ReturnType<typeof resolveModelPickerOptions>
+): string {
   if (!selection) return DEFAULT_LABEL
-  const modelLabel = MODEL_OPTIONS.find((m) => m.id === selection.model)?.label ?? selection.model ?? MODEL_OPTIONS[0].label
+  const modelLabel = modelLabelForSelection(selection.model, modelOptions)
   const effortLabel = EFFORT_OPTIONS.find((e) => e.id === selection.effort)?.label ?? EFFORT_OPTIONS[2].label
   return `${modelLabel} · ${effortLabel}`
 }
@@ -236,14 +180,17 @@ function ModelPicker({
   selection,
   onChange,
   open,
-  onOpenChange
+  onOpenChange,
+  liveModels
 }: {
   selection: ModelSelection | null
   onChange: (selection: ModelSelection) => void
   open: boolean
   onOpenChange: (open: boolean) => void
+  liveModels: ModelInfo[]
 }): JSX.Element {
-  const currentModel = selection?.model ?? MODEL_OPTIONS[0].id
+  const modelOptions = resolveModelPickerOptions(liveModels)
+  const currentModel = selection?.model ?? modelOptions[0]?.id ?? 'claude-sonnet-5'
   const currentEffort = selection?.effort ?? EFFORT_OPTIONS[2].id
 
   useEffect(() => {
@@ -273,12 +220,12 @@ function ModelPicker({
         <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z" />
         </svg>
-        {labelFor(selection)} ▾
+        {labelFor(selection, modelOptions)} ▾
       </button>
       {open && (
         <div className="picker-pop" data-testid="model-picker-popover">
           <div className="label-caps" style={{ padding: '4px 8px' }}>Model</div>
-          {MODEL_OPTIONS.map((opt) => (
+          {modelOptions.map((opt) => (
             <div
               key={opt.id}
               className={'picker-item' + (opt.id === currentModel ? ' sel' : '')}
@@ -288,7 +235,10 @@ function ModelPicker({
                 onOpenChange(false)
               }}
             >
-              {opt.label}
+              <span>{opt.displayName}</span>
+              {opt.contextLabel ? (
+                <span className="picker-item-meta">{opt.contextLabel}</span>
+              ) : null}
             </div>
           ))}
           <div className="label-caps" style={{ padding: '8px 8px 4px' }}>Effort</div>
@@ -366,6 +316,8 @@ interface ComposerProps {
    * see `slashCommands` below — since the SDK has no concept of them.
    */
   liveSlashCommands: SlashCommandInfo[]
+  /** Live model registry from SDK initialization — drives the model picker list. */
+  liveModels?: ModelInfo[]
   /** Current SDK permission mode for the active session (11-composer-mode-indicator) — always defined, defaulting to 'default' for a session that's never been cycled. */
   mode: PermissionModeValue
   /** Fired on Shift+Tab (composer focused) or a click on the mode pill — cycles default -> plan -> acceptEdits -> auto -> default via a real IPC round-trip to SessionManager.cycleMode. */
@@ -562,6 +514,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   modelSelection,
   onModelSelectionChange,
   liveSlashCommands,
+  liveModels = [],
   mode,
   onCycleMode,
   queuedMessages = [],
@@ -1260,6 +1213,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             onChange={onModelSelectionChange}
             open={modelPickerOpen}
             onOpenChange={setModelPickerOpen}
+            liveModels={liveModels}
           />
           {busy ? (
             <button

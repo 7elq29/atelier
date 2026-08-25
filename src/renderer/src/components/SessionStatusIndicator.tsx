@@ -71,6 +71,14 @@ function IconTree(): JSX.Element {
   )
 }
 
+export function ApprovalNeededIcon(): JSX.Element {
+  return (
+    <span className="approval-needed-icon" aria-hidden>
+      <IconAlert />
+    </span>
+  )
+}
+
 export function SessionStatusIndicator({ dotStatus }: { dotStatus: string }): JSX.Element {
   const statusClass = 'status-' + dotStatus
 

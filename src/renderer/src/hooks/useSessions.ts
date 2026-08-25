@@ -11,7 +11,8 @@ import type {
   SessionInterruptResult,
   SessionRecord,
   SessionStatus,
-  SlashCommandInfo
+  SlashCommandInfo,
+  ModelInfo
 } from '../../../shared/session-types'
 import type {
   BackgroundTaskRow,
@@ -37,6 +38,8 @@ export interface UseSessionsResult {
   busyBySession: Record<string, boolean>
   /** Live slash-command registry per session (bug #56) — see SessionCommandsEvent's doc comment. Empty until the harness's first push lands. */
   commandsBySession: Record<string, SlashCommandInfo[]>
+  /** Live model registry per session — from SDK `initializationResult().models`. */
+  modelsBySession: Record<string, ModelInfo[]>
   /** Claude Code cwd per session (composer context bar) — from SDK init + inferred Bash `cd`. */
   harnessCwdBySession: Record<string, string>
   /** Context-window token usage per session (token-usage-indicator) — updated after each completed turn. Empty until the session's first turn completes. */
@@ -106,6 +109,7 @@ export function useSessions(): UseSessionsResult {
   const [allTags, setAllTags] = useState<string[]>([])
   const [busyBySession, setBusyBySession] = useState<Record<string, boolean>>({})
   const [commandsBySession, setCommandsBySession] = useState<Record<string, SlashCommandInfo[]>>({})
+  const [modelsBySession, setModelsBySession] = useState<Record<string, ModelInfo[]>>({})
   const [harnessCwdBySession, setHarnessCwdBySession] = useState<Record<string, string>>({})
   const [tokenUsageBySession, setTokenUsageBySession] = useState<Record<string, { inputTokens: number; contextWindow: number }>>({})
   const [promptSuggestionBySession, setPromptSuggestionBySession] = useState<Record<string, string | undefined>>({})
@@ -243,6 +247,9 @@ export function useSessions(): UseSessionsResult {
     const offCommands = window.atelier.onSessionCommands(({ sessionId, commands }) => {
       setCommandsBySession((prev) => ({ ...prev, [sessionId]: commands }))
     })
+    const offModels = window.atelier.onSessionModels(({ sessionId, models }) => {
+      setModelsBySession((prev) => ({ ...prev, [sessionId]: models }))
+    })
     const offHarnessCwd = window.atelier.onSessionHarnessCwd(({ sessionId, cwd }) => {
       setHarnessCwdBySession((prev) => ({ ...prev, [sessionId]: cwd }))
     })
@@ -301,6 +308,7 @@ export function useSessions(): UseSessionsResult {
       offGroup()
       offTurnState()
       offCommands()
+      offModels()
       offHarnessCwd()
       offTokenUsage()
       offPromptSuggestion()
@@ -356,6 +364,7 @@ export function useSessions(): UseSessionsResult {
   }, [])
 
   const interrupt = useCallback(async (sessionId: string): Promise<SessionInterruptResult> => {
+    setBusyBySession((prev) => (prev[sessionId] === false ? prev : { ...prev, [sessionId]: false }))
     return window.atelier.interruptSession(sessionId)
   }, [])
 
@@ -539,6 +548,7 @@ export function useSessions(): UseSessionsResult {
     allTags,
     busyBySession,
     commandsBySession,
+    modelsBySession,
     harnessCwdBySession,
     tokenUsageBySession,
     promptSuggestionBySession,

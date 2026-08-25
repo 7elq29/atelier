@@ -1653,6 +1653,7 @@ export default function App(): JSX.Element {
                                   void window.atelier.setSessionModelSelection(sessionId, selection)
                                 }}
                                 liveSlashCommands={sessions.commandsBySession[sessionId] ?? []}
+                                liveModels={sessions.modelsBySession[sessionId] ?? []}
                                 mode={session.permissionMode}
                                 onCycleMode={() => void sessions.cycleMode(sessionId)}
                                 queuedMessages={queuedMessagesBySession[sessionId] ?? []}

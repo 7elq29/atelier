@@ -19,6 +19,7 @@ import type {
   PromptDecision,
   RemoteHostOption,
   SessionCommandsEvent,
+  SessionModelsEvent,
   SessionHarnessCwdEvent,
   SessionGroupEvent,
   SessionGroupRecord,
@@ -302,6 +303,12 @@ const api = {
     const listener = (_event: unknown, payload: SessionCommandsEvent): void => callback(payload)
     ipcRenderer.on('session:commands', listener)
     return () => ipcRenderer.removeListener('session:commands', listener)
+  },
+  /** Live model registry from SDK initialization — full replacement list for the model picker. */
+  onSessionModels: (callback: (event: SessionModelsEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionModelsEvent): void => callback(payload)
+    ipcRenderer.on('session:models', listener)
+    return () => ipcRenderer.removeListener('session:models', listener)
   },
   /** Claude Code working directory for the composer context bar — SDK init cwd and inferred Bash `cd`. */
   onSessionHarnessCwd: (callback: (event: SessionHarnessCwdEvent) => void): (() => void) => {

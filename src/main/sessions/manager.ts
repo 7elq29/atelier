@@ -8,6 +8,7 @@ import type {
   CreateSessionOptions,
   ImageAttachment,
   MessageRecord,
+  ModelInfo,
   ModelSelection,
   MessageSearchHit,
   PermissionModeValue,
@@ -156,6 +157,8 @@ interface LiveStream {
   pendingUserMessageId: number | null
   /** True once the harness has started producing turn output for the pending user message. */
   turnExecutionStarted: boolean
+  /** Set when the user hits Stop/ESC — drop late stream events until the terminal harness event. */
+  interruptRequested: boolean
 }
 
 
@@ -205,6 +208,7 @@ function newLiveStream(turnCount = 0): LiveStream {
     thinkingParentToolUseId: null,
     pendingUserMessageId: null,
     turnExecutionStarted: false,
+    interruptRequested: false,
   }
 }
 
@@ -642,6 +646,7 @@ export class SessionManager {
     }
     live.pendingUserMessageId = userMessageId
     live.turnExecutionStarted = false
+    live.interruptRequested = false
   }
 
   private markTurnExecutionStarted(live: LiveStream): void {
@@ -766,6 +771,10 @@ export class SessionManager {
 
   private sendCommands(sessionId: string, commands: SlashCommandInfo[]): void {
     this.getWindow()?.webContents.send('session:commands', { sessionId, commands })
+  }
+
+  private sendModels(sessionId: string, models: ModelInfo[]): void {
+    this.getWindow()?.webContents.send('session:models', { sessionId, models })
   }
 
   private sendHarnessCwd(sessionId: string, cwd: string): void {
@@ -1553,10 +1562,39 @@ export class SessionManager {
     }
   }
 
+  /** True while the composer should show Stop — may lead `live.busy` during reconnect/streamInput setup. */
+  private composerTurnActive(sessionId: string, live?: LiveStream | null): boolean {
+    const entry = live ?? this.live.get(sessionId)
+    return (
+      (entry?.pendingUserMessageId != null) ||
+      entry?.busy === true ||
+      entry?.bufferMessageId != null ||
+      (entry?.pendingTools.size ?? 0) > 0 ||
+      entry?.thinkingMessageId != null ||
+      this.connecting.has(sessionId)
+    )
+  }
+
+  /** Immediate UI + transcript cleanup when Stop/ESC fires — don't wait for harness teardown. */
+  private applyOptimisticInterrupt(sessionId: string, live: LiveStream): void {
+    live.interruptRequested = true
+    this.expirePendingPrompts(sessionId, live)
+    this.flushBuffer(sessionId, live)
+    this.finishThinkingBlock(sessionId, live, 'completed')
+    this.finalizeStaleRunningToolCalls(sessionId, live)
+    this.clearPendingUserTurn(live)
+    live.busy = false
+    this.sendTurnState(sessionId, false)
+    if (this.connecting.has(sessionId)) {
+      this.connecting.delete(sessionId)
+    }
+    this.sendStatus(sessionId)
+  }
+
   async interrupt(sessionId: string): Promise<SessionInterruptResult> {
     const live = this.live.get(sessionId)
     const canWithdraw =
-      live?.busy === true &&
+      live != null &&
       !live.turnExecutionStarted &&
       live.pendingUserMessageId != null
 
@@ -1564,23 +1602,13 @@ export class SessionManager {
       const messageId = live!.pendingUserMessageId!
       const removed = this.store.deleteMessage(messageId)
       if (removed) this.sendMessageRemoved(sessionId, messageId)
-      this.clearPendingUserTurn(live!)
-      live!.busy = false
-      this.sendTurnState(sessionId, false)
-      if (this.connecting.has(sessionId)) {
-        this.connecting.delete(sessionId)
-      }
-      this.sendStatus(sessionId)
+      this.applyOptimisticInterrupt(sessionId, live!)
       await this.harness.interrupt(sessionId)
       return { action: 'withdrawn', restoredText: removed ? userMessagePlainText(removed.content) : '' }
     }
 
-    if (live?.busy) {
-      this.expirePendingPrompts(sessionId, live)
-      this.clearPendingUserTurn(live)
-      live.busy = false
-      this.sendTurnState(sessionId, false)
-      this.sendStatus(sessionId)
+    if (live && this.composerTurnActive(sessionId, live)) {
+      this.applyOptimisticInterrupt(sessionId, live)
     }
     await this.harness.interrupt(sessionId)
     return { action: 'interrupted' }
@@ -2048,6 +2076,14 @@ export class SessionManager {
     if (!this.store.getSession(sessionId)) return
     const live = this.live.get(sessionId) ?? newLiveStream()
     this.live.set(sessionId, live)
+    if (
+      live.interruptRequested &&
+      event.type !== 'interrupted' &&
+      event.type !== 'error' &&
+      event.type !== 'result'
+    ) {
+      return
+    }
     const needsWorkspacePreload = this.pendingPanelPreload.delete(sessionId)
     if (needsWorkspacePreload) {
       this.startupAutoReconnect.delete(sessionId)
@@ -2346,6 +2382,14 @@ export class SessionManager {
         this.sendCommands(sessionId, event.commands)
         return
 
+      case 'models_updated':
+        logger.info('harness event: models_updated', {
+          sessionId,
+          modelIds: event.models.map((m) => m.value)
+        })
+        this.sendModels(sessionId, event.models)
+        return
+
       case 'prompt_suggestion':
         logger.info('harness event: prompt_suggestion', { sessionId, length: event.suggestion.length })
         this.sendPromptSuggestion(sessionId, event.suggestion)
@@ -2440,6 +2484,7 @@ export class SessionManager {
         this.finalizeStaleRunningToolCalls(sessionId, live)
         this.expirePendingPrompts(sessionId, live)
         live.busy = false
+        live.interruptRequested = false
         this.clearPendingUserTurn(live)
         this.sendStatus(sessionId)
         logger.info('harness event: interrupted (terminal)', { sessionId })

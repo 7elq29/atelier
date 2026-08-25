@@ -420,14 +420,26 @@ test.describe('04-composer-core', () => {
       .toBeGreaterThan(0)
 
     await page.screenshot({ path: join(artifactsDir, '04-composer-mid-stream-before-stop.png') })
+    const stopClickedAt = Date.now()
     await stopButton.click()
 
-    // Clean swap back to Send — no hung state, no error banner.
-    await expect(activeComposer(page).getByTestId('send-button')).toBeVisible({ timeout: 15_000 })
-    await expect(activeComposer(page).getByTestId('stop-button')).toHaveCount(0, { timeout: 90_000 })
+    // UI must flip back immediately — don't wait for harness teardown.
+    await expect(activeComposer(page).getByTestId('send-button')).toBeVisible({ timeout: 2_000 })
+    await expect(activeComposer(page).getByTestId('stop-button')).toHaveCount(0, { timeout: 2_000 })
+    await expect(activeComposer(page).getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 2_000 })
+    expect(Date.now() - stopClickedAt).toBeLessThan(2_500)
 
     const errorBanner = page.locator('.msg-system', { hasText: 'Error:' })
     await expect(errorBanner).toHaveCount(0)
+
+    await expect
+      .poll(async () => {
+        const logFilePath = await page.evaluate(() => window.atelier.getLogFilePath())
+        const raw = readFileSync(logFilePath, 'utf-8')
+        const afterInterrupt = raw.split('harness.interrupt() called').pop() ?? ''
+        return /interrupted \(terminal\)/.test(afterInterrupt)
+      }, { timeout: 60_000 })
+      .toBe(true)
 
     await appendComposerLog(page, 'stop-clicked')
     const logContents = readFileSync(composerLogPath, 'utf-8')

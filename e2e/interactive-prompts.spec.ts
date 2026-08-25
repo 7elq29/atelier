@@ -119,6 +119,10 @@ test.describe('05-interactive-prompts', () => {
     await expect(card).toBeVisible({ timeout: 30_000 })
     await expect(card).toContainText('Which fruit do you prefer?')
 
+    const sessionRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+    await expect(sessionRow.getByTestId('session-dot')).toHaveClass(/status-waiting-blocked/)
+    await expect(page.getByTestId('tool-awaiting-user-indicator').last()).toBeVisible()
+
     const options = card.getByTestId('aq-option')
     await expect(options).toHaveCount(2) // Apple, Banana (the "Other" row has its own data-testid)
     await expect(card.getByTestId('aq-option-other')).toHaveCount(1)

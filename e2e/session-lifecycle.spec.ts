@@ -228,7 +228,7 @@ test.describe('02-session-lifecycle', () => {
   test('rename: manual name survives the auto-naming summarizer after more messages', async () => {
     const row = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-rename').click()
+    await page.getByTestId('menu-rename').click()
     const input = row.getByTestId('session-rename-input')
     await input.fill('My Manual Name')
     await input.press('Enter')
@@ -293,7 +293,7 @@ test.describe('02-session-lifecycle', () => {
   test('close: disappears from active view but remains in history', async () => {
     const row = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
 
     await expect(page.locator(`[data-group="pinned"] [data-session-id="${localSessionId}"]`)).toHaveCount(0)
     await expect(page.locator(`[data-group="ungrouped"] [data-session-id="${localSessionId}"]`)).toHaveCount(0)
@@ -372,7 +372,7 @@ test.describe('02-session-lifecycle', () => {
       .evaluateAll((els) => els.map((el) => el.getAttribute('data-session-id')))
 
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-fork').click()
+    await page.getByTestId('menu-fork').click()
 
     await expect
       .poll(async () =>
@@ -418,7 +418,7 @@ test.describe('02-session-lifecycle', () => {
     const nameBefore = await row.getByTestId('session-name').textContent()
 
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-restart').click()
+    await page.getByTestId('menu-restart').click()
 
     // The old (forked) session should close (move to history)...
     await expect
@@ -450,7 +450,7 @@ test.describe('02-session-lifecycle', () => {
     const historyRow = page.locator(`[data-testid="session-row"][data-session-id="${forkedSessionId}"]`)
     await expect(historyRow).toBeVisible()
     await historyRow.getByTestId('session-menu-button').click()
-    await historyRow.getByTestId('menu-delete').click()
+    await page.getByTestId('menu-delete').click()
 
     await expect(page.locator(`[data-session-id="${forkedSessionId}"]`)).toHaveCount(0)
 
@@ -514,7 +514,7 @@ test.describe('02-session-lifecycle', () => {
     // Resume: host re-resolves to the same devpod.
     const remoteRowEl = page.locator(`[data-testid="session-row"][data-session-id="${remoteSessionId}"]`)
     await remoteRowEl.getByTestId('session-menu-button').click()
-    await remoteRowEl.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
     const historyRemote = page.locator(`[data-group="history"] [data-session-id="${remoteSessionId}"]`)
     await expect(historyRemote).toBeVisible({ timeout: 10_000 })
     await reconnectClosedSessionFromHistory(page, remoteSessionId)
@@ -539,7 +539,7 @@ test.describe('02-session-lifecycle', () => {
   test('connecting session still allows switching to another session in the sidebar', async () => {
     const localRow = page.locator(`[data-testid="session-row"][data-session-id="${localSessionId}"]`)
     await localRow.getByTestId('session-menu-button').click()
-    await localRow.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
     const historyLocal = page.locator(`[data-group="history"] [data-session-id="${localSessionId}"]`)
     await expect(historyLocal).toBeVisible({ timeout: 10_000 })
     await historyLocal.click()
@@ -607,7 +607,7 @@ test.describe('02-session-lifecycle', () => {
     // Clean up so it doesn't interfere with later group/index assumptions.
     const tildeRow = page.locator(`[data-testid="session-row"][data-session-id="${tildeSessionId!}"]`)
     await tildeRow.getByTestId('session-menu-button').click()
-    await tildeRow.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
   })
 
   // ── 8c. Local with a literal `~` project path (spawn cwd bug) ─────────
@@ -732,7 +732,7 @@ test.describe('02-session-lifecycle', () => {
       .toBe(true)
 
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
 
     const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
     await expect(historyRow).toBeVisible({ timeout: 10_000 })
@@ -787,7 +787,7 @@ test.describe('02-session-lifecycle', () => {
     // Closing idle and resuming again must not duplicate the notice.
     await expect(page.getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 15_000 })
     await activeRow.getByTestId('session-menu-button').click()
-    await activeRow.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
     await expect(historyRow).toBeVisible({ timeout: 10_000 })
     await page.waitForTimeout(1000)
     await reconnectClosedSessionFromHistory(page, sessionId)
@@ -831,7 +831,7 @@ test.describe('02-session-lifecycle', () => {
       .toBeGreaterThan(0)
 
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
 
     const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
     await expect(historyRow).toBeVisible({ timeout: 10_000 })
@@ -873,7 +873,7 @@ test.describe('02-session-lifecycle', () => {
     await page.screenshot({ path: join(artifactsDir, 'bug-stale-tool-running-after-resume.png') })
 
     await activeRow.getByTestId('session-menu-button').click()
-    await activeRow.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
   })
 
   // ── Bug repro (Part A safety net): a GENUINE reconnect failure (not our
@@ -903,7 +903,7 @@ test.describe('02-session-lifecycle', () => {
       .toBeGreaterThan(0)
 
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
 
     const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
     await expect(historyRow).toBeVisible({ timeout: 10_000 })
@@ -1006,7 +1006,7 @@ test.describe('02-session-lifecycle', () => {
     // Close, then delete this session's own transcript — the local
     // equivalent of the devpod losing its conversation history server-side.
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
 
     const historyRow = page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)
     await expect(historyRow).toBeVisible({ timeout: 10_000 })
@@ -1353,7 +1353,7 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
     await row.click()
     await row.getByTestId('session-menu-button').click()
-    await row.getByTestId('menu-close').click()
+    await page.getByTestId('menu-close').click()
     await expect(page.locator(`[data-group="history"] [data-session-id="${sessionId}"]`)).toHaveCount(1, {
       timeout: 5_000
     })
