@@ -354,6 +354,7 @@ export interface SessionMessageRemovedEvent {
 export type PromptDecision =
   | { kind: 'permission'; decision: 'allow' | 'deny'; alwaysAllow?: boolean }
   | { kind: 'ask_user_question'; answers: Record<string, string>; freeText?: string }
+  | { kind: 'ask_user_question'; cancelled: true }
   | { kind: 'plan'; decision: 'accept' | 'reject' | 'keep_planning'; feedback?: string }
 
 /**
@@ -417,8 +418,8 @@ export interface SessionHarnessCwdEvent {
  * Context-window token usage push (token-usage-indicator). Fired after every
  * completed turn's `result` harness event from the SDK's `getContextUsage()`.
  * `inputTokens` is total in-context tokens (`totalTokens` from the SDK);
- * `contextWindow` is the compaction threshold (`autoCompactThreshold ??
- * maxTokens`), not the model's full raw context size.
+ * `contextWindow` is the effective usable window (`maxTokens` from
+ * `getContextUsage()`), not the auto-compaction trigger or raw catalog max.
  */
 export interface SessionTokenUsageEvent {
   sessionId: string

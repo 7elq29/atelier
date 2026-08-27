@@ -21,7 +21,7 @@
  */
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { resolveContextCompactThreshold } from '../../shared/context-usage'
+import { resolveContextWindowForDisplay } from '../../shared/context-usage'
 import type {
   CanUseTool,
   Options as SdkOptions,
@@ -526,17 +526,17 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
    * Returns the current context usage for a live session, pulled directly
    * from the SDK's own context-usage query (token-usage-indicator). Use this
    * after a `result` harness event to get accurate token counts and the
-   * compaction threshold (`autoCompactThreshold ?? maxTokens`).
+   * effective context window (`maxTokens` — the usable in-context budget).
    * Returns `null` if the session is not live (no query object available).
    */
-  async getContextUsage(sessionId: string): Promise<{ totalTokens: number; compactThreshold: number } | null> {
+  async getContextUsage(sessionId: string): Promise<{ totalTokens: number; contextWindow: number } | null> {
     const active = this.sessions.get(sessionId)
     if (!active) return null
     try {
       const usage = await active.query.getContextUsage()
-      const compactThreshold = resolveContextCompactThreshold(usage)
-      if (compactThreshold == null) return null
-      return { totalTokens: usage.totalTokens, compactThreshold }
+      const contextWindow = resolveContextWindowForDisplay(usage)
+      if (contextWindow == null) return null
+      return { totalTokens: usage.totalTokens, contextWindow }
     } catch {
       return null
     }
@@ -829,10 +829,17 @@ function makeCanUseTool(sessionId: string, active: ActiveSession): CanUseTool {
       if (response.kind !== 'ask_user_question') {
         return { behavior: 'deny', message: 'Internal error: mismatched prompt response' }
       }
+      if ('cancelled' in response && response.cancelled) {
+        return {
+          behavior: 'deny',
+          message:
+            'The user skipped this structured question — continue the discussion in normal chat. Do not call AskUserQuestion again for the same topic unless they ask you to.'
+        }
+      }
       const updatedInput: Record<string, unknown> = { questions }
-      if (response.freeText) {
+      if ('freeText' in response && response.freeText) {
         updatedInput.response = response.freeText
-      } else {
+      } else if ('answers' in response) {
         updatedInput.answers = response.answers
       }
       return { behavior: 'allow', updatedInput }

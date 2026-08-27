@@ -5,6 +5,9 @@ import ResolvedPromptFold from './ResolvedPromptFold'
 import { askUserFoldSummary } from './resolved-prompt-fold'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
 
+/** Sentinel in `picked` when the user chose the "Other" row for a question. */
+const OTHER_PICK = '__other__'
+
 /**
  * AskUserQuestion card (05-interactive-prompts) — a REAL clickable card:
  * clicking an option sends the SDK's expected `answers` shape back through
@@ -21,6 +24,7 @@ export default function AskUserQuestionCard({
   embedded?: boolean
 }): JSX.Element {
   const answered = content.status === 'answered'
+  const cancelled = content.status === 'cancelled'
   const expired = content.status === 'expired'
   const resolved = content.status !== 'pending'
   const [open, setOpen] = useState(false)
@@ -30,15 +34,31 @@ export default function AskUserQuestionCard({
 
   function submit(nextPicked: Record<number, string>): void {
     const answers: Record<string, string> = {}
+    let freeText: string | undefined
     content.questions.forEach((q, i) => {
-      if (nextPicked[i] !== undefined) answers[q.question] = nextPicked[i]
+      const pick = nextPicked[i]
+      if (pick === OTHER_PICK) {
+        const text = otherText.trim()
+        answers[q.question] = text
+        freeText = text
+      } else if (pick !== undefined) {
+        answers[q.question] = pick
+      }
     })
-    onRespond({ kind: 'ask_user_question', answers })
+    onRespond({ kind: 'ask_user_question', answers, freeText })
   }
 
   function pickOption(qIndex: number, label: string): void {
     if (resolved) return
+    setOtherOpenFor((cur) => (cur === qIndex ? null : cur))
+    setOtherText('')
     setPicked((prev) => ({ ...prev, [qIndex]: label }))
+  }
+
+  function pickOther(qIndex: number): void {
+    if (resolved) return
+    setOtherOpenFor(qIndex)
+    setPicked((prev) => ({ ...prev, [qIndex]: OTHER_PICK }))
   }
 
   function submitOther(qIndex: number): void {
@@ -49,16 +69,26 @@ export default function AskUserQuestionCard({
     setOtherText('')
   }
 
+  function cancelQuestion(): void {
+    if (resolved) return
+    onRespond({ kind: 'ask_user_question', cancelled: true })
+  }
+
   const selectedAnswer = (q: AskUserQuestionContent['questions'][number]): string | undefined =>
     answered ? content.answers?.[q.question] : undefined
 
-  const allPicked = content.questions.every((_, i) => picked[i] !== undefined)
+  const allPicked = content.questions.every((_, i) => {
+    const pick = picked[i]
+    if (pick === OTHER_PICK) return otherText.trim().length > 0
+    return pick !== undefined
+  })
 
   const questionBody = (
     <>
       {content.questions.map((q, qIndex) => {
         const selected = selectedAnswer(q)
         const pendingPick = picked[qIndex]
+        const otherSelected = pendingPick === OTHER_PICK || otherOpenFor === qIndex
         return (
           <div key={q.question} data-testid="aq-question-block">
             <div className="aq-question">{q.question}</div>
@@ -79,9 +109,9 @@ export default function AskUserQuestionCard({
               ))}
               {!resolved ? (
                 <div
-                  className="aq-option aq-other"
+                  className={`aq-option aq-other${otherSelected ? ' selected' : ''}`}
                   data-testid="aq-option-other"
-                  onClick={() => setOtherOpenFor(qIndex)}
+                  onClick={() => pickOther(qIndex)}
                 >
                   <div className="num">{q.options.length + 1}</div>
                   <div>Other — type your own answer</div>
@@ -100,7 +130,7 @@ export default function AskUserQuestionCard({
                     handleEmacsTextareaKeyDown(e, otherText, setOtherText)
                   }}
                 />
-                <button className="btn btn-primary btn-sm" data-testid="aq-other-send" onClick={() => submitOther(qIndex)}>
+                <button className="btn btn-sm btn-allow" data-testid="aq-other-send" onClick={() => submitOther(qIndex)}>
                   Send
                 </button>
               </div>
@@ -109,21 +139,36 @@ export default function AskUserQuestionCard({
         )
       })}
       {!resolved && (
-        <button
-          className="btn btn-primary aq-submit"
-          data-testid="aq-submit"
-          disabled={!allPicked}
-          onClick={() => submit(picked)}
-        >
-          Submit
-        </button>
+        <div className="aq-actions" data-testid="aq-actions">
+          <button
+            type="button"
+            className="btn btn-sm btn-allow aq-submit"
+            data-testid="aq-submit"
+            disabled={!allPicked}
+            onClick={() => submit(picked)}
+          >
+            Submit answer
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost aq-cancel"
+            data-testid="aq-cancel"
+            onClick={cancelQuestion}
+          >
+            Continue without answering
+          </button>
+        </div>
       )}
       {expired ? (
         <div className="aq-footer-hint" data-testid="aq-expired-note">
           This request expired — the turn ended before you could respond.
         </div>
+      ) : cancelled ? (
+        <div className="aq-footer-hint" data-testid="aq-cancelled-note">
+          Skipped — Claude will continue in normal chat.
+        </div>
       ) : !resolved ? (
-        <div className="aq-footer-hint">You can also just type a reply in the composer below instead of picking an option.</div>
+        <div className="aq-footer-hint">Or type a reply in the composer below.</div>
       ) : null}
     </>
   )

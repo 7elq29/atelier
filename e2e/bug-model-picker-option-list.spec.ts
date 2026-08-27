@@ -116,6 +116,7 @@ test.describe('bug-fix: model picker now surfaces the full verified catalog (fab
     expect(modelOptionIds.sort()).toEqual(
       [
         'model-option-claude-opus-4-8',
+        'model-option-claude-opus-4-8[1m]',
         'model-option-claude-sonnet-5',
         'model-option-claude-haiku-4-5',
         'model-option-claude-haiku-4-5[1m]',
@@ -124,6 +125,7 @@ test.describe('bug-fix: model picker now surfaces the full verified catalog (fab
       ].sort()
     )
     await expect(popover.locator('.picker-item-meta', { hasText: '1M' }).first()).toBeVisible()
+    await expect(popover.locator('.picker-item-meta', { hasText: '400k' }).first()).toBeVisible()
     await expect(popover.locator('.picker-item-meta', { hasText: '200k' }).first()).toBeVisible()
     // No invented id anywhere in the catalog (the unverified aifx screenshot's
     // "Opus 5" claim) and no stale/legacy generation snuck in either.

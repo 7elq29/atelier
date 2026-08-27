@@ -316,7 +316,7 @@ const api = {
     ipcRenderer.on('session:harnessCwd', listener)
     return () => ipcRenderer.removeListener('session:harnessCwd', listener)
   },
-  /** Context-window token usage push (token-usage-indicator) — after each turn, `inputTokens` is SDK total in-context usage and `contextWindow` is the compaction threshold. */
+  /** Context-window token usage push (token-usage-indicator) — after each turn, `inputTokens` is SDK total in-context usage and `contextWindow` is the effective window (`maxTokens`). */
   onSessionTokenUsage: (callback: (event: SessionTokenUsageEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: SessionTokenUsageEvent): void => callback(payload)
     ipcRenderer.on('session:tokenUsage', listener)

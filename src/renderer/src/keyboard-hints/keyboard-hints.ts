@@ -36,8 +36,12 @@ export function generateHintLabels(count: number): string[] {
   return labels
 }
 
-/** Badge shows the next key in the sequence, not the full multi-char label. */
+/** Badge label shown on screen — numeric session/note rows show the full code (e.g. 11, 12); letter hints show the next key only. */
 export function hintBadgeDisplayLabel(fullLabel: string, typedBuffer: string): string {
+  if (/^[0-9]+$/.test(fullLabel)) {
+    if (!typedBuffer || !fullLabel.startsWith(typedBuffer)) return fullLabel
+    return fullLabel.slice(typedBuffer.length) || fullLabel
+  }
   if (!fullLabel.startsWith(typedBuffer)) return fullLabel.charAt(0) ?? fullLabel
   const remaining = fullLabel.slice(typedBuffer.length)
   return remaining.charAt(0) ?? fullLabel.charAt(fullLabel.length - 1) ?? fullLabel

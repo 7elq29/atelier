@@ -4,6 +4,15 @@ import type {
   PlanProposedContent
 } from '../../../../shared/chat-content'
 
+/** Collapsed summary rows — not the expanded card — must stay one scannable line. */
+const FOLD_DETAIL_MAX = 72
+
+function truncateFoldDetail(text: string, max = FOLD_DETAIL_MAX): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim()
+  if (oneLine.length <= max) return oneLine
+  return `${oneLine.slice(0, max - 1)}…`
+}
+
 export function permissionResolvedSummary(content: PermissionRequestContent): string {
   if (content.status === 'expired') return 'Expired'
   if (content.status === 'allowed') {
@@ -21,6 +30,7 @@ export function permissionFoldSummary(content: PermissionRequestContent, command
 
 export function askUserResolvedSummary(content: AskUserQuestionContent): string {
   if (content.status === 'expired') return 'Expired'
+  if (content.status === 'cancelled') return 'Skipped'
   if (content.status === 'answered' && content.answers) {
     const parts = Object.values(content.answers).filter(Boolean)
     if (parts.length === 1) return parts[0]!
@@ -31,8 +41,9 @@ export function askUserResolvedSummary(content: AskUserQuestionContent): string 
 
 export function askUserFoldSummary(content: AskUserQuestionContent): string {
   if (content.status === 'expired') return 'Question expired'
+  if (content.status === 'cancelled') return 'Question skipped — continued in chat'
   const answer = askUserResolvedSummary(content)
-  return `Question answered — ${answer}`
+  return `Question answered — ${truncateFoldDetail(answer)}`
 }
 
 export function planResolvedSummary(content: PlanProposedContent): string {
@@ -56,8 +67,12 @@ export function planFoldSummary(content: PlanProposedContent): string {
 
 export function permissionCommandText(content: PermissionRequestContent): string {
   const input = content.input as Record<string, unknown> | undefined
-  if (content.toolName === 'Bash' && typeof input?.command === 'string') return input.command
-  if (typeof input?.file_path === 'string') return input.file_path
+  if (content.toolName === 'Bash' && typeof input?.command === 'string') {
+    // Multiline/heredoc commands stay full-size in the expanded permission card only.
+    const firstLine = input.command.split('\n')[0]?.trim() ?? input.command
+    return truncateFoldDetail(firstLine)
+  }
+  if (typeof input?.file_path === 'string') return truncateFoldDetail(input.file_path)
   return content.toolName
 }
 

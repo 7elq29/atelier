@@ -551,7 +551,7 @@ test.describe('04-composer-core', () => {
     testInfo.setTimeout(90_000)
     if (!sessionId) sessionId = await createComposerSession(page, projectDir)
 
-    const small = 'short paste under fifty characters'
+    const small = 'short paste under two hundred characters'
     await page.evaluate(async (text) => {
       await navigator.clipboard.writeText(text)
     }, small)

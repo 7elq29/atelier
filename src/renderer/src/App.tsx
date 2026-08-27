@@ -1633,6 +1633,7 @@ export default function App(): JSX.Element {
                                   if (handle) composerRefs.current.set(sessionId, handle)
                                   else composerRefs.current.delete(sessionId)
                                 }}
+                                active={composerActive}
                                 onSend={(text, image) => void handleSend(sessionId, text, image)}
                                 onInterrupt={() => void handleInterrupt(sessionId)}
                                 busy={sessions.busyBySession[sessionId] ?? false}

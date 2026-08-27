@@ -172,6 +172,7 @@ export interface HarnessAskQuestion {
 export type PromptResponse =
   | { kind: 'permission'; decision: 'allow' | 'deny'; alwaysAllow?: boolean }
   | { kind: 'ask_user_question'; answers: Record<string, string>; freeText?: string }
+  | { kind: 'ask_user_question'; cancelled: true }
   | { kind: 'plan'; decision: 'accept' | 'reject' | 'keep_planning'; feedback?: string }
 
 /**
@@ -637,11 +638,10 @@ export interface HarnessDriver {
   /**
    * Returns the current context window usage for a live session via the SDK's
    * own `getContextUsage()` query — call this after a `result` event to get
-   * `totalTokens` (all in-context categories summed) and `compactThreshold`
-   * (when auto-compaction fires — `autoCompactThreshold ?? maxTokens`, not
-   * the model's full `rawMaxTokens`). Returns `null` if the session is not live.
+   * `totalTokens` (all in-context categories summed) and `contextWindow`
+   * (effective usable window — SDK `maxTokens`). Returns `null` if the session is not live.
    */
-  getContextUsage(sessionId: string): Promise<{ totalTokens: number; compactThreshold: number } | null>
+  getContextUsage(sessionId: string): Promise<{ totalTokens: number; contextWindow: number } | null>
 
   /**
    * Resolves a pending `permission_request` / `ask_user_question` /

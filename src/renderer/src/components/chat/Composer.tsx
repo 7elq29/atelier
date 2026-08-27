@@ -15,7 +15,7 @@ import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
 const MAX_TEXTAREA_HEIGHT = 160
 
 /** Pastes longer than this show a one-line summary in the composer; full text is sent on submit. */
-const LARGE_PASTE_THRESHOLD = 50
+const LARGE_PASTE_THRESHOLD = 200
 
 interface LargePasteEntry {
   display: string
@@ -334,7 +334,7 @@ interface ComposerProps {
    * Current context-window token usage for this session (token-usage-indicator).
    * Undefined until the session's first turn completes. Values come from the
    * SDK's `getContextUsage()`: usage is total in-context tokens; cap is the
-   * auto-compaction threshold, not the model's full context window.
+   * effective context window (`maxTokens`), not the auto-compaction trigger.
    */
   tokenUsage?: { inputTokens: number; contextWindow: number }
   /** SDK `prompt_suggestion` — placeholder in the empty composer; Tab accepts. */
@@ -349,6 +349,8 @@ interface ComposerProps {
   onValidateModel: (model: string) => Promise<ModelValidationResult>
   /** True when the harness is not connected (session-startup-idle) — composer is read-only until Reconnect. */
   harnessDisconnected?: boolean
+  /** False for cached per-session composers hidden off-screen — skips cursor mirror + auto-grow. */
+  active?: boolean
 }
 
 interface SlashCommand {
@@ -466,34 +468,42 @@ async function readAttachedImage(file: File | Blob): Promise<AttachedImage | nul
  * image at a time (dropping/pasting a second one replaces the first — no
  * multi-attach UI, per spec.md's minimal scope).
  */
+const CARET_MIRROR_PROPS = [
+  'borderBottomWidth', 'borderLeftWidth', 'borderRightWidth', 'borderTopWidth',
+  'boxSizing', 'fontFamily', 'fontSize', 'fontStyle', 'fontVariant', 'fontWeight',
+  'letterSpacing', 'lineHeight', 'paddingBottom', 'paddingLeft', 'paddingRight', 'paddingTop',
+  'textIndent', 'textRendering', 'textTransform', 'width', 'wordSpacing', 'overflowWrap', 'wordWrap'
+] as const
+
+let caretMirrorDiv: HTMLDivElement | null = null
+let caretMirrorMarker: HTMLSpanElement | null = null
+
 /** Calculates the pixel position of the caret within a textarea using the
  *  mirror-div technique: clones the textarea's styles into a hidden div,
  *  inserts a marker span at `position`, and reads its offset coordinates.
  *  Returns coordinates relative to the textarea element's top-left corner
  *  (including its own padding), adjusted for the current scroll position. */
 function getCaretCoordinates(ta: HTMLTextAreaElement, position: number): { top: number; left: number } {
-  const PROPS = ['borderBottomWidth','borderLeftWidth','borderRightWidth','borderTopWidth',
-    'boxSizing','fontFamily','fontSize','fontStyle','fontVariant','fontWeight',
-    'letterSpacing','lineHeight','paddingBottom','paddingLeft','paddingRight','paddingTop',
-    'textIndent','textRendering','textTransform','width','wordSpacing','overflowWrap','wordWrap']
-  const div = document.createElement('div')
+  if (!caretMirrorDiv) {
+    caretMirrorDiv = document.createElement('div')
+    caretMirrorMarker = document.createElement('span')
+    caretMirrorMarker.textContent = '\u200b'
+    caretMirrorDiv.style.position = 'absolute'
+    caretMirrorDiv.style.visibility = 'hidden'
+    caretMirrorDiv.style.whiteSpace = 'pre-wrap'
+    caretMirrorDiv.style.overflow = 'hidden'
+    caretMirrorDiv.style.top = '0'
+    caretMirrorDiv.style.left = '0'
+    document.body.appendChild(caretMirrorDiv)
+  }
+  const div = caretMirrorDiv
+  const marker = caretMirrorMarker!
   const cs = window.getComputedStyle(ta)
-  PROPS.forEach((p) => { (div.style as unknown as Record<string, string>)[p] = (cs as unknown as Record<string, string>)[p] })
-  div.style.position = 'absolute'
-  div.style.visibility = 'hidden'
-  div.style.whiteSpace = 'pre-wrap'
-  div.style.overflow = 'hidden'
-  div.style.top = '0'
-  div.style.left = '0'
-  document.body.appendChild(div)
-  div.textContent = ta.value.slice(0, position)
-  const marker = document.createElement('span')
-  marker.textContent = '​'
-  div.appendChild(marker)
-  const top = marker.offsetTop - ta.scrollTop
-  const left = marker.offsetLeft
-  document.body.removeChild(div)
-  return { top, left }
+  for (const prop of CARET_MIRROR_PROPS) {
+    ;(div.style as unknown as Record<string, string>)[prop] = (cs as unknown as Record<string, string>)[prop]
+  }
+  div.replaceChildren(document.createTextNode(ta.value.slice(0, position)), marker)
+  return { top: marker.offsetTop - ta.scrollTop, left: marker.offsetLeft }
 }
 
 export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
@@ -528,7 +538,8 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   sdkChrome,
   onAddLocalMessage,
   onValidateModel,
-  harnessDisconnected = false
+  harnessDisconnected = false,
+  active = true
 }: ComposerProps, ref): JSX.Element {
   const [value, setValue] = useState('')
   const valueRef = useRef(value)
@@ -550,14 +561,25 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   const [cursorPhase, setCursorPhase] = useState<'typing' | 'idle' | 'unfocused'>('unfocused')
   const [cursorPos, setCursorPos] = useState<{ top: number; left: number } | null>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cursorRafRef = useRef<number | null>(null)
 
   const updateCursorPos = useCallback(() => {
+    if (!active) return
     const ta = textareaRef.current
     if (!ta) return
     const coords = getCaretCoordinates(ta, ta.selectionStart ?? 0)
     // Add the textarea's own offset within .composer-box (its offsetParent).
     setCursorPos({ top: coords.top + ta.offsetTop, left: coords.left + ta.offsetLeft })
-  }, [])
+  }, [active])
+
+  const scheduleCursorUpdate = useCallback(() => {
+    if (!active) return
+    if (cursorRafRef.current != null) return
+    cursorRafRef.current = requestAnimationFrame(() => {
+      cursorRafRef.current = null
+      updateCursorPos()
+    })
+  }, [active, updateCursorPos])
 
   /** Recomputes trigger state from the token immediately before the cursor. */
   const updatePopoverFromCursor = useCallback((text: string, cursor: number): void => {
@@ -586,31 +608,32 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
 
   const onTextareaFocus = useCallback(() => {
     setCursorPhase('idle')
-    updateCursorPos()
+    scheduleCursorUpdate()
     syncPopoverFromTextarea()
-  }, [syncPopoverFromTextarea, updateCursorPos])
+  }, [scheduleCursorUpdate, syncPopoverFromTextarea])
 
   const onTextareaBlur = useCallback(() => {
     if (typingTimer.current) clearTimeout(typingTimer.current)
     setCursorPhase('unfocused')
-    updateCursorPos()
-  }, [updateCursorPos])
+    scheduleCursorUpdate()
+  }, [scheduleCursorUpdate])
 
   const onTextareaKeyActivity = useCallback(() => {
     setCursorPhase('typing')
-    updateCursorPos()
+    scheduleCursorUpdate()
     if (typingTimer.current) clearTimeout(typingTimer.current)
     typingTimer.current = setTimeout(() => setCursorPhase('idle'), 500)
-  }, [updateCursorPos])
+  }, [scheduleCursorUpdate])
 
-  // Keep cursor position in sync whenever value changes.
   useEffect(() => {
-    updateCursorPos()
-  }, [value, updateCursorPos])
+    if (!active) return
+    scheduleCursorUpdate()
+  }, [active, value, scheduleCursorUpdate])
 
   useEffect(() => {
     return () => {
       if (typingTimer.current) clearTimeout(typingTimer.current)
+      if (cursorRafRef.current != null) cancelAnimationFrame(cursorRafRef.current)
     }
   }, [])
 
@@ -712,7 +735,9 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   // because `scrollHeight` can exceed `clientHeight` by a stray sub-pixel
   // even when content fits on screen, which made the native scrollbar
   // flash in briefly with nothing to actually scroll to.
+  // Skipped for hidden cached composers — synced when the session becomes active.
   useEffect(() => {
+    if (!active) return
     const ta = textareaRef.current
     if (!ta) return
     ta.style.height = 'auto'
@@ -725,7 +750,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     ta.style.height = `${next}px`
     ta.style.overflowY = capped ? 'auto' : 'hidden'
     if (!value.trim()) ta.scrollTop = 0
-  }, [value])
+  }, [active, value])
 
   const mentionMatches = useMemo(() => {
     if (popover?.kind !== 'mention') return []
@@ -1129,7 +1154,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           onKeyUp={onTextareaKeyActivity}
           onSelect={syncPopoverFromTextarea}
           onClick={() => {
-            updateCursorPos()
+            scheduleCursorUpdate()
             syncPopoverFromTextarea()
           }}
           onFocus={onTextareaFocus}
@@ -1195,7 +1220,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
               <span
                 className={`token-usage${pct >= 70 ? ' token-usage-high' : ''}`}
                 data-testid="token-usage"
-                title={`${tokenUsage.inputTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} context tokens (compacts near cap)`}
+                title={`${tokenUsage.inputTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} context tokens`}
               >
                 {formatTokens(tokenUsage.inputTokens)} [{tokenBar(pct)} {pct}%/{formatTokens(tokenUsage.contextWindow)}]
               </span>

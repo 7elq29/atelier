@@ -1522,8 +1522,8 @@ test.describe('02-session-lifecycle — AI conformance connect', () => {
             AI_CONFORMANCE_SESSION_ID
           )
           const listCount = result.messages.length
-          if (userTurnCount > 100) {
-            return result.transcriptTruncated && listCount < dbCount && listCount >= 100
+          if (userTurnCount > 40) {
+            return result.transcriptTruncated && listCount < dbCount && listCount >= 40
           }
           return dbCount === listCount && listCount >= clonedMessageCount
         },

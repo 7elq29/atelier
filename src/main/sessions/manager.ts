@@ -2542,14 +2542,12 @@ export class SessionManager {
         this.sendTurnState(sessionId, false)
         void this.refreshSessionWorkspace(sessionId, false).catch(() => undefined)
         // token-usage-indicator: pull context usage directly from the SDK's
-        // own query — `totalTokens` is full in-context usage; cap is when
-        // auto-compaction fires (`autoCompactThreshold ?? maxTokens`), not
-        // modelUsage's raw `contextWindow`. Do not fall back to modelUsage —
-        // it tracks API input totals against the model max, which mismatches
-        // what Claude Code shows in /context.
+        // own query — `totalTokens` is full in-context usage; cap is the
+        // effective window (`maxTokens`), not auto-compaction threshold or
+        // modelUsage's raw `contextWindow`.
         void this.harness.getContextUsage(sessionId).then((ctx) => {
-          if (ctx && ctx.compactThreshold > 0) {
-            this.sendTokenUsage(sessionId, ctx.totalTokens, ctx.compactThreshold)
+          if (ctx && ctx.contextWindow > 0) {
+            this.sendTokenUsage(sessionId, ctx.totalTokens, ctx.contextWindow)
           }
         })
         if (event.isError) this.expirePendingPrompts(sessionId, live)
@@ -2898,7 +2896,12 @@ function applyDecision(
     return { ...content, status: decision.decision === 'allow' ? 'allowed' : 'denied', alwaysAllowed: decision.alwaysAllow }
   }
   if (content.kind === 'ask_user_question' && decision.kind === 'ask_user_question') {
-    return { ...content, status: 'answered', answers: decision.answers, freeText: decision.freeText }
+    if ('cancelled' in decision && decision.cancelled) {
+      return { ...content, status: 'cancelled' }
+    }
+    if ('answers' in decision) {
+      return { ...content, status: 'answered', answers: decision.answers, freeText: decision.freeText }
+    }
   }
   if (content.kind === 'plan_proposed' && decision.kind === 'plan') {
     const status = decision.decision === 'accept' ? 'accepted' : decision.decision === 'reject' ? 'rejected' : 'keep_planning'

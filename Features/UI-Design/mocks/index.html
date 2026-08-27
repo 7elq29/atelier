@@ -384,22 +384,22 @@
      one cue per theme (--elevation-border/--elevation-shadow), and internal divider lines are
      gone in favor of spacing — matching the chosen variant's flat, borderless option rows. */
   .aq-card { border: 1px solid var(--elevation-border); background: var(--bg-panel); border-radius: var(--r-lg); overflow: hidden; max-width: 84%; box-shadow: var(--elevation-shadow); }
-  .aq-head { display: flex; align-items: center; gap: 8px; padding: 13px 16px 8px; font-size: 13.5px; font-weight: 600; color: var(--accent); }
-  .aq-body { padding: 0 16px 15px; display: flex; flex-direction: column; gap: 10px; }
-  .aq-question { font-size: var(--text-base); color: var(--text-primary); }
-  .aq-options { display: flex; flex-direction: column; gap: 7px; }
-  .aq-option { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border: none; border-radius: 12px; background: var(--bg-tint); cursor: pointer; font-size: var(--text-sm); }
+  .aq-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px 6px; font-size: 13px; font-weight: 600; color: var(--accent); }
+  .aq-body { padding: 0 14px 13px; display: flex; flex-direction: column; gap: 8px; }
+  .aq-question { font-size: 13.5px; line-height: 1.45; color: var(--text-primary); }
+  .aq-options { display: flex; flex-direction: column; gap: 6px; }
+  .aq-option { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border: none; border-radius: 10px; background: var(--bg-tint); cursor: pointer; font-size: 13.5px; line-height: 1.4; }
   .aq-option:hover { background: var(--bg-hover); }
-  .aq-option .num { width: 17px; height: 17px; border-radius: 50%; background: transparent; border: 1.5px solid var(--text-tertiary); font-size: 0; flex-shrink: 0; }
-  .aq-option .desc { color: var(--text-tertiary); font-size: 14.5px; margin-top: 1px; }
+  .aq-option .num { width: 15px; height: 15px; border-radius: 50%; background: transparent; border: 1.5px solid var(--text-tertiary); font-size: 0; flex-shrink: 0; margin-top: 2px; }
+  .aq-option .desc { color: var(--text-tertiary); font-size: 12.5px; line-height: 1.4; margin-top: 2px; }
   .aq-card.answered .aq-option { pointer-events: none; opacity: .45; }
   .aq-card.answered .aq-option.selected { opacity: 1; background: var(--accent-dim); }
   .aq-card.answered .aq-option.selected .num { background: var(--accent); border-color: var(--accent); }
   .aq-option.aq-other { border: 1.5px dashed var(--border-strong); background: transparent; color: var(--text-secondary); }
   .aq-other-box { display: none; gap: 6px; }
   .aq-other-box.show { display: flex; }
-  .aq-other-box textarea { flex: 1; background: var(--bg-input); border: 1px solid var(--accent); border-radius: var(--r-md); color: var(--text-primary); font-family: var(--font-ui); font-size: var(--text-sm); padding: 7px 9px; resize: none; outline: none; min-height: 34px; }
-  .aq-footer-hint { font-size: 12.5px; color: var(--text-tertiary); padding-top: 2px; }
+  .aq-other-box textarea { flex: 1; background: var(--bg-input); border: 1px solid var(--accent); border-radius: var(--r-md); color: var(--text-primary); font-family: var(--font-ui); font-size: 13.5px; padding: 6px 8px; resize: none; outline: none; min-height: 32px; }
+  .aq-footer-hint { font-size: 12px; color: var(--text-tertiary); padding-top: 0; line-height: 1.4; }
   .aq-footer-hint a { cursor: pointer; }
 
   /* Permission prompt — same flat treatment, kept a full warning-colored border in both themes

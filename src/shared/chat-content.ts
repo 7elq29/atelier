@@ -103,7 +103,7 @@ export interface PermissionRequestContent {
   alwaysAllowed?: boolean
 }
 
-export type AskUserQuestionStatus = 'pending' | 'answered' | 'expired'
+export type AskUserQuestionStatus = 'pending' | 'answered' | 'cancelled' | 'expired'
 
 export interface AskUserQuestionContent {
   kind: 'ask_user_question'
