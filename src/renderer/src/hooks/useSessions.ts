@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { startTransition, useCallback, useEffect, useState } from 'react'
 import type {
   CreateSessionOptions,
   ImageAttachment,
@@ -245,10 +245,14 @@ export function useSessions(): UseSessionsResult {
     // doc comment (the SDK's own commands_changed push is itself a full
     // replacement, not a delta).
     const offCommands = window.atelier.onSessionCommands(({ sessionId, commands }) => {
-      setCommandsBySession((prev) => ({ ...prev, [sessionId]: commands }))
+      startTransition(() => {
+        setCommandsBySession((prev) => ({ ...prev, [sessionId]: commands }))
+      })
     })
     const offModels = window.atelier.onSessionModels(({ sessionId, models }) => {
-      setModelsBySession((prev) => ({ ...prev, [sessionId]: models }))
+      startTransition(() => {
+        setModelsBySession((prev) => ({ ...prev, [sessionId]: models }))
+      })
     })
     const offHarnessCwd = window.atelier.onSessionHarnessCwd(({ sessionId, cwd }) => {
       setHarnessCwdBySession((prev) => ({ ...prev, [sessionId]: cwd }))

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef } from 'react'
+import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useRef } from 'react'
 import type { MessageRecord } from '../../../../shared/session-types'
 import type { PromptDecision } from '../../../../shared/session-types'
 import { parseStructuredContent, type ToolCallContent, type ThinkingBlockContent, type TranscriptNoticeContent, type LocalCommandOutputContent } from '../../../../shared/chat-content'
@@ -19,6 +19,9 @@ import BackgroundTasksConversationCard from './BackgroundTasksConversationCard'
 import type { BackgroundTaskRow, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import type { ReviewPaneTarget, ReviewComposerComment } from '../../../../shared/review-pane-types'
 import { CHAT_TRANSCRIPT_MAX_TURNS } from '../../../../shared/chat-transcript-window'
+
+/** Above this size, skip ReactMarkdown — a 10k+ token reply can freeze the UI for seconds. */
+const LARGE_ASSISTANT_TEXT_CHARS = 48_000
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
@@ -206,8 +209,10 @@ export default function ChatTranscript({
   }
 
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null
+  // Defer switching streaming plain-text → Markdown until after turn-end state settles.
+  const busyDeferred = useDeferredValue(busy)
   const streamingTailId =
-    busy &&
+    busyDeferred &&
     lastMessage?.role === 'assistant' &&
     !parseStructuredContent(lastMessage.content)
       ? lastMessage.id
@@ -672,7 +677,7 @@ export default function ChatTranscript({
           <div className="msg-assistant" data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
             {query ? (
               highlightMatches(message.content, query, matchCounter, activeMatchIndex)
-            ) : message.id === streamingTailId ? (
+            ) : message.id === streamingTailId || message.content.length > LARGE_ASSISTANT_TEXT_CHARS ? (
               message.content
             ) : onAddComment ? (
               <TranscriptInlineComments

@@ -18,11 +18,21 @@ const pendingStreamDeltas = new Map<string, Map<number, string>>()
 /** Coalesced stream text flushed once per animation frame. */
 const pendingStreamFlush = new Map<string, Map<number, string>>()
 let streamFlushRaf = 0
+let emitRaf = 0
 
 const EMPTY_MESSAGES: MessageRecord[] = []
 
 function emit(): void {
   for (const listener of listeners) listener()
+}
+
+/** Coalesce subscriber wakeups to one per frame (stream deltas + tool/message bursts). */
+function scheduleEmit(): void {
+  if (emitRaf !== 0) return
+  emitRaf = requestAnimationFrame(() => {
+    emitRaf = 0
+    emit()
+  })
 }
 
 function flushPendingStreamDeltas(): void {
@@ -125,7 +135,7 @@ export function patchSessionMessages(
       }
     }
   }
-  emit()
+  scheduleEmit()
 }
 
 export function removeSessionMessages(sessionId: string): void {
@@ -215,6 +225,10 @@ export function initSessionMessagesListeners(): () => void {
     if (streamFlushRaf !== 0) {
       cancelAnimationFrame(streamFlushRaf)
       streamFlushRaf = 0
+    }
+    if (emitRaf !== 0) {
+      cancelAnimationFrame(emitRaf)
+      emitRaf = 0
     }
     pendingStreamFlush.clear()
   }
