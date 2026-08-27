@@ -1,12 +1,12 @@
 import { forwardRef, useEffect, useRef, useState } from 'react'
 import { SessionMenuPopup } from './SessionMenuPopup'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
-import type { MessageRecord, SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
+import type { SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
 import type { AppNoteRecord } from '../../../shared/app-note-types'
-import { pendingInteractivePromptDotStatus } from './chat/interactive-prompt-status'
+import type { SessionPromptDot } from '../stores/session-prompt-dot-store'
 import SpendStatusChip from './SpendStatusChip'
 import { handleEmacsTextareaKeyDown } from '../palette-input-keys'
-import { useSessionMessagesMap } from '../hooks/useSessionMessages'
+import { useSessionPromptDotsMap } from '../hooks/useSessionMessages'
 
 interface SidebarProps {
   collapsed: boolean
@@ -101,9 +101,8 @@ function sessionMetaLabel(session: SessionRecord, shellRemoteHost: string | null
  *  blocked-wait (orange) by inspecting the last assistant message.
  *  While a turn is still `working`, pending permission/question/plan cards
  *  also map to blocked-wait — the harness stays busy in canUseTool. */
-function dotStatusClass(status: SessionStatus, messages: MessageRecord[] | undefined): string {
-  const blocked = pendingInteractivePromptDotStatus(messages)
-  if (blocked) return blocked
+function dotStatusClass(status: SessionStatus, promptDot: SessionPromptDot): string {
+  if (promptDot) return promptDot
   if (status !== 'waiting') return status
   return 'waiting-input'
 }
@@ -113,11 +112,11 @@ function sessionDotStatus(
   closed: boolean,
   statuses: Record<string, SessionStatus>,
   staleSessionIds: Set<string>,
-  messages: MessageRecord[] | undefined
+  promptDot: SessionPromptDot
 ): string {
   return staleSessionIds.has(session.id)
     ? 'stale'
-    : dotStatusClass(displayStatus(session, closed, statuses), messages)
+    : dotStatusClass(displayStatus(session, closed, statuses), promptDot)
 }
 
 /**
@@ -796,7 +795,7 @@ export default function Sidebar({
   onRenameAppNote,
   onDeleteAppNote
 }: SidebarProps): JSX.Element {
-  const messagesBySession = useSessionMessagesMap()
+  const promptDotsBySession = useSessionPromptDotsMap()
   const [newGroupOpen, setNewGroupOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
@@ -835,7 +834,7 @@ export default function Sidebar({
           false,
           statuses,
           staleSessionIds,
-          messagesBySession[session.id]
+          promptDotsBySession[session.id] ?? null
         )
         const prevStatus = prevDotStatusBySessionRef.current[session.id]
         if (
@@ -857,7 +856,7 @@ export default function Sidebar({
       }
       return next ?? prev
     })
-  }, [activeSessions, statuses, messagesBySession, staleSessionIds, activeSessionId])
+  }, [activeSessions, statuses, promptDotsBySession, staleSessionIds, activeSessionId])
 
   useEffect(() => {
     if (!activeSessionId) return
@@ -962,7 +961,7 @@ export default function Sidebar({
         active={session.id === activeSessionId && activeAppNoteId == null}
         closed={closed}
         status={displayStatus(session, closed, statuses)}
-        dotStatus={sessionDotStatus(session, closed, statuses, staleSessionIds, messagesBySession[session.id])}
+        dotStatus={sessionDotStatus(session, closed, statuses, staleSessionIds, promptDotsBySession[session.id] ?? null)}
         showWaitingInputAlert={
           !closed &&
           waitingInputAlertIds.has(session.id) &&

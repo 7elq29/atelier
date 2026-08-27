@@ -2,12 +2,16 @@ import { useSyncExternalStore } from 'react'
 import type { MessageRecord } from '../../../shared/session-types'
 import {
   getSessionMessages,
-  getSessionMessagesSnapshot,
   getTranscriptTruncation,
   hasSessionMessages,
   subscribeSessionMessages,
   type TranscriptTruncationInfo
 } from '../stores/session-messages-store'
+import {
+  getSessionPromptDotsSnapshot,
+  subscribeSessionPromptDots,
+  type SessionPromptDot
+} from '../stores/session-prompt-dot-store'
 
 const EMPTY_MESSAGES: MessageRecord[] = []
 
@@ -20,12 +24,12 @@ export function useSessionMessages(sessionId: string | null): MessageRecord[] {
   )
 }
 
-/** Full map for sidebar dots — re-renders on any session's message update. */
-export function useSessionMessagesMap(): Record<string, MessageRecord[]> {
+/** Sidebar prompt-dot hints — skips stream-delta content-only updates. */
+export function useSessionPromptDotsMap(): Record<string, SessionPromptDot> {
   return useSyncExternalStore(
-    subscribeSessionMessages,
-    getSessionMessagesSnapshot,
-    getSessionMessagesSnapshot
+    subscribeSessionPromptDots,
+    getSessionPromptDotsSnapshot,
+    getSessionPromptDotsSnapshot
   )
 }
 

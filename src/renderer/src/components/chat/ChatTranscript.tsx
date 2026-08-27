@@ -139,6 +139,7 @@ export default function ChatTranscript({
   reviewComments = [],
   transcriptTruncated = false,
   hiddenTurnCount = 0,
+  busy = false,
 }: {
   messages: MessageRecord[]
   /** Resolves a permission/AskUserQuestion/plan card by requestId (05-interactive-prompts). */
@@ -172,6 +173,8 @@ export default function ChatTranscript({
   reviewComments?: readonly ReviewComposerComment[]
   transcriptTruncated?: boolean
   hiddenTurnCount?: number
+  /** While a turn is in flight, render the tail assistant message as plain text (skip Markdown). */
+  busy?: boolean
 }): JSX.Element {
   function findPreviousPlanMarkdown(currentMessageId: number): string | undefined {
     const idx = messages.findIndex((m) => m.id === currentMessageId)
@@ -201,6 +204,14 @@ export default function ChatTranscript({
     }
     topRows.push({ message: m, tool: parsed?.kind === 'tool_call' ? parsed : undefined })
   }
+
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null
+  const streamingTailId =
+    busy &&
+    lastMessage?.role === 'assistant' &&
+    !parseStructuredContent(lastMessage.content)
+      ? lastMessage.id
+      : null
 
   /**
    * Renders one tool-call row's full markup — its `transcript-message`
@@ -661,6 +672,8 @@ export default function ChatTranscript({
           <div className="msg-assistant" data-testid="transcript-message" data-role={message.role} data-message-id={message.id}>
             {query ? (
               highlightMatches(message.content, query, matchCounter, activeMatchIndex)
+            ) : message.id === streamingTailId ? (
+              message.content
             ) : onAddComment ? (
               <TranscriptInlineComments
                 messageId={message.id}

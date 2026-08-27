@@ -596,14 +596,23 @@ export default function App(): JSX.Element {
     setActiveAppNoteId(noteId)
   }, [])
 
-  const selectDailyNote = useCallback(async () => {
+  const selectDailyNote = useCallback(() => {
     setActiveAppNoteId(null)
     setActiveWeeklyPlanOpen(false)
     setWeeklyPlanViewDoc(null)
     setWeeklyPlanExistsHint(null)
-    const d = activeDailyNoteDate ?? (await window.atelier.getDefaultDate())
+    // Navigate immediately — do not await IPC while a chat turn is streaming
+    // (main process busy → click feels dead until getDefaultDate returns).
+    const now = new Date()
+    const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const d = activeDailyNoteDate ?? date ?? localToday
     setActiveDailyNoteDate(d)
-  }, [activeDailyNoteDate])
+    if (!activeDailyNoteDate && !date) {
+      void window.atelier.getDefaultDate().then((mainDate) => {
+        setActiveDailyNoteDate((prev) => (prev === localToday ? mainDate : prev))
+      })
+    }
+  }, [activeDailyNoteDate, date])
 
   const toggleDailyNotesPanel = useCallback(async () => {
     if (date) {
@@ -1613,6 +1622,7 @@ export default function App(): JSX.Element {
                         onUpdateComment={replaceInActiveComposer}
                         onDeleteComment={deleteReviewCommentByNote}
                         reviewComments={reviewCommentsBySession[activeSession.id] ?? []}
+                        busy={sessions.busyBySession[activeSession.id] ?? false}
                       />
                       <div className="composer-cache">
                         {[...aliveChatComposers].map((sessionId) => {

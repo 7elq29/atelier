@@ -32,7 +32,8 @@ export function SessionChatSurface({
   onAddComment,
   onUpdateComment,
   onDeleteComment,
-  reviewComments = []
+  reviewComments = [],
+  busy = false,
 }: {
   session: SessionRecord
   pendingJumpMessageId: number | null
@@ -59,6 +60,7 @@ export function SessionChatSurface({
   onUpdateComment: (oldNote: string, newNote: string) => void
   onDeleteComment: (composerNote: string) => void
   reviewComments?: readonly ReviewComposerComment[]
+  busy?: boolean
 }): JSX.Element {
   const messages = useSessionMessages(session.id)
   const truncation = useTranscriptTruncation(session.id)
@@ -103,6 +105,7 @@ export function SessionChatSurface({
           onUpdateComment={onUpdateComment}
           onDeleteComment={onDeleteComment}
           reviewComments={reviewComments}
+          busy={busy}
         />
       </div>
       <TrackerRail messages={messages} backgroundTasks={backgroundTasks} />
