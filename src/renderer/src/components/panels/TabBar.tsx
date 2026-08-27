@@ -1,3 +1,5 @@
+import { SESSION_TAB_SHORTCUT_LABELS } from '../../keyboard-hints/keyboard-hints'
+
 export type SessionTab = 'chat' | 'diff' | 'files' | 'terminal' | 'ports'
 
 /**
@@ -32,6 +34,7 @@ export default function TabBar({
           className={activeTab === t.id ? 'active' : ''}
           onClick={() => onSelect(t.id)}
           data-testid={`tab-${t.id}`}
+          data-session-tab-shortcut={SESSION_TAB_SHORTCUT_LABELS[t.id]}
         >
           {t.label}
           {t.id === 'diff' && diffChangedCount != null && diffChangedCount > 0 ? (

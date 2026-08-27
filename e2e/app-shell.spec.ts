@@ -137,6 +137,10 @@ test('keyboard hints: ⌘+f switches to Files tab while hints are active', async
   })
   await page.waitForTimeout(300)
   await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByTestId('keyboard-hint-tab-badge-c')).toBeVisible()
+  await expect(page.getByTestId('keyboard-hint-tab-badge-d')).toBeVisible()
+  await expect(page.getByTestId('keyboard-hint-tab-badge-f')).toBeVisible()
+  await expect(page.getByTestId('keyboard-hint-tab-badge-t')).toBeVisible()
 
   await page.evaluate(() => {
     window.dispatchEvent(

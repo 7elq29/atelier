@@ -584,6 +584,12 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   padding-inline: 4px;
   text-align: center;
 }
+.keyboard-hint-badge--tab {
+  background: var(--accent);
+  min-width: 1.1em;
+  padding-inline: 4px;
+  text-align: center;
+}
 
 /* ===== Modals (command palette / settings / onboarding) ===== */
 .modal-backdrop {

@@ -746,7 +746,6 @@ export default function App(): JSX.Element {
   const handleSessionTabHintShortcut = useCallback(
     (tab: SessionTab) => {
       if (tab === 'ports' && !activeSession?.hostname) return
-      if (tab === 'terminal') return
       if (claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)) return
       setActiveTab(tab)
       setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)))

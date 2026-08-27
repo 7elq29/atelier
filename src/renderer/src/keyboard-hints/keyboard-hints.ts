@@ -210,12 +210,34 @@ export function normalizeHintKeyChar(key: string): string | null {
   return null
 }
 
+export type SessionTabShortcut = 'chat' | 'diff' | 'files' | 'terminal' | 'ports'
+
 /** Reserved ⌘+letter session tab shortcuts while hint mode is active. */
-export const SESSION_TAB_HINT_KEYS: Readonly<Record<string, 'chat' | 'diff' | 'files' | 'ports'>> = {
+export const SESSION_TAB_HINT_KEYS: Readonly<Record<string, SessionTabShortcut>> = {
   c: 'chat',
   d: 'diff',
   f: 'files',
+  t: 'terminal',
   p: 'ports'
+}
+
+/** Letter shown on each tab button while hint mode is active (tabs stay excluded from letter hints). */
+export const SESSION_TAB_SHORTCUT_LABELS: Readonly<Record<SessionTabShortcut, string>> = {
+  chat: 'c',
+  diff: 'd',
+  files: 'f',
+  terminal: 't',
+  ports: 'p'
+}
+
+export function collectSessionTabShortcutBadges(root: HTMLElement): HintEntry[] {
+  return [...root.querySelectorAll<HTMLElement>('[data-session-tab-shortcut]')]
+    .filter((el) => isElementVisible(el))
+    .map((element) => ({
+      element,
+      label: element.getAttribute('data-session-tab-shortcut') ?? ''
+    }))
+    .filter((entry) => entry.label.length > 0)
 }
 
 /** Don't treat editing chords as hint letters (Ctrl+C/V on macOS). */

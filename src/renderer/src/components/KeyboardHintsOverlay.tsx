@@ -11,7 +11,9 @@ import {
   layoutHintBadge,
   matchHintEntries,
   normalizeHintKeyChar,
+  collectSessionTabShortcutBadges,
   SESSION_TAB_HINT_KEYS,
+  type SessionTabShortcut,
   setHintLabelAttributes,
   shouldBypassHintKeydown
 } from '../keyboard-hints/keyboard-hints'
@@ -23,6 +25,7 @@ type BadgeLayout = {
   label: string
   top: number
   left: number
+  kind: 'hint' | 'tab'
 }
 
 type Props = {
@@ -30,8 +33,8 @@ type Props = {
   disabled: boolean
   /** Root scanned for interactives (main app shell). */
   scanRootId?: string
-  /** ⌘+c/d/f/p while hints are active — reserved session tab shortcuts. */
-  onSessionTabShortcut?: (tab: 'chat' | 'diff' | 'files' | 'ports') => void
+  /** ⌘+c/d/f/t/p while hints are active — reserved session tab shortcuts. */
+  onSessionTabShortcut?: (tab: SessionTabShortcut) => void
 }
 
 /**
@@ -77,10 +80,20 @@ export default function KeyboardHintsOverlay({
       const displayLabel = hintBadgeDisplayLabel(label, bufferRef.current)
       const rect = element.getBoundingClientRect()
       const { top, left } = layoutHintBadge(rect, displayLabel)
-      return { label: displayLabel, top, left }
+      return { label: displayLabel, top, left, kind: 'hint' as const }
     })
+
+    const root = document.getElementById(scanRootId)
+    if (root) {
+      for (const { element, label } of collectSessionTabShortcutBadges(root)) {
+        const rect = element.getBoundingClientRect()
+        const { top, left } = layoutHintBadge(rect, label)
+        next.push({ label, top, left, kind: 'tab' })
+      }
+    }
+
     setBadges(next)
-  }, [])
+  }, [scanRootId])
 
   const beginHintMode = useCallback(() => {
     if (disabledRef.current) return
@@ -268,9 +281,18 @@ export default function KeyboardHintsOverlay({
     >
       {badges.map((b) => (
         <span
-          key={`${b.label}-${b.top}-${b.left}`}
-          className={'keyboard-hint-badge' + (/^[0-9]+$/.test(b.label) ? ' keyboard-hint-badge--session' : '')}
-          data-testid={`keyboard-hint-badge-${b.label}`}
+          key={`${b.kind}-${b.label}-${b.top}-${b.left}`}
+          className={
+            'keyboard-hint-badge' +
+            (b.kind === 'tab'
+              ? ' keyboard-hint-badge--tab'
+              : /^[0-9]+$/.test(b.label)
+                ? ' keyboard-hint-badge--session'
+                : '')
+          }
+          data-testid={
+            b.kind === 'tab' ? `keyboard-hint-tab-badge-${b.label}` : `keyboard-hint-badge-${b.label}`
+          }
           style={{ top: b.top, left: b.left }}
         >
           {b.label}
