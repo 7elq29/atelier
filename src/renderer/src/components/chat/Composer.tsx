@@ -10,6 +10,13 @@ import type { ImageAttachment, ModelInfo, ModelSelection, ModelValidationResult,
 import { modelLabelForSelection, resolveModelPickerOptions } from './model-picker-options'
 import type { SessionRateLimitEvent, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
+import {
+  APP_NOTE_DRAG_MIME,
+  appNoteAttachRelativePath,
+  formatAppNoteFileContent,
+  joinToWorkspaceRoot,
+  parseAppNoteDragPayload
+} from '../../../../shared/app-note-attach'
 
 /** Cap in px for the textarea's auto-grow, per mocks/index.html's `.composer-box textarea { max-height: 160px }`. */
 const MAX_TEXTAREA_HEIGHT = 160
@@ -267,6 +274,11 @@ const ACCEPTED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif
 interface AttachedImage extends ImageAttachment {
   /** `data:<mime>;base64,<data>` — the same bytes as `data`, kept around only so the thumbnail's `<img src>` doesn't need to re-derive it. */
   previewUrl: string
+}
+
+type PendingAppNoteAttach = {
+  id: string
+  title: string
 }
 
 export interface ComposerHandle {
@@ -551,6 +563,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   const [branch, setBranch] = useState<string | null>(null)
   const [fileList, setFileList] = useState<string[]>([])
   const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null)
+  const [pendingAppNotes, setPendingAppNotes] = useState<PendingAppNoteAttach[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   // `/model`'s target — lifted out of ModelPicker itself (bug #56) so typing
   // the full command and pressing Enter/Tab, or clicking its slash-item, can
@@ -767,9 +780,41 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   const activeMatches: (string | SlashCommand)[] =
     popover?.kind === 'mention' ? mentionMatches : popover?.kind === 'slash' ? slashMatches : []
 
+  async function materializePendingAppNotes(): Promise<string[]> {
+    if (pendingAppNotes.length === 0) return []
+    const workspaceRoot = harnessCwd ?? worktreePath ?? projectPath ?? ''
+    if (!workspaceRoot.trim()) {
+      onAddLocalMessage('Cannot attach app notes — session workspace path is not available yet.')
+      return []
+    }
+
+    const mentionPaths: string[] = []
+    for (const pending of pendingAppNotes) {
+      let note
+      try {
+        note = await window.atelier.getAppNote(pending.id)
+      } catch {
+        onAddLocalMessage(`Could not attach note "${pending.title}" — it may have been deleted.`)
+        continue
+      }
+      const relativePath = appNoteAttachRelativePath(note.id, note.title)
+      const absolutePath = joinToWorkspaceRoot(relativePath, workspaceRoot)
+      const result = await window.atelier.filesWrite(absolutePath, formatAppNoteFileContent(note), hostname)
+      if (!result.ok) {
+        onAddLocalMessage(`Could not write note "${pending.title}" to the workspace: ${result.error ?? 'unknown error'}`)
+        continue
+      }
+      mentionPaths.push(relativePath)
+    }
+    return mentionPaths
+  }
+
   async function handleSend(): Promise<void> {
     const text = resolveSendText(value, largePastesRef.current).trim()
-    const sendText = buildComposerSendText(text, reviewComments)
+    const mentionPaths = await materializePendingAppNotes()
+    const mentionPrefix = mentionPaths.length > 0 ? mentionPaths.map((p) => `@${p}`).join(' ') + ' ' : ''
+    const mergedText = (mentionPrefix + text).trim()
+    const sendText = buildComposerSendText(mergedText, reviewComments)
     if (!sendText && !attachedImage) return
     // `/model <model-id>` validates against the SDK's own live acceptance
     // logic (calls `Query.setModel()` on the connected session and checks
@@ -793,10 +838,11 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         return
       }
     }
-    onSend(text, attachedImage ? { mimeType: attachedImage.mimeType, data: attachedImage.data } : undefined)
+    onSend(mergedText, attachedImage ? { mimeType: attachedImage.mimeType, data: attachedImage.data } : undefined)
     setValue('')
     largePastesRef.current = []
     setAttachedImage(null)
+    setPendingAppNotes([])
   }
 
   async function attachFile(file: File | null | undefined): Promise<void> {
@@ -805,9 +851,14 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     if (image) setAttachedImage(image)
   }
 
+  function acceptsComposerDrop(types: readonly string[]): boolean {
+    return types.includes('Files') || types.includes(APP_NOTE_DRAG_MIME)
+  }
+
   function handleDragOver(e: React.DragEvent<HTMLDivElement>): void {
-    if (!e.dataTransfer.types.includes('Files')) return
+    if (!acceptsComposerDrop(e.dataTransfer.types)) return
     e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
     setIsDragOver(true)
   }
 
@@ -816,9 +867,16 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   }
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>): void {
-    if (e.dataTransfer.files.length === 0) return
     e.preventDefault()
     setIsDragOver(false)
+    const notePayload = parseAppNoteDragPayload(e.dataTransfer.getData(APP_NOTE_DRAG_MIME))
+    if (notePayload) {
+      setPendingAppNotes((prev) =>
+        prev.some((n) => n.id === notePayload.id) ? prev : [...prev, { id: notePayload.id, title: notePayload.title }]
+      )
+      return
+    }
+    if (e.dataTransfer.files.length === 0) return
     void attachFile(e.dataTransfer.files[0])
   }
 
@@ -1116,18 +1174,44 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             <span data-testid="composer-turn-status-text">{composerTurnStatusText(sdkChrome)}</span>
           </div>
         )}
-        {attachedImage && (
+        {(attachedImage || pendingAppNotes.length > 0) && (
           <div className="attach-row" data-testid="composer-attach-row">
-            <div className="attach-thumb" data-testid="composer-attach-thumb">
-              <img src={attachedImage.previewUrl} alt="Attached" data-testid="composer-attach-image" />
-              <span
-                className="remove"
-                data-testid="composer-attach-remove"
-                onClick={() => setAttachedImage(null)}
+            {attachedImage ? (
+              <div className="attach-thumb" data-testid="composer-attach-thumb">
+                <img src={attachedImage.previewUrl} alt="Attached" data-testid="composer-attach-image" />
+                <span
+                  className="remove"
+                  data-testid="composer-attach-remove"
+                  onClick={() => setAttachedImage(null)}
+                >
+                  ✕
+                </span>
+              </div>
+            ) : null}
+            {pendingAppNotes.map((note) => (
+              <div
+                key={note.id}
+                className="attach-thumb attach-thumb--note"
+                data-testid="composer-attach-note"
+                data-note-id={note.id}
+                title={note.title}
               >
-                ✕
-              </span>
-            </div>
+                <span className="attach-note-icon" aria-hidden="true">
+                  <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 2h8l4 4v16H6z" />
+                    <path d="M14 2v4h4" />
+                  </svg>
+                </span>
+                <span className="attach-note-label">{note.title}</span>
+                <span
+                  className="remove"
+                  data-testid="composer-attach-note-remove"
+                  onClick={() => setPendingAppNotes((prev) => prev.filter((n) => n.id !== note.id))}
+                >
+                  ✕
+                </span>
+              </div>
+            ))}
           </div>
         )}
         <ReviewComposerCommentList
@@ -1261,7 +1345,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             disabled={
               harnessDisconnected ||
               rateLimit?.sendBlocked ||
-              (!buildComposerSendText(value, reviewComments).trim() && !attachedImage)
+              (!buildComposerSendText(value, reviewComments).trim() && !attachedImage && pendingAppNotes.length === 0)
             }
             title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
             aria-label={busy ? 'Queue' : 'Send'}

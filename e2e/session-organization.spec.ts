@@ -227,6 +227,57 @@ test.describe('06-session-organization', () => {
     expect(dbRows).toHaveLength(0)
   })
 
+  test('app notes: drag onto composer attaches as file mention on send', async () => {
+    const chatSessionId =
+      sessionA ?? (await createLocalSession(electronApp, page, projectDir, 'Reply with exactly the word: ATTACH'))
+
+    await page.getByTestId('new-app-note-button').click()
+    const noteRow = page.locator('[data-testid="app-note-row"]').first()
+    await expect(noteRow).toHaveClass(/active/)
+    const noteId = (await noteRow.getAttribute('data-note-id')) as string
+
+    const editor = page.getByTestId('app-note-editor').getByTestId('atomic-note-editor')
+    await editor.click()
+    await page.keyboard.type('# Attach me\n\nDrag-drop body line.')
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s')
+
+    await page.locator(`[data-testid="session-row"][data-session-id="${chatSessionId}"]`).click()
+    await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 15_000 })
+
+    await page.evaluate(
+      ({ id, title }) => {
+        const row = document.querySelector(`[data-note-id="${id}"]`)
+        const composer = document.querySelector('.composer-box')
+        if (!row || !composer) throw new Error('drag targets missing')
+        const dt = new DataTransfer()
+        dt.setData('application/x-atelier-app-note', JSON.stringify({ id, title: title ?? 'Untitled note' }))
+        const drop = new Event('drop', { bubbles: true, cancelable: true })
+        Object.defineProperty(drop, 'dataTransfer', { value: dt })
+        composer.dispatchEvent(drop)
+      },
+      { id: noteId, title: 'Untitled note' }
+    )
+
+    await expect(page.getByTestId('composer-attach-note')).toBeVisible()
+    await page.getByTestId('composer-input').fill('Use the attached note.')
+    await page.getByTestId('send-button').click()
+
+    await expect
+      .poll(async () => {
+        const rows = await queryDb<{ content: string }>(
+          page,
+          'SELECT content FROM messages WHERE session_id = ? AND role = ? ORDER BY id DESC LIMIT 1',
+          [chatSessionId, 'user']
+        )
+        return rows[0]?.content ?? ''
+      }, { timeout: 60_000 })
+      .toContain('@.atelier/app-notes/')
+
+    const relPath = `.atelier/app-notes/untitled-note-${noteId.slice(0, 8)}.md`
+    await expect.poll(() => existsSync(join(projectDir, relPath))).toBe(true)
+    await page.screenshot({ path: join(artifactsDir, '06-app-note-composer-attach.png') })
+  })
+
   // ── Color ─────────────────────────────────────────────────────────────
   test('color: set a color and confirm it persists + renders via a --sc-* token', async () => {
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionC}"]`)

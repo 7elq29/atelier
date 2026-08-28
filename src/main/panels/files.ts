@@ -6,7 +6,8 @@
  * (same pattern as git.ts), so repeated calls after the first pay ~5ms auth
  * cost instead of ~4.5s.
  */
-import { readdirSync, readFileSync, statSync, existsSync, writeFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { join, relative, extname, basename } from 'node:path'
 import { execFile, spawn } from 'node:child_process'
@@ -356,7 +357,9 @@ export async function writeFileContent(path: string, content: string, sshHost?: 
   }
 
   try {
-    writeFileSync(resolveLocalPath(path), content, 'utf8')
+    const localPath = resolveLocalPath(path)
+    mkdirSync(dirname(localPath), { recursive: true })
+    writeFileSync(localPath, content, 'utf8')
     return { ok: true }
   } catch (err) {
     return { ok: false, error: (err as Error).message }

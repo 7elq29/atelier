@@ -502,6 +502,7 @@ const api = {
   getSpendStatus: (): Promise<SpendStatus | null> => ipcRenderer.invoke('spendStatus:get'),
 
   listAppNotes: (): Promise<AppNoteRecord[]> => ipcRenderer.invoke('app-note:list'),
+  getAppNote: (id: string): Promise<AppNoteRecord> => ipcRenderer.invoke('app-note:get', id),
   createAppNote: (title?: string): Promise<AppNoteRecord> => ipcRenderer.invoke('app-note:create', title),
   updateAppNote: (id: string, patch: AppNoteUpdate): Promise<AppNoteRecord> =>
     ipcRenderer.invoke('app-note:update', id, patch),

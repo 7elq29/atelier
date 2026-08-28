@@ -14,6 +14,12 @@ function notesStore(): AppNotesStore {
 export function registerAppNotesHandlers(): void {
   ipcMain.handle('app-note:list', () => notesStore().list())
 
+  ipcMain.handle('app-note:get', (_event, id: string) => {
+    const note = notesStore().get(id)
+    if (!note) throw new Error(`app note not found: ${id}`)
+    return note
+  })
+
   ipcMain.handle('app-note:create', (_event, title?: string) => {
     const note = notesStore().create(title)
     logger.info('app-note created', { id: note.id })

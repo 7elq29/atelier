@@ -32,6 +32,11 @@ export class AppNotesStore {
     return rows.map(rowToRecord)
   }
 
+  get(id: string): AppNoteRecord | undefined {
+    const row = this.db.prepare('SELECT * FROM app_notes WHERE id = ?').get(id) as AppNoteRow | undefined
+    return row ? rowToRecord(row) : undefined
+  }
+
   create(title = 'Untitled note'): AppNoteRecord {
     const now = new Date().toISOString()
     const id = randomUUID()

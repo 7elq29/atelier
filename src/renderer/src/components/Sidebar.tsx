@@ -3,6 +3,7 @@ import { SessionMenuPopup } from './SessionMenuPopup'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
 import type { SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
 import type { AppNoteRecord } from '../../../shared/app-note-types'
+import { APP_NOTE_DRAG_MIME } from '../../../shared/app-note-attach'
 import type { SessionPromptDot } from '../stores/session-prompt-dot-store'
 import SpendStatusChip from './SpendStatusChip'
 import { handleEmacsTextareaKeyDown } from '../palette-input-keys'
@@ -341,9 +342,15 @@ function AppNoteRow({
       data-hint-note-row=""
       data-note-id={note.id}
       data-active={active ? 'true' : 'false'}
+      draggable={!editing}
       role="button"
       tabIndex={0}
       onClick={onSelect}
+      onDragStart={(e) => {
+        if (editing) return
+        e.dataTransfer.setData(APP_NOTE_DRAG_MIME, JSON.stringify({ id: note.id, title: displayTitle }))
+        e.dataTransfer.effectAllowed = 'copy'
+      }}
       onContextMenu={(e) => {
         e.preventDefault()
         e.stopPropagation()
