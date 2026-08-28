@@ -235,6 +235,8 @@ export interface RemoteHostResolver {
  */
 export class SessionManager {
   private readonly live = new Map<string, LiveStream>()
+  /** Sessions whose Atelier worktree checkout was checked and absent — skip repeat SSH stat on every send. */
+  private readonly worktreeMissingChecked = new Set<string>()
   /** Sessions currently between a triggered `reconnect()` and the live harness connection actually being (re)established — see `getStatus()`'s 'connecting' case (fix-session-resume-stale-sigterm-and-no-connect-indicator). */
   private readonly connecting = new Set<string>()
   /** Sessions currently being set up with an async worktree creation — see `getStatus()`'s 'creating-worktree' case. */
@@ -867,11 +869,15 @@ export class SessionManager {
    */
   private async ensureSessionWorktreePath(session: SessionRecord): Promise<SessionRecord> {
     if (session.worktreePath) return session
+    if (this.worktreeMissingChecked.has(session.id)) return session
     const homeDir = this.homeDirForStoredSession(session)
     const worktreeRoot = worktreeRootFromConfig(loadConfig())
     const expected = sessionWorktreePath(worktreeRoot, session.id, homeDir)
     const hostname = session.hostname ? this.hosts.resolveByHostname(session.hostname)?.sshHost : undefined
-    if (!(await worktreePathExists(expected, hostname))) return session
+    if (!(await worktreePathExists(expected, hostname))) {
+      this.worktreeMissingChecked.add(session.id)
+      return session
+    }
     logger.info('ensureSessionWorktreePath: re-binding orphan worktree directory', {
       sessionId: session.id,
       worktreePath: expected
@@ -1428,9 +1434,8 @@ export class SessionManager {
    * close or a real app relaunch.
    */
   async sendUserMessage(sessionId: string, text: string, override?: ModelSelection, image?: ImageAttachment): Promise<void> {
-    let session = this.store.getSession(sessionId)
+    const session = this.store.getSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
-    session = await this.ensureSessionWorktreePath(session)
     // Persisted content is the plain-text string in the common (no image)
     // case, unchanged from before this task. With an image attached, it's
     // JSON-encoded as an ImageAttachmentContent instead — same
@@ -1525,8 +1530,9 @@ export class SessionManager {
         }
       }
       logger.info('sendUserMessage: no live harness session, reconnecting via resume()', { sessionId })
-      const permissionMode = this.permissionModes.get(sessionId) ?? session.permissionMode
-      const modelSelection = this.modelSelections.get(sessionId) ?? session.modelSelection ?? undefined
+      const sessionForReconnect = await this.ensureSessionWorktreePath(session)
+      const permissionMode = this.permissionModes.get(sessionId) ?? sessionForReconnect.permissionMode
+      const modelSelection = this.modelSelections.get(sessionId) ?? sessionForReconnect.modelSelection ?? undefined
       // fix-send-message-dropped-on-never-connected: for sessions that have
       // never connected, startFreshWithRetry is a lazy async generator —
       // this.sessions.set() (and therefore a valid queue to push to) only
@@ -1534,8 +1540,8 @@ export class SessionManager {
       // the generator. Calling streamInput() before that would push to the OLD
       // closed queue (a silent no-op). Instead, pass the text as initialPrompt
       // so it's seeded into the new queue at startWithId/launch time.
-      const needsInitialPrompt = !session.everConnected
-      const harnessSession = await this.reconnectHarness(session, {
+      const needsInitialPrompt = !sessionForReconnect.everConnected
+      const harnessSession = await this.reconnectHarness(sessionForReconnect, {
         permissionMode,
         model: modelSelection?.model,
         effort: modelSelection?.effort,
