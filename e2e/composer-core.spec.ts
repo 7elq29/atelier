@@ -217,7 +217,7 @@ test.describe('04-composer-core', () => {
     await appendComposerLog(page, 'enter-sends')
   })
 
-  test('Emacs navigation: Opt+F/B/V, Ctrl+A/E, Opt+Shift+,/.', async () => {
+  test('Emacs navigation: Opt+F/B/D/V, Ctrl+A/E, Opt+Shift+,/.', async () => {
     const textarea = activeComposer(page).getByTestId('composer-input')
     const sample = 'hello world\nsecond line'
     await textarea.click()
@@ -236,6 +236,16 @@ test.describe('04-composer-core', () => {
     await page.keyboard.press('KeyB')
     await page.keyboard.up('Alt')
     await expect.poll(async () => textarea.evaluate((el) => el.selectionStart)).toBe(0)
+
+    await textarea.fill('hello world')
+    await textarea.evaluate((el: HTMLTextAreaElement) => {
+      el.focus()
+      el.setSelectionRange(0, 0)
+    })
+    await page.keyboard.down('Alt')
+    await page.keyboard.press('KeyD')
+    await page.keyboard.up('Alt')
+    await expect(textarea).toHaveValue(' world')
 
     await textarea.fill(sample)
     await textarea.evaluate((el: HTMLTextAreaElement) => {

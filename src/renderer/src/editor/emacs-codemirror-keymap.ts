@@ -12,6 +12,7 @@ import {
   cursorPageDown,
   cursorPageUp,
   deleteGroupBackward,
+  deleteGroupForward,
   deleteToLineEnd,
   deleteToLineStart
 } from '@codemirror/commands'
@@ -43,6 +44,10 @@ export const emacsCodemirrorKeymapExtension = Prec.highest(
         if (event.code === 'KeyB') {
           event.preventDefault()
           return cursorGroupBackward(view)
+        }
+        if (event.code === 'KeyD') {
+          event.preventDefault()
+          return deleteGroupForward(view)
         }
         if (event.code === 'KeyV') {
           event.preventDefault()

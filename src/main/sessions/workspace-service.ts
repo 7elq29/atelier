@@ -16,7 +16,7 @@ import type {
 import type { DiffSummary } from '../../shared/panel-types'
 import type { SessionChangesCap } from '../../shared/session-changes-cap'
 import { sessionChangesCapSignature } from '../../shared/session-changes-cap'
-import { getDiffSummary, getDiffSummaryWithHunks, onWorkingTreeUpdated, probeGitRepo } from '../panels/git'
+import { getDiffSummary, getDiffSummaryWithHunks, mergeHintPathsIntoDiffSummary, onWorkingTreeUpdated, probeGitRepo } from '../panels/git'
 import { resolveGitRepoRoot } from '../panels/git-core'
 import { walkFileTree, listWorkspaceFiles } from '../panels/files'
 import type { PtyManager } from '../panels/pty'
@@ -24,6 +24,7 @@ import { logger } from '../logger'
 import { warmSshMux } from '../ssh-exec'
 import { ensureUssh } from '../uber-auth'
 import { withRemotePreloadHostQueue, withRemoteBackgroundHostQueue, coalesceSessionCapRebuild } from './remote-preload-gate'
+import { mergeCapItemsFromDiffSummary } from './session-changes-cap'
 
 export const DEVPOD_GIT_POLL_MS = 15_000
 export const LOCAL_GIT_DEBOUNCE_MS = 400
@@ -65,6 +66,8 @@ function mergeDiffHunks(prev: DiffSummary | undefined, next: DiffSummary): DiffS
 const PRELOAD_DIFF_HUNKS_TIMEOUT_MS = 60_000
 /** Wall-clock cap for essential preload — clears connecting even if remote SSH/files hang. */
 const PRELOAD_ESSENTIALS_TIMEOUT_MS = 45_000
+/** Wall-clock cap for background workspace refresh — clears "Refreshing diff…" if remote git stalls. */
+const REFRESH_WORKSPACE_TIMEOUT_MS = 120_000
 
 async function loadPreloadDiff(
   workspacePath: string,
@@ -102,7 +105,8 @@ export class WorkspaceService {
 
   constructor(
     private readonly getWindow: () => BrowserWindow | null,
-    private readonly buildSessionChangesCap: (sessionId: string) => Promise<SessionChangesCap>
+    private readonly buildSessionChangesCap: (sessionId: string) => Promise<SessionChangesCap>,
+    private readonly listSessionTouchedPaths: (sessionId: string) => string[] = () => []
   ) {
     onWorkingTreeUpdated((workspacePath, hostname, diff) => {
       this.applyUntrackedDiffUpdate(workspacePath, hostname ?? null, diff)
@@ -119,7 +123,13 @@ export class WorkspaceService {
       if (payload.workspacePath !== workspacePath || payload.hostname !== hostname) continue
       const merged = mergeDiffHunks(payload.diff, diff)
       if (diffListSignature(payload.diff) === diffListSignature(merged)) continue
-      this.sendUpdated({ ...payload, diff: merged, loadedAt: Date.now() })
+      const hintPaths = this.listSessionTouchedPaths(payload.sessionId)
+      const sessionChangesCap = mergeCapItemsFromDiffSummary(
+        payload.sessionChangesCap,
+        merged,
+        hintPaths
+      )
+      this.sendUpdated({ ...payload, diff: merged, sessionChangesCap, loadedAt: Date.now() })
     }
   }
 
@@ -336,11 +346,19 @@ export class WorkspaceService {
         const capTimed = await timed(() => this.loadSessionChangesCapSafe(session.id, { items: [] }, hostname))
         backgroundCapMs = capTimed.ms
 
-        const diff = mergeDiffHunks(base.diff, gitTimed.result)
+        const diffWithHints = await mergeHintPathsIntoDiffSummary(
+          gitTimed.result,
+          workspacePath,
+          hostname,
+          this.listSessionTouchedPaths(session.id)
+        )
+        const diff = mergeDiffHunks(base.diff, diffWithHints)
+        const hintPaths = this.listSessionTouchedPaths(session.id)
+        const sessionChangesCap = mergeCapItemsFromDiffSummary(capTimed.result, diff, hintPaths)
         const payload: SessionWorkspacePayload = {
           ...base,
           diff,
-          sessionChangesCap: capTimed.result,
+          sessionChangesCap,
           loadedAt: Date.now()
         }
         this.sendUpdated(payload)
@@ -416,9 +434,16 @@ export class WorkspaceService {
         const workspacePath = workspacePathFor(session)
         const prev = this.cache.get(session.id)
         const includeFiles = opts?.includeFiles === true
-        const diffRaw = force
+        const hintPaths = this.listSessionTouchedPaths(session.id)
+        const diffRawBase = force
           ? await getDiffSummaryWithHunks(workspacePath, session.hostname, true)
           : await getDiffSummary(workspacePath, session.hostname, force)
+        const diffRaw = await mergeHintPathsIntoDiffSummary(
+          diffRawBase,
+          workspacePath,
+          session.hostname,
+          hintPaths
+        )
         const diff = mergeDiffHunks(prev?.diff, diffRaw)
         const [filesTree, filesList] = await Promise.all([
           includeFiles
@@ -432,10 +457,15 @@ export class WorkspaceService {
               )
             : Promise.resolve(prev?.filesList ?? [])
         ])
-        const sessionChangesCap = await this.loadSessionChangesCapSafe(
+        const sessionChangesCapRaw = await this.loadSessionChangesCapSafe(
           session.id,
           prev?.sessionChangesCap ?? { items: [] },
           session.hostname
+        )
+        const sessionChangesCap = mergeCapItemsFromDiffSummary(
+          sessionChangesCapRaw,
+          diff,
+          hintPaths
         )
         const payload: SessionWorkspacePayload = {
           sessionId: session.id,
@@ -461,9 +491,23 @@ export class WorkspaceService {
         return payload
       }
 
-      return session.hostname
-        ? await withRemoteBackgroundHostQueue(session.hostname, run)
-        : await run()
+      const queued = session.hostname
+        ? withRemoteBackgroundHostQueue(session.hostname, run)
+        : run()
+      return await Promise.race([
+        queued,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('workspace refresh timed out')), REFRESH_WORKSPACE_TIMEOUT_MS)
+        )
+      ])
+    } catch (err) {
+      logger.warn('workspace refresh failed or timed out', {
+        sessionId: session.id,
+        error: err instanceof Error ? err.message : String(err)
+      })
+      const cached = this.cache.get(session.id)
+      if (cached) return cached
+      return this.emptyPreloadPayload(session, `${session.id}:tab-terminal`)
     } finally {
       this.endRefresh(session.id)
     }

@@ -344,6 +344,18 @@ export async function readFileForPreview(path: string, sshHost?: string | null):
 
 export async function writeFileContent(path: string, content: string, sshHost?: string | null): Promise<FileWriteResult> {
   if (sshHost) {
+    const parentDir = dirname(path)
+    const { code: mkdirCode, stderr: mkdirStderr } = await sshExec(
+      sshHost,
+      `mkdir -p ${remoteFilePath(parentDir)}`
+    )
+    if (mkdirCode !== 0) {
+      return {
+        ok: false,
+        error: mkdirStderr.trim() || `SSH mkdir failed with exit code ${mkdirCode}`
+      }
+    }
+
     return new Promise((resolve) => {
       const proc = spawn('ssh', [...SSH_MUX_OPTS, sshHost, '--', `cat > ${remoteFilePath(path)}`])
       proc.stdin.write(content, 'utf8')

@@ -174,12 +174,16 @@ app.whenReady().then(() => {
   // re-created per IPC call.
   const harness = new ClaudeAgentSdkHarness()
   sessionManager = new SessionManager(sessionStore, harness, createStaticHostResolver(), () => mainWindow)
-  workspaceService = new WorkspaceService(() => mainWindow, async (sessionId) => {
-    const session = sessionStore.getSession(sessionId)
-    if (!session) return { items: [] }
-    const workspacePath = session.worktreePath ?? session.projectPath
-    return refreshSessionChangesCap(sessionStore, sessionId, workspacePath, session.hostname)
-  })
+  workspaceService = new WorkspaceService(
+    () => mainWindow,
+    async (sessionId) => {
+      const session = sessionStore.getSession(sessionId)
+      if (!session) return { items: [] }
+      const workspacePath = session.worktreePath ?? session.projectPath
+      return refreshSessionChangesCap(sessionStore, sessionId, workspacePath, session.hostname)
+    },
+    (sessionId) => sessionStore.listSessionTouchedPaths(sessionId).map((row) => row.path)
+  )
   sessionManager.setWorkspaceService(workspaceService)
   const manager = sessionManager
   manager.markStartupIdleSessions()

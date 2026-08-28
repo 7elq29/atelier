@@ -22,6 +22,7 @@ export {
   listCommits,
   listWorktrees,
   mergeWorktreeBranch,
+  mergeHintPathsIntoDiffSummary,
   onWorkingTreeUpdated,
   probeGitRepo,
   removeWorktree,

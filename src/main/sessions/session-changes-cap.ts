@@ -12,6 +12,7 @@ import {
   type SessionFileEdit
 } from '../../shared/session-file-edits'
 import type { SessionChangesCap, SessionChangesCapItem } from '../../shared/session-changes-cap'
+import type { DiffSummary } from '../../shared/panel-types'
 import { parseStructuredContent, type ToolCallContent } from '../../shared/chat-content'
 import { resolve } from 'node:path'
 import { readFile } from 'node:fs/promises'
@@ -198,7 +199,9 @@ export async function registerTouchedPathFromToolCallAsync(
   if (!isSessionFileEditTool(toolName)) return
   const now = new Date().toISOString()
   for (const rawPath of filePathsForFileEditTool(toolName, input)) {
-    const path = await normalizeCapStoragePath(rawPath, workspacePath, hostname, projectPath)
+    const path =
+      (await normalizeCapStoragePath(rawPath, workspacePath, hostname, projectPath)) ??
+      normalizeToRepoRelativePath(rawPath, workspacePath)
     if (!path) continue
     store.registerSessionTouchedPath(sessionId, path, now)
   }
@@ -434,9 +437,21 @@ async function capPathWorkingTreeStats(
   if (repoMap) {
     const fromMap = lookupBatchedNumstat(repoMap, gitPath)
     if (fromMap) return fromMap
-    return null
+    // Batched numstat is tracked+staged only — fall through for untracked paths.
   }
-  return getPathWorkingTreeNumstat(repoRoot, gitPath, hostname)
+  const fromGit = await getPathWorkingTreeNumstat(repoRoot, gitPath, hostname)
+  if (fromGit) return fromGit
+  // Gitignored or slow remote git — compare on-disk content to session baseline.
+  const fromBaseline = await cheapOutsideCapStats(
+    store,
+    sessionId,
+    workspacePath,
+    capPath,
+    hostname,
+    projectPath
+  )
+  if (fromBaseline) return fromBaseline
+  return fallbackFileStats(workspacePath, capPath, hostname)
 }
 
 async function capPathToGitRelative(
@@ -464,6 +479,54 @@ async function capPathOpensInFilesTab(
   hostname: string | null
 ): Promise<boolean> {
   return !(await isCapPathInGitRepo(workspacePath, capPath, hostname))
+}
+
+function capPathsMatch(stored: string, diffPath: string): boolean {
+  const a = stored.replace(/\\/g, '/').replace(/^\.\//, '')
+  const b = diffPath.replace(/\\/g, '/').replace(/^\.\//, '')
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`)
+}
+
+/** Fill cap rows from an already-loaded diff when per-path git stats lag behind Diff. */
+export function mergeCapItemsFromDiffSummary(
+  cap: SessionChangesCap,
+  diff: DiffSummary,
+  touchedPaths: string[]
+): SessionChangesCap {
+  if (!diff.isRepo || diff.files.length === 0 || touchedPaths.length === 0) return cap
+
+  const byPath = new Map<string, SessionChangesCapItem>()
+  for (const item of cap.items) {
+    if (item.kind === 'file') byPath.set(item.path, item)
+  }
+
+  const now = new Date().toISOString()
+  for (const f of diff.files) {
+    if (!touchedPaths.some((t) => capPathsMatch(t, f.path))) continue
+    const navPath = f.path
+    const existing = byPath.get(navPath)
+    if (existing?.kind === 'file') {
+      if (f.additions + f.deletions > existing.additions + existing.deletions) {
+        byPath.set(navPath, {
+          ...existing,
+          additions: f.additions,
+          deletions: f.deletions
+        })
+      }
+      continue
+    }
+    byPath.set(navPath, {
+      kind: 'file',
+      path: navPath,
+      additions: f.additions,
+      deletions: f.deletions,
+      opensInFilesTab: false,
+      sortAt: now
+    })
+  }
+
+  const items = [...byPath.values()].sort((a, b) => (a.sortAt > b.sortAt ? -1 : 1))
+  return { items }
 }
 
 async function canonicalizeStoredCapPath(
@@ -511,6 +574,8 @@ export async function buildSessionChangesCap(
 ): Promise<SessionChangesCap> {
   const session = store.getSession(sessionId)
   const projectPath = session?.projectPath ?? workspacePath
+  const workspaceRoot = session?.worktreePath ?? session?.projectPath ?? workspacePath
+  rebuildSessionTouchedPathsFromMessages(store, sessionId, workspaceRoot)
   const paths = store.listSessionTouchedPaths(sessionId)
   const now = new Date().toISOString()
   const fileItems: SessionChangesCapItem[] = []
@@ -553,7 +618,7 @@ export async function buildSessionChangesCap(
         numstatByRepo
       )
       if (!stats) {
-        store.deleteSessionTouchedPath(sessionId, capPath)
+        // Transient git/SSH failure — keep path registered; diff merge may supply stats later.
         continue
       }
       const sortAt = now
@@ -572,7 +637,6 @@ export async function buildSessionChangesCap(
         capPath,
         error: err instanceof Error ? err.message : String(err)
       })
-      store.deleteSessionTouchedPath(sessionId, capPath)
     }
   }
 
@@ -613,7 +677,9 @@ export async function registerFileEditToolTouchedPaths(
   )
   const now = new Date().toISOString()
   for (const rawPath of filePathsForFileEditTool(toolName, input)) {
-    const path = await normalizeCapStoragePath(rawPath, workspacePath, hostname, project)
+    const path =
+      (await normalizeCapStoragePath(rawPath, workspacePath, hostname, project)) ??
+      normalizeToRepoRelativePath(rawPath, workspaceRoot)
     if (!path) continue
     store.updateSessionTouchedPathPendingAt(sessionId, path, now)
   }

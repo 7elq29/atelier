@@ -56,6 +56,7 @@ export function registerEmacsMonacoKeybindings(
 
   bind(M | monaco.KeyCode.KeyF, () => runAction(editor, 'cursorWordEndRight'))
   bind(M | monaco.KeyCode.KeyB, () => runAction(editor, 'cursorWordStartLeft'))
+  bind(M | monaco.KeyCode.KeyD, () => runAction(editor, 'deleteWordRight'))
   bind(C | monaco.KeyCode.KeyV, () => runAction(editor, 'scrollPageDown'))
   bind(M | monaco.KeyCode.KeyV, () => runAction(editor, 'scrollPageUp'))
 

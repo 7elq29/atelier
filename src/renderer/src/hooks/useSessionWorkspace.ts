@@ -89,9 +89,15 @@ export function useSessionWorkspace(): {
   }, [])
 
   useEffect(() => {
+    const depthBySession = new Map<string, number>()
     return window.atelier.onSessionWorkspaceRefreshing(({ sessionId, refreshing }) => {
+      const prevDepth = depthBySession.get(sessionId) ?? 0
+      const nextDepth = Math.max(0, prevDepth + (refreshing ? 1 : -1))
+      if (nextDepth === 0) depthBySession.delete(sessionId)
+      else depthBySession.set(sessionId, nextDepth)
+
       setRefreshingBySession((prev) => {
-        if (refreshing) {
+        if (nextDepth > 0) {
           if (prev[sessionId]) return prev
           return { ...prev, [sessionId]: true }
         }

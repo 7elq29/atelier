@@ -1168,12 +1168,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             ))}
           </div>
         )}
-        {busy && !harnessDisconnected && (
-          <div className="composer-turn-status" data-testid="composer-turn-status">
-            <span className="spinner" data-testid="composer-working-spinner" aria-hidden="true" />
-            <span data-testid="composer-turn-status-text">{composerTurnStatusText(sdkChrome)}</span>
-          </div>
-        )}
         {(attachedImage || pendingAppNotes.length > 0) && (
           <div className="attach-row" data-testid="composer-attach-row">
             {attachedImage ? (
@@ -1311,10 +1305,10 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             )
           })()}
           <div className="spacer" />
-          {busy && (
-            <span className="working-pill" data-testid="composer-working-pill">
-              <span className="spinner" />
-              Working…
+          {busy && !harnessDisconnected && (
+            <span className="working-pill" data-testid="composer-turn-status">
+              <span className="spinner" data-testid="composer-working-spinner" aria-hidden="true" />
+              <span data-testid="composer-turn-status-text">{composerTurnStatusText(sdkChrome)}</span>
             </span>
           )}
           <ModelPicker

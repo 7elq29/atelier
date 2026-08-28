@@ -5,6 +5,7 @@
  */
 import type { CommitInfo, DiffFileChange, DiffFileContentPair, DiffFileStatus, DiffSummary, WorktreeInfo } from '../../shared/panel-types'
 import { countPlanReviewDiffStats } from '../../shared/plan-review-diff'
+import { resolveCapGitContext } from '../sessions/session-file-edits'
 import { readFileForPreview } from './files'
 import { isAbsolute, join, resolve } from 'node:path'
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -679,6 +680,47 @@ export async function probeGitRepo(
   const branchRaw = branchRes.stdout.trim()
   const branch = branchRaw === 'HEAD' || !branchRaw ? null : branchRaw
   return { isRepo: true, branch, files: [] }
+}
+
+/**
+ * Merge session touched paths that numstat-only refresh misses (typically new
+ * untracked files). Avoids waiting on a full-repo `git ls-files --others`.
+ */
+export async function mergeHintPathsIntoDiffSummary(
+  summary: DiffSummary,
+  projectPath: string,
+  sshHost: string | null | undefined,
+  hintPaths: string[]
+): Promise<DiffSummary> {
+  if (!summary.isRepo || hintPaths.length === 0) return summary
+
+  const seen = new Set(summary.files.map((f) => f.path))
+  const extra: DiffFileChange[] = []
+
+  for (const raw of hintPaths) {
+    const path = raw.trim().replace(/\\/g, '/').replace(/^\.\//, '')
+    if (!path || seen.has(path)) continue
+
+    const ctx = await resolveCapGitContext(path, projectPath, sshHost ?? null)
+    const gitPath = ctx?.gitRelative ?? path
+    if (seen.has(gitPath)) continue
+
+    const repoRoot = ctx?.repoRoot ?? projectPath
+    const stats = await getPathWorkingTreeNumstat(repoRoot, gitPath, sshHost)
+    if (!stats || (stats.additions === 0 && stats.deletions === 0)) continue
+
+    seen.add(gitPath)
+    extra.push({
+      path: gitPath,
+      status: 'added',
+      additions: stats.additions,
+      deletions: stats.deletions,
+      hunks: []
+    })
+  }
+
+  if (extra.length === 0) return summary
+  return { ...summary, files: [...summary.files, ...extra] }
 }
 
 /** Working-tree snapshot with hunks hydrated (used at session open). */

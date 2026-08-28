@@ -69,6 +69,13 @@ function backwardWordStartForKill(value: string, cursor: number): number {
   return start
 }
 
+function forwardWordEndForKill(value: string, cursor: number): number {
+  let end = cursor
+  while (end < value.length && /\s/.test(value[end])) end++
+  while (end < value.length && !/\s/.test(value[end])) end++
+  return end
+}
+
 function moveVertical(value: string, cursor: number, delta: number): number {
   const [lineStart, lineEnd] = lineBoundsInText(value, cursor)
   const column = cursor - lineStart
@@ -114,6 +121,13 @@ export function applyEmacsNavigationToTextarea(
     if (e.code === 'KeyB') {
       e.preventDefault()
       setTextareaCursor(ta, backwardWordPos(value, cursor))
+      return true
+    }
+    if (e.code === 'KeyD') {
+      e.preventDefault()
+      const end = forwardWordEndForKill(value, cursor)
+      setValue(value.slice(0, cursor) + value.slice(end))
+      setTextareaCursor(ta, cursor)
       return true
     }
     if (e.code === 'KeyV') {
