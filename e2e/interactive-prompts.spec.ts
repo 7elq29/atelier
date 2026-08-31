@@ -175,6 +175,49 @@ test.describe('05-interactive-prompts', () => {
     await logTranscriptState(page, sessionId, 'ask-user-question')
   })
 
+  test('AskUserQuestion: multi-question batch uses stepper nav and explicit Submit on last step', async ({}, testInfo) => {
+    testInfo.setTimeout(90_000)
+    await openNewSessionModal(page)
+    await fillProjectPath(page, projectDir)
+    await selectClaudeCodeMode(page)
+    await page.getByTestId('initial-prompt').fill(
+      'Use the AskUserQuestion tool right now to ask me exactly three questions in one call. ' +
+        'Question 1 header "Scope", question text "Which scope?", options "Small" and "Large". ' +
+        'Question 2 header "Path", question text "Which path?", options "Worktree" and "Repo". ' +
+        'Question 3 header "Revert", question text "Which revert?", options "Auto" and "Manual". ' +
+        'Do not do anything else first. Wait for all my answers, then reply with one sentence listing all three picks.'
+    )
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    const sessionId = await activateLatestSession(page)
+    const card = page.getByTestId('ask-user-question-card')
+    await expect(card).toBeVisible({ timeout: 45_000 })
+    await expect(card).toContainText('Claude is asking 3 questions')
+    await expect(card.getByTestId('aq-stepper')).toBeVisible()
+    await expect(card.getByTestId('aq-step')).toHaveCount(3)
+    await expect(card.getByTestId('aq-step-count')).toContainText('Question 1 of 3')
+
+    await card.getByTestId('aq-option').filter({ hasText: 'Small' }).click()
+    await expect(card.getByTestId('aq-step-count')).toContainText('Question 2 of 3')
+    await card.getByTestId('aq-option').filter({ hasText: 'Worktree' }).click()
+    await expect(card.getByTestId('aq-step-count')).toContainText('Question 3 of 3')
+
+    await expect(card.getByTestId('aq-next')).toHaveCount(0)
+    await card.getByTestId('aq-option').filter({ hasText: 'Auto' }).click()
+    const submitButton = card.getByTestId('aq-submit')
+    await expect(submitButton).toBeEnabled()
+    await submitButton.click()
+
+    const askSummary = page.locator('[data-testid="tool-sequence-summary"]').filter({ hasText: /question answered/i }).last()
+    await expect(askSummary).toBeVisible({ timeout: 15_000 })
+    await askSummary.click()
+    await expect(page.getByTestId('ask-user-question-card').first()).toHaveAttribute('data-status', 'answered')
+
+    await page.screenshot({ path: join(artifactsDir, '05-askuserquestion-multi-stepper.png') })
+    await logTranscriptState(page, sessionId, 'ask-user-question-multi')
+  })
+
   // ── 2. Permission prompts: real Allow/Deny before the tool runs, plus "always allow" ──
   test('Permission: Allow runs the tool, Deny blocks it, and "always allow" suppresses a second identical prompt', async ({}, testInfo) => {
     testInfo.setTimeout(120_000)

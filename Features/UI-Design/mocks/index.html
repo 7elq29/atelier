@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <title>Gardenia — Interactive Mock</title>
 <link rel="stylesheet" href="shared.css" />
-<!-- Related mock pages: sdk-harness-events-review.html (draft threads), sdk-harness-events.html (approved SDK UI), context-bar-variants.html, todo-session-link-dialogs.html -->
+<!-- Related mock pages: ask-user-question-multi.html (multi-question stepper — open this directly), sdk-harness-events-review.html, sdk-harness-events.html, context-bar-variants.html, todo-session-link-dialogs.html -->
 <style>
   html, body, #app { height: 100%; }
   .hidden { display: none !important; }
@@ -305,6 +305,8 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .transcript { flex: 1; overflow-y: auto; padding: 24px 28px 14px; display: flex; flex-direction: column; gap: 16px; }
+  /* Prevent flex children from being crushed when transcript scrolls (aq-card/perm-card were collapsing to ~2px). */
+  .transcript > * { flex-shrink: 0; }
   .turn-divider { display: flex; align-items: center; gap: 10px; margin: 4px 0; color: var(--text-disabled); font-size: 13.5px; }
   .turn-divider::before, .turn-divider::after { content: ""; flex: 1; height: 1px; background: var(--border-subtle); }
   .msg-user { align-self: flex-end; max-width: 72%; background: var(--accent-dim); border-radius: var(--r-lg) var(--r-lg) 4px var(--r-lg); padding: 11px 16px; font-size: 15.5px; }
@@ -383,7 +385,7 @@
      overrides as a patch; removing both here instead of patching further). Elevation is exactly
      one cue per theme (--elevation-border/--elevation-shadow), and internal divider lines are
      gone in favor of spacing — matching the chosen variant's flat, borderless option rows. */
-  .aq-card { border: 1px solid var(--elevation-border); background: var(--bg-panel); border-radius: var(--r-lg); overflow: hidden; max-width: 84%; box-shadow: var(--elevation-shadow); }
+  .aq-card { border: 1px solid var(--elevation-border); background: var(--bg-panel); border-radius: var(--r-lg); overflow: hidden; max-width: 84%; box-shadow: var(--elevation-shadow); flex-shrink: 0; align-self: flex-start; }
   .aq-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px 6px; font-size: 13px; font-weight: 600; color: var(--accent); }
   .aq-body { padding: 0 14px 13px; display: flex; flex-direction: column; gap: 8px; }
   .aq-question { font-size: 13.5px; line-height: 1.45; color: var(--text-primary); }
@@ -401,6 +403,75 @@
   .aq-other-box textarea { flex: 1; background: var(--bg-input); border: 1px solid var(--accent); border-radius: var(--r-md); color: var(--text-primary); font-family: var(--font-ui); font-size: 13.5px; padding: 6px 8px; resize: none; outline: none; min-height: 32px; }
   .aq-footer-hint { font-size: 12px; color: var(--text-tertiary); padding-top: 0; line-height: 1.4; }
   .aq-footer-hint a { cursor: pointer; }
+  .aq-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .aq-submit:disabled { opacity: .45; cursor: not-allowed; }
+  .aq-question-block + .aq-question-block { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
+  .aq-question-block.is-done .aq-question { color: var(--text-secondary); }
+  .aq-card.aq-mode-stacked .aq-question-block.is-done .aq-options { display: none; }
+  .aq-card.answered .aq-question-block .aq-options,
+  .aq-card.answered .aq-other-box { display: none !important; }
+  .aq-picked-summary { display: none; font-size: 12.5px; color: var(--accent); margin-top: 4px; }
+  .aq-card.aq-mode-stacked .aq-question-block.is-done .aq-picked-summary,
+  .aq-card.answered .aq-picked-summary { display: block; }
+
+  /* Multi-question — stepper (Claude Code tab nav) vs stacked (current Atelier) */
+  .aq-design-note {
+    font-size: 12px; line-height: 1.45; color: var(--text-tertiary);
+    background: var(--bg-tint); border: 1px dashed var(--border-strong);
+    border-radius: var(--r-md); padding: 8px 10px; margin-bottom: 8px;
+  }
+  .aq-design-note strong { color: var(--text-secondary); font-weight: 600; }
+  .aq-pattern-toggle {
+    display: inline-flex; margin-left: auto; gap: 2px;
+    background: var(--bg-input); border: 1px solid var(--border-default);
+    border-radius: 100px; padding: 2px;
+  }
+  .aq-pattern-toggle button {
+    border: none; background: transparent; color: var(--text-tertiary);
+    font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 100px;
+    cursor: pointer; font-family: var(--font-ui); white-space: nowrap;
+  }
+  .aq-pattern-toggle button.active { background: var(--bg-active); color: var(--text-primary); }
+  .aq-stepper {
+    display: flex; align-items: center; gap: 6px; padding: 0 14px 8px;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .aq-stepper::-webkit-scrollbar { display: none; }
+  .aq-step {
+    display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+    border: 1px solid var(--border-default); background: var(--bg-tint);
+    color: var(--text-tertiary); font-size: 11.5px; font-weight: 500;
+    padding: 4px 10px; border-radius: 100px; cursor: pointer; font-family: var(--font-ui);
+  }
+  .aq-step:hover { background: var(--bg-hover); color: var(--text-secondary); }
+  .aq-step .aq-step-num {
+    width: 16px; height: 16px; border-radius: 50%; display: inline-flex;
+    align-items: center; justify-content: center; font-size: 10px;
+    border: 1.5px solid var(--border-strong); color: var(--text-tertiary);
+  }
+  .aq-step.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+  .aq-step.active .aq-step-num { border-color: var(--accent); color: var(--accent); }
+  .aq-step.done { color: var(--text-secondary); cursor: pointer; }
+  .aq-step.done .aq-step-num { background: var(--accent); border-color: var(--accent); color: var(--accent-text-on); font-size: 0; }
+  .aq-step.done .aq-step-num::after { content: '✓'; font-size: 10px; color: var(--accent-text-on); }
+  .aq-wizard-nav {
+    display: flex; align-items: center; gap: 8px; padding: 4px 14px 12px;
+  }
+  .aq-wizard-nav .aq-step-count { flex: 1; text-align: center; font-size: 12px; color: var(--text-tertiary); }
+  .aq-card.aq-mode-stacked .aq-stepper,
+  .aq-card.aq-mode-stacked .aq-wizard-nav { display: none; }
+  .aq-card.aq-mode-stacked .aq-step-panel { display: block !important; }
+  .aq-card.aq-mode-stepper .aq-step-panel { display: none; }
+  .aq-card.aq-mode-stepper .aq-step-panel.active { display: block; }
+  .aq-card.aq-mode-stepper .aq-question-block + .aq-question-block { margin-top: 0; padding-top: 0; border-top: none; }
+  .aq-card.aq-mode-stacked .aq-stacked-footer { display: flex !important; }
+  .aq-card.aq-mode-stepper .aq-stacked-footer { display: none !important; }
+  .aq-card.answered .aq-pattern-toggle,
+  .aq-card.answered .aq-wizard-nav,
+  .aq-card.answered .aq-stepper,
+  .aq-card.answered .aq-stacked-footer { display: none; }
+  .aq-card.answered .aq-design-note { display: none; }
+  .aq-card.answered .aq-step-panel { display: block !important; }
 
   /* Permission prompt — same flat treatment, kept a full warning-colored border in both themes
      (rather than the theme-conditional elevation) since a prompt asking for permission should
@@ -1246,7 +1317,7 @@
 </svg>
 
 <div class="mock-frame">
-  <div class="mock-label">MOCK — Gardenia interactive prototype · Obsidian-style integrated title bar (traffic lights + drag region) · ⌘K palette · Ctrl+X Ctrl+F quick open</div>
+  <div class="mock-label">MOCK — Gardenia interactive prototype · <a href="ask-user-question-multi.html" style="color:var(--accent);text-decoration:underline">Multi-question AskUserQuestion</a> · Obsidian-style title bar · ⌘K palette · Ctrl+X Ctrl+F quick open</div>
 
   <div class="mock-body" style="height:auto; flex:1; min-height:0;">
   <div id="app">
@@ -1543,6 +1614,80 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                   </div>
                 </div>
               </div>
+
+              <div class="msg-assistant">Before I scaffold the failover skill, a few quick questions — answer them here or type in the composer.</div>
+
+              <div class="aq-card aq-mode-stepper" id="aq-multi">
+                <div class="aq-head">
+                  <svg class="icon" width="14" height="14"><use href="#icon-help"/></svg>
+                  Claude is asking 3 questions
+                  <div class="aq-pattern-toggle" role="tablist" aria-label="Question layout">
+                    <button type="button" class="active" data-pattern="stepper" onclick="aqMultiSetPattern('stepper')">Stepper</button>
+                    <button type="button" data-pattern="stacked" onclick="aqMultiSetPattern('stacked')">Stacked</button>
+                  </div>
+                </div>
+                <div class="aq-design-note">
+                  <strong>Design exploration.</strong> Claude Code shows one question at a time with tab/step navigation (up to 4 per call). Atelier today stacks all questions in one card. Toggle above to compare — stepper is the proposed default for multi-question batches.
+                </div>
+                <div class="aq-body">
+                  <div class="aq-stepper" id="aq-multi-stepper" aria-label="Question progress"></div>
+
+                  <div class="aq-step-panel active" data-step="0" id="aq-multi-step-0">
+                    <div class="aq-question-block" id="aq-multi-q0">
+                      <div class="aq-question">Which failover phases should this skill cover first?</div>
+                      <div class="aq-options" id="aq-multi-q0-options">
+                        <div class="aq-option" onclick="aqMultiPick(0, this)"><div class="num">1</div><div>Sampling only (Phase 1)</div></div>
+                        <div class="aq-option" onclick="aqMultiPick(0, this)"><div class="num">2</div><div>Sampling + throughput (Phases 1–2)</div></div>
+                        <div class="aq-option" onclick="aqMultiPick(0, this)"><div class="num">3</div><div>Full stack when unblocked</div></div>
+                      </div>
+                      <div class="aq-picked-summary" id="aq-multi-q0-summary"></div>
+                    </div>
+                  </div>
+
+                  <div class="aq-step-panel" data-step="1" id="aq-multi-step-1">
+                    <div class="aq-question-block" id="aq-multi-q1">
+                      <div class="aq-question">Where should generated OMG plans and revert scripts live?</div>
+                      <div class="aq-options" id="aq-multi-q1-options">
+                        <div class="aq-option" onclick="aqMultiPick(1, this)"><div class="num">1</div><div>Worktree only (ephemeral)</div></div>
+                        <div class="aq-option" onclick="aqMultiPick(1, this)"><div class="num">2</div><div>Repo path under <code>skills/</code></div></div>
+                        <div class="aq-option aq-other" onclick="aqMultiShowOther(1, this)"><div class="num">3</div><div>Other — type your own path</div></div>
+                      </div>
+                      <div class="aq-other-box" id="aq-multi-q1-other-box">
+                        <textarea id="aq-multi-q1-other-input" rows="2" placeholder="e.g. ~/failover-runs/{date}/"></textarea>
+                        <button class="btn btn-primary btn-sm" onclick="aqMultiSubmitOther(1)">Use this path</button>
+                      </div>
+                      <div class="aq-picked-summary" id="aq-multi-q1-summary"></div>
+                    </div>
+                  </div>
+
+                  <div class="aq-step-panel" data-step="2" id="aq-multi-step-2">
+                    <div class="aq-question-block" id="aq-multi-q2">
+                      <div class="aq-question">How should the revert script behave on restore?</div>
+                      <div class="aq-options" id="aq-multi-q2-options">
+                        <div class="aq-option" onclick="aqMultiPick(2, this)"><div class="num">2</div><div>Unblock throughput after quota restore</div></div>
+                        <div class="aq-option" onclick="aqMultiPick(2, this)"><div class="num">1</div><div>Sampling rollback only</div></div>
+                        <div class="aq-option" onclick="aqMultiPick(2, this)"><div class="num">3</div><div>Require manual confirmation per phase</div></div>
+                      </div>
+                      <div class="aq-picked-summary" id="aq-multi-q2-summary"></div>
+                    </div>
+                  </div>
+
+                  <div class="aq-wizard-nav" id="aq-multi-wizard-nav">
+                    <button type="button" class="btn btn-ghost btn-sm" id="aq-multi-back" onclick="aqMultiBack()" disabled>Back</button>
+                    <span class="aq-step-count" id="aq-multi-step-count">Question 1 of 3</span>
+                    <button type="button" class="btn btn-primary btn-sm" id="aq-multi-next" onclick="aqMultiNext()" disabled>Next</button>
+                    <button type="button" class="btn btn-primary btn-sm aq-submit" id="aq-multi-submit" onclick="aqMultiSubmit()" style="display:none" disabled>Submit</button>
+                  </div>
+
+                  <div class="aq-actions aq-stacked-footer" id="aq-multi-stacked-footer">
+                    <button type="button" class="btn btn-primary btn-sm aq-submit" id="aq-multi-stacked-submit" onclick="aqMultiSubmit()" disabled>Submit all answers</button>
+                  </div>
+
+                  <div class="aq-footer-hint">Stepper matches Claude Code's batched AskUserQuestion. Stacked shows today's Atelier layout — every question visible at once.</div>
+                </div>
+              </div>
+
+              <div class="msg-assistant" id="afterAqMulti" style="display:none;">Got it — scaffolding the skill with Phases 1–2, repo-backed artifacts, and ordered throughput restore.</div>
 
               <div class="msg-assistant">Found it — <code>session-bootstrap.ts</code> passes an absolute timestamp where a relative duration is expected. Before I patch it, one question:</div>
 
@@ -3407,6 +3552,170 @@ function updateMachine(id, btn) {
 }
 
 /* ===== AskUserQuestion ===== */
+const AQ_MULTI = {
+  total: 3,
+  labels: ['Scope', 'Artifacts', 'Revert'],
+  step: 0,
+  pattern: 'stepper',
+  picks: {}
+};
+
+function aqMultiInit() {
+  aqMultiRenderStepper();
+  aqMultiUpdateUI();
+}
+
+function aqMultiRenderStepper() {
+  const bar = document.getElementById('aq-multi-stepper');
+  if (!bar) return;
+  bar.innerHTML = AQ_MULTI.labels.map((label, i) => {
+    const cls = i === AQ_MULTI.step ? 'active' : (AQ_MULTI.picks[i] ? 'done' : '');
+    return '<button type="button" class="aq-step ' + cls + '" data-step="' + i + '" onclick="aqMultiGoStep(' + i + ')">' +
+      '<span class="aq-step-num">' + (i + 1) + '</span><span>' + label + '</span></button>';
+  }).join('');
+}
+
+function aqMultiSetPattern(pattern) {
+  if (AQ_MULTI.pattern === pattern) return;
+  AQ_MULTI.pattern = pattern;
+  const card = document.getElementById('aq-multi');
+  card.classList.remove('aq-mode-stepper', 'aq-mode-stacked');
+  card.classList.add('aq-mode-' + pattern);
+  document.querySelectorAll('#aq-multi .aq-pattern-toggle button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.pattern === pattern);
+  });
+  for (let i = 0; i < AQ_MULTI.total; i++) {
+    const block = document.getElementById('aq-multi-q' + i);
+    if (!block) continue;
+    if (pattern === 'stacked' && AQ_MULTI.picks[i]) {
+      block.classList.add('is-done');
+      document.getElementById('aq-multi-q' + i + '-summary').textContent = '→ ' + AQ_MULTI.picks[i].text;
+    } else {
+      block.classList.remove('is-done');
+      document.getElementById('aq-multi-q' + i + '-summary').textContent = '';
+    }
+  }
+  aqMultiUpdateUI();
+}
+
+function aqMultiPick(stepIdx, optionEl) {
+  const card = document.getElementById('aq-multi');
+  if (card.classList.contains('answered')) return;
+  const block = document.getElementById('aq-multi-q' + stepIdx);
+  block.querySelectorAll('.aq-option').forEach(o => o.classList.remove('selected'));
+  optionEl.classList.add('selected');
+  const text = optionEl.querySelector('div:last-child').textContent.trim();
+  AQ_MULTI.picks[stepIdx] = { text, other: false };
+  const otherBox = document.getElementById('aq-multi-q' + stepIdx + '-other-box');
+  if (otherBox) otherBox.classList.remove('show');
+  if (AQ_MULTI.pattern === 'stacked') {
+    block.classList.add('is-done');
+    document.getElementById('aq-multi-q' + stepIdx + '-summary').textContent = '→ ' + text;
+  }
+  if (AQ_MULTI.pattern === 'stepper' && stepIdx === AQ_MULTI.step && stepIdx < AQ_MULTI.total - 1) {
+    AQ_MULTI.step = stepIdx + 1;
+  }
+  aqMultiUpdateUI();
+}
+
+function aqMultiShowOther(stepIdx, optionEl) {
+  const card = document.getElementById('aq-multi');
+  if (card.classList.contains('answered')) return;
+  document.getElementById('aq-multi-q' + stepIdx + '-options').querySelectorAll('.aq-option').forEach(o => o.classList.remove('selected'));
+  optionEl.classList.add('selected');
+  const box = document.getElementById('aq-multi-q' + stepIdx + '-other-box');
+  box.classList.add('show');
+  document.getElementById('aq-multi-q' + stepIdx + '-other-input').focus();
+}
+
+function aqMultiSubmitOther(stepIdx) {
+  const input = document.getElementById('aq-multi-q' + stepIdx + '-other-input');
+  const text = input.value.trim();
+  if (!text) return;
+  const block = document.getElementById('aq-multi-q' + stepIdx);
+  const otherOption = block.querySelector('.aq-option.aq-other');
+  otherOption.querySelector('div:last-child').textContent = '"' + text + '"';
+  AQ_MULTI.picks[stepIdx] = { text, other: true };
+  if (AQ_MULTI.pattern === 'stacked') {
+    block.classList.add('is-done');
+    document.getElementById('aq-multi-q' + stepIdx + '-summary').textContent = '→ ' + text;
+  }
+  document.getElementById('aq-multi-q' + stepIdx + '-other-box').classList.remove('show');
+  if (AQ_MULTI.pattern === 'stepper' && stepIdx === AQ_MULTI.step && stepIdx < AQ_MULTI.total - 1) {
+    AQ_MULTI.step = stepIdx + 1;
+  }
+  aqMultiUpdateUI();
+}
+
+function aqMultiGoStep(idx) {
+  const card = document.getElementById('aq-multi');
+  if (card.classList.contains('answered') || AQ_MULTI.pattern !== 'stepper') return;
+  if (idx > AQ_MULTI.step && !AQ_MULTI.picks[idx - 1]) return;
+  AQ_MULTI.step = idx;
+  aqMultiUpdateUI();
+}
+
+function aqMultiBack() {
+  if (AQ_MULTI.step <= 0) return;
+  AQ_MULTI.step -= 1;
+  aqMultiUpdateUI();
+}
+
+function aqMultiNext() {
+  if (!AQ_MULTI.picks[AQ_MULTI.step]) return;
+  if (AQ_MULTI.step >= AQ_MULTI.total - 1) return;
+  AQ_MULTI.step += 1;
+  aqMultiUpdateUI();
+}
+
+function aqMultiAllAnswered() {
+  for (let i = 0; i < AQ_MULTI.total; i++) {
+    if (!AQ_MULTI.picks[i]) return false;
+  }
+  return true;
+}
+
+function aqMultiUpdateUI() {
+  const card = document.getElementById('aq-multi');
+  if (!card || card.classList.contains('answered')) return;
+  aqMultiRenderStepper();
+  for (let i = 0; i < AQ_MULTI.total; i++) {
+    const panel = document.getElementById('aq-multi-step-' + i);
+    if (panel) panel.classList.toggle('active', AQ_MULTI.pattern === 'stacked' || i === AQ_MULTI.step);
+  }
+  const onLast = AQ_MULTI.step === AQ_MULTI.total - 1;
+  const hasPick = !!AQ_MULTI.picks[AQ_MULTI.step];
+  const allDone = aqMultiAllAnswered();
+  document.getElementById('aq-multi-step-count').textContent =
+    'Question ' + (AQ_MULTI.step + 1) + ' of ' + AQ_MULTI.total;
+  document.getElementById('aq-multi-back').disabled = AQ_MULTI.step === 0;
+  const nextBtn = document.getElementById('aq-multi-next');
+  const submitBtn = document.getElementById('aq-multi-submit');
+  if (AQ_MULTI.pattern === 'stepper') {
+    nextBtn.style.display = onLast ? 'none' : '';
+    submitBtn.style.display = onLast ? '' : 'none';
+    nextBtn.disabled = !hasPick;
+    submitBtn.disabled = !allDone;
+  }
+  document.getElementById('aq-multi-stacked-submit').disabled = !allDone;
+}
+
+function aqMultiSubmit() {
+  if (!aqMultiAllAnswered()) return;
+  const card = document.getElementById('aq-multi');
+  card.classList.add('answered');
+  for (let i = 0; i < AQ_MULTI.total; i++) {
+    const block = document.getElementById('aq-multi-q' + i);
+    if (block && AQ_MULTI.picks[i]) {
+      block.classList.add('is-done');
+      document.getElementById('aq-multi-q' + i + '-summary').textContent = '→ ' + AQ_MULTI.picks[i].text;
+    }
+  }
+  const after = document.getElementById('afterAqMulti');
+  if (after) after.style.display = '';
+  aqMultiUpdateUI();
+}
+
 function answerQuestion(cardId, optionEl) {
   const card = document.getElementById(cardId);
   card.querySelectorAll('.aq-option').forEach(o => o.classList.remove('selected'));
@@ -4277,12 +4586,29 @@ function initTerminalToolboxes(root) {
   });
 }
 
+function scrollToAqMulti() {
+  const card = document.getElementById('aq-multi');
+  if (!card) return;
+  selectTab('s1', 'chat');
+  selectSession('s1');
+  requestAnimationFrame(() => {
+    const transcript = document.getElementById('transcript-s1');
+    if (transcript) transcript.scrollTop = Math.max(0, card.offsetTop - transcript.offsetTop - 24);
+    card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   initMonaco('s1');
   renderDiffChangesArea('s1', 'session-bootstrap.ts');
   seedDailyNoteMockData();
   renderAppNotesList();
   initTerminalToolboxes();
+  aqMultiInit();
+  if (location.hash === '#aq-multi') scrollToAqMulti();
+});
+window.addEventListener('hashchange', () => {
+  if (location.hash === '#aq-multi') scrollToAqMulti();
 });
 
 /* ===== Modals ===== */

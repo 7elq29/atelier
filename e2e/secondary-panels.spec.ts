@@ -1005,7 +1005,7 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 10_000 })
     const term = page.getByTestId('terminal-body')
     await term.click()
-    await page.waitForTimeout(500) // let the shell finish its startup `cd && clear`
+    await page.waitForTimeout(500) // let the shell finish its silent startup clear
     await page.keyboard.type('echo hello-from-terminal-mode')
     await page.keyboard.press('Enter')
 

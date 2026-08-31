@@ -7,8 +7,8 @@
  * for the shell to boot (~1s). replenish() refills the pool in the background.
  *
  * Pool sessions are named `atelier-pool-<hex>` and start in the user's home
- * directory. After claiming, the caller writes `cd <cwd> && clear` to the pty
- * to navigate to the real project directory.
+ * directory. After claiming, the caller runs a silent `cd <cwd> && clear` in
+ * the attached pty (echo disabled) to navigate to the real project directory.
  */
 
 import { execFile, execFileSync } from 'child_process'

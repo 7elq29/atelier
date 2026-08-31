@@ -70,6 +70,16 @@ function resolveLocalPtyCwd(cwd: string): string {
   return homedir()
 }
 
+/** Clear the visible screen without echoing a shell command (CSI erase + home). */
+function writeSilentClear(proc: pty.IPty): void {
+  proc.write('\x1b[2J\x1b[H')
+}
+
+/** Run startup shell commands without echoing them to the user. */
+function writeSilentShell(proc: pty.IPty, script: string): void {
+  proc.write(`stty -echo 2>/dev/null; ${script}; stty echo 2>/dev/null\r`)
+}
+
 interface PtyEntry {
   proc: pty.IPty
   gen: number
@@ -293,16 +303,16 @@ export class PtyManager {
       this.ptys.delete(id)
     })
 
-    // Plain local shell (no tmux, no remote): navigate to cwd and clear so
-    // the terminal starts on a clean prompt in the right directory.
+    // Plain local shell (no tmux, no remote): node-pty already spawns in
+    // localCwd — only clear the screen without echoing "clear" to the user.
     // With tmux, cwd is set via the -c flag above; we intentionally do NOT
     // cd+clear on reattach so the user's shell state is preserved.
-    // Pool claim exception: the pool session starts in $HOME, so we cd to the
-    // real project cwd after attach just like the plain shell path does.
+    // Pool claim exception: the pool session starts in $HOME, so cd to the
+    // real project cwd after attach without showing the startup command line.
     if (!isRemote && !useTmux) {
-      proc.write(`cd ${JSON.stringify(localCwd)} && clear\r`)
+      writeSilentClear(proc)
     } else if (claimedFromPool) {
-      proc.write(`cd ${JSON.stringify(localCwd)} && clear\r`)
+      writeSilentShell(proc, `cd ${JSON.stringify(localCwd)} && clear`)
     }
 
     logger.info('pty spawned', { id, shell, remote: isRemote, tmux: Boolean(entryTmuxName), cwd: opts.cwd, gen, totalElapsedMs: elapsed() })
