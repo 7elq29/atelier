@@ -1,5 +1,0 @@
-[turn1] user: Use the Bash tool to run exactly: sleep 2 && echo done. Wait for it to finish, then reply with three full sentences describing what the command did.
-[turn1] assistant: {"kind":"thinking_block","status":"completed","text":"The user wants me to:\n1. Run a specific bash command: `sleep 2 && echo done`\n2. Wait for it to finish\n3. Reply with three full sentences descri
-[turn1] assistant: {"kind":"tool_call","toolUseId":"toolu_vrtx_011yJdicAVVUyvDhcEqzPoH1","name":"Bash","input":{"command":"sleep 2 && echo done","description":"Run sleep for 2 seconds then echo done"},"status":"complete
-[turn1] assistant: {"kind":"thinking_block","status":"completed","text":"The user asked me to run a specific command \"sleep 2 && echo done\" and wait for it to finish, then reply with three full sentences describing wh
-[turn1] assistant: 

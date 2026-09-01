@@ -70,14 +70,12 @@ function resolveLocalPtyCwd(cwd: string): string {
   return homedir()
 }
 
-/** Clear the visible screen without echoing a shell command (CSI erase + home). */
-function writeSilentClear(proc: pty.IPty): void {
-  proc.write('\x1b[2J\x1b[H')
-}
-
-/** Run startup shell commands without echoing them to the user. */
-function writeSilentShell(proc: pty.IPty, script: string): void {
-  proc.write(`stty -echo 2>/dev/null; ${script}; stty echo 2>/dev/null\r`)
+/** Run a one-line shell script in a detached tmux pane before the user attaches. */
+async function tmuxSendSilentCommand(tmuxBin: string, sessionName: string, script: string): Promise<void> {
+  const line = `stty -echo 2>/dev/null; ${script}; stty echo 2>/dev/null`
+  await execFileAsync(tmuxBin, ['send-keys', '-t', sessionName, line, 'Enter'])
+  // Let cd/clear finish before attach paints the pane.
+  await new Promise((resolve) => setTimeout(resolve, 120))
 }
 
 interface PtyEntry {
@@ -158,8 +156,6 @@ export class PtyManager {
     // Accumulated for the PtyEntry written after spawn — set in each branch below.
     let entryTmuxName: string | undefined
     let entryHostname: string | undefined
-    // Set when a pool session was claimed so we cd to the real cwd after spawn.
-    let claimedFromPool = false
 
     logger.info('pty spawn: start', { id, isRemote, useTmux, cwd: opts.cwd })
 
@@ -184,7 +180,11 @@ export class PtyManager {
         if (poolName !== null) {
           logger.info('pty spawn: claiming from pool', { id, name, poolName, elapsedMs: elapsed() })
           await execFileAsync(tmuxBin!, ['rename-session', '-t', poolName, name])
-          claimedFromPool = true
+          await tmuxSendSilentCommand(
+            tmuxBin!,
+            name,
+            `cd ${JSON.stringify(localCwd)} && clear`
+          )
           shellPool!.replenish()
           logger.info('pty spawn: pool claim complete', { id, name, elapsedMs: elapsed() })
         } else {
@@ -303,17 +303,10 @@ export class PtyManager {
       this.ptys.delete(id)
     })
 
-    // Plain local shell (no tmux, no remote): node-pty already spawns in
-    // localCwd — only clear the screen without echoing "clear" to the user.
-    // With tmux, cwd is set via the -c flag above; we intentionally do NOT
-    // cd+clear on reattach so the user's shell state is preserved.
-    // Pool claim exception: the pool session starts in $HOME, so cd to the
-    // real project cwd after attach without showing the startup command line.
-    if (!isRemote && !useTmux) {
-      writeSilentClear(proc)
-    } else if (claimedFromPool) {
-      writeSilentShell(proc, `cd ${JSON.stringify(localCwd)} && clear`)
-    }
+    // No post-spawn startup commands. Plain local shells already spawn in
+    // localCwd; fresh tmux sessions use `new-session -c`; pool claims cd/clear
+    // in the detached pane via tmux send-keys before attach; reattach preserves
+    // the user's existing shell state intentionally.
 
     logger.info('pty spawned', { id, shell, remote: isRemote, tmux: Boolean(entryTmuxName), cwd: opts.cwd, gen, totalElapsedMs: elapsed() })
 

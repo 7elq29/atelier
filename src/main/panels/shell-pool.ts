@@ -7,8 +7,8 @@
  * for the shell to boot (~1s). replenish() refills the pool in the background.
  *
  * Pool sessions are named `atelier-pool-<hex>` and start in the user's home
- * directory. After claiming, the caller runs a silent `cd <cwd> && clear` in
- * the attached pty (echo disabled) to navigate to the real project directory.
+ * directory. After claiming, spawn() runs a silent `cd <cwd> && clear` in the
+ * detached tmux pane (via send-keys) before the client attaches.
  */
 
 import { execFile, execFileSync } from 'child_process'

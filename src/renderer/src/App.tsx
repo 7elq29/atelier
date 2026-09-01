@@ -1559,70 +1559,86 @@ export default function App(): JSX.Element {
           ) : activeSession ? (
             activeSession.mode === 'terminal' ? (
               <div className="terminal-only-main" data-testid="terminal-only-session" />
-            ) : activeSessionDisconnected ? (
-              <SessionDisconnectedPanel
-                onReconnect={() => void handleSessionReconnect()}
-                connecting={
-                  !activeSession.closedAt && sessions.statuses[activeSession.id] === 'connecting'
-                }
-                connectStatusLabel={
-                  activeSessionId
-                    ? sessionWorkspace.connectProgressBySession[activeSessionId]?.label ?? null
-                    : null
-                }
-              />
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                   <div className={`tab-content${activeTab === 'chat' ? '' : ' hidden'}`} data-tab="chat">
                     <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
-                      <SessionMessagesHydrator
-                        sessionId={activeSession.id}
-                        enabled={!activeSessionDisconnected}
-                        loadSessionMessages={sessions.loadSessionMessages}
-                      />
-                      <SdkToastStack toasts={sessions.sdkToastsBySession[activeSession.id] ?? []} />
-                      <SessionChatSurface
-                        session={activeSession}
-                        pendingJumpMessageId={pendingJumpMessageId}
-                        onJumpHandled={handleJumpHandled}
-                        transcriptSearchOpen={transcriptSearchOpen}
-                        transcriptSearchQuery={transcriptSearchQuery}
-                        activeMatchIndex={activeMatchIndex}
-                        onMatchCount={setMatchCount}
-                        onOpenFileInFiles={openFileInFiles}
-                        filePathCandidates={filePathCandidatesForSession(
-                          sessionWorkspace.workspaceBySession[activeSession.id]
-                        )}
-                        sdkChrome={sessions.sdkChromeBySession[activeSession.id] ?? null}
-                        backgroundTasks={sessions.backgroundTasksBySession[activeSession.id] ?? []}
-                        onRespondToPrompt={(requestId, decision) =>
-                          void sessions.respondToPrompt(activeSession.id, requestId, decision)
-                        }
-                        reviewTarget={reviewTarget}
-                        onReviewMessage={(message) =>
-                          setReviewTarget({
-                            sourceId: message.id,
-                            kind: 'response',
-                            content: message.content
-                          })
-                        }
-                        onReviewPlan={(message, planMarkdown, previousPlanMarkdown) =>
-                          setReviewTarget({
-                            sourceId: message.id,
-                            kind: 'plan',
-                            content: planMarkdown,
-                            previousContent: previousPlanMarkdown
-                          })
-                        }
-                        onCloseReview={() => setReviewTarget(null)}
-                        effectiveTheme={effectiveTheme}
-                        onAddComment={appendToActiveComposer}
-                        onUpdateComment={replaceInActiveComposer}
-                        onDeleteComment={deleteReviewCommentByNote}
-                        reviewComments={reviewCommentsBySession[activeSession.id] ?? []}
-                        busy={sessions.busyBySession[activeSession.id] ?? false}
-                      />
+                      {activeSessionDisconnected ? (
+                        <SessionDisconnectedPanel
+                          onReconnect={() => void handleSessionReconnect()}
+                          connecting={
+                            !activeSession.closedAt && sessions.statuses[activeSession.id] === 'connecting'
+                          }
+                          connectStatusLabel={
+                            activeSessionId
+                              ? sessionWorkspace.connectProgressBySession[activeSessionId]?.label ?? null
+                              : null
+                          }
+                        />
+                      ) : (
+                        <>
+                          <SessionMessagesHydrator
+                            sessionId={activeSession.id}
+                            enabled={!activeSessionDisconnected}
+                            loadSessionMessages={sessions.loadSessionMessages}
+                          />
+                          <SdkToastStack toasts={sessions.sdkToastsBySession[activeSession.id] ?? []} />
+                          <SessionChatSurface
+                            session={activeSession}
+                            pendingJumpMessageId={pendingJumpMessageId}
+                            onJumpHandled={handleJumpHandled}
+                            transcriptSearchOpen={transcriptSearchOpen}
+                            transcriptSearchQuery={transcriptSearchQuery}
+                            activeMatchIndex={activeMatchIndex}
+                            onMatchCount={setMatchCount}
+                            onOpenFileInFiles={openFileInFiles}
+                            filePathCandidates={filePathCandidatesForSession(
+                              sessionWorkspace.workspaceBySession[activeSession.id]
+                            )}
+                            sdkChrome={sessions.sdkChromeBySession[activeSession.id] ?? null}
+                            backgroundTasks={sessions.backgroundTasksBySession[activeSession.id] ?? []}
+                            onRespondToPrompt={(requestId, decision) =>
+                              void sessions.respondToPrompt(activeSession.id, requestId, decision)
+                            }
+                            reviewTarget={reviewTarget}
+                            onReviewMessage={(message) =>
+                              setReviewTarget({
+                                sourceId: message.id,
+                                kind: 'response',
+                                content: message.content
+                              })
+                            }
+                            onReviewPlan={(message, planMarkdown, previousPlanMarkdown) =>
+                              setReviewTarget({
+                                sourceId: message.id,
+                                kind: 'plan',
+                                content: planMarkdown,
+                                previousContent: previousPlanMarkdown
+                              })
+                            }
+                            onCloseReview={() => setReviewTarget(null)}
+                            effectiveTheme={effectiveTheme}
+                            onAddComment={appendToActiveComposer}
+                            onUpdateComment={replaceInActiveComposer}
+                            onDeleteComment={deleteReviewCommentByNote}
+                            reviewComments={reviewCommentsBySession[activeSession.id] ?? []}
+                            busy={sessions.busyBySession[activeSession.id] ?? false}
+                          />
+                          {import.meta.env.DEV && (sessions.hookLogBySession[activeSession.id]?.length ?? 0) > 0 && (
+                            <div className="sdk-debug-log" data-testid="sdk-debug-log">
+                              {(sessions.hookLogBySession[activeSession.id] ?? []).map((line, i) => (
+                                <span key={i} className="line">
+                                  {line}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                      {/* Keep composers mounted while the active session is on the disconnected gate
+                          (connecting / startup-idle) — otherwise switching away unmounts every
+                          visited composer's draft state. */}
                       <div className="composer-cache">
                         {[...aliveChatComposers].map((sessionId) => {
                           const session = allSessions.find((s) => s.id === sessionId)
@@ -1689,57 +1705,52 @@ export default function App(): JSX.Element {
                           )
                         })}
                       </div>
-                      {import.meta.env.DEV && (sessions.hookLogBySession[activeSession.id]?.length ?? 0) > 0 && (
-                        <div className="sdk-debug-log" data-testid="sdk-debug-log">
-                          {(sessions.hookLogBySession[activeSession.id] ?? []).map((line, i) => (
-                            <span key={i} className="line">
-                              {line}
-                            </span>
-                          ))}
+                    </div>
+                  </div>
+
+                  {!activeSessionDisconnected && (
+                    <>
+                      <SessionWorkspacePanels
+                        sessionIds={workspacePanelSessionIds}
+                        allSessions={allSessions}
+                        workspaceBySession={sessionWorkspace.workspaceBySession}
+                        sessionProfiles={config.sessionProfiles}
+                        activeSessionId={activeSessionId}
+                        activeTab={activeTab}
+                        activeSessionDisconnected={activeSessionDisconnected}
+                        effectiveTheme={effectiveTheme}
+                        revealChangePath={revealChangePath}
+                        revealChangeSeq={revealChangeSeq}
+                        revealCommitHash={revealCommitHash}
+                        revealCommitSeq={revealCommitSeq}
+                        revealFilePath={revealFilePath}
+                        revealFileSeq={revealFileSeq}
+                        revealFileDiffPath={revealFileDiffPath}
+                        revealFileDiffSeq={revealFileDiffSeq}
+                        injectDiffBySession={injectDiffBySession}
+                        onRevealChangeHandled={() => setRevealChangePath(undefined)}
+                        onRevealCommitHandled={() => setRevealCommitHash(undefined)}
+                        onRevealFileHandled={() => setRevealFilePath(undefined)}
+                        onRevealFileDiffHandled={() => setRevealFileDiffPath(undefined)}
+                        onAddComment={appendToActiveComposer}
+                        onOpenFileQuickOpen={openFileQuickOpen}
+                        onRefreshWorkspace={handleRefreshWorkspace}
+                        refreshingBySession={sessionWorkspace.refreshingBySession}
+                      />
+
+                      <div className={`tab-content${activeTab === 'terminal' ? '' : ' hidden'}`} data-tab="terminal">
+                        {/* TerminalPanel lives in the terminal-cache-layer above this session subtree.
+                            This empty div keeps the tab layout slot; the cache entry overlays it. */}
+                      </div>
+
+                      {Boolean(activeSession.hostname) && (
+                        <div className={`tab-content${activeTab === 'ports' ? '' : ' hidden'}`} data-tab="ports">
+                          {visitedTabs.has('ports') && (
+                            <PortsPanel sessionId={activeSession.id} sshHost={activeSession.hostname as string} />
+                          )}
                         </div>
                       )}
-                    </div>
-                  </div>
-
-                  <SessionWorkspacePanels
-                    sessionIds={workspacePanelSessionIds}
-                    allSessions={allSessions}
-                    workspaceBySession={sessionWorkspace.workspaceBySession}
-                    sessionProfiles={config.sessionProfiles}
-                    activeSessionId={activeSessionId}
-                    activeTab={activeTab}
-                    activeSessionDisconnected={activeSessionDisconnected}
-                    effectiveTheme={effectiveTheme}
-                    revealChangePath={revealChangePath}
-                    revealChangeSeq={revealChangeSeq}
-                    revealCommitHash={revealCommitHash}
-                    revealCommitSeq={revealCommitSeq}
-                    revealFilePath={revealFilePath}
-                    revealFileSeq={revealFileSeq}
-                    revealFileDiffPath={revealFileDiffPath}
-                    revealFileDiffSeq={revealFileDiffSeq}
-                    injectDiffBySession={injectDiffBySession}
-                    onRevealChangeHandled={() => setRevealChangePath(undefined)}
-                    onRevealCommitHandled={() => setRevealCommitHash(undefined)}
-                    onRevealFileHandled={() => setRevealFilePath(undefined)}
-                    onRevealFileDiffHandled={() => setRevealFileDiffPath(undefined)}
-                    onAddComment={appendToActiveComposer}
-                    onOpenFileQuickOpen={openFileQuickOpen}
-                    onRefreshWorkspace={handleRefreshWorkspace}
-                    refreshingBySession={sessionWorkspace.refreshingBySession}
-                  />
-
-                  <div className={`tab-content${activeTab === 'terminal' ? '' : ' hidden'}`} data-tab="terminal">
-                    {/* TerminalPanel lives in the terminal-cache-layer above this session subtree.
-                        This empty div keeps the tab layout slot; the cache entry overlays it. */}
-                  </div>
-
-                  {Boolean(activeSession.hostname) && (
-                    <div className={`tab-content${activeTab === 'ports' ? '' : ' hidden'}`} data-tab="ports">
-                      {visitedTabs.has('ports') && (
-                        <PortsPanel sessionId={activeSession.id} sshHost={activeSession.hostname as string} />
-                      )}
-                    </div>
+                    </>
                   )}
                 </div>
               </div>
