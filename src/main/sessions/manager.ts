@@ -2557,7 +2557,10 @@ export class SessionManager {
           }
         })
         if (event.isError) this.expirePendingPrompts(sessionId, live)
-        if (live.turnCount >= AUTO_NAME_STARTING_FROM_TURN) {
+        // Only on the session's 2nd completed turn — not on every later turn or
+        // after reconnect (turnCount is restored from the transcript, so >= 2
+        // would re-summarize and overwrite the title on each post-reconnect message).
+        if (live.turnCount === AUTO_NAME_STARTING_FROM_TURN) {
           void this.maybeAutoName(sessionId).catch((err) =>
             logger.warn('auto-naming failed', { sessionId, error: err instanceof Error ? err.message : String(err) })
           )
@@ -2728,18 +2731,17 @@ export class SessionManager {
   // ── Auto-naming (background summarizer, Bug #93 regression guard) ────
 
   /**
-   * Always actually runs the summarizer harness call when there's a
-   * transcript, regardless of `name_locked_by_user` — the lock is enforced
-   * exclusively at the write path (`SessionStore.setAutoName`), not by
-   * skipping the call here. This mirrors Playground's real Bug #93 exactly
-   * (the summarizer DID run after a manual rename; the missing piece was a
-   * guard on the write) and makes the regression test meaningful: it proves
-   * the guard holds under an actual attempted overwrite, not just that the
-   * summarizer happened not to be invoked.
+   * Runs once on the session's 2nd completed turn (`AUTO_NAME_STARTING_FROM_TURN`).
+   * Skipped when the user has manually renamed (`name_locked_by_user`). The write
+   * path (`SessionStore.setAutoName`) also no-ops when locked as a belt-and-suspenders guard.
    */
   private async maybeAutoName(sessionId: string): Promise<void> {
     const session = this.store.getSession(sessionId)
     if (!session) return
+    if (session.nameLockedByUser) {
+      logger.info('auto-naming skipped: name locked by user', { sessionId })
+      return
+    }
 
     const early = this.store.listMessages(sessionId).slice(0, 6)
     const transcript = early.map((m) => `${m.role}: ${m.content}`).join('\n').slice(0, 2000)
@@ -2759,15 +2761,7 @@ export class SessionManager {
     }
 
     if (!title) return
-    // SessionStore.setAutoName is the ONLY place a name is ever auto-applied,
-    // and it internally no-ops when name_locked_by_user is true — this call
-    // happens unconditionally, proving the guard (not the caller) is what
-    // stops the overwrite.
     const updated = this.store.setAutoName(sessionId, title)
-    if (session.nameLockedByUser) {
-      logger.info('auto-naming attempted but blocked: name is locked by user', { sessionId, attemptedTitle: title })
-      return
-    }
     if (updated && updated.name === title) {
       this.sendLifecycle({ type: 'session.updated', session: updated })
     }

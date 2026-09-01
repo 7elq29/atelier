@@ -520,7 +520,7 @@ function SessionRow({
   function commitRename(): void {
     setEditing(false)
     const trimmed = draftName.trim()
-    if (trimmed && trimmed !== session.name) onRename(trimmed)
+    if (trimmed) onRename(trimmed)
     else setDraftName(session.name)
   }
 

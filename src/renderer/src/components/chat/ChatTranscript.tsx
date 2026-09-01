@@ -783,7 +783,9 @@ export default function ChatTranscript({
   useEffect(() => {
     const transcript = containerRef.current
     if (!transcript) return
-    const composer = transcript.closest('.chat-tab-wrap')?.querySelector('.composer-cache')
+    const composer =
+      transcript.closest('.chat-tab-wrap')?.querySelector('.composer-cache') ??
+      transcript.closest('[data-main-content]')?.querySelector('.composer-cache')
     if (!composer) return
     const observer = new ResizeObserver(() => {
       scrollToBottomIfPinned()

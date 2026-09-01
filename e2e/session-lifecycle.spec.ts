@@ -271,7 +271,10 @@ test.describe('02-session-lifecycle', () => {
       .poll(
         () => {
           const log = appendMainLog(userDataDir)
-          return log.includes('auto-naming attempted but blocked')
+          return (
+            log.includes('auto-naming skipped: name locked by user') ||
+            log.includes('auto-naming attempted but blocked')
+          )
         },
         { timeout: 90_000 }
       )
@@ -287,6 +290,20 @@ test.describe('02-session-lifecycle', () => {
     )
     expect(rows[0].name).toBe('My Manual Name')
     expect(rows[0].name_locked_by_user).toBe(1)
+
+    // Reconnect + another turn must not re-run the summarizer (turnCount > 2).
+    await page.getByTestId('composer-input').fill('Reply with exactly the single word: ZAP')
+    await page.getByTestId('send-button').click()
+    await expect
+      .poll(
+        async () => {
+          const texts = await page.locator('[data-testid="transcript-message"][data-role="assistant"]').allTextContents()
+          return texts.some((t) => t.includes('ZAP'))
+        },
+        { timeout: 60_000 }
+      )
+      .toBe(true)
+    await expect(row.getByTestId('session-name')).toHaveText('My Manual Name')
   })
 
   // ── 3. Close ─────────────────────────────────────────────────────────
