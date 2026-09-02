@@ -2913,8 +2913,30 @@ body.dragging-workspace-tab .workspace-drop-overlay,
 .workspace-drop-right { right: 0; top: 0; bottom: 0; width: 22%; }
 .workspace-drop-top { left: 0; right: 0; top: 0; height: 22%; }
 .workspace-drop-bottom { left: 0; right: 0; bottom: 0; height: 22%; }
-body.dragging-workspace-tab .workspace-drop-zone:hover,
-.workspace-drop-overlay.visible .workspace-drop-zone:hover { opacity: 1; background: color-mix(in srgb, var(--border-strong) 35%, transparent); }
+/* The hit strips stay invisible; the preview below is the visible affordance. */
+.workspace-drop-preview {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(50% - 2.5px);
+  opacity: 0;
+  border-radius: var(--r-md);
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  pointer-events: none;
+}
+/* top/bottom are aliases for left/right — handleWorkspaceSplitDrop always builds a
+   side-by-side split — so the preview shows the half the tab will really land in. */
+.workspace-drop-overlay:has(.workspace-drop-left:hover) .workspace-drop-preview,
+.workspace-drop-overlay:has(.workspace-drop-top:hover) .workspace-drop-preview {
+  left: 0;
+  opacity: 1;
+}
+.workspace-drop-overlay:has(.workspace-drop-right:hover) .workspace-drop-preview,
+.workspace-drop-overlay:has(.workspace-drop-bottom:hover) .workspace-drop-preview {
+  right: 0;
+  opacity: 1;
+}
 
 /* ===== Diff tab ===== */
 .diff-sub-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--border-subtle); }

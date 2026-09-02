@@ -660,6 +660,40 @@ test.describe('07-secondary-panels', () => {
     await page.getByTestId('tab-chat').click()
     const workspace = page.getByTestId('session-workspace-tabs')
 
+    // While dragging, the affordance previews the resulting pane (a half), not the
+    // narrow hit strip, so the drop target reads as the layout you actually get.
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-testid="tab-diff"]') as HTMLElement | null
+      if (!btn) throw new Error('tab-diff not found')
+      btn.dispatchEvent(
+        new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })
+      )
+    })
+    const zoneBox = await page.locator('.workspace-drop-right').boundingBox()
+    if (!zoneBox) throw new Error('right drop zone is not visible while dragging')
+    await page.mouse.move(zoneBox.x + zoneBox.width / 2, zoneBox.y + zoneBox.height / 2)
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const el = document.querySelector('.workspace-drop-preview') as HTMLElement | null
+          const host = document.querySelector('.workspace-drop-overlay') as HTMLElement | null
+          if (!el || !host) return null
+          const r = el.getBoundingClientRect()
+          const h = host.getBoundingClientRect()
+          return {
+            shown: getComputedStyle(el).opacity === '1',
+            widthPctOfArea: Math.round((r.width / h.width) * 100),
+            rightAligned: Math.abs(r.right - h.right) < 2
+          }
+        })
+      )
+      .toEqual({ shown: true, widthPctOfArea: 50, rightAligned: true })
+    await page.screenshot({ path: join(artifactsDir, '07-workspace-split-drop-preview.png') })
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-testid="tab-diff"]') as HTMLElement | null
+      btn?.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true }))
+    })
+
     // Native HTML5 DnD doesn't fire real drag events under Playwright's
     // synthetic mouse driver reliably — dispatch drop on the right edge zone.
     await page.evaluate(() => {

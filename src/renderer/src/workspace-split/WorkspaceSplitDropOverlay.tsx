@@ -14,6 +14,9 @@ export function WorkspaceSplitDropOverlay({
 
   return (
     <div className="workspace-drop-overlay" data-testid="workspace-drop-overlay" aria-hidden="true">
+      {/* Preview of the resulting pane, not of the hit strip: every edge produces a
+          half-width side-by-side split, so this mirrors that geometry. */}
+      <div className="workspace-drop-preview" data-testid="workspace-drop-preview" />
       <div
         className="workspace-drop-zone workspace-drop-left"
         data-drop="left"
