@@ -1,26 +1,26 @@
-{"ts":"2026-08-27T17:21:07.618Z","level":"info","process":"main","msg":"tmux available","path":"/opt/homebrew/bin/tmux"}
-{"ts":"2026-08-27T17:21:07.630Z","level":"info","process":"main","msg":"shell-pool: warm shell ready","name":"atelier-pool-fcaa7a74"}
-{"ts":"2026-08-27T17:21:07.630Z","level":"info","process":"main","msg":"shell-pool: warm shell ready","name":"atelier-pool-0018cf8d"}
-{"ts":"2026-08-27T17:21:07.687Z","level":"info","process":"main","msg":"database migration applied","name":"0001_sessions_and_messages"}
-{"ts":"2026-08-27T17:21:07.687Z","level":"info","process":"main","msg":"database migration applied","name":"0002_tags_notes_groups_ordering"}
-{"ts":"2026-08-27T17:21:07.687Z","level":"info","process":"main","msg":"database migration applied","name":"0003_session_cost_tracking"}
-{"ts":"2026-08-27T17:21:07.688Z","level":"info","process":"main","msg":"database migration applied","name":"0004_message_full_text_search"}
-{"ts":"2026-08-27T17:21:07.688Z","level":"info","process":"main","msg":"database migration applied","name":"0005_project_path_history"}
-{"ts":"2026-08-27T17:21:07.688Z","level":"info","process":"main","msg":"database migration applied","name":"0006_session_ever_connected"}
-{"ts":"2026-08-27T17:21:07.688Z","level":"info","process":"main","msg":"database migration applied","name":"0007_session_mode_model"}
-{"ts":"2026-08-27T17:21:07.688Z","level":"info","process":"main","msg":"database migration applied","name":"0008_session_worktree"}
-{"ts":"2026-08-27T17:21:07.688Z","level":"info","process":"main","msg":"database migration applied","name":"0009_pending_turn_interrupted_notice"}
-{"ts":"2026-08-27T17:21:07.688Z","level":"info","process":"main","msg":"database migration applied","name":"0010_app_notes"}
-{"ts":"2026-08-27T17:21:07.689Z","level":"info","process":"main","msg":"database migration applied","name":"0011_session_last_active_at"}
-{"ts":"2026-08-27T17:21:07.689Z","level":"info","process":"main","msg":"database migration applied","name":"0012_session_linked_daily_task"}
-{"ts":"2026-08-27T17:21:07.689Z","level":"info","process":"main","msg":"database migration applied","name":"0013_session_file_edits"}
-{"ts":"2026-08-27T17:21:07.689Z","level":"info","process":"main","msg":"database migration applied","name":"0014_session_changes_cap_v2"}
-{"ts":"2026-08-27T17:21:07.689Z","level":"info","process":"main","msg":"database migration applied","name":"0015_weekly_plan_drafts"}
-{"ts":"2026-08-27T17:21:07.689Z","level":"info","process":"main","msg":"database migration applied","name":"0016_session_profile_id"}
-{"ts":"2026-08-27T17:21:07.689Z","level":"info","process":"main","msg":"gardenia → atelier worktree migration applied","sessionsUpdated":0}
-{"ts":"2026-08-27T17:21:07.690Z","level":"info","process":"main","msg":"historical cost backfill complete","recomputed":0,"resetToZero":0}
-{"ts":"2026-08-27T17:21:07.690Z","level":"info","process":"main","msg":"database opened","dbPath":"/private/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-VtJeiM/data/atelier.sqlite"}
-{"ts":"2026-08-27T17:21:07.690Z","level":"info","process":"main","msg":"app ready","version":"32.3.3","platform":"darwin","dev":true}
-{"ts":"2026-08-27T17:21:07.753Z","level":"warn","process":"main","msg":"ELECTRON_RENDERER_URL unset in dev; loading built renderer from disk — use npm run dev (electron-vite) so Vite serves the UI","path":"/Users/qingqin/gardenia/out/renderer/index.html"}
-{"ts":"2026-08-27T17:21:08.200Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
-{"ts":"2026-08-27T17:21:08.202Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
+{"ts":"2026-09-02T19:44:17.445Z","level":"info","process":"main","msg":"tmux available","path":"/opt/homebrew/bin/tmux"}
+{"ts":"2026-09-02T19:44:17.460Z","level":"info","process":"main","msg":"shell-pool: warm shell ready","name":"atelier-pool-f6d099d9"}
+{"ts":"2026-09-02T19:44:17.460Z","level":"info","process":"main","msg":"shell-pool: warm shell ready","name":"atelier-pool-f061f854"}
+{"ts":"2026-09-02T19:44:17.496Z","level":"info","process":"main","msg":"database migration applied","name":"0001_sessions_and_messages"}
+{"ts":"2026-09-02T19:44:17.496Z","level":"info","process":"main","msg":"database migration applied","name":"0002_tags_notes_groups_ordering"}
+{"ts":"2026-09-02T19:44:17.496Z","level":"info","process":"main","msg":"database migration applied","name":"0003_session_cost_tracking"}
+{"ts":"2026-09-02T19:44:17.496Z","level":"info","process":"main","msg":"database migration applied","name":"0004_message_full_text_search"}
+{"ts":"2026-09-02T19:44:17.497Z","level":"info","process":"main","msg":"database migration applied","name":"0005_project_path_history"}
+{"ts":"2026-09-02T19:44:17.497Z","level":"info","process":"main","msg":"database migration applied","name":"0006_session_ever_connected"}
+{"ts":"2026-09-02T19:44:17.497Z","level":"info","process":"main","msg":"database migration applied","name":"0007_session_mode_model"}
+{"ts":"2026-09-02T19:44:17.497Z","level":"info","process":"main","msg":"database migration applied","name":"0008_session_worktree"}
+{"ts":"2026-09-02T19:44:17.497Z","level":"info","process":"main","msg":"database migration applied","name":"0009_pending_turn_interrupted_notice"}
+{"ts":"2026-09-02T19:44:17.497Z","level":"info","process":"main","msg":"database migration applied","name":"0010_app_notes"}
+{"ts":"2026-09-02T19:44:17.498Z","level":"info","process":"main","msg":"database migration applied","name":"0011_session_last_active_at"}
+{"ts":"2026-09-02T19:44:17.498Z","level":"info","process":"main","msg":"database migration applied","name":"0012_session_linked_daily_task"}
+{"ts":"2026-09-02T19:44:17.498Z","level":"info","process":"main","msg":"database migration applied","name":"0013_session_file_edits"}
+{"ts":"2026-09-02T19:44:17.498Z","level":"info","process":"main","msg":"database migration applied","name":"0014_session_changes_cap_v2"}
+{"ts":"2026-09-02T19:44:17.498Z","level":"info","process":"main","msg":"database migration applied","name":"0015_weekly_plan_drafts"}
+{"ts":"2026-09-02T19:44:17.498Z","level":"info","process":"main","msg":"database migration applied","name":"0016_session_profile_id"}
+{"ts":"2026-09-02T19:44:17.498Z","level":"info","process":"main","msg":"gardenia → atelier worktree migration applied","sessionsUpdated":0}
+{"ts":"2026-09-02T19:44:17.499Z","level":"info","process":"main","msg":"historical cost backfill complete","recomputed":0,"resetToZero":0}
+{"ts":"2026-09-02T19:44:17.499Z","level":"info","process":"main","msg":"database opened","dbPath":"/private/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-Lk0jYU/data/atelier.sqlite"}
+{"ts":"2026-09-02T19:44:17.499Z","level":"info","process":"main","msg":"app ready","version":"32.3.3","platform":"darwin","dev":true}
+{"ts":"2026-09-02T19:44:17.556Z","level":"warn","process":"main","msg":"ELECTRON_RENDERER_URL unset in dev; loading built renderer from disk — use npm run dev (electron-vite) so Vite serves the UI","path":"/Users/qingqin/gardenia/out/renderer/index.html"}
+{"ts":"2026-09-02T19:44:17.922Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}
+{"ts":"2026-09-02T19:44:17.923Z","level":"info","process":"main","msg":"ipc app:getVersion invoked","version":"32.3.3"}

@@ -193,3 +193,21 @@ test('keyboard hints: ⌘+c does not switch tabs while hints are active', async 
   })
   await expect(page.getByTestId('keyboard-hints-overlay')).toHaveCount(0)
 })
+
+test('keyboard hints: reserved letters do not appear as chrome badges while ⌘ is held', async () => {
+  await page.locator('#app').click()
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', bubbles: true }))
+  })
+  await page.waitForTimeout(300)
+  await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
+
+  for (const letter of ['a', 'c', 'v', 'x', 'h', 'd', 'f', 't', 'p']) {
+    await expect(page.getByTestId(`keyboard-hint-badge-${letter}`)).toHaveCount(0)
+  }
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', bubbles: true }))
+  })
+  await expect(page.getByTestId('keyboard-hints-overlay')).toHaveCount(0)
+})

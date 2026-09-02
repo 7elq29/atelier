@@ -13,6 +13,21 @@ import Composer, { type ComposerHandle } from './components/chat/Composer'
 import SdkToastStack from './components/chat/SdkToastStack'
 import ExportMenu from './components/chat/ExportMenu'
 import TabBar, { type SessionTab } from './components/panels/TabBar'
+import {
+  applyStripTabSelect,
+  createSplit,
+  isChatTabVisible,
+  isSplitLayoutVisible,
+  isTabHiddenFromStrip,
+  isTerminalTabVisible,
+  isWorkspaceSplittableTab,
+  resolveTabVisibility,
+  stripActiveTab,
+  tabContentClass
+} from './workspace-split/workspace-split-logic'
+import type { WorkspaceSplitState } from './workspace-split/workspace-split-types'
+import { WorkspaceSplitDivider } from './workspace-split/WorkspaceSplitDivider'
+import { WorkspaceSplitDropOverlay } from './workspace-split/WorkspaceSplitDropOverlay'
 import AppNotesPanel from './components/panels/AppNotesPanel'
 import DailyNoteEditorPanel from './components/panels/DailyNoteEditorPanel'
 import WeeklyPlanWizardPanel from './components/panels/WeeklyPlanWizardPanel'
@@ -197,6 +212,10 @@ export default function App(): JSX.Element {
   const [modelSelectionBySession, setModelSelectionBySession] = useState<Record<string, ModelSelection>>({})
   const [activeTab, setActiveTab] = useState<SessionTab>('chat')
   const [visitedTabs, setVisitedTabs] = useState<Set<SessionTab>>(new Set(['chat']))
+  const [workspaceSplitBySession, setWorkspaceSplitBySession] = useState<
+    Record<string, WorkspaceSplitState>
+  >({})
+  const [workspaceDragTab, setWorkspaceDragTab] = useState<SessionTab | null>(null)
   const [revealChangePath, setRevealChangePath] = useState<string | undefined>()
   const [revealChangeSeq, setRevealChangeSeq] = useState(0)
   const [revealCommitHash, setRevealCommitHash] = useState<string | undefined>()
@@ -681,11 +700,100 @@ export default function App(): JSX.Element {
     [activeAppNoteId, appNotes]
   )
 
-  function selectTab(tab: SessionTab): void {
-    if (claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)) return
-    setActiveTab(tab)
-    setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)))
-  }
+  const activeSession = activeSessionId
+    ? allSessions.find((s) => s.id === activeSessionId) ?? null
+    : null
+  const activeAppNote = activeAppNoteId
+    ? appNotes.notes.find((n) => n.id === activeAppNoteId) ?? null
+    : null
+
+  const selectTab = useCallback(
+    (tab: SessionTab): void => {
+      if (claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)) return
+      const sessionId = activeSessionId
+      const split = sessionId ? workspaceSplitBySession[sessionId] ?? null : null
+      const { split: nextSplit } = applyStripTabSelect(tab, split)
+      if (sessionId && nextSplit !== split) {
+        setWorkspaceSplitBySession((prev) => {
+          if (!nextSplit) {
+            const { [sessionId]: _, ...rest } = prev
+            return rest
+          }
+          return { ...prev, [sessionId]: nextSplit }
+        })
+      }
+      setActiveTab(tab)
+      setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)))
+    },
+    [activeSession, activeSessionId, sessions.statuses, workspaceSplitBySession]
+  )
+
+  const activeWorkspaceSplit = activeSessionId ? workspaceSplitBySession[activeSessionId] ?? null : null
+  const stripTab = stripActiveTab(activeTab, activeWorkspaceSplit)
+  const splitLayoutVisible = isSplitLayoutVisible(activeWorkspaceSplit)
+  const hiddenStripTabs = useMemo(() => {
+    if (!activeWorkspaceSplit) return undefined
+    const hidden = new Set<SessionTab>()
+    if (isTabHiddenFromStrip('diff', activeWorkspaceSplit)) hidden.add('diff')
+    if (isTabHiddenFromStrip('files', activeWorkspaceSplit)) hidden.add('files')
+    if (isTabHiddenFromStrip('chat', activeWorkspaceSplit)) hidden.add('chat')
+    if (isTabHiddenFromStrip('terminal', activeWorkspaceSplit)) hidden.add('terminal')
+    if (isTabHiddenFromStrip('ports', activeWorkspaceSplit)) hidden.add('ports')
+    return hidden.size > 0 ? hidden : undefined
+  }, [activeWorkspaceSplit])
+
+  const handleWorkspaceSplitDrop = useCallback(
+    (edge: 'left' | 'right' | 'top' | 'bottom', tab: SessionTab) => {
+      if (!activeSessionId || !isWorkspaceSplittableTab(tab)) return
+      const split = workspaceSplitBySession[activeSessionId] ?? null
+      if (split && (tab === split.primaryTab || tab === split.secondaryTab)) return
+      const anchorTab = split?.fullscreenTab
+        ? split.primaryTab
+        : split
+          ? split.primaryTab
+          : activeTab
+      if (!isWorkspaceSplittableTab(anchorTab)) return
+      const insertBefore = edge === 'left' || edge === 'top'
+      const primaryTab = insertBefore ? tab : anchorTab
+      const secondaryTab = insertBefore ? anchorTab : tab
+      const next = createSplit(primaryTab, secondaryTab, split?.splitRatio ?? 0.5)
+      if (!next) return
+      setWorkspaceSplitBySession((prev) => ({ ...prev, [activeSessionId]: next }))
+      setActiveTab(primaryTab)
+      setVisitedTabs((prev) => {
+        const nextVisited = new Set(prev)
+        nextVisited.add(primaryTab)
+        nextVisited.add(secondaryTab)
+        return nextVisited
+      })
+      setWorkspaceDragTab(null)
+    },
+    [activeSessionId, activeTab, workspaceSplitBySession]
+  )
+
+  const handleWorkspaceDragTabStart = useCallback((tab: SessionTab, e: React.DragEvent<HTMLButtonElement>) => {
+    e.dataTransfer.setData('text/plain', tab)
+    e.dataTransfer.effectAllowed = 'move'
+    setWorkspaceDragTab(tab)
+    document.body.classList.add('dragging-workspace-tab')
+  }, [])
+
+  const handleWorkspaceDragTabEnd = useCallback(() => {
+    setWorkspaceDragTab(null)
+    document.body.classList.remove('dragging-workspace-tab')
+  }, [])
+
+  const handleWorkspaceSplitRatioChange = useCallback(
+    (ratio: number) => {
+      if (!activeSessionId) return
+      setWorkspaceSplitBySession((prev) => {
+        const split = prev[activeSessionId]
+        if (!split) return prev
+        return { ...prev, [activeSessionId]: { ...split, splitRatio: ratio } }
+      })
+    },
+    [activeSessionId]
+  )
 
   // Switching sessions always closes/clears the in-conversation search bar —
   // matches (and their indices) are only meaningful for the transcript
@@ -697,15 +805,6 @@ export default function App(): JSX.Element {
     setMatchCount(0)
   }, [activeSessionId])
 
-  // Register terminal-mode sessions in the keep-alive map the first time they
-  // become active. After registration the TerminalPanel never unmounts, so
-  // switching away and back is a CSS visibility toggle with no pty re-spawn.
-  const activeSession = activeSessionId
-    ? allSessions.find((s) => s.id === activeSessionId) ?? null
-    : null
-  const activeAppNote = activeAppNoteId
-    ? appNotes.notes.find((n) => n.id === activeAppNoteId) ?? null
-    : null
   const activeWeeklyPlanSurface = activeWeeklyPlanOpen || weeklyPlanViewDoc !== null
   const activeWorkspacePath =
     activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanSurface
@@ -723,10 +822,9 @@ export default function App(): JSX.Element {
       if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
       setRevealChangePath(path)
       setRevealChangeSeq((n) => n + 1)
-      setActiveTab('diff')
-      setVisitedTabs((prev) => (prev.has('diff') ? prev : new Set(prev).add('diff')))
+      selectTab('diff')
     },
-    [activeSessionId, allSessions, sessions.statuses]
+    [activeSessionId, allSessions, sessions.statuses, selectTab]
   )
 
   const openChangedFileInFilesWithDiff = useCallback(
@@ -737,20 +835,17 @@ export default function App(): JSX.Element {
       const absolutePath = resolveOpenFilePath(path, session, filePathCandidatesForSession(ws))
       setRevealFileDiffPath(absolutePath)
       setRevealFileDiffSeq((n) => n + 1)
-      setActiveTab('files')
-      setVisitedTabs((prev) => (prev.has('files') ? prev : new Set(prev).add('files')))
+      selectTab('files')
     },
-    [activeSessionId, allSessions, sessions.statuses, sessionWorkspace.workspaceBySession]
+    [activeSessionId, allSessions, sessions.statuses, sessionWorkspace.workspaceBySession, selectTab]
   )
 
   const handleSessionTabHintShortcut = useCallback(
     (tab: SessionTab) => {
       if (tab === 'ports' && !activeSession?.hostname) return
-      if (claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)) return
-      setActiveTab(tab)
-      setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)))
+      selectTab(tab)
     },
-    [activeSession, activeSessionId, sessions.statuses]
+    [activeSession?.hostname, selectTab]
   )
 
   const openFileInFiles = useCallback(
@@ -761,10 +856,9 @@ export default function App(): JSX.Element {
       const absolutePath = resolveOpenFilePath(rawPath, session, filePathCandidatesForSession(ws))
       setRevealFilePath(absolutePath)
       setRevealFileSeq((n) => n + 1)
-      setActiveTab('files')
-      setVisitedTabs((prev) => (prev.has('files') ? prev : new Set(prev).add('files')))
+      selectTab('files')
     },
-    [activeSessionId, allSessions, sessions.statuses, sessionWorkspace.workspaceBySession]
+    [activeSessionId, allSessions, sessions.statuses, sessionWorkspace.workspaceBySession, selectTab]
   )
 
   useEffect(() => {
@@ -1224,7 +1318,7 @@ export default function App(): JSX.Element {
     !activeWeeklyPlanSurface &&
     activeSession?.mode === 'claude-code' &&
     !activeSessionDisconnected &&
-    activeTab === 'chat'
+    isChatTabVisible(activeTab, activeWorkspaceSplit)
   )
 
   const showOnboarding = loaded && !config.onboardingCompleted
@@ -1285,7 +1379,7 @@ export default function App(): JSX.Element {
       !activeDailyNoteDate &&
       !activeWeeklyPlanSurface &&
       !activeSessionDisconnected &&
-      activeTab === 'chat'
+      isChatTabVisible(activeTab, activeWorkspaceSplit)
   )
   chatSessionInterruptEnabledRef.current = chatSessionInterruptEnabled
   const transcriptSearchOpenRef = useRef(false)
@@ -1446,10 +1540,13 @@ export default function App(): JSX.Element {
             {activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanSurface && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
               <>
                 <TabBar
-                  activeTab={activeTab}
+                  activeTab={stripTab}
                   onSelect={selectTab}
                   showPorts={Boolean(activeSession.hostname)}
                   diffChangedCount={activeDiffChangedCount}
+                  hiddenTabs={hiddenStripTabs}
+                  onDragTabStart={handleWorkspaceDragTabStart}
+                  onDragTabEnd={handleWorkspaceDragTabEnd}
                 />
                 <div className="topbar-spacer" />
                 <span className="topbar-chip" data-testid="cost-chip">
@@ -1503,7 +1600,7 @@ export default function App(): JSX.Element {
                     sessionMainInForeground &&
                     activeSession?.mode === 'claude-code' &&
                     activeSession.id === sessionId &&
-                    activeTab === 'terminal' &&
+                    isTerminalTabVisible(activeTab, activeWorkspaceSplit) &&
                     !activeSessionDisconnected
                   return (
                     <div key={`${ptyId}:${info.cwd}`} className={`terminal-cache-entry${isActive ? ' active' : ''}`}>
@@ -1533,6 +1630,7 @@ export default function App(): JSX.Element {
                 sessionProfiles={config.sessionProfiles}
                 activeSessionId={activeSessionId}
                 activeTab={activeTab}
+                workspaceSplit={activeWorkspaceSplit}
                 activeSessionDisconnected={activeSessionDisconnected}
                 sessionMainInForeground={sessionMainInForeground}
                 effectiveTheme={effectiveTheme}
@@ -1599,8 +1697,19 @@ export default function App(): JSX.Element {
               <div className="terminal-only-main" data-testid="terminal-only-session" />
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                  <div className={`tab-content${activeTab === 'chat' ? '' : ' hidden'}`} data-tab="chat">
+                <div
+                  className={`session-workspace-tabs${splitLayoutVisible ? ' session-workspace-tabs--split' : ''}`}
+                  style={
+                    splitLayoutVisible && activeWorkspaceSplit
+                      ? ({ '--workspace-split-ratio': activeWorkspaceSplit.splitRatio } as React.CSSProperties)
+                      : undefined
+                  }
+                  data-testid="session-workspace-tabs"
+                >
+                  <div
+                    className={tabContentClass(resolveTabVisibility('chat', activeTab, activeWorkspaceSplit))}
+                    data-tab="chat"
+                  >
                     <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
                       {activeSessionDisconnected ? (
                         <SessionDisconnectedPanel
@@ -1679,18 +1788,38 @@ export default function App(): JSX.Element {
 
                   {!activeSessionDisconnected && (
                     <>
-                      <div className={`tab-content${activeTab === 'terminal' ? '' : ' hidden'}`} data-tab="terminal">
+                      {/* SessionWorkspacePanels renders from the panel-cache-layer above,
+                          so it survives note/terminal switches instead of unmounting here. */}
+                      <div
+                        className={tabContentClass(resolveTabVisibility('terminal', activeTab, activeWorkspaceSplit))}
+                        data-tab="terminal"
+                      >
                         {/* TerminalPanel lives in the terminal-cache-layer above this session subtree.
                             This empty div keeps the tab layout slot; the cache entry overlays it. */}
                       </div>
 
                       {Boolean(activeSession.hostname) && (
-                        <div className={`tab-content${activeTab === 'ports' ? '' : ' hidden'}`} data-tab="ports">
+                        <div
+                          className={tabContentClass(resolveTabVisibility('ports', activeTab, activeWorkspaceSplit))}
+                          data-tab="ports"
+                        >
                           {visitedTabs.has('ports') && (
                             <PortsPanel sessionId={activeSession.id} sshHost={activeSession.hostname as string} />
                           )}
                         </div>
                       )}
+                      {splitLayoutVisible && activeWorkspaceSplit ? (
+                        <WorkspaceSplitDivider
+                          splitRatio={activeWorkspaceSplit.splitRatio}
+                          onSplitRatioChange={handleWorkspaceSplitRatioChange}
+                        />
+                      ) : null}
+                      <WorkspaceSplitDropOverlay
+                        onDrop={(edge, tab) => {
+                          handleWorkspaceDragTabEnd()
+                          handleWorkspaceSplitDrop(edge, tab)
+                        }}
+                      />
                     </>
                   )}
                 </div>
