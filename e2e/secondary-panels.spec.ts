@@ -658,7 +658,11 @@ test.describe('07-secondary-panels', () => {
 
   /** Presses a tab and moves the mouse by (dx, dy) without releasing it. */
   async function pressTabAndMoveBy(tab: string, dx: number, dy: number): Promise<void> {
-    const box = await page.getByTestId(`tab-${tab}`).boundingBox()
+    // The strip scrolls horizontally, so a clipped tab's box can sit outside the
+    // visible area; driving the mouse by hand skips the scrolling that click() does.
+    const button = page.getByTestId(`tab-${tab}`)
+    await button.scrollIntoViewIfNeeded()
+    const box = await button.boundingBox()
     if (!box) throw new Error(`tab-${tab} has no bounding box`)
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await page.mouse.down()
