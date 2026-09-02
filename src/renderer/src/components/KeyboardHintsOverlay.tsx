@@ -33,7 +33,7 @@ type Props = {
   disabled: boolean
   /** Root scanned for interactives (main app shell). */
   scanRootId?: string
-  /** ⌘+c/d/f/t/p while hints are active — reserved session tab shortcuts. */
+  /** ⌘+h/d/f/t/p while hints are active — reserved session tab shortcuts (not c/v/a). */
   onSessionTabShortcut?: (tab: SessionTabShortcut) => void
 }
 
@@ -186,6 +186,8 @@ export default function KeyboardHintsOverlay({
         return
       }
 
+      if (shouldBypassHintKeydown(e)) return
+
       if (
         entriesRef.current.length > 0 &&
         onSessionTabShortcut &&
@@ -202,8 +204,6 @@ export default function KeyboardHintsOverlay({
           return
         }
       }
-
-      if (shouldBypassHintKeydown(e)) return
 
       if (tryConsumeHintKey(e.key)) {
         e.preventDefault()

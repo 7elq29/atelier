@@ -137,7 +137,7 @@ test('keyboard hints: ⌘+f switches to Files tab while hints are active', async
   })
   await page.waitForTimeout(300)
   await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByTestId('keyboard-hint-tab-badge-c')).toBeVisible()
+  await expect(page.getByTestId('keyboard-hint-tab-badge-h')).toBeVisible()
   await expect(page.getByTestId('keyboard-hint-tab-badge-d')).toBeVisible()
   await expect(page.getByTestId('keyboard-hint-tab-badge-f')).toBeVisible()
   await expect(page.getByTestId('keyboard-hint-tab-badge-t')).toBeVisible()
@@ -155,4 +155,41 @@ test('keyboard hints: ⌘+f switches to Files tab while hints are active', async
 
   await expect(page.getByTestId('keyboard-hints-overlay')).toHaveCount(0)
   await expect(page.getByTestId('tab-files')).toHaveClass(/active/)
+})
+
+test('keyboard hints: ⌘+c does not switch tabs while hints are active', async () => {
+  const sessionRow = page.locator('[data-testid="session-row"]').first()
+  if ((await sessionRow.count()) === 0) {
+    test.skip(true, 'no session available for tab shortcut test')
+  }
+  await sessionRow.click()
+  await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 15_000 })
+  await page.getByTestId('tab-diff').click()
+  await expect(page.getByTestId('tab-diff')).toHaveClass(/active/)
+
+  await page.locator('#app').click()
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', bubbles: true }))
+  })
+  await page.waitForTimeout(300)
+  await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'c',
+        metaKey: true,
+        bubbles: true,
+        cancelable: true
+      })
+    )
+  })
+
+  await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible()
+  await expect(page.getByTestId('tab-diff')).toHaveClass(/active/)
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', bubbles: true }))
+  })
+  await expect(page.getByTestId('keyboard-hints-overlay')).toHaveCount(0)
 })

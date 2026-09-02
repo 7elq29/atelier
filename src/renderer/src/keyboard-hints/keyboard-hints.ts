@@ -212,9 +212,9 @@ export function normalizeHintKeyChar(key: string): string | null {
 
 export type SessionTabShortcut = 'chat' | 'diff' | 'files' | 'terminal' | 'ports'
 
-/** Reserved ⌘+letter session tab shortcuts while hint mode is active. */
+/** Reserved ⌘+letter session tab shortcuts while hint mode is active (not c/v/a — copy/paste/select-all). */
 export const SESSION_TAB_HINT_KEYS: Readonly<Record<string, SessionTabShortcut>> = {
-  c: 'chat',
+  h: 'chat',
   d: 'diff',
   f: 'files',
   t: 'terminal',
@@ -223,7 +223,7 @@ export const SESSION_TAB_HINT_KEYS: Readonly<Record<string, SessionTabShortcut>>
 
 /** Letter shown on each tab button while hint mode is active (tabs stay excluded from letter hints). */
 export const SESSION_TAB_SHORTCUT_LABELS: Readonly<Record<SessionTabShortcut, string>> = {
-  chat: 'c',
+  chat: 'h',
   diff: 'd',
   files: 'f',
   terminal: 't',
@@ -240,12 +240,19 @@ export function collectSessionTabShortcutBadges(root: HTMLElement): HintEntry[] 
     .filter((entry) => entry.label.length > 0)
 }
 
-/** Don't treat editing chords as hint letters (Ctrl+C/V on macOS). */
-export function shouldBypassHintKeydown(
+/** Copy, paste, select-all, cut — never hijack for hints or tab switching. */
+export function isStandardEditChord(
   e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey'>
 ): boolean {
   if (e.ctrlKey) return true
   const k = e.key.toLowerCase()
-  if (e.metaKey && !e.altKey && (k === 'v' || k === 'x' || k === 'a')) return true
+  if (e.metaKey && !e.altKey && (k === 'c' || k === 'v' || k === 'a' || k === 'x')) return true
   return false
+}
+
+/** Don't treat editing chords as hint letters while ⌘ hint mode is active. */
+export function shouldBypassHintKeydown(
+  e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey'>
+): boolean {
+  return isStandardEditChord(e)
 }
