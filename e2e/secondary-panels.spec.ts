@@ -759,6 +759,46 @@ test.describe('07-secondary-panels', () => {
     await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
   })
 
+  test('workspace split: Terminal splits beside Chat instead of covering the whole area', async () => {
+    // The real terminal overlays its tab slot from the keep-alive layer, so unless
+    // that layer takes the pane geometry the terminal fills the entire workspace
+    // and the split is invisible.
+    await page.getByTestId('tab-terminal').click()
+    await expect(page.locator('.terminal-cache-entry.active')).toHaveCount(1)
+    await page.getByTestId('tab-chat').click()
+
+    await page.evaluate(() => {
+      const zone = document.querySelector('.workspace-drop-zone.workspace-drop-right')
+      if (!zone) throw new Error('right drop zone not found')
+      const dt = new DataTransfer()
+      dt.setData('text/plain', 'terminal')
+      zone.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
+      zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+    })
+
+    const workspace = page.getByTestId('session-workspace-tabs')
+    await expect(workspace).toHaveClass(/session-workspace-tabs--split-row/)
+    await expect(page.getByTestId('tab-terminal')).toHaveCount(0)
+    await expect(page.locator('.terminal-cache-entry.active')).toHaveClass(/workspace-split-pane--secondary/)
+
+    const geometry = await page.evaluate(() => {
+      const term = document.querySelector('.terminal-cache-entry.active')?.getBoundingClientRect()
+      const chat = document.querySelector('.tab-content[data-tab="chat"]')?.getBoundingClientRect()
+      const host = document.querySelector('[data-testid="session-workspace-tabs"]')?.getBoundingClientRect()
+      if (!term || !chat || !host) return null
+      return {
+        terminalIsHalf: Math.abs(term.width - host.width / 2) < 8,
+        chatLeftOfTerminal: chat.right <= term.left + 1
+      }
+    })
+    expect(geometry).toEqual({ terminalIsHalf: true, chatLeftOfTerminal: true })
+    await page.screenshot({ path: join(artifactsDir, '07-workspace-split-terminal.png') })
+
+    await page.locator('[data-testid="workspace-split-pane-close"][data-tab="terminal"]').click()
+    await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
+    await expect(page.getByTestId('tab-terminal')).toHaveCount(1)
+  })
+
   // ── 2. Diff panel: real hunks + commits, inline comment -> composer ────
   test('diff panel: shows real uncommitted diff + commit log, inline comment feeds the composer', async () => {
     await page.getByTestId('tab-diff').click()

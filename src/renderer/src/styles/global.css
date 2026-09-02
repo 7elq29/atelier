@@ -2867,47 +2867,51 @@ input[type='range'] {
   min-height: 0;
   position: relative;
 }
-/* Diff/Files render in .panel-cache-layer instead of .session-workspace-tabs so
-   their buffer survives note/terminal switches, so both containers carry the
-   same pane geometry and ratio to stay aligned with each other. */
-.session-workspace-tabs--split .tab-content.workspace-split-pane,
-.panel-cache-entry--split .tab-content.workspace-split-pane {
+/* Panes live in three different subtrees — the tab slots, the Diff/Files
+   keep-alive layer, and the terminal keep-alive layer — but all three sit in the
+   same box inside .main-surface, which carries the direction and ratio. Keying
+   the geometry off those inherited values keeps one implementation for all. */
+.workspace-split-pane {
   position: absolute;
   display: flex !important;
   min-height: 0;
   z-index: 0;
 }
 /* Row: side by side, from a left/right drop. */
-.session-workspace-tabs--split-row .tab-content.workspace-split-pane,
-.panel-cache-entry--split-row .tab-content.workspace-split-pane {
+[data-split-direction='row'] .workspace-split-pane {
   top: 0;
   bottom: 0;
 }
-.session-workspace-tabs--split-row .tab-content.workspace-split-pane--primary,
-.panel-cache-entry--split-row .tab-content.workspace-split-pane--primary {
+[data-split-direction='row'] .workspace-split-pane--primary {
   left: 0;
+  right: auto;
   width: calc(var(--workspace-split-ratio, 0.5) * 100% - 2.5px);
 }
-.session-workspace-tabs--split-row .tab-content.workspace-split-pane--secondary,
-.panel-cache-entry--split-row .tab-content.workspace-split-pane--secondary {
+[data-split-direction='row'] .workspace-split-pane--secondary {
+  left: auto;
   right: 0;
   width: calc((1 - var(--workspace-split-ratio, 0.5)) * 100% - 2.5px);
 }
 /* Column: stacked, from a top/bottom drop. */
-.session-workspace-tabs--split-col .tab-content.workspace-split-pane,
-.panel-cache-entry--split-col .tab-content.workspace-split-pane {
+[data-split-direction='col'] .workspace-split-pane {
   left: 0;
   right: 0;
 }
-.session-workspace-tabs--split-col .tab-content.workspace-split-pane--primary,
-.panel-cache-entry--split-col .tab-content.workspace-split-pane--primary {
+[data-split-direction='col'] .workspace-split-pane--primary {
   top: 0;
+  bottom: auto;
   height: calc(var(--workspace-split-ratio, 0.5) * 100% - 2.5px);
 }
-.session-workspace-tabs--split-col .tab-content.workspace-split-pane--secondary,
-.panel-cache-entry--split-col .tab-content.workspace-split-pane--secondary {
+[data-split-direction='col'] .workspace-split-pane--secondary {
+  top: auto;
   bottom: 0;
   height: calc((1 - var(--workspace-split-ratio, 0.5)) * 100% - 2.5px);
+}
+/* Empty layout slot for the Terminal tab. The real terminal overlays it from the
+   keep-alive layer, and in a split both take the same geometry — so the slot must
+   stay click-through or it would swallow input meant for the terminal. */
+.terminal-tab-slot {
+  pointer-events: none;
 }
 .workspace-split-pane-close {
   position: absolute;
@@ -3554,6 +3558,10 @@ body.dragging-workspace-tab .workspace-drop-zone,
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   pointer-events: none;
+  /* Paints above .session-workspace-tabs, which comes later in the DOM — the
+     entry has to overlay its tab slot, and in a split its pane close control
+     would otherwise sit under the workspace container. */
+  z-index: 1;
 }
 .terminal-cache-entry {
   position: absolute;

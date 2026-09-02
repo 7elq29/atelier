@@ -1597,7 +1597,18 @@ export default function App(): JSX.Element {
           >
             {/* Anchors the inset:0 keep-alive layers to the surface above the composer
                 dock, so a buffered panel can't paint over the composer in a split. */}
-            <div className="main-surface" data-testid="main-surface">
+            <div
+              className="main-surface"
+              data-testid="main-surface"
+              data-split-direction={
+                splitLayoutVisible && activeWorkspaceSplit ? activeWorkspaceSplit.direction : undefined
+              }
+              style={
+                activeWorkspaceSplit
+                  ? ({ '--workspace-split-ratio': activeWorkspaceSplit.splitRatio } as React.CSSProperties)
+                  : undefined
+              }
+            >
             {/* Terminal keep-alive layer: terminal-mode AND tab-terminal sessions stay
                 mounted here permanently. Switching sessions only toggles CSS visibility —
                 no xterm dispose/recreate, no tmux detach/reattach. Tab-bar lives inside
@@ -1629,8 +1640,25 @@ export default function App(): JSX.Element {
                     activeSession.id === sessionId &&
                     isTerminalTabVisible(activeTab, activeWorkspaceSplit) &&
                     !activeSessionDisconnected
+                  // The real terminal overlays its tab slot from this layer, so it has to
+                  // take the pane geometry itself or it would cover the whole split.
+                  const terminalVisibility = isActive
+                    ? resolveTabVisibility('terminal', activeTab, activeWorkspaceSplit)
+                    : 'hidden'
+                  const paneClass =
+                    terminalVisibility === 'split-primary' || terminalVisibility === 'split-secondary'
+                      ? ` ${tabContentClass(terminalVisibility).replace('tab-content ', '')}`
+                      : ''
                   return (
-                    <div key={`${ptyId}:${info.cwd}`} className={`terminal-cache-entry${isActive ? ' active' : ''}`}>
+                    <div
+                      key={`${ptyId}:${info.cwd}`}
+                      className={`terminal-cache-entry${isActive ? ' active' : ''}${paneClass}`}
+                    >
+                      <WorkspaceSplitPaneClose
+                        tab="terminal"
+                        visibility={terminalVisibility}
+                        onClose={handleWorkspaceSplitPaneClose}
+                      />
                       <TerminalWithToolbox
                         ptyId={ptyId}
                         cwd={info.cwd}
@@ -1828,7 +1856,9 @@ export default function App(): JSX.Element {
                       {/* SessionWorkspacePanels renders from the panel-cache-layer above,
                           so it survives note/terminal switches instead of unmounting here. */}
                       <div
-                        className={tabContentClass(resolveTabVisibility('terminal', activeTab, activeWorkspaceSplit))}
+                        className={`${tabContentClass(
+                          resolveTabVisibility('terminal', activeTab, activeWorkspaceSplit)
+                        )} terminal-tab-slot`}
                         data-tab="terminal"
                       >
                         {/* TerminalPanel lives in the terminal-cache-layer above this session subtree.
