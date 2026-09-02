@@ -6,6 +6,8 @@ import { resolveSessionProfileFileTree } from '../../../../shared/session-profil
 import DiffPanel from '../panels/DiffPanel'
 import FilesPanel from '../panels/FilesPanel'
 import type { SessionTab } from '../panels/TabBar'
+import { resolveTabVisibility, tabContentClass } from '../../workspace-split/workspace-split-logic'
+import type { WorkspaceSplitState } from '../../workspace-split/workspace-split-types'
 
 export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   sessionIds,
@@ -14,6 +16,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   sessionProfiles,
   activeSessionId,
   activeTab,
+  workspaceSplit,
   activeSessionDisconnected,
   effectiveTheme,
   revealChangePath,
@@ -40,6 +43,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   sessionProfiles: AtelierConfig['sessionProfiles']
   activeSessionId: string | null
   activeTab: SessionTab
+  workspaceSplit: WorkspaceSplitState | null
   activeSessionDisconnected: boolean
   effectiveTheme: 'light' | 'dark'
   revealChangePath?: string
@@ -67,6 +71,9 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
         const ws = workspaceBySession[sessionId]
         if (!session || session.mode !== 'claude-code') return null
         const panelsVisible = activeSessionId === sessionId && !activeSessionDisconnected
+        const split = panelsVisible ? workspaceSplit : null
+        const diffVisible = resolveTabVisibility('diff', activeTab, split)
+        const filesVisible = resolveTabVisibility('files', activeTab, split)
         const workspacePath = session.worktreePath ?? session.projectPath
         const profileFileTree = resolveSessionProfileFileTree(session, sessionProfiles ?? [])
         const inject = injectDiffBySession[sessionId]
@@ -75,14 +82,14 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
             key={`workspace-panels-${sessionId}-${session.projectPath}`}
             style={{ display: panelsVisible ? 'contents' : 'none' }}
           >
-            <div className={`tab-content${activeTab === 'diff' ? '' : ' hidden'}`} data-tab="diff">
+            <div className={tabContentClass(diffVisible)} data-tab="diff">
               <DiffPanel
                 workspacePath={workspacePath}
                 repoRoot={session.projectPath}
                 hostname={session.hostname}
                 effectiveTheme={effectiveTheme}
                 panelScopeKey={`${session.id}:${session.projectPath}`}
-                active={panelsVisible && activeTab === 'diff'}
+                active={panelsVisible && diffVisible !== 'hidden'}
                 workspaceDiff={ws?.diff}
                 workspaceRefreshing={Boolean(refreshingBySession[sessionId])}
                 onRefreshWorkspace={() => onRefreshWorkspace(sessionId)}
@@ -98,13 +105,13 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
               />
             </div>
 
-            <div className={`tab-content${activeTab === 'files' ? '' : ' hidden'}`} data-tab="files">
+            <div className={tabContentClass(filesVisible)} data-tab="files">
               <FilesPanel
                 projectPath={workspacePath}
                 sessionId={sessionId}
                 hostname={session.hostname}
                 effectiveTheme={effectiveTheme}
-                active={panelsVisible && activeTab === 'files'}
+                active={panelsVisible && filesVisible !== 'hidden'}
                 initialFilesTree={profileFileTree ? null : ws?.filesTree}
                 profileBar={
                   profileFileTree

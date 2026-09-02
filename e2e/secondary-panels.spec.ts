@@ -656,6 +656,38 @@ test.describe('07-secondary-panels', () => {
     await page.screenshot({ path: join(artifactsDir, '07-tabbar-dark.png') })
   })
 
+  test('workspace split: drag Diff beside Chat, Files fullscreen preserves split, Chat restores', async () => {
+    await page.getByTestId('tab-chat').click()
+    const workspace = page.getByTestId('session-workspace-tabs')
+
+    // Native HTML5 DnD doesn't fire real drag events under Playwright's
+    // synthetic mouse driver reliably — dispatch drop on the right edge zone.
+    await page.evaluate(() => {
+      const zone = document.querySelector('.workspace-drop-zone.workspace-drop-right')
+      if (!zone) throw new Error('workspace drop zone not found')
+      const dt = new DataTransfer()
+      dt.setData('text/plain', 'diff')
+      zone.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
+      zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+    })
+
+    await expect(workspace).toHaveClass(/session-workspace-tabs--split/)
+    await expect(page.locator('.tab-content[data-tab="chat"]')).toHaveClass(/workspace-split-pane/)
+    await expect(page.locator('.tab-content[data-tab="diff"]')).toHaveClass(/workspace-split-pane/)
+    await expect(page.getByTestId('tab-diff')).toHaveCount(0)
+    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+
+    await page.getByTestId('tab-files').click()
+    await expect(page.locator('.tab-content[data-tab="files"]')).not.toHaveClass(/hidden/)
+    await expect(page.getByTestId('tab-diff')).toHaveCount(0)
+    await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
+
+    await page.getByTestId('tab-chat').click()
+    await expect(workspace).toHaveClass(/session-workspace-tabs--split/)
+    await expect(page.getByTestId('tab-diff')).toHaveCount(0)
+    await page.screenshot({ path: join(artifactsDir, '07-workspace-split-restore.png') })
+  })
+
   // ── 2. Diff panel: real hunks + commits, inline comment -> composer ────
   test('diff panel: shows real uncommitted diff + commit log, inline comment feeds the composer', async () => {
     await page.getByTestId('tab-diff').click()

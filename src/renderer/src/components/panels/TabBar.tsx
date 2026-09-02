@@ -11,13 +11,20 @@ export default function TabBar({
   activeTab,
   onSelect,
   showPorts,
-  diffChangedCount
+  diffChangedCount,
+  hiddenTabs,
+  onDragTabStart,
+  onDragTabEnd
 }: {
   activeTab: SessionTab
   onSelect: (tab: SessionTab) => void
   showPorts: boolean
   /** Live changed-file count for the Diff tab badge; omit when not a git repo or zero. */
   diffChangedCount?: number | null
+  /** Tabs in secondary split panes — hidden from the strip while split is active. */
+  hiddenTabs?: ReadonlySet<SessionTab>
+  onDragTabStart?: (tab: SessionTab, e: React.DragEvent<HTMLButtonElement>) => void
+  onDragTabEnd?: () => void
 }): JSX.Element {
   const tabs: { id: SessionTab; label: string }[] = [
     { id: 'chat', label: 'Chat' },
@@ -28,22 +35,32 @@ export default function TabBar({
   ]
   return (
     <div className="tab-strip" data-testid="tab-strip" data-hint-exclude-root="">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          className={activeTab === t.id ? 'active' : ''}
-          onClick={() => onSelect(t.id)}
-          data-testid={`tab-${t.id}`}
-          data-session-tab-shortcut={SESSION_TAB_SHORTCUT_LABELS[t.id]}
-        >
-          {t.label}
-          {t.id === 'diff' && diffChangedCount != null && diffChangedCount > 0 ? (
-            <span className="tab-badge" data-testid="tab-diff-count">
-              {diffChangedCount}
+      {tabs.map((t) => {
+        if (hiddenTabs?.has(t.id)) return null
+        return (
+          <button
+            key={t.id}
+            className={`workspace-tab-draggable${activeTab === t.id ? ' active' : ''}`}
+            draggable={Boolean(onDragTabStart)}
+            onClick={() => onSelect(t.id)}
+            onDragStart={(e) => onDragTabStart?.(t.id, e)}
+            onDragEnd={() => onDragTabEnd?.()}
+            data-testid={`tab-${t.id}`}
+            data-tab={t.id}
+            data-session-tab-shortcut={SESSION_TAB_SHORTCUT_LABELS[t.id]}
+          >
+            <span className="tab-drag-grip" aria-hidden="true">
+              ⋮⋮
             </span>
-          ) : null}
-        </button>
-      ))}
+            {t.label}
+            {t.id === 'diff' && diffChangedCount != null && diffChangedCount > 0 ? (
+              <span className="tab-badge" data-testid="tab-diff-count">
+                {diffChangedCount}
+              </span>
+            ) : null}
+          </button>
+        )
+      })}
     </div>
   )
 }

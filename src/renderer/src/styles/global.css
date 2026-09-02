@@ -2856,6 +2856,59 @@ input[type='range'] {
 .tab-content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .tab-content.hidden { display: none; }
 
+/* Workspace tab split (mock parity) */
+.tab-strip button.workspace-tab-draggable { cursor: grab; }
+.tab-strip button.workspace-tab-draggable:active { cursor: grabbing; }
+.tab-strip .tab-drag-grip { font-size: 10px; color: var(--text-disabled); letter-spacing: -1px; user-select: none; }
+.session-workspace-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+.session-workspace-tabs--split .tab-content.workspace-split-pane {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex !important;
+  min-height: 0;
+  z-index: 0;
+}
+.session-workspace-tabs--split .tab-content.workspace-split-pane--primary {
+  left: 0;
+  width: calc(var(--workspace-split-ratio, 0.5) * 100% - 2.5px);
+}
+.session-workspace-tabs--split .tab-content.workspace-split-pane--secondary {
+  right: 0;
+  width: calc((1 - var(--workspace-split-ratio, 0.5)) * 100% - 2.5px);
+}
+.workspace-split-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 2;
+  background: transparent;
+}
+.workspace-split-divider:hover { background: var(--border-strong); }
+.workspace-drop-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  display: none;
+}
+body.dragging-workspace-tab .workspace-drop-overlay,
+.workspace-drop-overlay.visible { display: block; pointer-events: auto; }
+.workspace-drop-zone { position: absolute; opacity: 0; }
+.workspace-drop-overlay.visible .workspace-drop-left { left: 0; top: 0; bottom: 0; width: 22%; }
+.workspace-drop-overlay.visible .workspace-drop-right { right: 0; top: 0; bottom: 0; width: 22%; }
+.workspace-drop-overlay.visible .workspace-drop-top { left: 0; right: 0; top: 0; height: 22%; }
+.workspace-drop-overlay.visible .workspace-drop-bottom { left: 0; right: 0; bottom: 0; height: 22%; }
+.workspace-drop-overlay.visible .workspace-drop-zone:hover { opacity: 1; background: color-mix(in srgb, var(--border-strong) 35%, transparent); }
+
 /* ===== Diff tab ===== */
 .diff-sub-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--border-subtle); }
 .diff-sub-tabs button { background: transparent; border: none; color: var(--text-secondary); font-size: 14px; padding: 6px 10px; border-radius: 6px 6px 0 0; cursor: pointer; }
