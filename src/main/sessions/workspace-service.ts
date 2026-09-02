@@ -574,15 +574,18 @@ export class WorkspaceService {
         return payload
       }
 
+      const runWithTimeout = (): Promise<SessionWorkspacePayload> =>
+        Promise.race([
+          run(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('workspace refresh timed out')), REFRESH_WORKSPACE_TIMEOUT_MS)
+          )
+        ])
+
       const queued = session.hostname
-        ? withRemoteBackgroundHostQueue(session.hostname, run)
-        : run()
-      return await Promise.race([
-        queued,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('workspace refresh timed out')), REFRESH_WORKSPACE_TIMEOUT_MS)
-        )
-      ])
+        ? withRemoteBackgroundHostQueue(session.hostname, runWithTimeout)
+        : runWithTimeout()
+      return await queued
     } catch (err) {
       this.traceRefresh('refreshFailed', session.id, {
         source,

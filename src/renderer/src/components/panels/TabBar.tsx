@@ -13,8 +13,8 @@ export default function TabBar({
   showPorts,
   diffChangedCount,
   hiddenTabs,
-  onDragTabStart,
-  onDragTabEnd
+  onTabPress,
+  didDragTab
 }: {
   activeTab: SessionTab
   onSelect: (tab: SessionTab) => void
@@ -23,8 +23,10 @@ export default function TabBar({
   diffChangedCount?: number | null
   /** Tabs in secondary split panes — hidden from the strip while split is active. */
   hiddenTabs?: ReadonlySet<SessionTab>
-  onDragTabStart?: (tab: SessionTab, e: React.DragEvent<HTMLButtonElement>) => void
-  onDragTabEnd?: (tab: SessionTab) => void
+  /** Begins watching a tab press for a drag-to-split gesture. */
+  onTabPress?: (tab: SessionTab, e: React.MouseEvent) => void
+  /** True when the gesture just completed was a drag, whose click must not select. */
+  didDragTab?: () => boolean
 }): JSX.Element {
   const tabs: { id: SessionTab; label: string }[] = [
     { id: 'chat', label: 'Chat' },
@@ -37,17 +39,17 @@ export default function TabBar({
     <div className="tab-strip" data-testid="tab-strip" data-hint-exclude-root="">
       {tabs.map((t) => {
         if (hiddenTabs?.has(t.id)) return null
-        const dragEnabled = Boolean(onDragTabStart)
         return (
           <button
             key={t.id}
             className={`workspace-tab-draggable${activeTab === t.id ? ' active' : ''}`}
-            draggable={dragEnabled}
-            onClick={() => onSelect(t.id)}
-            onDragStart={(e) => onDragTabStart?.(t.id, e)}
-            /* A drag that ends without a drop is treated as a click by the drag-end
-               handler, since Chromium suppresses the click once a drag begins. */
-            onDragEnd={() => onDragTabEnd?.(t.id)}
+            /* Not natively draggable: the gesture is tracked from mousedown so it
+               can require real movement before it counts as a drag. */
+            onMouseDown={(e) => onTabPress?.(t.id, e)}
+            onClick={() => {
+              if (didDragTab?.()) return
+              onSelect(t.id)
+            }}
             data-testid={`tab-${t.id}`}
             data-tab={t.id}
             data-session-tab-shortcut={SESSION_TAB_SHORTCUT_LABELS[t.id]}

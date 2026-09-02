@@ -29,6 +29,8 @@ import {
 import type { WorkspaceSplitState } from './workspace-split/workspace-split-types'
 import { WorkspaceSplitDivider } from './workspace-split/WorkspaceSplitDivider'
 import { WorkspaceSplitDropOverlay } from './workspace-split/WorkspaceSplitDropOverlay'
+import { WorkspaceSplitDragGhost } from './workspace-split/WorkspaceSplitDragGhost'
+import { useWorkspaceTabDrag } from './workspace-split/useWorkspaceTabDrag'
 import { WorkspaceSplitPaneClose } from './workspace-split/WorkspaceSplitPaneClose'
 import AppNotesPanel from './components/panels/AppNotesPanel'
 import DailyNoteEditorPanel from './components/panels/DailyNoteEditorPanel'
@@ -217,7 +219,6 @@ export default function App(): JSX.Element {
   const [workspaceSplitBySession, setWorkspaceSplitBySession] = useState<
     Record<string, WorkspaceSplitState>
   >({})
-  const [workspaceDragTab, setWorkspaceDragTab] = useState<SessionTab | null>(null)
   const [revealChangePath, setRevealChangePath] = useState<string | undefined>()
   const [revealChangeSeq, setRevealChangeSeq] = useState(0)
   const [revealCommitHash, setRevealCommitHash] = useState<string | undefined>()
@@ -709,9 +710,6 @@ export default function App(): JSX.Element {
     ? appNotes.notes.find((n) => n.id === activeAppNoteId) ?? null
     : null
 
-  /** Whether the in-flight tab drag ended on a drop zone, as opposed to being a stray click. */
-  const workspaceTabDroppedRef = useRef(false)
-
   const selectTab = useCallback(
     (tab: SessionTab): void => {
       if (claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)) return
@@ -785,7 +783,6 @@ export default function App(): JSX.Element {
         splitDirectionForEdge(edge)
       )
       if (!next) return
-      workspaceTabDroppedRef.current = true
       setWorkspaceSplitBySession((prev) => ({ ...prev, [activeSessionId]: next }))
       setActiveTab(primaryTab)
       setVisitedTabs((prev) => {
@@ -794,35 +791,11 @@ export default function App(): JSX.Element {
         nextVisited.add(secondaryTab)
         return nextVisited
       })
-      setWorkspaceDragTab(null)
     },
     [activeSessionId, activeTab, workspaceSplitBySession]
   )
 
-  const handleWorkspaceDragTabStart = useCallback((tab: SessionTab, e: React.DragEvent<HTMLButtonElement>) => {
-    e.dataTransfer.setData('text/plain', tab)
-    e.dataTransfer.effectAllowed = 'move'
-    workspaceTabDroppedRef.current = false
-    setWorkspaceDragTab(tab)
-    document.body.classList.add('dragging-workspace-tab')
-  }, [])
-
-  const clearWorkspaceTabDrag = useCallback(() => {
-    setWorkspaceDragTab(null)
-    document.body.classList.remove('dragging-workspace-tab')
-  }, [])
-
-  // Chromium starts a drag after a couple of pixels of movement and then never
-  // dispatches the click, so a slightly sloppy click on a tab would otherwise do
-  // nothing at all. A drag that ends without a drop is treated as that click.
-  const handleWorkspaceDragTabEnd = useCallback(
-    (tab: SessionTab) => {
-      clearWorkspaceTabDrag()
-      if (!workspaceTabDroppedRef.current) selectTab(tab)
-      workspaceTabDroppedRef.current = false
-    },
-    [clearWorkspaceTabDrag, selectTab]
-  )
+  const workspaceTabDrag = useWorkspaceTabDrag(handleWorkspaceSplitDrop)
 
   const handleWorkspaceSplitRatioChange = useCallback(
     (ratio: number) => {
@@ -1586,8 +1559,8 @@ export default function App(): JSX.Element {
                   showPorts={Boolean(activeSession.hostname)}
                   diffChangedCount={activeDiffChangedCount}
                   hiddenTabs={hiddenStripTabs}
-                  onDragTabStart={handleWorkspaceDragTabStart}
-                  onDragTabEnd={handleWorkspaceDragTabEnd}
+                  onTabPress={workspaceTabDrag.trackTabPress}
+                  didDragTab={workspaceTabDrag.didDrag}
                 />
                 <div className="topbar-spacer" />
                 <span className="topbar-chip" data-testid="cost-chip">
@@ -1899,12 +1872,7 @@ export default function App(): JSX.Element {
                           onSplitRatioChange={handleWorkspaceSplitRatioChange}
                         />
                       ) : null}
-                      <WorkspaceSplitDropOverlay
-                        onDrop={(edge, tab) => {
-                          handleWorkspaceSplitDrop(edge, tab)
-                          clearWorkspaceTabDrag()
-                        }}
-                      />
+                      <WorkspaceSplitDropOverlay activeEdge={workspaceTabDrag.activeEdge} />
                     </>
                   )}
                 </div>
@@ -2022,6 +1990,8 @@ export default function App(): JSX.Element {
           </>
         ) : null}
       </div>
+
+      <WorkspaceSplitDragGhost tab={workspaceTabDrag.dragTab} position={workspaceTabDrag.ghost} />
 
       <CommandPalette
         isOpen={paletteOpen}

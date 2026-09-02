@@ -1,0 +1,834 @@
+{
+  "mode": "fixed (default poll)",
+  "userDataDir": "/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-diff-trace-Qjsn52",
+  "warmup": {
+    "fixRay": {
+      "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+      "activateMs": 12727
+    },
+    "aiConf": {
+      "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+      "activateMs": 8258
+    },
+    "spark": {
+      "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+      "activateMs": 10279
+    }
+  },
+  "sessions": {
+    "fixRay": {
+      "label": "Fix ray init",
+      "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+      "totalMs": 15254,
+      "activate": {
+        "stepMs": {
+          "clickRow": 114,
+          "clickChat": 32
+        }
+      },
+      "clickDiffMs": 93,
+      "snapshots": [
+        {
+          "atMs": 1788384220197,
+          "sessionIdAttr": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+          "loading": false,
+          "panel": true,
+          "refreshing": true,
+          "fileRows": 2,
+          "diag": {
+            "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+            "refreshRefCount": 1,
+            "coalescedRefresh": true,
+            "hostQueueDepth": 6,
+            "cachedDiffFiles": 0,
+            "cacheLoadedAt": 1788384176027
+          }
+        },
+        {
+          "atMs": 1788384225201,
+          "sessionIdAttr": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+          "loading": false,
+          "panel": true,
+          "refreshing": true,
+          "fileRows": 2,
+          "diag": {
+            "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+            "refreshRefCount": 1,
+            "coalescedRefresh": true,
+            "hostQueueDepth": 6,
+            "cachedDiffFiles": 0,
+            "cacheLoadedAt": 1788384176027
+          }
+        },
+        {
+          "atMs": 1788384235209,
+          "sessionIdAttr": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+          "loading": false,
+          "panel": true,
+          "refreshing": true,
+          "fileRows": 2,
+          "diag": {
+            "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+            "refreshRefCount": 1,
+            "coalescedRefresh": true,
+            "hostQueueDepth": 6,
+            "cachedDiffFiles": 0,
+            "cacheLoadedAt": 1788384176027
+          }
+        }
+      ]
+    },
+    "aiConf": {
+      "label": "AI conformance instruction",
+      "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+      "totalMs": 15473,
+      "activate": {
+        "stepMs": {
+          "clickRow": 241,
+          "clickChat": 40
+        }
+      },
+      "clickDiffMs": 177,
+      "snapshots": [
+        {
+          "atMs": 1788384235812,
+          "sessionIdAttr": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+          "loading": false,
+          "panel": true,
+          "refreshing": true,
+          "fileRows": 2,
+          "diag": {
+            "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+            "refreshRefCount": 1,
+            "coalescedRefresh": true,
+            "hostQueueDepth": 6,
+            "cachedDiffFiles": 2,
+            "cacheLoadedAt": 1788384204361
+          }
+        },
+        {
+          "atMs": 1788384240815,
+          "sessionIdAttr": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+          "loading": false,
+          "panel": true,
+          "refreshing": true,
+          "fileRows": 2,
+          "diag": {
+            "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+            "refreshRefCount": 1,
+            "coalescedRefresh": true,
+            "hostQueueDepth": 6,
+            "cachedDiffFiles": 2,
+            "cacheLoadedAt": 1788384204361
+          }
+        },
+        {
+          "atMs": 1788384250824,
+          "sessionIdAttr": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+          "loading": false,
+          "panel": true,
+          "refreshing": true,
+          "fileRows": 2,
+          "diag": {
+            "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+            "refreshRefCount": 1,
+            "coalescedRefresh": true,
+            "hostQueueDepth": 6,
+            "cachedDiffFiles": 2,
+            "cacheLoadedAt": 1788384204361
+          }
+        }
+      ]
+    }
+  },
+  "traces": {
+    "fixRay": [
+      {
+        "ts": "2026-09-02T21:22:48.920Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "refreshScheduled",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 0,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0,
+        "source": "poll",
+        "force": false,
+        "skipCapRebuild": false
+      },
+      {
+        "ts": "2026-09-02T21:22:48.920Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "beginRefresh",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0,
+        "source": "poll"
+      },
+      {
+        "ts": "2026-09-02T21:22:48.920Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "uiRefreshingOn",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0
+      },
+      {
+        "ts": "2026-09-02T21:22:48.920Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "refreshDequeued",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 0,
+        "source": "poll",
+        "queueWaitMs": 0,
+        "hintPathCount": 5
+      },
+      {
+        "ts": "2026-09-02T21:23:11.031Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 4,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:26.032Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 4,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:40.185Z",
+        "level": "info",
+        "process": "main",
+        "msg": "panel:git:diff:trace",
+        "event": "start",
+        "projectPath": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "hostname": "qingqin-go.devpod-us-or",
+        "force": false
+      },
+      {
+        "ts": "2026-09-02T21:23:40.193Z",
+        "level": "info",
+        "process": "main",
+        "msg": "diff:panel:trace",
+        "event": "bootstrapCheck",
+        "panelScopeKey": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c:~/go-code",
+        "workspacePath": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "hostname": "qingqin-go.devpod-us-or",
+        "workspaceRefreshing": true,
+        "needsBootstrap": true,
+        "bootstrapKey": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c\u0000qingqin-go.devpod-us-or",
+        "lastBootstrapKey": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c\u0000qingqin-go.devpod-us-or",
+        "summaryFileCount": 0,
+        "workspaceDiffFileCount": 0,
+        "diagnostics": {
+          "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+          "refreshRefCount": 1,
+          "coalescedRefresh": true,
+          "hostQueueDepth": 6,
+          "cachedDiffFiles": 0,
+          "cacheLoadedAt": 1788384176027
+        }
+      },
+      {
+        "ts": "2026-09-02T21:23:41.037Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:44.161Z",
+        "level": "info",
+        "process": "main",
+        "msg": "panel:git:diff:trace",
+        "event": "done",
+        "projectPath": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "hostname": "qingqin-go.devpod-us-or",
+        "force": false,
+        "isRepo": true,
+        "diffFiles": 0,
+        "ms": 3976
+      },
+      {
+        "ts": "2026-09-02T21:23:56.037Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:24:11.039Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      }
+    ],
+    "aiConf": [
+      {
+        "ts": "2026-09-02T21:22:55.433Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "refreshScheduled",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 0,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0,
+        "source": "poll",
+        "force": false,
+        "skipCapRebuild": false
+      },
+      {
+        "ts": "2026-09-02T21:22:55.433Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "beginRefresh",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0,
+        "source": "poll"
+      },
+      {
+        "ts": "2026-09-02T21:22:55.433Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "uiRefreshingOn",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0
+      },
+      {
+        "ts": "2026-09-02T21:23:21.638Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 4,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:36.643Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:51.648Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:55.809Z",
+        "level": "info",
+        "process": "main",
+        "msg": "diff:panel:trace",
+        "event": "bootstrapCheck",
+        "panelScopeKey": "c38421a4-1ba9-42cf-94e4-6e298eae8d23:~/go-code",
+        "workspacePath": "/home/user/.atelier/worktrees/c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "hostname": "qingqin-go.devpod-us-or",
+        "workspaceRefreshing": true,
+        "needsBootstrap": false,
+        "bootstrapKey": "/home/user/.atelier/worktrees/c38421a4-1ba9-42cf-94e4-6e298eae8d23\u0000qingqin-go.devpod-us-or",
+        "lastBootstrapKey": null,
+        "summaryFileCount": 2,
+        "workspaceDiffFileCount": 2,
+        "diagnostics": {
+          "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+          "refreshRefCount": 1,
+          "coalescedRefresh": true,
+          "hostQueueDepth": 6,
+          "cachedDiffFiles": 2,
+          "cacheLoadedAt": 1788384204361
+        }
+      },
+      {
+        "ts": "2026-09-02T21:24:06.649Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      }
+    ],
+    "spark": [
+      {
+        "ts": "2026-09-02T21:23:32.171Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollFired",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 0,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 5,
+        "legacyPoll": false
+      },
+      {
+        "ts": "2026-09-02T21:23:32.172Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "refreshScheduled",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 0,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 5,
+        "source": "poll",
+        "force": false,
+        "skipCapRebuild": true
+      },
+      {
+        "ts": "2026-09-02T21:23:32.172Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "beginRefresh",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 5,
+        "source": "poll"
+      },
+      {
+        "ts": "2026-09-02T21:23:32.172Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "uiRefreshingOn",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 5
+      },
+      {
+        "ts": "2026-09-02T21:23:47.174Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:24:02.179Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      }
+    ],
+    "all": [
+      {
+        "ts": "2026-09-02T21:22:48.920Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "refreshScheduled",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 0,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0,
+        "source": "poll",
+        "force": false,
+        "skipCapRebuild": false
+      },
+      {
+        "ts": "2026-09-02T21:22:48.920Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "beginRefresh",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0,
+        "source": "poll"
+      },
+      {
+        "ts": "2026-09-02T21:22:48.920Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "uiRefreshingOn",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0
+      },
+      {
+        "ts": "2026-09-02T21:22:48.920Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "refreshDequeued",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 0,
+        "source": "poll",
+        "queueWaitMs": 0,
+        "hintPathCount": 5
+      },
+      {
+        "ts": "2026-09-02T21:22:55.433Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "refreshScheduled",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 0,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0,
+        "source": "poll",
+        "force": false,
+        "skipCapRebuild": false
+      },
+      {
+        "ts": "2026-09-02T21:22:55.433Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "beginRefresh",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0,
+        "source": "poll"
+      },
+      {
+        "ts": "2026-09-02T21:22:55.433Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "uiRefreshingOn",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 0
+      },
+      {
+        "ts": "2026-09-02T21:23:11.031Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 4,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:21.638Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 4,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:26.032Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 4,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:32.171Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollFired",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 0,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 5,
+        "legacyPoll": false
+      },
+      {
+        "ts": "2026-09-02T21:23:32.172Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "refreshScheduled",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 0,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 5,
+        "source": "poll",
+        "force": false,
+        "skipCapRebuild": true
+      },
+      {
+        "ts": "2026-09-02T21:23:32.172Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "beginRefresh",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 5,
+        "source": "poll"
+      },
+      {
+        "ts": "2026-09-02T21:23:32.172Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "uiRefreshingOn",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 1,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 5
+      },
+      {
+        "ts": "2026-09-02T21:23:36.643Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:40.185Z",
+        "level": "info",
+        "process": "main",
+        "msg": "panel:git:diff:trace",
+        "event": "start",
+        "projectPath": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "hostname": "qingqin-go.devpod-us-or",
+        "force": false
+      },
+      {
+        "ts": "2026-09-02T21:23:40.193Z",
+        "level": "info",
+        "process": "main",
+        "msg": "diff:panel:trace",
+        "event": "bootstrapCheck",
+        "panelScopeKey": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c:~/go-code",
+        "workspacePath": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "hostname": "qingqin-go.devpod-us-or",
+        "workspaceRefreshing": true,
+        "needsBootstrap": true,
+        "bootstrapKey": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c\u0000qingqin-go.devpod-us-or",
+        "lastBootstrapKey": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c\u0000qingqin-go.devpod-us-or",
+        "summaryFileCount": 0,
+        "workspaceDiffFileCount": 0,
+        "diagnostics": {
+          "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+          "refreshRefCount": 1,
+          "coalescedRefresh": true,
+          "hostQueueDepth": 6,
+          "cachedDiffFiles": 0,
+          "cacheLoadedAt": 1788384176027
+        }
+      },
+      {
+        "ts": "2026-09-02T21:23:41.037Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:44.161Z",
+        "level": "info",
+        "process": "main",
+        "msg": "panel:git:diff:trace",
+        "event": "done",
+        "projectPath": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "hostname": "qingqin-go.devpod-us-or",
+        "force": false,
+        "isRepo": true,
+        "diffFiles": 0,
+        "ms": 3976
+      },
+      {
+        "ts": "2026-09-02T21:23:47.174Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:51.648Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:23:55.809Z",
+        "level": "info",
+        "process": "main",
+        "msg": "diff:panel:trace",
+        "event": "bootstrapCheck",
+        "panelScopeKey": "c38421a4-1ba9-42cf-94e4-6e298eae8d23:~/go-code",
+        "workspacePath": "/home/user/.atelier/worktrees/c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "hostname": "qingqin-go.devpod-us-or",
+        "workspaceRefreshing": true,
+        "needsBootstrap": false,
+        "bootstrapKey": "/home/user/.atelier/worktrees/c38421a4-1ba9-42cf-94e4-6e298eae8d23\u0000qingqin-go.devpod-us-or",
+        "lastBootstrapKey": null,
+        "summaryFileCount": 2,
+        "workspaceDiffFileCount": 2,
+        "diagnostics": {
+          "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+          "refreshRefCount": 1,
+          "coalescedRefresh": true,
+          "hostQueueDepth": 6,
+          "cachedDiffFiles": 2,
+          "cacheLoadedAt": 1788384204361
+        }
+      },
+      {
+        "ts": "2026-09-02T21:23:56.037Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:24:02.179Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:24:06.649Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      },
+      {
+        "ts": "2026-09-02T21:24:11.039Z",
+        "level": "info",
+        "process": "main",
+        "msg": "workspace:refresh:trace",
+        "event": "pollSkipped",
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 1,
+        "coalescedRefresh": true,
+        "hostQueueDepth": 6,
+        "reason": "refreshInFlight"
+      }
+    ]
+  }
+}

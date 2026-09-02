@@ -500,7 +500,9 @@ export default function DiffPanel({
     applySummary(workspaceDiff)
   }, [workspaceDiff, applySummary])
 
-  // Fast numstat bootstrap when workspace preload is still empty; wait out workspace refresh first.
+  // Fast numstat bootstrap when workspace preload is still empty. Do not wait on
+  // workspaceRefreshing — background poll/cap refresh is independent and can run
+  // for minutes on a saturated devpod host queue.
   useEffect(() => {
     if (!active) return
     const bootstrapKey = `${workspacePath}\0${hostname ?? ''}`
@@ -529,7 +531,6 @@ export default function DiffPanel({
       lastChangesBootstrapKeyRef.current = null
       return
     }
-    if (workspaceRefreshing) return
     if (lastChangesBootstrapKeyRef.current === bootstrapKey) return
     lastChangesBootstrapKeyRef.current = bootstrapKey
     void refreshChanges(false)

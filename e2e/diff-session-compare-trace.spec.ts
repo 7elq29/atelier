@@ -13,7 +13,6 @@ const SESSIONS = {
 const PROD_USER_DATA = join(process.env.HOME!, 'Library/Application Support/Atelier')
 const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
 const artifactDir = join(__dirname, '..', 'e2e-artifacts')
-const artifactPath = join(artifactDir, 'diff-session-compare-trace.json')
 
 function copyProdUserData(dest: string): void {
   mkdirSync(join(dest, 'data'), { recursive: true })
@@ -124,8 +123,21 @@ function tracesForSession(traces: unknown[], sessionId: string): unknown[] {
   })
 }
 
+test('capture diff-session compare traces (fixed poll mode)', async () => {
+  test.setTimeout(300_000)
+  await runDiffSessionCompareTrace({ legacyPoll: false })
+})
+
 test('capture diff-session compare traces (legacy poll mode)', async () => {
   test.setTimeout(300_000)
+  await runDiffSessionCompareTrace({ legacyPoll: true })
+})
+
+async function runDiffSessionCompareTrace(opts: { legacyPoll: boolean }): Promise<void> {
+  const artifactPath = join(
+    artifactDir,
+    opts.legacyPoll ? 'diff-session-compare-trace-legacy.json' : 'diff-session-compare-trace-fixed.json'
+  )
   mkdirSync(artifactDir, { recursive: true })
   const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-diff-trace-'))
   copyProdUserData(userDataDir)
@@ -134,7 +146,10 @@ test('capture diff-session compare traces (legacy poll mode)', async () => {
 
   const app = await electron.launch({
     args: [mainEntry, `--user-data-dir=${userDataDir}`],
-    env: { ...process.env, ATELIER_DIAGNOSTIC_LEGACY_POLL: '1' }
+    env: {
+      ...process.env,
+      ...(opts.legacyPoll ? { ATELIER_DIAGNOSTIC_LEGACY_POLL: '1' } : {})
+    }
   })
   const page = await app.firstWindow()
   try {
@@ -157,7 +172,7 @@ test('capture diff-session compare traces (legacy poll mode)', async () => {
     await page.waitForTimeout(5000)
     const allTraces = parseTraceLines(logPath)
     const report = {
-      mode: 'ATELIER_DIAGNOSTIC_LEGACY_POLL=1',
+      mode: opts.legacyPoll ? 'ATELIER_DIAGNOSTIC_LEGACY_POLL=1' : 'fixed (default poll)',
       userDataDir,
       warmup,
       sessions: { fixRay, aiConf },
@@ -169,10 +184,13 @@ test('capture diff-session compare traces (legacy poll mode)', async () => {
       }
     }
     writeFileSync(artifactPath, JSON.stringify(report, null, 2))
-    cpSync(logPath, join(artifactDir, 'diff-session-compare-main.log'))
+    cpSync(
+      logPath,
+      join(artifactDir, opts.legacyPoll ? 'diff-session-compare-main-legacy.log' : 'diff-session-compare-main-fixed.log')
+    )
     console.log(`Wrote ${artifactPath}`)
     console.log(`fixRay traces: ${report.traces.fixRay.length}, aiConf: ${report.traces.aiConf.length}`)
   } finally {
     await app.close()
   }
-})
+}

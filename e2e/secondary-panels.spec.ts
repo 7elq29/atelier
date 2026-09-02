@@ -656,95 +656,111 @@ test.describe('07-secondary-panels', () => {
     await page.screenshot({ path: join(artifactsDir, '07-tabbar-dark.png') })
   })
 
-  test('tab bar: tabs show the grab cursor only while a drag is in flight', async () => {
-    const filesTab = page.getByTestId('tab-files')
-    await expect(filesTab).toHaveCSS('cursor', 'pointer')
+  /** Presses a tab and moves the mouse by (dx, dy) without releasing it. */
+  async function pressTabAndMoveBy(tab: string, dx: number, dy: number): Promise<void> {
+    const box = await page.getByTestId(`tab-${tab}`).boundingBox()
+    if (!box) throw new Error(`tab-${tab} has no bounding box`)
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy, { steps: 5 })
+  }
 
-    await page.evaluate(() => {
-      const btn = document.querySelector('[data-testid="tab-files"]') as HTMLElement | null
-      if (!btn) throw new Error('tab-files not found')
-      btn.dispatchEvent(
-        new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })
-      )
-    })
-    await expect(filesTab).toHaveCSS('cursor', 'grabbing')
+  /** A point just inside the given edge of the workspace, within its drop band. */
+  async function workspaceEdgePoint(edge: 'left' | 'right' | 'top' | 'bottom') {
+    const ws = await page.getByTestId('session-workspace-tabs').boundingBox()
+    if (!ws) throw new Error('workspace has no bounding box')
+    const inset = 24
+    if (edge === 'left') return { x: ws.x + inset, y: ws.y + ws.height / 2 }
+    if (edge === 'right') return { x: ws.x + ws.width - inset, y: ws.y + ws.height / 2 }
+    if (edge === 'top') return { x: ws.x + ws.width / 2, y: ws.y + inset }
+    return { x: ws.x + ws.width / 2, y: ws.y + ws.height - inset }
+  }
 
-    await page.evaluate(() => {
-      const btn = document.querySelector('[data-testid="tab-files"]') as HTMLElement | null
-      btn?.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true }))
-    })
-    await expect(filesTab).toHaveCSS('cursor', 'pointer')
-    await page.getByTestId('tab-chat').click()
-  })
+  /** Full drag of a tab onto one edge of the workspace. */
+  async function dragTabToEdge(tab: string, edge: 'left' | 'right' | 'top' | 'bottom'): Promise<void> {
+    await pressTabAndMoveBy(tab, 0, 30)
+    const target = await workspaceEdgePoint(edge)
+    await page.mouse.move(target.x, target.y, { steps: 12 })
+    await page.mouse.up()
+  }
 
-  test('tab bar: a click Chromium turns into a stray drag still selects the tab', async () => {
-    // Chromium begins a native drag after a couple of pixels of movement and then
-    // never dispatches the click, so a slightly sloppy click on a draggable tab
-    // used to do nothing at all.
+  /**
+   * Engages a drag and parks the pointer over the middle of the workspace, clear
+   * of every edge band, leaving the button down so mid-drag state can be checked
+   * without a release splitting anything.
+   */
+  async function engageDragOverMiddle(tab: string): Promise<void> {
+    const ws = await page.getByTestId('session-workspace-tabs').boundingBox()
+    if (!ws) throw new Error('workspace has no bounding box')
+    await pressTabAndMoveBy(tab, 0, 30)
+    await page.mouse.move(ws.x + ws.width / 2, ws.y + ws.height / 2, { steps: 10 })
+  }
+
+  test('tab bar: a small movement stays a click; only a deliberate drag engages', async () => {
+    // A tab press must tolerate some wobble. Native HTML5 drag engaged after about
+    // four pixels and then swallowed the click, so sloppy clicks did nothing.
     await page.getByTestId('tab-chat').click()
     await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
 
-    await page.evaluate(() => {
-      const btn = document.querySelector('[data-testid="tab-files"]') as HTMLElement | null
-      if (!btn) throw new Error('tab-files not found')
-      const dt = new DataTransfer()
-      btn.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }))
-      btn.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }))
-    })
+    await pressTabAndMoveBy('files', 5, 3)
+    await expect(page.getByTestId('workspace-drop-zone-right')).toHaveCSS('opacity', '0')
+    await expect(page.getByTestId('workspace-drag-ghost')).toHaveCount(0)
+    await page.mouse.up()
 
     await expect(page.getByTestId('tab-files')).toHaveClass(/active/)
     await expect(page.locator('.tab-content[data-tab="files"]')).not.toHaveClass(/hidden/)
-    // The stray drag must not leave the drop zones showing.
-    await expect(page.getByTestId('workspace-drop-zone-right')).toHaveCSS('opacity', '0')
 
-    // Having been dragged once must not leave a tab permanently unclickable.
+    // Past the threshold the gesture becomes a drag. Released over the middle of
+    // the workspace, away from every edge band, it splits nothing — and must not
+    // be taken as a click on the tab either.
     await page.getByTestId('tab-chat').click()
+    await engageDragOverMiddle('files')
+    await expect(page.getByTestId('workspace-drag-ghost')).toBeVisible()
+    await expect(page.getByTestId('workspace-drop-zone-top')).not.toHaveClass(/active/)
+    await page.mouse.up()
+
+    await expect(page.getByTestId('session-workspace-tabs')).not.toHaveClass(/--split/)
     await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+
+    // Having been dragged must not leave a tab unclickable.
     await page.getByTestId('tab-files').click()
     await expect(page.getByTestId('tab-files')).toHaveClass(/active/)
     await page.getByTestId('tab-chat').click()
     await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
   })
 
+  test('tab bar: tabs show the grab cursor only while a drag is in flight', async () => {
+    const filesTab = page.getByTestId('tab-files')
+    await expect(filesTab).toHaveCSS('cursor', 'pointer')
+
+    await engageDragOverMiddle('files')
+    await expect(filesTab).toHaveCSS('cursor', 'grabbing')
+    await page.mouse.up()
+
+    await expect(filesTab).toHaveCSS('cursor', 'pointer')
+    await page.getByTestId('tab-chat').click()
+  })
+
   test('workspace split: drag Diff beside Chat, Files fullscreen preserves split, Chat restores', async () => {
     await page.getByTestId('tab-chat').click()
     const workspace = page.getByTestId('session-workspace-tabs')
 
-    // All four drop targets must be visible for the whole drag. A :hover-driven
-    // highlight is invisible in practice: Chromium doesn't update :hover during a
-    // native HTML5 drag, so the zones have to light up from drag events instead.
-    await page.evaluate(() => {
-      const btn = document.querySelector('[data-testid="tab-diff"]') as HTMLElement | null
-      if (!btn) throw new Error('tab-diff not found')
-      btn.dispatchEvent(
-        new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })
-      )
-    })
+    // All four drop targets stay visible for the whole drag, with only the one
+    // under the pointer solid. They can't be driven by CSS :hover — Chromium
+    // doesn't update :hover while a drag is in flight.
+    await pressTabAndMoveBy('diff', 0, 30)
+    const rightEdge = await workspaceEdgePoint('right')
+    await page.mouse.move(rightEdge.x, rightEdge.y, { steps: 12 })
+
     for (const edge of ['left', 'right', 'top', 'bottom']) {
       await expect(page.getByTestId(`workspace-drop-zone-${edge}`)).toHaveCSS('opacity', '1')
     }
-
-    // Only the zone being dragged over is the solid/active one.
-    await page.evaluate(() => {
-      const zone = document.querySelector('.workspace-drop-right')
-      const dt = new DataTransfer()
-      dt.setData('text/plain', 'diff')
-      zone?.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
-    })
     await expect(page.getByTestId('workspace-drop-zone-right')).toHaveClass(/active/)
     await expect(page.getByTestId('workspace-drop-zone-left')).not.toHaveClass(/active/)
+    await expect(page.getByTestId('workspace-drag-ghost')).toBeVisible()
     await page.screenshot({ path: join(artifactsDir, '07-workspace-split-drop-zones.png') })
 
-    // Native HTML5 DnD doesn't fire real drag events under Playwright's
-    // synthetic mouse driver reliably — dispatch drop on the right edge zone.
-    // Ends the same drag that started above, as a real drop would.
-    await page.evaluate(() => {
-      const zone = document.querySelector('.workspace-drop-zone.workspace-drop-right')
-      if (!zone) throw new Error('workspace drop zone not found')
-      const dt = new DataTransfer()
-      dt.setData('text/plain', 'diff')
-      zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
-    })
+    await page.mouse.up()
 
     await expect(workspace).toHaveClass(/session-workspace-tabs--split/)
     await expect(page.locator('.tab-content[data-tab="chat"]')).toHaveClass(/workspace-split-pane/)
@@ -778,14 +794,7 @@ test.describe('07-secondary-panels', () => {
 
     // Dropping on the bottom edge stacks the panes instead of placing them side
     // by side — left/right build a row, top/bottom a column.
-    await page.evaluate(() => {
-      const zone = document.querySelector('.workspace-drop-zone.workspace-drop-bottom')
-      if (!zone) throw new Error('bottom drop zone not found')
-      const dt = new DataTransfer()
-      dt.setData('text/plain', 'diff')
-      zone.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
-      zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
-    })
+    await dragTabToEdge('diff', 'bottom')
     await expect(workspace).toHaveClass(/session-workspace-tabs--split-col/)
     await expect(page.getByTestId('workspace-split-divider')).toHaveAttribute('data-direction', 'col')
 
@@ -813,14 +822,7 @@ test.describe('07-secondary-panels', () => {
     await expect(page.locator('.terminal-cache-entry.active')).toHaveCount(1)
     await page.getByTestId('tab-chat').click()
 
-    await page.evaluate(() => {
-      const zone = document.querySelector('.workspace-drop-zone.workspace-drop-right')
-      if (!zone) throw new Error('right drop zone not found')
-      const dt = new DataTransfer()
-      dt.setData('text/plain', 'terminal')
-      zone.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
-      zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
-    })
+    await dragTabToEdge('terminal', 'right')
 
     const workspace = page.getByTestId('session-workspace-tabs')
     await expect(workspace).toHaveClass(/session-workspace-tabs--split-row/)
