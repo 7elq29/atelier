@@ -2903,10 +2903,11 @@ input[type='range'] {
 body.dragging-workspace-tab .workspace-drop-overlay,
 .workspace-drop-overlay.visible { display: block; pointer-events: auto; }
 .workspace-drop-zone { position: absolute; opacity: 0; }
-.workspace-drop-overlay.visible .workspace-drop-left { left: 0; top: 0; bottom: 0; width: 22%; }
-.workspace-drop-overlay.visible .workspace-drop-right { right: 0; top: 0; bottom: 0; width: 22%; }
-.workspace-drop-overlay.visible .workspace-drop-top { left: 0; right: 0; top: 0; height: 22%; }
-.workspace-drop-overlay.visible .workspace-drop-bottom { left: 0; right: 0; bottom: 0; height: 22%; }
+.workspace-drop-left { left: 0; top: 0; bottom: 0; width: 22%; }
+.workspace-drop-right { right: 0; top: 0; bottom: 0; width: 22%; }
+.workspace-drop-top { left: 0; right: 0; top: 0; height: 22%; }
+.workspace-drop-bottom { left: 0; right: 0; bottom: 0; height: 22%; }
+body.dragging-workspace-tab .workspace-drop-zone:hover,
 .workspace-drop-overlay.visible .workspace-drop-zone:hover { opacity: 1; background: color-mix(in srgb, var(--border-strong) 35%, transparent); }
 
 /* ===== Diff tab ===== */

@@ -37,14 +37,31 @@ export default function TabBar({
     <div className="tab-strip" data-testid="tab-strip" data-hint-exclude-root="">
       {tabs.map((t) => {
         if (hiddenTabs?.has(t.id)) return null
+        const dragEnabled = Boolean(onDragTabStart)
         return (
           <button
             key={t.id}
             className={`workspace-tab-draggable${activeTab === t.id ? ' active' : ''}`}
-            draggable={Boolean(onDragTabStart)}
-            onClick={() => onSelect(t.id)}
-            onDragStart={(e) => onDragTabStart?.(t.id, e)}
-            onDragEnd={() => onDragTabEnd?.()}
+            draggable={dragEnabled}
+            onClick={(e) => {
+              if (dragEnabled && (e.currentTarget as HTMLButtonElement & { __didDrag?: boolean }).__didDrag) {
+                e.preventDefault()
+                e.stopPropagation()
+                return
+              }
+              onSelect(t.id)
+            }}
+            onDragStart={(e) => {
+              if (!onDragTabStart) return
+              ;(e.currentTarget as HTMLButtonElement & { __didDrag?: boolean }).__didDrag = true
+              onDragTabStart(t.id, e)
+            }}
+            onDragEnd={(e) => {
+              onDragTabEnd?.()
+              window.setTimeout(() => {
+                ;(e.currentTarget as HTMLButtonElement & { __didDrag?: boolean }).__didDrag = false
+              }, 0)
+            }}
             data-testid={`tab-${t.id}`}
             data-tab={t.id}
             data-session-tab-shortcut={SESSION_TAB_SHORTCUT_LABELS[t.id]}

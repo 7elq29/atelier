@@ -1,6 +1,11 @@
 /** Home-row-first charset (26 letters) for hint labels. */
 export const HINT_CHARS = 'asdfghjklqwertyuiopzxcvbnm'
 
+/** Never assign these as chrome hint badges — reserved for ⌘+edit chords or ⌘+tab shortcuts. */
+export const RESERVED_HINT_LETTERS = new Set(['a', 'c', 'v', 'x', 'h', 'd', 'f', 't', 'p'])
+
+const HINT_LABEL_CHARS = [...HINT_CHARS].filter((c) => !RESERVED_HINT_LETTERS.has(c)).join('')
+
 const INTERACTIVE_SELECTOR = [
   'button:not([disabled])',
   'a[href]',
@@ -20,7 +25,7 @@ export type HintEntry = {
 }
 
 export function generateHintLabels(count: number): string[] {
-  const chars = [...HINT_CHARS]
+  const chars = [...HINT_LABEL_CHARS]
   if (count <= chars.length) {
     return chars.slice(0, count)
   }
