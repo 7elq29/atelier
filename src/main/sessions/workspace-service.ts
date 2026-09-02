@@ -23,7 +23,7 @@ import type { PtyManager } from '../panels/pty'
 import { logger } from '../logger'
 import { warmSshMux } from '../ssh-exec'
 import { ensureUssh } from '../uber-auth'
-import { withRemotePreloadHostQueue, withRemoteBackgroundHostQueue, coalesceSessionCapRebuild } from './remote-preload-gate'
+import { withRemotePreloadHostQueue, withRemoteBackgroundHostQueue, coalesceSessionCapRebuild, getHostBackgroundQueueDepth } from './remote-preload-gate'
 import { mergeCapItemsFromDiffSummary } from './session-changes-cap'
 
 export const DEVPOD_GIT_POLL_MS = 15_000
@@ -68,6 +68,8 @@ const PRELOAD_DIFF_HUNKS_TIMEOUT_MS = 60_000
 const PRELOAD_ESSENTIALS_TIMEOUT_MS = 45_000
 /** Wall-clock cap for background workspace refresh — clears "Refreshing diff…" if remote git stalls. */
 const REFRESH_WORKSPACE_TIMEOUT_MS = 120_000
+/** E2E/diagnostic only: reproduce installed-app poll stacking (no coalesce, full cap rebuild). */
+const DIAGNOSTIC_LEGACY_POLL = process.env.ATELIER_DIAGNOSTIC_LEGACY_POLL === '1'
 
 async function loadPreloadDiff(
   workspacePath: string,
@@ -180,23 +182,63 @@ export class WorkspaceService {
     })
   }
 
+  private traceRefresh(
+    event: string,
+    sessionId: string,
+    extra: Record<string, unknown> = {}
+  ): void {
+    const hostname = this.cache.get(sessionId)?.hostname ?? null
+    logger.info('workspace:refresh:trace', {
+      event,
+      sessionId,
+      refreshRefCount: this.refreshInFlight.get(sessionId) ?? 0,
+      coalescedRefresh: this.sessionRefreshPromises.has(sessionId),
+      hostQueueDepth: hostname ? getHostBackgroundQueueDepth(hostname) : 0,
+      ...extra
+    })
+  }
+
   private sendRefreshing(sessionId: string, refreshing: boolean): void {
+    this.traceRefresh(refreshing ? 'uiRefreshingOn' : 'uiRefreshingOff', sessionId)
     this.getWindow()?.webContents.send('session:workspaceRefreshing', { sessionId, refreshing })
   }
 
-  private beginRefresh(sessionId: string): void {
+  private beginRefresh(sessionId: string, source: string): void {
     const next = (this.refreshInFlight.get(sessionId) ?? 0) + 1
     this.refreshInFlight.set(sessionId, next)
+    this.traceRefresh('beginRefresh', sessionId, { source, refreshRefCount: next })
     if (next === 1) this.sendRefreshing(sessionId, true)
   }
 
-  private endRefresh(sessionId: string): void {
+  private endRefresh(sessionId: string, source: string): void {
     const next = (this.refreshInFlight.get(sessionId) ?? 1) - 1
     if (next <= 0) {
       this.refreshInFlight.delete(sessionId)
+      this.traceRefresh('endRefresh', sessionId, { source, refreshRefCount: 0 })
       this.sendRefreshing(sessionId, false)
     } else {
       this.refreshInFlight.set(sessionId, next)
+      this.traceRefresh('endRefresh', sessionId, { source, refreshRefCount: next })
+    }
+  }
+
+  getRefreshDiagnostics(sessionId: string): {
+    sessionId: string
+    refreshRefCount: number
+    coalescedRefresh: boolean
+    hostQueueDepth: number
+    cachedDiffFiles: number | null
+    cacheLoadedAt: number | null
+  } {
+    const cached = this.cache.get(sessionId)
+    const hostname = cached?.hostname ?? null
+    return {
+      sessionId,
+      refreshRefCount: this.refreshInFlight.get(sessionId) ?? 0,
+      coalescedRefresh: this.sessionRefreshPromises.has(sessionId),
+      hostQueueDepth: hostname ? getHostBackgroundQueueDepth(hostname) : 0,
+      cachedDiffFiles: cached?.diff.files.length ?? null,
+      cacheLoadedAt: cached?.loadedAt ?? null
     }
   }
 
@@ -427,12 +469,17 @@ export class WorkspaceService {
   async refreshWorkspace(
     session: SessionRecord,
     force: boolean,
-    opts?: { includeFiles?: boolean; skipCapRebuild?: boolean }
+    opts?: { includeFiles?: boolean; skipCapRebuild?: boolean; source?: string }
   ): Promise<SessionWorkspacePayload> {
+    const source = opts?.source ?? (force ? 'manual' : 'poll')
     const existing = this.sessionRefreshPromises.get(session.id)
-    if (existing) return existing
+    if (!DIAGNOSTIC_LEGACY_POLL && existing) {
+      this.traceRefresh('refreshCoalesced', session.id, { source, force, skipCapRebuild: opts?.skipCapRebuild === true })
+      return existing
+    }
 
-    const work = this.runRefreshWorkspace(session, force, opts)
+    this.traceRefresh('refreshScheduled', session.id, { source, force, skipCapRebuild: opts?.skipCapRebuild === true })
+    const work = this.runRefreshWorkspace(session, force, opts, source)
     this.sessionRefreshPromises.set(session.id, work)
     return work.finally(() => {
       if (this.sessionRefreshPromises.get(session.id) === work) {
@@ -444,26 +491,31 @@ export class WorkspaceService {
   private async runRefreshWorkspace(
     session: SessionRecord,
     force: boolean,
-    opts?: { includeFiles?: boolean; skipCapRebuild?: boolean }
+    opts: { includeFiles?: boolean; skipCapRebuild?: boolean; source?: string } | undefined,
+    source: string
   ): Promise<SessionWorkspacePayload> {
-    this.beginRefresh(session.id)
+    const refreshStartedAt = Date.now()
+    this.beginRefresh(session.id, source)
     try {
+      const queueEnteredAt = Date.now()
       const run = async (): Promise<SessionWorkspacePayload> => {
+        const queueWaitMs = Date.now() - queueEnteredAt
         const workspacePath = workspacePathFor(session)
         const prev = this.cache.get(session.id)
         const includeFiles = opts?.includeFiles === true
         const skipCapRebuild = opts?.skipCapRebuild === true
         const hintPaths = this.listSessionTouchedPaths(session.id)
-        const diffRawBase = force
-          ? await getDiffSummaryWithHunks(workspacePath, session.hostname, true)
-          : await getDiffSummary(workspacePath, session.hostname, force)
-        const diffRaw = await mergeHintPathsIntoDiffSummary(
-          diffRawBase,
-          workspacePath,
-          session.hostname,
-          hintPaths
+        this.traceRefresh('refreshDequeued', session.id, { source, queueWaitMs, hintPathCount: hintPaths.length })
+
+        const gitTimed = await timed(() =>
+          force
+            ? getDiffSummaryWithHunks(workspacePath, session.hostname, true)
+            : getDiffSummary(workspacePath, session.hostname, force)
         )
-        const diff = mergeDiffHunks(prev?.diff, diffRaw)
+        const hintsTimed = await timed(() =>
+          mergeHintPathsIntoDiffSummary(gitTimed.result, workspacePath, session.hostname, hintPaths)
+        )
+        const diff = mergeDiffHunks(prev?.diff, hintsTimed.result)
         const [filesTree, filesList] = await Promise.all([
           includeFiles
             ? Promise.resolve(walkFileTree(workspacePath, session.hostname)).then((r) =>
@@ -476,18 +528,16 @@ export class WorkspaceService {
               )
             : Promise.resolve(prev?.filesList ?? [])
         ])
-        const sessionChangesCapRaw = skipCapRebuild
-          ? (prev?.sessionChangesCap ?? { items: [] })
-          : await this.loadSessionChangesCapSafe(
-              session.id,
-              prev?.sessionChangesCap ?? { items: [] },
-              session.hostname
+        const capTimed = skipCapRebuild
+          ? { result: prev?.sessionChangesCap ?? { items: [] }, ms: 0 }
+          : await timed(() =>
+              this.loadSessionChangesCapSafe(
+                session.id,
+                prev?.sessionChangesCap ?? { items: [] },
+                session.hostname
+              )
             )
-        const sessionChangesCap = mergeCapItemsFromDiffSummary(
-          sessionChangesCapRaw,
-          diff,
-          hintPaths
-        )
+        const sessionChangesCap = mergeCapItemsFromDiffSummary(capTimed.result, diff, hintPaths)
         const payload: SessionWorkspacePayload = {
           sessionId: session.id,
           workspacePath,
@@ -504,11 +554,23 @@ export class WorkspaceService {
         const capChanged =
           sessionChangesCapSignature(prev?.sessionChangesCap ?? { items: [] }) !==
           sessionChangesCapSignature(sessionChangesCap)
-        if (prevDiffSig !== nextDiffSig || capChanged || force) {
+        const sentUpdate = prevDiffSig !== nextDiffSig || capChanged || force
+        if (sentUpdate) {
           this.sendUpdated(payload)
         } else {
           this.cache.set(session.id, payload)
         }
+        this.traceRefresh('refreshCompleted', session.id, {
+          source,
+          queueWaitMs,
+          gitMs: gitTimed.ms,
+          hintsMs: hintsTimed.ms,
+          capMs: capTimed.ms,
+          skipCapRebuild,
+          diffFiles: diff.files.length,
+          sentUpdate,
+          totalMs: Date.now() - refreshStartedAt
+        })
         return payload
       }
 
@@ -522,6 +584,11 @@ export class WorkspaceService {
         )
       ])
     } catch (err) {
+      this.traceRefresh('refreshFailed', session.id, {
+        source,
+        error: err instanceof Error ? err.message : String(err),
+        totalMs: Date.now() - refreshStartedAt
+      })
       logger.warn('workspace refresh failed or timed out', {
         sessionId: session.id,
         error: err instanceof Error ? err.message : String(err)
@@ -530,7 +597,7 @@ export class WorkspaceService {
       if (cached) return cached
       return this.emptyPreloadPayload(session, `${session.id}:tab-terminal`)
     } finally {
-      this.endRefresh(session.id)
+      this.endRefresh(session.id, source)
     }
   }
 
@@ -570,8 +637,15 @@ export class WorkspaceService {
     const workspacePath = workspacePathFor(session)
     if (session.hostname) {
       const timer = setInterval(() => {
-        if (this.sessionRefreshPromises.has(session.id)) return
-        void this.refreshWorkspace(session, false, { skipCapRebuild: true }).catch((err) =>
+        if (!DIAGNOSTIC_LEGACY_POLL && this.sessionRefreshPromises.has(session.id)) {
+          this.traceRefresh('pollSkipped', session.id, { reason: 'refreshInFlight' })
+          return
+        }
+        this.traceRefresh('pollFired', session.id, { legacyPoll: DIAGNOSTIC_LEGACY_POLL })
+        void this.refreshWorkspace(session, false, {
+          skipCapRebuild: !DIAGNOSTIC_LEGACY_POLL,
+          source: 'poll'
+        }).catch((err) =>
           logger.warn('devpod workspace poll failed', {
             sessionId: session.id,
             error: err instanceof Error ? err.message : String(err)
@@ -591,8 +665,12 @@ export class WorkspaceService {
       const schedule = (): void => {
         if (debounce) clearTimeout(debounce)
         debounce = setTimeout(() => {
-          if (this.sessionRefreshPromises.has(session.id)) return
-          void this.refreshWorkspace(session, false, { skipCapRebuild: true }).catch(() => undefined)
+          if (this.sessionRefreshPromises.has(session.id)) {
+            this.traceRefresh('pollSkipped', session.id, { reason: 'refreshInFlight' })
+            return
+          }
+          this.traceRefresh('pollFired', session.id, { local: true })
+          void this.refreshWorkspace(session, false, { skipCapRebuild: true, source: 'poll' }).catch(() => undefined)
         }, LOCAL_GIT_DEBOUNCE_MS)
       }
       for (const rel of ['index', 'HEAD']) {

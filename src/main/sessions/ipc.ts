@@ -198,6 +198,10 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
     manager.getSessionWorkspaceSnapshot(sessionId)
   )
 
+  ipcMain.handle('session:getWorkspaceRefreshDiagnostics', (_event, sessionId: string) =>
+    manager.getSessionWorkspaceRefreshDiagnostics(sessionId)
+  )
+
   ipcMain.handle('session:refreshWorkspace', async (_event, sessionId: string, force: boolean) =>
     manager.refreshSessionWorkspace(sessionId, force)
   )
@@ -229,4 +233,8 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
       manager.debugApplyHarnessUiEvents(sessionId, events)
     }
   )
+
+  ipcMain.handle('diagnostics:diffPanelOpen', (_event, payload: Record<string, unknown>) => {
+    logger.info('diff:panel:trace', payload)
+  })
 }

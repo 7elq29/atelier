@@ -656,6 +656,27 @@ test.describe('07-secondary-panels', () => {
     await page.screenshot({ path: join(artifactsDir, '07-tabbar-dark.png') })
   })
 
+  test('tab bar: tabs show the grab cursor only while a drag is in flight', async () => {
+    const filesTab = page.getByTestId('tab-files')
+    await expect(filesTab).toHaveCSS('cursor', 'pointer')
+
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-testid="tab-files"]') as HTMLElement | null
+      if (!btn) throw new Error('tab-files not found')
+      btn.dispatchEvent(
+        new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })
+      )
+    })
+    await expect(filesTab).toHaveCSS('cursor', 'grabbing')
+
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-testid="tab-files"]') as HTMLElement | null
+      btn?.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true }))
+    })
+    await expect(filesTab).toHaveCSS('cursor', 'pointer')
+    await page.getByTestId('tab-chat').click()
+  })
+
   test('tab bar: a click Chromium turns into a stray drag still selects the tab', async () => {
     // Chromium begins a native drag after a couple of pixels of movement and then
     // never dispatches the click, so a slightly sloppy click on a draggable tab

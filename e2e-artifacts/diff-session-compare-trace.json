@@ -1,0 +1,170 @@
+{
+  "mode": "ATELIER_DIAGNOSTIC_LEGACY_POLL=1",
+  "windowStart": "2026-09-02T21:15:39.088Z",
+  "windowEnd": "2026-09-02T21:16:04.191Z",
+  "snapshots": {
+    "fixRay": {
+      "label": "Fix ray init",
+      "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+      "elapsedMs": 18118,
+      "ui": {
+        "sessionIdAttr": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "loading": false,
+        "panel": true,
+        "refreshing": true,
+        "fileRows": 0,
+        "diag": {
+          "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+          "refreshRefCount": 0,
+          "coalescedRefresh": false,
+          "hostQueueDepth": 2,
+          "cachedDiffFiles": 0,
+          "cacheLoadedAt": 1788383756825
+        }
+      },
+      "t0": 1788383741978
+    },
+    "aiConf": {
+      "label": "AI conformance instruction",
+      "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+      "elapsedMs": 996,
+      "ui": {
+        "sessionIdAttr": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "loading": false,
+        "panel": true,
+        "refreshing": true,
+        "fileRows": 0,
+        "diag": {
+          "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+          "refreshRefCount": 0,
+          "coalescedRefresh": false,
+          "hostQueueDepth": 2,
+          "cachedDiffFiles": 0,
+          "cacheLoadedAt": 1788383760297
+        }
+      },
+      "t0": 1788383760191
+    }
+  },
+  "traces": [
+    {
+      "ts": "2026-09-02T21:15:39.970Z",
+      "level": "info",
+      "process": "main",
+      "msg": "workspace:refresh:trace",
+      "event": "refreshScheduled",
+      "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+      "refreshRefCount": 0,
+      "coalescedRefresh": false,
+      "hostQueueDepth": 0,
+      "source": "poll",
+      "force": false,
+      "skipCapRebuild": false
+    },
+    {
+      "ts": "2026-09-02T21:15:39.970Z",
+      "level": "info",
+      "process": "main",
+      "msg": "workspace:refresh:trace",
+      "event": "beginRefresh",
+      "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+      "refreshRefCount": 1,
+      "coalescedRefresh": false,
+      "hostQueueDepth": 0,
+      "source": "poll"
+    },
+    {
+      "ts": "2026-09-02T21:15:39.970Z",
+      "level": "info",
+      "process": "main",
+      "msg": "workspace:refresh:trace",
+      "event": "uiRefreshingOn",
+      "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+      "refreshRefCount": 1,
+      "coalescedRefresh": false,
+      "hostQueueDepth": 0
+    },
+    {
+      "ts": "2026-09-02T21:15:39.971Z",
+      "level": "info",
+      "process": "main",
+      "msg": "workspace:refresh:trace",
+      "event": "refreshDequeued",
+      "sessionId": "aad40140-ec8f-48d4-a6f1-e92f10723138",
+      "refreshRefCount": 1,
+      "coalescedRefresh": true,
+      "hostQueueDepth": 0,
+      "source": "poll",
+      "queueWaitMs": 1,
+      "hintPathCount": 4
+    },
+    {
+      "ts": "2026-09-02T21:15:59.833Z",
+      "level": "info",
+      "process": "main",
+      "msg": "panel:git:diff:trace",
+      "event": "start",
+      "projectPath": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+      "hostname": "qingqin-go.devpod-us-or",
+      "force": false
+    },
+    {
+      "ts": "2026-09-02T21:15:59.840Z",
+      "level": "info",
+      "process": "main",
+      "msg": "diff:panel:trace",
+      "event": "bootstrapCheck",
+      "panelScopeKey": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c:~/go-code",
+      "workspacePath": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+      "hostname": "qingqin-go.devpod-us-or",
+      "workspaceRefreshing": false,
+      "needsBootstrap": true,
+      "bootstrapKey": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c\u0000qingqin-go.devpod-us-or",
+      "lastBootstrapKey": "/home/user/.atelier/worktrees/a35b2ba0-f738-4ce1-8c6e-500acad8be2c\u0000qingqin-go.devpod-us-or",
+      "summaryFileCount": 0,
+      "workspaceDiffFileCount": 0,
+      "diagnostics": {
+        "sessionId": "a35b2ba0-f738-4ce1-8c6e-500acad8be2c",
+        "refreshRefCount": 0,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 2,
+        "cachedDiffFiles": 0,
+        "cacheLoadedAt": 1788383756825
+      }
+    },
+    {
+      "ts": "2026-09-02T21:16:00.926Z",
+      "level": "info",
+      "process": "main",
+      "msg": "panel:git:diff:trace",
+      "event": "start",
+      "projectPath": "/home/user/.atelier/worktrees/c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+      "hostname": "qingqin-go.devpod-us-or",
+      "force": false
+    },
+    {
+      "ts": "2026-09-02T21:16:00.931Z",
+      "level": "info",
+      "process": "main",
+      "msg": "diff:panel:trace",
+      "event": "bootstrapCheck",
+      "panelScopeKey": "c38421a4-1ba9-42cf-94e4-6e298eae8d23:~/go-code",
+      "workspacePath": "/home/user/.atelier/worktrees/c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+      "hostname": "qingqin-go.devpod-us-or",
+      "workspaceRefreshing": false,
+      "needsBootstrap": true,
+      "bootstrapKey": "/home/user/.atelier/worktrees/c38421a4-1ba9-42cf-94e4-6e298eae8d23\u0000qingqin-go.devpod-us-or",
+      "lastBootstrapKey": "/home/user/.atelier/worktrees/c38421a4-1ba9-42cf-94e4-6e298eae8d23\u0000qingqin-go.devpod-us-or",
+      "summaryFileCount": 0,
+      "workspaceDiffFileCount": 0,
+      "diagnostics": {
+        "sessionId": "c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+        "refreshRefCount": 0,
+        "coalescedRefresh": false,
+        "hostQueueDepth": 2,
+        "cachedDiffFiles": 0,
+        "cacheLoadedAt": 1788383760297
+      }
+    }
+  ]
+}

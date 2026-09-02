@@ -188,6 +188,16 @@ const api = {
   reconnectSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:reconnect', sessionId),
   getSessionWorkspaceSnapshot: (sessionId: string): Promise<SessionWorkspacePayload | null> =>
     ipcRenderer.invoke('session:getWorkspaceSnapshot', sessionId),
+  getSessionWorkspaceRefreshDiagnostics: (sessionId: string): Promise<{
+    sessionId: string
+    refreshRefCount: number
+    coalescedRefresh: boolean
+    hostQueueDepth: number
+    cachedDiffFiles: number | null
+    cacheLoadedAt: number | null
+  } | null> => ipcRenderer.invoke('session:getWorkspaceRefreshDiagnostics', sessionId),
+  traceDiffPanelOpen: (payload: Record<string, unknown>): Promise<void> =>
+    ipcRenderer.invoke('diagnostics:diffPanelOpen', payload),
   refreshSessionWorkspace: (sessionId: string, force: boolean): Promise<SessionWorkspacePayload | null> =>
     ipcRenderer.invoke('session:refreshWorkspace', sessionId, force),
   capOutsideFileDiff: (

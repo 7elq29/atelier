@@ -506,7 +506,26 @@ export default function DiffPanel({
     const bootstrapKey = `${workspacePath}\0${hostname ?? ''}`
     if (workspaceDiff != null) applySummary(workspaceDiff)
     const snapshot = summaryRef.current ?? workspaceDiff
-    if (!needsChangesBootstrap(snapshot)) {
+    const needsBootstrap = needsChangesBootstrap(snapshot)
+    void window.atelier
+      .getSessionWorkspaceRefreshDiagnostics(panelScopeKey.split(':')[0] ?? '')
+      .then((diag) =>
+        window.atelier.traceDiffPanelOpen({
+          event: 'bootstrapCheck',
+          panelScopeKey,
+          workspacePath,
+          hostname: hostname ?? null,
+          workspaceRefreshing,
+          needsBootstrap,
+          bootstrapKey,
+          lastBootstrapKey: lastChangesBootstrapKeyRef.current,
+          summaryFileCount: summaryRef.current?.files.length ?? null,
+          workspaceDiffFileCount: workspaceDiff?.files.length ?? null,
+          diagnostics: diag
+        })
+      )
+      .catch(() => undefined)
+    if (!needsBootstrap) {
       lastChangesBootstrapKeyRef.current = null
       return
     }

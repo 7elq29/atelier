@@ -18,11 +18,35 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
   const portManager = new PortForwardManager(getWindow)
 
   // ── Git / diff / worktrees ─────────────────────────────────────────
-  ipcMain.handle('panel:git:diff', (_e, projectPath: string, hostname?: string | null, force?: boolean) =>
-    force
-      ? git.getDiffSummaryWithHunks(projectPath, hostname, true)
-      : git.getDiffSummary(projectPath, hostname, force)
-  )
+  ipcMain.handle('panel:git:diff', async (_e, projectPath: string, hostname?: string | null, force?: boolean) => {
+    const startedAt = Date.now()
+    logger.info('panel:git:diff:trace', { event: 'start', projectPath, hostname: hostname ?? null, force: force === true })
+    try {
+      const summary = force
+        ? await git.getDiffSummaryWithHunks(projectPath, hostname, true)
+        : await git.getDiffSummary(projectPath, hostname, force)
+      logger.info('panel:git:diff:trace', {
+        event: 'done',
+        projectPath,
+        hostname: hostname ?? null,
+        force: force === true,
+        isRepo: summary.isRepo,
+        diffFiles: summary.files.length,
+        ms: Date.now() - startedAt
+      })
+      return summary
+    } catch (err) {
+      logger.info('panel:git:diff:trace', {
+        event: 'error',
+        projectPath,
+        hostname: hostname ?? null,
+        force: force === true,
+        ms: Date.now() - startedAt,
+        error: err instanceof Error ? err.message : String(err)
+      })
+      throw err
+    }
+  })
   ipcMain.handle('panel:git:fileDiff', (_e, projectPath: string, filePath: string, hostname?: string | null) =>
     git.getFileDiff(projectPath, filePath, hostname)
   )

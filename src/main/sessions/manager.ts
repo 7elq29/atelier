@@ -404,6 +404,10 @@ export class SessionManager {
     return this.workspace?.getCached(sessionId) ?? null
   }
 
+  getSessionWorkspaceRefreshDiagnostics(sessionId: string) {
+    return this.workspace?.getRefreshDiagnostics(sessionId) ?? null
+  }
+
   async refreshSessionWorkspace(
     sessionId: string,
     force: boolean,

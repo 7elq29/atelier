@@ -27,6 +27,12 @@ export function withRemotePreloadHostQueue<T>(
 
 /** Background git/cap refresh — serialized per host alongside preload, not in parallel with it. */
 const hostBackgroundWorkTails = new Map<string, Promise<void>>()
+const hostBackgroundQueueDepth = new Map<string, number>()
+
+export function getHostBackgroundQueueDepth(hostname: string | null | undefined): number {
+  if (!hostname) return 0
+  return hostBackgroundQueueDepth.get(hostname) ?? 0
+}
 
 export function withRemoteBackgroundHostQueue<T>(
   hostname: string | null | undefined,
@@ -34,8 +40,19 @@ export function withRemoteBackgroundHostQueue<T>(
 ): Promise<T> {
   if (!hostname) return fn()
 
+  const depth = (hostBackgroundQueueDepth.get(hostname) ?? 0) + 1
+  hostBackgroundQueueDepth.set(hostname, depth)
+
   const prev = hostBackgroundWorkTails.get(hostname) ?? Promise.resolve()
-  const run = prev.catch(() => undefined).then(fn)
+  const run = prev.catch(() => undefined).then(async () => {
+    try {
+      return await fn()
+    } finally {
+      const next = (hostBackgroundQueueDepth.get(hostname) ?? 1) - 1
+      if (next <= 0) hostBackgroundQueueDepth.delete(hostname)
+      else hostBackgroundQueueDepth.set(hostname, next)
+    }
+  })
   hostBackgroundWorkTails.set(
     hostname,
     run.then(
