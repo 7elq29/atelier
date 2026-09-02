@@ -1520,6 +1520,42 @@ export default function App(): JSX.Element {
               </div>
             )}
 
+            {/* Diff/Files keep-alive layer: buffered per visited session, same as the
+                terminal layer above. It lives outside the main-area branch below so that
+                opening a note, a weekly plan, or a terminal session only toggles CSS
+                visibility instead of unmounting the panels and losing their open
+                editor tabs, diff selection, and scroll position. */}
+            <div className="panel-cache-layer">
+              <SessionWorkspacePanels
+                sessionIds={workspacePanelSessionIds}
+                allSessions={allSessions}
+                workspaceBySession={sessionWorkspace.workspaceBySession}
+                sessionProfiles={config.sessionProfiles}
+                activeSessionId={activeSessionId}
+                activeTab={activeTab}
+                activeSessionDisconnected={activeSessionDisconnected}
+                sessionMainInForeground={sessionMainInForeground}
+                effectiveTheme={effectiveTheme}
+                revealChangePath={revealChangePath}
+                revealChangeSeq={revealChangeSeq}
+                revealCommitHash={revealCommitHash}
+                revealCommitSeq={revealCommitSeq}
+                revealFilePath={revealFilePath}
+                revealFileSeq={revealFileSeq}
+                revealFileDiffPath={revealFileDiffPath}
+                revealFileDiffSeq={revealFileDiffSeq}
+                injectDiffBySession={injectDiffBySession}
+                onRevealChangeHandled={() => setRevealChangePath(undefined)}
+                onRevealCommitHandled={() => setRevealCommitHash(undefined)}
+                onRevealFileHandled={() => setRevealFilePath(undefined)}
+                onRevealFileDiffHandled={() => setRevealFileDiffPath(undefined)}
+                onAddComment={appendToActiveComposer}
+                onOpenFileQuickOpen={openFileQuickOpen}
+                onRefreshWorkspace={handleRefreshWorkspace}
+                refreshingBySession={sessionWorkspace.refreshingBySession}
+              />
+            </div>
+
           {weeklyPlanExistsHint ? (
             <div className="weekly-plan-exists-hint" data-testid="weekly-plan-exists-hint">
               {weeklyPlanExistsHint}
@@ -1643,34 +1679,6 @@ export default function App(): JSX.Element {
 
                   {!activeSessionDisconnected && (
                     <>
-                      <SessionWorkspacePanels
-                        sessionIds={workspacePanelSessionIds}
-                        allSessions={allSessions}
-                        workspaceBySession={sessionWorkspace.workspaceBySession}
-                        sessionProfiles={config.sessionProfiles}
-                        activeSessionId={activeSessionId}
-                        activeTab={activeTab}
-                        activeSessionDisconnected={activeSessionDisconnected}
-                        effectiveTheme={effectiveTheme}
-                        revealChangePath={revealChangePath}
-                        revealChangeSeq={revealChangeSeq}
-                        revealCommitHash={revealCommitHash}
-                        revealCommitSeq={revealCommitSeq}
-                        revealFilePath={revealFilePath}
-                        revealFileSeq={revealFileSeq}
-                        revealFileDiffPath={revealFileDiffPath}
-                        revealFileDiffSeq={revealFileDiffSeq}
-                        injectDiffBySession={injectDiffBySession}
-                        onRevealChangeHandled={() => setRevealChangePath(undefined)}
-                        onRevealCommitHandled={() => setRevealCommitHash(undefined)}
-                        onRevealFileHandled={() => setRevealFilePath(undefined)}
-                        onRevealFileDiffHandled={() => setRevealFileDiffPath(undefined)}
-                        onAddComment={appendToActiveComposer}
-                        onOpenFileQuickOpen={openFileQuickOpen}
-                        onRefreshWorkspace={handleRefreshWorkspace}
-                        refreshingBySession={sessionWorkspace.refreshingBySession}
-                      />
-
                       <div className={`tab-content${activeTab === 'terminal' ? '' : ' hidden'}`} data-tab="terminal">
                         {/* TerminalPanel lives in the terminal-cache-layer above this session subtree.
                             This empty div keeps the tab layout slot; the cache entry overlays it. */}

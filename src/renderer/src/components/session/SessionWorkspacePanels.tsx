@@ -15,6 +15,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   activeSessionId,
   activeTab,
   activeSessionDisconnected,
+  sessionMainInForeground,
   effectiveTheme,
   revealChangePath,
   revealChangeSeq,
@@ -41,6 +42,8 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   activeSessionId: string | null
   activeTab: SessionTab
   activeSessionDisconnected: boolean
+  /** False while a note/weekly-plan surface owns the main area — keeps the layer inert. */
+  sessionMainInForeground: boolean
   effectiveTheme: 'light' | 'dark'
   revealChangePath?: string
   revealChangeSeq: number
@@ -66,14 +69,19 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
         const session = allSessions.find((s) => s.id === sessionId)
         const ws = workspaceBySession[sessionId]
         if (!session || session.mode !== 'claude-code') return null
-        const panelsVisible = activeSessionId === sessionId && !activeSessionDisconnected
+        const panelsVisible =
+          activeSessionId === sessionId && sessionMainInForeground && !activeSessionDisconnected
+        // The layer sits on top of the whole content area, so it may only take
+        // pointer events while one of its own tabs is the selected tab.
+        const entryActive = panelsVisible && (activeTab === 'diff' || activeTab === 'files')
         const workspacePath = session.worktreePath ?? session.projectPath
         const profileFileTree = resolveSessionProfileFileTree(session, sessionProfiles ?? [])
         const inject = injectDiffBySession[sessionId]
         return (
           <div
             key={`workspace-panels-${sessionId}-${session.projectPath}`}
-            style={{ display: panelsVisible ? 'contents' : 'none' }}
+            className={`panel-cache-entry${entryActive ? ' active' : ''}`}
+            data-session-id={sessionId}
           >
             <div className={`tab-content${activeTab === 'diff' ? '' : ' hidden'}`} data-tab="diff">
               <DiffPanel
