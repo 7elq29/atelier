@@ -131,7 +131,21 @@ test.describe('05-interactive-prompts', () => {
 
     await page.screenshot({ path: join(artifactsDir, '05-askuserquestion.png') })
 
+    // The "Other" row opens a bare textarea: it carries no inline submit of its
+    // own, so the card's single explicit Submit is what enables once free text
+    // is typed.
+    await card.getByTestId('aq-option-other').click()
+    const otherBox = card.getByTestId('aq-other-box')
+    await expect(otherBox).toHaveClass(/show/)
+    await expect(otherBox.getByTestId('aq-other-send')).toHaveCount(0)
+    await expect(card.getByTestId('aq-submit')).toBeDisabled()
+    await otherBox.getByTestId('aq-other-input').fill('Cherry')
+    await expect(card.getByTestId('aq-submit')).toBeEnabled()
+    await page.screenshot({ path: join(artifactsDir, '05-askuserquestion-other-freetext.png') })
+
+    // Switching back to a listed option closes the box again.
     await appleOption.click()
+    await expect(otherBox).not.toHaveClass(/show/)
 
     // bug #52: a single click only selects — the card stays pending until an
     // explicit Submit click.
@@ -200,7 +214,18 @@ test.describe('05-interactive-prompts', () => {
 
     await card.getByTestId('aq-option').filter({ hasText: 'Small' }).click()
     await expect(card.getByTestId('aq-step-count')).toContainText('Question 2 of 3')
-    await card.getByTestId('aq-option').filter({ hasText: 'Worktree' }).click()
+
+    // Free text inside the stepper: the box holds only the textarea, and the
+    // stepper's own Next is the single control that confirms and advances.
+    await card.getByTestId('aq-option-other').click()
+    const otherBox = card.getByTestId('aq-other-box')
+    await expect(otherBox).toHaveClass(/show/)
+    await expect(otherBox.getByTestId('aq-other-send')).toHaveCount(0)
+    await expect(card.getByTestId('aq-next')).toBeDisabled()
+    await otherBox.getByTestId('aq-other-input').fill('Custom vault path')
+    await page.screenshot({ path: join(artifactsDir, '05-askuserquestion-stepper-other.png') })
+    await expect(card.getByTestId('aq-next')).toBeEnabled()
+    await card.getByTestId('aq-next').click()
     await expect(card.getByTestId('aq-step-count')).toContainText('Question 3 of 3')
 
     await expect(card.getByTestId('aq-next')).toHaveCount(0)
@@ -211,6 +236,8 @@ test.describe('05-interactive-prompts', () => {
 
     const askSummary = page.locator('[data-testid="tool-sequence-summary"]').filter({ hasText: /question answered/i }).last()
     await expect(askSummary).toBeVisible({ timeout: 15_000 })
+    // The free-text pick reached the SDK payload, submitted by Next + Submit alone.
+    await expect(askSummary.locator('.tool-sequence-summary-text')).toContainText('Custom vault path')
     await askSummary.click()
     await expect(page.getByTestId('ask-user-question-card').first()).toHaveAttribute('data-status', 'answered')
 

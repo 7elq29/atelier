@@ -86,23 +86,6 @@ export default function AskUserQuestionCard({
     setPicked((prev) => ({ ...prev, [qIndex]: OTHER_PICK }))
   }
 
-  function submitOther(qIndex: number): void {
-    const text = (otherTextByQ[qIndex] ?? '').trim()
-    if (!text) return
-    if (questionCount === 1) {
-      onRespond({
-        kind: 'ask_user_question',
-        answers: { [content.questions[qIndex].question]: text },
-        freeText: text
-      })
-      setOtherOpenFor(null)
-      return
-    }
-    setPicked((prev) => ({ ...prev, [qIndex]: OTHER_PICK }))
-    setOtherOpenFor(null)
-    advanceFromStep(qIndex)
-  }
-
   function cancelQuestion(): void {
     if (resolved) return
     onRespond({ kind: 'ask_user_question', cancelled: true })
@@ -178,13 +161,6 @@ export default function AskUserQuestionCard({
                 )
               }}
             />
-            <button
-              className="btn btn-sm btn-allow"
-              data-testid="aq-other-send"
-              onClick={() => submitOther(qIndex)}
-            >
-              {questionCount > 1 ? 'Use this answer' : 'Send'}
-            </button>
           </div>
         ) : null}
       </div>
