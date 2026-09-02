@@ -99,7 +99,9 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
         return (
           <div
             key={`workspace-panels-${sessionId}-${session.projectPath}`}
-            className={`panel-cache-entry${entryActive ? ' active' : ''}${entrySplit ? ' panel-cache-entry--split' : ''}`}
+            className={`panel-cache-entry${entryActive ? ' active' : ''}${
+              entrySplit && split ? ` panel-cache-entry--split panel-cache-entry--split-${split.direction}` : ''
+            }`}
             style={
               entrySplit && split
                 ? ({ '--workspace-split-ratio': split.splitRatio } as React.CSSProperties)

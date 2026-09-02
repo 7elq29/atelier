@@ -1,5 +1,9 @@
 import type { SessionTab } from '../components/panels/TabBar'
-import type { WorkspaceSplitState, WorkspaceTabVisibility } from './workspace-split-types'
+import type {
+  WorkspaceSplitDirection,
+  WorkspaceSplitState,
+  WorkspaceTabVisibility
+} from './workspace-split-types'
 import { WORKSPACE_SPLITTABLE_TABS } from './workspace-split-types'
 
 export function isWorkspaceSplittableTab(tab: SessionTab): boolean {
@@ -70,11 +74,17 @@ export function applyStripTabSelect(
 export function createSplit(
   primaryTab: SessionTab,
   secondaryTab: SessionTab,
-  splitRatio = 0.5
+  splitRatio = 0.5,
+  direction: WorkspaceSplitDirection = 'row'
 ): WorkspaceSplitState | null {
   if (primaryTab === secondaryTab) return null
   if (!isWorkspaceSplittableTab(primaryTab) || !isWorkspaceSplittableTab(secondaryTab)) return null
-  return { primaryTab, secondaryTab, splitRatio, fullscreenTab: null }
+  return { primaryTab, secondaryTab, splitRatio, direction, fullscreenTab: null }
+}
+
+/** left/right split side by side; top/bottom stack, matching the mock's pane tree. */
+export function splitDirectionForEdge(edge: 'left' | 'right' | 'top' | 'bottom'): WorkspaceSplitDirection {
+  return edge === 'left' || edge === 'right' ? 'row' : 'col'
 }
 
 export function tabContentClass(visibility: WorkspaceTabVisibility): string {

@@ -22,6 +22,7 @@ import {
   isTerminalTabVisible,
   isWorkspaceSplittableTab,
   resolveTabVisibility,
+  splitDirectionForEdge,
   stripActiveTab,
   tabContentClass
 } from './workspace-split/workspace-split-logic'
@@ -774,7 +775,12 @@ export default function App(): JSX.Element {
       const insertBefore = edge === 'left' || edge === 'top'
       const primaryTab = insertBefore ? tab : anchorTab
       const secondaryTab = insertBefore ? anchorTab : tab
-      const next = createSplit(primaryTab, secondaryTab, split?.splitRatio ?? 0.5)
+      const next = createSplit(
+        primaryTab,
+        secondaryTab,
+        split?.splitRatio ?? 0.5,
+        splitDirectionForEdge(edge)
+      )
       if (!next) return
       setWorkspaceSplitBySession((prev) => ({ ...prev, [activeSessionId]: next }))
       setActiveTab(primaryTab)
@@ -1589,6 +1595,9 @@ export default function App(): JSX.Element {
             data-main-content
             style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}
           >
+            {/* Anchors the inset:0 keep-alive layers to the surface above the composer
+                dock, so a buffered panel can't paint over the composer in a split. */}
+            <div className="main-surface" data-testid="main-surface">
             {/* Terminal keep-alive layer: terminal-mode AND tab-terminal sessions stay
                 mounted here permanently. Switching sessions only toggles CSS visibility —
                 no xterm dispose/recreate, no tmux detach/reattach. Tab-bar lives inside
@@ -1717,7 +1726,11 @@ export default function App(): JSX.Element {
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 <div
-                  className={`session-workspace-tabs${splitLayoutVisible ? ' session-workspace-tabs--split' : ''}`}
+                  className={`session-workspace-tabs${
+                    splitLayoutVisible && activeWorkspaceSplit
+                      ? ` session-workspace-tabs--split session-workspace-tabs--split-${activeWorkspaceSplit.direction}`
+                      : ''
+                  }`}
                   style={
                     splitLayoutVisible && activeWorkspaceSplit
                       ? ({ '--workspace-split-ratio': activeWorkspaceSplit.splitRatio } as React.CSSProperties)
@@ -1835,6 +1848,7 @@ export default function App(): JSX.Element {
                       {splitLayoutVisible && activeWorkspaceSplit ? (
                         <WorkspaceSplitDivider
                           splitRatio={activeWorkspaceSplit.splitRatio}
+                          direction={activeWorkspaceSplit.direction}
                           onSplitRatioChange={handleWorkspaceSplitRatioChange}
                         />
                       ) : null}
@@ -1865,6 +1879,7 @@ export default function App(): JSX.Element {
               </div>
             </div>
           )}
+            </div>
           {aliveChatComposers.size > 0 ? (
             <div className="composer-cache" data-testid="composer-cache">
               {[...aliveChatComposers].map((sessionId) => {

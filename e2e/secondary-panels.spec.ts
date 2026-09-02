@@ -660,8 +660,9 @@ test.describe('07-secondary-panels', () => {
     await page.getByTestId('tab-chat').click()
     const workspace = page.getByTestId('session-workspace-tabs')
 
-    // While dragging, the affordance previews the resulting pane (a half), not the
-    // narrow hit strip, so the drop target reads as the layout you actually get.
+    // All four drop targets must be visible for the whole drag. A :hover-driven
+    // highlight is invisible in practice: Chromium doesn't update :hover during a
+    // native HTML5 drag, so the zones have to light up from drag events instead.
     await page.evaluate(() => {
       const btn = document.querySelector('[data-testid="tab-diff"]') as HTMLElement | null
       if (!btn) throw new Error('tab-diff not found')
@@ -669,26 +670,20 @@ test.describe('07-secondary-panels', () => {
         new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })
       )
     })
-    const zoneBox = await page.locator('.workspace-drop-right').boundingBox()
-    if (!zoneBox) throw new Error('right drop zone is not visible while dragging')
-    await page.mouse.move(zoneBox.x + zoneBox.width / 2, zoneBox.y + zoneBox.height / 2)
-    await expect
-      .poll(async () =>
-        page.evaluate(() => {
-          const el = document.querySelector('.workspace-drop-preview') as HTMLElement | null
-          const host = document.querySelector('.workspace-drop-overlay') as HTMLElement | null
-          if (!el || !host) return null
-          const r = el.getBoundingClientRect()
-          const h = host.getBoundingClientRect()
-          return {
-            shown: getComputedStyle(el).opacity === '1',
-            widthPctOfArea: Math.round((r.width / h.width) * 100),
-            rightAligned: Math.abs(r.right - h.right) < 2
-          }
-        })
-      )
-      .toEqual({ shown: true, widthPctOfArea: 50, rightAligned: true })
-    await page.screenshot({ path: join(artifactsDir, '07-workspace-split-drop-preview.png') })
+    for (const edge of ['left', 'right', 'top', 'bottom']) {
+      await expect(page.getByTestId(`workspace-drop-zone-${edge}`)).toHaveCSS('opacity', '1')
+    }
+
+    // Only the zone being dragged over is the solid/active one.
+    await page.evaluate(() => {
+      const zone = document.querySelector('.workspace-drop-right')
+      const dt = new DataTransfer()
+      dt.setData('text/plain', 'diff')
+      zone?.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
+    })
+    await expect(page.getByTestId('workspace-drop-zone-right')).toHaveClass(/active/)
+    await expect(page.getByTestId('workspace-drop-zone-left')).not.toHaveClass(/active/)
+    await page.screenshot({ path: join(artifactsDir, '07-workspace-split-drop-zones.png') })
     await page.evaluate(() => {
       const btn = document.querySelector('[data-testid="tab-diff"]') as HTMLElement | null
       btn?.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true }))
@@ -734,6 +729,34 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('tab-diff')).toHaveCount(1)
     await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
     await expect(page.locator('.tab-content[data-tab="chat"]')).not.toHaveClass(/workspace-split-pane/)
+
+    // Dropping on the bottom edge stacks the panes instead of placing them side
+    // by side — left/right build a row, top/bottom a column.
+    await page.evaluate(() => {
+      const zone = document.querySelector('.workspace-drop-zone.workspace-drop-bottom')
+      if (!zone) throw new Error('bottom drop zone not found')
+      const dt = new DataTransfer()
+      dt.setData('text/plain', 'diff')
+      zone.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
+      zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+    })
+    await expect(workspace).toHaveClass(/session-workspace-tabs--split-col/)
+    await expect(page.getByTestId('workspace-split-divider')).toHaveAttribute('data-direction', 'col')
+
+    const stacked = await page.evaluate(() => {
+      const chat = document.querySelector('.tab-content[data-tab="chat"]')?.getBoundingClientRect()
+      const diff = document.querySelector('.tab-content[data-tab="diff"]')?.getBoundingClientRect()
+      if (!chat || !diff) return null
+      return {
+        sameWidth: Math.abs(chat.width - diff.width) < 2,
+        chatAboveDiff: chat.bottom <= diff.top + 1
+      }
+    })
+    expect(stacked).toEqual({ sameWidth: true, chatAboveDiff: true })
+    await page.screenshot({ path: join(artifactsDir, '07-workspace-split-vertical.png') })
+
+    await page.locator('[data-testid="workspace-split-pane-close"][data-tab="diff"]').click()
+    await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
   })
 
   // ── 2. Diff panel: real hunks + commits, inline comment -> composer ────

@@ -1,12 +1,25 @@
+import { useState } from 'react'
 import type { SessionTab } from '../components/panels/TabBar'
 
+type Edge = 'left' | 'right' | 'top' | 'bottom'
+
+const EDGES: Edge[] = ['left', 'right', 'top', 'bottom']
+
+/**
+ * Drop targets for splitting the workspace. The active zone is tracked in state
+ * from dragenter/dragover rather than CSS :hover — during a native HTML5 drag
+ * Chromium does not update :hover, so a hover-driven highlight never appears.
+ */
 export function WorkspaceSplitDropOverlay({
   onDrop
 }: {
-  onDrop: (edge: 'left' | 'right' | 'top' | 'bottom', tab: SessionTab) => void
+  onDrop: (edge: Edge, tab: SessionTab) => void
 }): JSX.Element {
-  const handleDrop = (edge: 'left' | 'right' | 'top' | 'bottom') => (e: React.DragEvent) => {
+  const [activeEdge, setActiveEdge] = useState<Edge | null>(null)
+
+  const handleDrop = (edge: Edge) => (e: React.DragEvent) => {
     e.preventDefault()
+    setActiveEdge(null)
     const tab = e.dataTransfer.getData('text/plain') as SessionTab
     if (!tab) return
     onDrop(edge, tab)
@@ -14,33 +27,25 @@ export function WorkspaceSplitDropOverlay({
 
   return (
     <div className="workspace-drop-overlay" data-testid="workspace-drop-overlay" aria-hidden="true">
-      {/* Preview of the resulting pane, not of the hit strip: every edge produces a
-          half-width side-by-side split, so this mirrors that geometry. */}
-      <div className="workspace-drop-preview" data-testid="workspace-drop-preview" />
-      <div
-        className="workspace-drop-zone workspace-drop-left"
-        data-drop="left"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop('left')}
-      />
-      <div
-        className="workspace-drop-zone workspace-drop-right"
-        data-drop="right"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop('right')}
-      />
-      <div
-        className="workspace-drop-zone workspace-drop-top"
-        data-drop="top"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop('top')}
-      />
-      <div
-        className="workspace-drop-zone workspace-drop-bottom"
-        data-drop="bottom"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop('bottom')}
-      />
+      {EDGES.map((edge) => (
+        <div
+          key={edge}
+          className={`workspace-drop-zone workspace-drop-${edge}${activeEdge === edge ? ' active' : ''}`}
+          data-drop={edge}
+          data-testid={`workspace-drop-zone-${edge}`}
+          onDragEnter={(e) => {
+            e.preventDefault()
+            setActiveEdge(edge)
+          }}
+          onDragOver={(e) => {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            if (activeEdge !== edge) setActiveEdge(edge)
+          }}
+          onDragLeave={() => setActiveEdge((cur) => (cur === edge ? null : cur))}
+          onDrop={handleDrop(edge)}
+        />
+      ))}
     </div>
   )
 }
