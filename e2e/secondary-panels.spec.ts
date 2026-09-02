@@ -720,6 +720,20 @@ test.describe('07-secondary-panels', () => {
     await expect(workspace).toHaveClass(/session-workspace-tabs--split/)
     await expect(page.getByTestId('tab-diff')).toHaveCount(0)
     await page.screenshot({ path: join(artifactsDir, '07-workspace-split-restore.png') })
+
+    // Each pane carries its own close control — without one there is no way out
+    // of a split, since the secondary tab is hidden from the strip.
+    const closeButtons = page.getByTestId('workspace-split-pane-close')
+    await expect(closeButtons).toHaveCount(2)
+    await page.screenshot({ path: join(artifactsDir, '07-workspace-split-pane-close.png') })
+
+    // Closing the Diff pane leaves Chat fullscreen and returns Diff to the strip.
+    await page.locator('[data-testid="workspace-split-pane-close"][data-tab="diff"]').click()
+    await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
+    await expect(page.getByTestId('workspace-split-pane-close')).toHaveCount(0)
+    await expect(page.getByTestId('tab-diff')).toHaveCount(1)
+    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    await expect(page.locator('.tab-content[data-tab="chat"]')).not.toHaveClass(/workspace-split-pane/)
   })
 
   // ── 2. Diff panel: real hunks + commits, inline comment -> composer ────

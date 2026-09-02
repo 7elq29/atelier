@@ -28,6 +28,7 @@ import {
 import type { WorkspaceSplitState } from './workspace-split/workspace-split-types'
 import { WorkspaceSplitDivider } from './workspace-split/WorkspaceSplitDivider'
 import { WorkspaceSplitDropOverlay } from './workspace-split/WorkspaceSplitDropOverlay'
+import { WorkspaceSplitPaneClose } from './workspace-split/WorkspaceSplitPaneClose'
 import AppNotesPanel from './components/panels/AppNotesPanel'
 import DailyNoteEditorPanel from './components/panels/DailyNoteEditorPanel'
 import WeeklyPlanWizardPanel from './components/panels/WeeklyPlanWizardPanel'
@@ -741,6 +742,23 @@ export default function App(): JSX.Element {
     if (isTabHiddenFromStrip('ports', activeWorkspaceSplit)) hidden.add('ports')
     return hidden.size > 0 ? hidden : undefined
   }, [activeWorkspaceSplit])
+
+  /** Closing one pane dismisses the split and leaves the other tab fullscreen. */
+  const handleWorkspaceSplitPaneClose = useCallback(
+    (tab: SessionTab) => {
+      if (!activeSessionId) return
+      const split = workspaceSplitBySession[activeSessionId] ?? null
+      if (!split) return
+      const remaining = tab === split.primaryTab ? split.secondaryTab : split.primaryTab
+      setWorkspaceSplitBySession((prev) => {
+        const { [activeSessionId]: _removed, ...rest } = prev
+        return rest
+      })
+      setActiveTab(remaining)
+      setVisitedTabs((prev) => (prev.has(remaining) ? prev : new Set(prev).add(remaining)))
+    },
+    [activeSessionId, workspaceSplitBySession]
+  )
 
   const handleWorkspaceSplitDrop = useCallback(
     (edge: 'left' | 'right' | 'top' | 'bottom', tab: SessionTab) => {
@@ -1631,6 +1649,7 @@ export default function App(): JSX.Element {
                 activeSessionId={activeSessionId}
                 activeTab={activeTab}
                 workspaceSplit={activeWorkspaceSplit}
+                onCloseSplitPane={handleWorkspaceSplitPaneClose}
                 activeSessionDisconnected={activeSessionDisconnected}
                 sessionMainInForeground={sessionMainInForeground}
                 effectiveTheme={effectiveTheme}
@@ -1710,6 +1729,11 @@ export default function App(): JSX.Element {
                     className={tabContentClass(resolveTabVisibility('chat', activeTab, activeWorkspaceSplit))}
                     data-tab="chat"
                   >
+                    <WorkspaceSplitPaneClose
+                      tab="chat"
+                      visibility={resolveTabVisibility('chat', activeTab, activeWorkspaceSplit)}
+                      onClose={handleWorkspaceSplitPaneClose}
+                    />
                     <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
                       {activeSessionDisconnected ? (
                         <SessionDisconnectedPanel

@@ -11,6 +11,7 @@ import {
   resolveTabVisibility,
   tabContentClass
 } from '../../workspace-split/workspace-split-logic'
+import { WorkspaceSplitPaneClose } from '../../workspace-split/WorkspaceSplitPaneClose'
 import type { WorkspaceSplitState } from '../../workspace-split/workspace-split-types'
 
 export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
@@ -21,6 +22,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   activeSessionId,
   activeTab,
   workspaceSplit,
+  onCloseSplitPane,
   activeSessionDisconnected,
   sessionMainInForeground,
   effectiveTheme,
@@ -49,6 +51,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   activeSessionId: string | null
   activeTab: SessionTab
   workspaceSplit: WorkspaceSplitState | null
+  onCloseSplitPane: (tab: SessionTab) => void
   activeSessionDisconnected: boolean
   /** False while a note/weekly-plan surface owns the main area — keeps the layer inert. */
   sessionMainInForeground: boolean
@@ -105,6 +108,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
             data-session-id={sessionId}
           >
             <div className={tabContentClass(diffVisible)} data-tab="diff">
+              <WorkspaceSplitPaneClose tab="diff" visibility={diffVisible} onClose={onCloseSplitPane} />
               <DiffPanel
                 workspacePath={workspacePath}
                 repoRoot={session.projectPath}
@@ -128,6 +132,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
             </div>
 
             <div className={tabContentClass(filesVisible)} data-tab="files">
+              <WorkspaceSplitPaneClose tab="files" visibility={filesVisible} onClose={onCloseSplitPane} />
               <FilesPanel
                 projectPath={workspacePath}
                 sessionId={sessionId}

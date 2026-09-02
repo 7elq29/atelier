@@ -2889,6 +2889,31 @@ input[type='range'] {
   right: 0;
   width: calc((1 - var(--workspace-split-ratio, 0.5)) * 100% - 2.5px);
 }
+.workspace-split-pane-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 3;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  opacity: 0.55;
+}
+.workspace-split-pane-close:hover {
+  opacity: 1;
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
 .workspace-split-divider {
   position: absolute;
   top: 0;
