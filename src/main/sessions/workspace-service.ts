@@ -203,22 +203,22 @@ export class WorkspaceService {
     this.getWindow()?.webContents.send('session:workspaceRefreshing', { sessionId, refreshing })
   }
 
-  private beginRefresh(sessionId: string, source: string): void {
+  private beginRefresh(sessionId: string, source: string, opts?: { silent?: boolean }): void {
     const next = (this.refreshInFlight.get(sessionId) ?? 0) + 1
     this.refreshInFlight.set(sessionId, next)
-    this.traceRefresh('beginRefresh', sessionId, { source, refreshRefCount: next })
-    if (next === 1) this.sendRefreshing(sessionId, true)
+    this.traceRefresh('beginRefresh', sessionId, { source, refreshRefCount: next, silent: opts?.silent === true })
+    if (next === 1 && opts?.silent !== true) this.sendRefreshing(sessionId, true)
   }
 
-  private endRefresh(sessionId: string, source: string): void {
+  private endRefresh(sessionId: string, source: string, opts?: { silent?: boolean }): void {
     const next = (this.refreshInFlight.get(sessionId) ?? 1) - 1
     if (next <= 0) {
       this.refreshInFlight.delete(sessionId)
-      this.traceRefresh('endRefresh', sessionId, { source, refreshRefCount: 0 })
-      this.sendRefreshing(sessionId, false)
+      this.traceRefresh('endRefresh', sessionId, { source, refreshRefCount: 0, silent: opts?.silent === true })
+      if (opts?.silent !== true) this.sendRefreshing(sessionId, false)
     } else {
       this.refreshInFlight.set(sessionId, next)
-      this.traceRefresh('endRefresh', sessionId, { source, refreshRefCount: next })
+      this.traceRefresh('endRefresh', sessionId, { source, refreshRefCount: next, silent: opts?.silent === true })
     }
   }
 
@@ -495,17 +495,19 @@ export class WorkspaceService {
     source: string
   ): Promise<SessionWorkspacePayload> {
     const refreshStartedAt = Date.now()
-    this.beginRefresh(session.id, source)
-    try {
-      const queueEnteredAt = Date.now()
-      const run = async (): Promise<SessionWorkspacePayload> => {
-        const queueWaitMs = Date.now() - queueEnteredAt
+    const queueEnteredAt = Date.now()
+    const silentRefresh = opts?.skipCapRebuild === true && source === 'poll'
+
+    const run = async (): Promise<SessionWorkspacePayload> => {
+      const queueWaitMs = Date.now() - queueEnteredAt
+      this.traceRefresh('refreshDequeued', session.id, { source, queueWaitMs, hintPathCount: this.listSessionTouchedPaths(session.id).length })
+      this.beginRefresh(session.id, source, { silent: silentRefresh })
+      try {
         const workspacePath = workspacePathFor(session)
         const prev = this.cache.get(session.id)
         const includeFiles = opts?.includeFiles === true
         const skipCapRebuild = opts?.skipCapRebuild === true
         const hintPaths = this.listSessionTouchedPaths(session.id)
-        this.traceRefresh('refreshDequeued', session.id, { source, queueWaitMs, hintPathCount: hintPaths.length })
 
         const gitTimed = await timed(() =>
           force
@@ -572,16 +574,20 @@ export class WorkspaceService {
           totalMs: Date.now() - refreshStartedAt
         })
         return payload
+      } finally {
+        this.endRefresh(session.id, source, { silent: silentRefresh })
       }
+    }
 
-      const runWithTimeout = (): Promise<SessionWorkspacePayload> =>
-        Promise.race([
-          run(),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('workspace refresh timed out')), REFRESH_WORKSPACE_TIMEOUT_MS)
-          )
-        ])
+    const runWithTimeout = (): Promise<SessionWorkspacePayload> =>
+      Promise.race([
+        run(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('workspace refresh timed out')), REFRESH_WORKSPACE_TIMEOUT_MS)
+        )
+      ])
 
+    try {
       const queued = session.hostname
         ? withRemoteBackgroundHostQueue(session.hostname, runWithTimeout)
         : runWithTimeout()
@@ -599,8 +605,6 @@ export class WorkspaceService {
       const cached = this.cache.get(session.id)
       if (cached) return cached
       return this.emptyPreloadPayload(session, `${session.id}:tab-terminal`)
-    } finally {
-      this.endRefresh(session.id, source)
     }
   }
 
