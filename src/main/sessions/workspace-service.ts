@@ -100,6 +100,7 @@ export class WorkspaceService {
   private readonly cache = new Map<string, SessionWorkspacePayload>()
   private readonly monitors = new Map<string, { stop: () => void }>()
   private readonly refreshInFlight = new Map<string, number>()
+  private readonly sessionRefreshPromises = new Map<string, Promise<SessionWorkspacePayload>>()
   private readonly backgroundPreloadInFlight = new Set<string>()
   private ptyManager: PtyManager | null = null
 
@@ -426,7 +427,24 @@ export class WorkspaceService {
   async refreshWorkspace(
     session: SessionRecord,
     force: boolean,
-    opts?: { includeFiles?: boolean }
+    opts?: { includeFiles?: boolean; skipCapRebuild?: boolean }
+  ): Promise<SessionWorkspacePayload> {
+    const existing = this.sessionRefreshPromises.get(session.id)
+    if (existing) return existing
+
+    const work = this.runRefreshWorkspace(session, force, opts)
+    this.sessionRefreshPromises.set(session.id, work)
+    return work.finally(() => {
+      if (this.sessionRefreshPromises.get(session.id) === work) {
+        this.sessionRefreshPromises.delete(session.id)
+      }
+    })
+  }
+
+  private async runRefreshWorkspace(
+    session: SessionRecord,
+    force: boolean,
+    opts?: { includeFiles?: boolean; skipCapRebuild?: boolean }
   ): Promise<SessionWorkspacePayload> {
     this.beginRefresh(session.id)
     try {
@@ -434,6 +452,7 @@ export class WorkspaceService {
         const workspacePath = workspacePathFor(session)
         const prev = this.cache.get(session.id)
         const includeFiles = opts?.includeFiles === true
+        const skipCapRebuild = opts?.skipCapRebuild === true
         const hintPaths = this.listSessionTouchedPaths(session.id)
         const diffRawBase = force
           ? await getDiffSummaryWithHunks(workspacePath, session.hostname, true)
@@ -457,11 +476,13 @@ export class WorkspaceService {
               )
             : Promise.resolve(prev?.filesList ?? [])
         ])
-        const sessionChangesCapRaw = await this.loadSessionChangesCapSafe(
-          session.id,
-          prev?.sessionChangesCap ?? { items: [] },
-          session.hostname
-        )
+        const sessionChangesCapRaw = skipCapRebuild
+          ? (prev?.sessionChangesCap ?? { items: [] })
+          : await this.loadSessionChangesCapSafe(
+              session.id,
+              prev?.sessionChangesCap ?? { items: [] },
+              session.hostname
+            )
         const sessionChangesCap = mergeCapItemsFromDiffSummary(
           sessionChangesCapRaw,
           diff,
@@ -539,6 +560,7 @@ export class WorkspaceService {
     this.stopMonitor(sessionId)
     this.cache.delete(sessionId)
     this.backgroundPreloadInFlight.delete(sessionId)
+    this.sessionRefreshPromises.delete(sessionId)
   }
 
   private startMonitor(session: SessionRecord): void {
@@ -548,7 +570,8 @@ export class WorkspaceService {
     const workspacePath = workspacePathFor(session)
     if (session.hostname) {
       const timer = setInterval(() => {
-        void this.refreshWorkspace(session, false).catch((err) =>
+        if (this.sessionRefreshPromises.has(session.id)) return
+        void this.refreshWorkspace(session, false, { skipCapRebuild: true }).catch((err) =>
           logger.warn('devpod workspace poll failed', {
             sessionId: session.id,
             error: err instanceof Error ? err.message : String(err)
@@ -568,7 +591,8 @@ export class WorkspaceService {
       const schedule = (): void => {
         if (debounce) clearTimeout(debounce)
         debounce = setTimeout(() => {
-          void this.refreshWorkspace(session, false).catch(() => undefined)
+          if (this.sessionRefreshPromises.has(session.id)) return
+          void this.refreshWorkspace(session, false, { skipCapRebuild: true }).catch(() => undefined)
         }, LOCAL_GIT_DEBOUNCE_MS)
       }
       for (const rel of ['index', 'HEAD']) {

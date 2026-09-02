@@ -487,23 +487,43 @@ export default function DiffPanel({
     [workspacePath, hostname, applySummary]
   )
 
+  const needsChangesBootstrap = useCallback((diff: DiffSummary | null | undefined): boolean => {
+    if (!diff) return true
+    if (!diff.isRepo) return false
+    return diff.files.length === 0
+  }, [])
+
+  const lastChangesBootstrapKeyRef = useRef<string | null>(null)
+
   useEffect(() => {
     if (workspaceDiff == null) return
     applySummary(workspaceDiff)
   }, [workspaceDiff, applySummary])
 
-  // Diff › Changes uses preloaded workspace data; background refresh runs from main.
-  // Do not force a full git rescan on every tab switch — that duplicated preload work.
-
-  // When the Diff tab becomes visible before workspace push arrives, bootstrap from IPC.
+  // Fast numstat bootstrap when workspace preload is still empty; wait out workspace refresh first.
   useEffect(() => {
-    if (!active || summaryRef.current != null) return
-    if (workspaceDiff != null) {
-      applySummary(workspaceDiff)
+    if (!active) return
+    const bootstrapKey = `${workspacePath}\0${hostname ?? ''}`
+    if (workspaceDiff != null) applySummary(workspaceDiff)
+    const snapshot = summaryRef.current ?? workspaceDiff
+    if (!needsChangesBootstrap(snapshot)) {
+      lastChangesBootstrapKeyRef.current = null
       return
     }
-    void refreshChanges(true)
-  }, [active, workspaceDiff, applySummary, refreshChanges])
+    if (workspaceRefreshing) return
+    if (lastChangesBootstrapKeyRef.current === bootstrapKey) return
+    lastChangesBootstrapKeyRef.current = bootstrapKey
+    void refreshChanges(false)
+  }, [
+    active,
+    workspaceDiff,
+    workspaceRefreshing,
+    workspacePath,
+    hostname,
+    needsChangesBootstrap,
+    applySummary,
+    refreshChanges
+  ])
 
   // Reset local UI when repo identity changes; fetch only if workspace push hasn't arrived yet.
   useEffect(() => {
@@ -517,10 +537,11 @@ export default function DiffPanel({
     setCommitSelectedFile(null)
     commitLoadedHunksRef.current.clear()
     commitDetailCacheRef.current.clear()
+    lastChangesBootstrapKeyRef.current = null
     if (workspaceDiff != null) {
       applySummary(workspaceDiff)
     } else if (active) {
-      void refreshChanges(true)
+      void refreshChanges(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset on repo identity, not on active toggle
   }, [workspacePath, hostname, refreshChanges])

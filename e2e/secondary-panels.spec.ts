@@ -656,6 +656,35 @@ test.describe('07-secondary-panels', () => {
     await page.screenshot({ path: join(artifactsDir, '07-tabbar-dark.png') })
   })
 
+  test('tab bar: a click Chromium turns into a stray drag still selects the tab', async () => {
+    // Chromium begins a native drag after a couple of pixels of movement and then
+    // never dispatches the click, so a slightly sloppy click on a draggable tab
+    // used to do nothing at all.
+    await page.getByTestId('tab-chat').click()
+    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-testid="tab-files"]') as HTMLElement | null
+      if (!btn) throw new Error('tab-files not found')
+      const dt = new DataTransfer()
+      btn.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }))
+      btn.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }))
+    })
+
+    await expect(page.getByTestId('tab-files')).toHaveClass(/active/)
+    await expect(page.locator('.tab-content[data-tab="files"]')).not.toHaveClass(/hidden/)
+    // The stray drag must not leave the drop zones showing.
+    await expect(page.getByTestId('workspace-drop-zone-right')).toHaveCSS('opacity', '0')
+
+    // Having been dragged once must not leave a tab permanently unclickable.
+    await page.getByTestId('tab-chat').click()
+    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    await page.getByTestId('tab-files').click()
+    await expect(page.getByTestId('tab-files')).toHaveClass(/active/)
+    await page.getByTestId('tab-chat').click()
+    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+  })
+
   test('workspace split: drag Diff beside Chat, Files fullscreen preserves split, Chat restores', async () => {
     await page.getByTestId('tab-chat').click()
     const workspace = page.getByTestId('session-workspace-tabs')
@@ -684,19 +713,15 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('workspace-drop-zone-right')).toHaveClass(/active/)
     await expect(page.getByTestId('workspace-drop-zone-left')).not.toHaveClass(/active/)
     await page.screenshot({ path: join(artifactsDir, '07-workspace-split-drop-zones.png') })
-    await page.evaluate(() => {
-      const btn = document.querySelector('[data-testid="tab-diff"]') as HTMLElement | null
-      btn?.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true }))
-    })
 
     // Native HTML5 DnD doesn't fire real drag events under Playwright's
     // synthetic mouse driver reliably — dispatch drop on the right edge zone.
+    // Ends the same drag that started above, as a real drop would.
     await page.evaluate(() => {
       const zone = document.querySelector('.workspace-drop-zone.workspace-drop-right')
       if (!zone) throw new Error('workspace drop zone not found')
       const dt = new DataTransfer()
       dt.setData('text/plain', 'diff')
-      zone.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
       zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
     })
 
@@ -801,12 +826,16 @@ test.describe('07-secondary-panels', () => {
 
   // ── 2. Diff panel: real hunks + commits, inline comment -> composer ────
   test('diff panel: shows real uncommitted diff + commit log, inline comment feeds the composer', async () => {
+    const t0 = Date.now()
     await page.getByTestId('tab-diff').click()
+    await expect(page.getByTestId('diff-panel-active')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('diff-refreshing')).toHaveCount(0, { timeout: 30_000 })
     const diff = page.getByTestId('diff-panel-active')
-    await diff.getByTestId('diff-sub-changes').click()
-    const indexRow = diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })
-    await expect(indexRow).toBeVisible()
+    await expect(diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })).toBeVisible({ timeout: 30_000 })
+    expect(Date.now() - t0).toBeLessThan(30_000)
+    log(`diff tab ready in ${Date.now() - t0}ms`)
     await expect(diff.getByTestId('diff-file-row').filter({ hasText: 'repo-wide-change.js' })).toBeVisible()
+    const indexRow = diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })
     await indexRow.click()
     await expect(diff.locator('.diff-line.add').first()).toContainText('hello world!')
 

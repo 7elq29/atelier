@@ -24,7 +24,7 @@ export default function TabBar({
   /** Tabs in secondary split panes — hidden from the strip while split is active. */
   hiddenTabs?: ReadonlySet<SessionTab>
   onDragTabStart?: (tab: SessionTab, e: React.DragEvent<HTMLButtonElement>) => void
-  onDragTabEnd?: () => void
+  onDragTabEnd?: (tab: SessionTab) => void
 }): JSX.Element {
   const tabs: { id: SessionTab; label: string }[] = [
     { id: 'chat', label: 'Chat' },
@@ -43,25 +43,11 @@ export default function TabBar({
             key={t.id}
             className={`workspace-tab-draggable${activeTab === t.id ? ' active' : ''}`}
             draggable={dragEnabled}
-            onClick={(e) => {
-              if (dragEnabled && (e.currentTarget as HTMLButtonElement & { __didDrag?: boolean }).__didDrag) {
-                e.preventDefault()
-                e.stopPropagation()
-                return
-              }
-              onSelect(t.id)
-            }}
-            onDragStart={(e) => {
-              if (!onDragTabStart) return
-              ;(e.currentTarget as HTMLButtonElement & { __didDrag?: boolean }).__didDrag = true
-              onDragTabStart(t.id, e)
-            }}
-            onDragEnd={(e) => {
-              onDragTabEnd?.()
-              window.setTimeout(() => {
-                ;(e.currentTarget as HTMLButtonElement & { __didDrag?: boolean }).__didDrag = false
-              }, 0)
-            }}
+            onClick={() => onSelect(t.id)}
+            onDragStart={(e) => onDragTabStart?.(t.id, e)}
+            /* A drag that ends without a drop is treated as a click by the drag-end
+               handler, since Chromium suppresses the click once a drag begins. */
+            onDragEnd={() => onDragTabEnd?.(t.id)}
             data-testid={`tab-${t.id}`}
             data-tab={t.id}
             data-session-tab-shortcut={SESSION_TAB_SHORTCUT_LABELS[t.id]}

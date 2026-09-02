@@ -709,6 +709,9 @@ export default function App(): JSX.Element {
     ? appNotes.notes.find((n) => n.id === activeAppNoteId) ?? null
     : null
 
+  /** Whether the in-flight tab drag ended on a drop zone, as opposed to being a stray click. */
+  const workspaceTabDroppedRef = useRef(false)
+
   const selectTab = useCallback(
     (tab: SessionTab): void => {
       if (claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)) return
@@ -782,6 +785,7 @@ export default function App(): JSX.Element {
         splitDirectionForEdge(edge)
       )
       if (!next) return
+      workspaceTabDroppedRef.current = true
       setWorkspaceSplitBySession((prev) => ({ ...prev, [activeSessionId]: next }))
       setActiveTab(primaryTab)
       setVisitedTabs((prev) => {
@@ -798,14 +802,27 @@ export default function App(): JSX.Element {
   const handleWorkspaceDragTabStart = useCallback((tab: SessionTab, e: React.DragEvent<HTMLButtonElement>) => {
     e.dataTransfer.setData('text/plain', tab)
     e.dataTransfer.effectAllowed = 'move'
+    workspaceTabDroppedRef.current = false
     setWorkspaceDragTab(tab)
     document.body.classList.add('dragging-workspace-tab')
   }, [])
 
-  const handleWorkspaceDragTabEnd = useCallback(() => {
+  const clearWorkspaceTabDrag = useCallback(() => {
     setWorkspaceDragTab(null)
     document.body.classList.remove('dragging-workspace-tab')
   }, [])
+
+  // Chromium starts a drag after a couple of pixels of movement and then never
+  // dispatches the click, so a slightly sloppy click on a tab would otherwise do
+  // nothing at all. A drag that ends without a drop is treated as that click.
+  const handleWorkspaceDragTabEnd = useCallback(
+    (tab: SessionTab) => {
+      clearWorkspaceTabDrag()
+      if (!workspaceTabDroppedRef.current) selectTab(tab)
+      workspaceTabDroppedRef.current = false
+    },
+    [clearWorkspaceTabDrag, selectTab]
+  )
 
   const handleWorkspaceSplitRatioChange = useCallback(
     (ratio: number) => {
@@ -1884,8 +1901,8 @@ export default function App(): JSX.Element {
                       ) : null}
                       <WorkspaceSplitDropOverlay
                         onDrop={(edge, tab) => {
-                          handleWorkspaceDragTabEnd()
                           handleWorkspaceSplitDrop(edge, tab)
+                          clearWorkspaceTabDrag()
                         }}
                       />
                     </>

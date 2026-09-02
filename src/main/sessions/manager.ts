@@ -407,7 +407,7 @@ export class SessionManager {
   async refreshSessionWorkspace(
     sessionId: string,
     force: boolean,
-    opts?: { includeFiles?: boolean }
+    opts?: { includeFiles?: boolean; skipCapRebuild?: boolean }
   ): Promise<SessionWorkspacePayload | null> {
     const session = this.getSession(sessionId)
     if (!session || session.mode !== 'claude-code' || !this.workspace) return null
