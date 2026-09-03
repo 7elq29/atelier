@@ -247,6 +247,21 @@ test.describe('07-secondary-panels', () => {
 
     await page.screenshot({ path: join(artifactsDir, '07-session-project-path-reload.png') })
     log(`project path changed to ${altProjectPath}`)
+
+    // Every later test in this serial file drives the fixture repo through this session. Leaving it
+    // pointed at a throwaway non-repo directory makes all of them fail on state this test created.
+    await row.getByTestId('session-menu-button').click()
+    await page.getByTestId('menu-details').click()
+    await expect(popover).toBeVisible()
+    await popover.getByTestId('session-project-path').fill(sessionProjectPath)
+    await popover.getByTestId('apply-project-path-button').click()
+    await expect
+      .poll(async () => {
+        const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
+        return snap?.workspacePath ?? null
+      }, { timeout: 15_000 })
+      .toBe(sessionProjectPath)
+    log(`project path restored to ${sessionProjectPath}`)
   })
 
   test('chat: untracked plan file appears in session changes cap', async () => {
@@ -578,7 +593,9 @@ test.describe('07-secondary-panels', () => {
     await editFileOnce(page, sessionId, editTarget, 'hello from e2e\n', 'hello twice\n')
     await expect(cap).toBeVisible({ timeout: 30_000 })
     await expandCap(page)
-    await expect(cap.getByTestId('chat-changes-file')).toHaveCount(1)
+    // Earlier tests leave their own rows (plan mirror, outside-workspace file) in this cap, so the
+    // claim here is about a.txt specifically: a second edit updates its row instead of adding one.
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)
     log('second edit -> single file row OK')
   })
 
@@ -587,8 +604,10 @@ test.describe('07-secondary-panels', () => {
     const cap = page.getByTestId('chat-uncommitted-changes')
     const editTarget = join(repoDir, 'a.txt')
     await editFileOnce(page, sessionId, editTarget, 'hello twice\n', 'a\n')
-    await expect(cap).toHaveCount(0, { timeout: 30_000 })
-    log('revert -> cap hidden OK')
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(0, {
+      timeout: 30_000
+    })
+    log('revert -> a.txt row dropped OK')
   })
 
   test('chat: git checkout clears cap row without follow-up edit', async () => {
@@ -598,7 +617,7 @@ test.describe('07-secondary-panels', () => {
     await editFileOnce(page, sessionId, editTarget, 'a\n', 'pending git checkout\n')
     await expect(cap).toBeVisible({ timeout: 30_000 })
     await expandCap(page)
-    await expect(cap.getByTestId('chat-changes-file')).toHaveCount(1)
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)
 
     await page.getByTestId('composer-input').fill(
       `Use the Bash tool exactly once with command ${JSON.stringify(`cd ${repoDir} && git checkout -- a.txt`)}. ` +
@@ -606,8 +625,10 @@ test.describe('07-secondary-panels', () => {
     )
     await page.getByTestId('send-button').click()
     await waitForTurnIdle(page, 90_000)
-    await expect(cap).toHaveCount(0, { timeout: 30_000 })
-    log('git checkout -> cap hidden OK')
+    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(0, {
+      timeout: 30_000
+    })
+    log('git checkout -> a.txt row dropped OK')
   })
 
   test('chat: changes cap restores from SQLite after relaunch', async () => {
@@ -624,9 +645,13 @@ test.describe('07-secondary-panels', () => {
     await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
     await page.getByTestId('tab-chat').click()
     await waitForTurnIdle(page, 60_000)
-    await expect(cap).toBeVisible({ timeout: 60_000 })
+    // `cap` belongs to the page that was just closed — the restored cap lives on the new one.
+    const relaunchedCap = page.getByTestId('chat-uncommitted-changes')
+    await expect(relaunchedCap).toBeVisible({ timeout: 60_000 })
     await expandCap(page)
-    await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)
+    await expect(
+      relaunchedCap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })
+    ).toHaveCount(1)
     const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
     expect(snap?.sessionChangesCap?.items.some((i) => i.path === 'a.txt')).toBe(true)
     log('cap restore after relaunch OK')
@@ -1022,7 +1047,9 @@ test.describe('07-secondary-panels', () => {
     await page.getByTestId('tab-files').click()
     const files = page.getByTestId('files-panel-active')
     const location = files.getByTestId('files-location-input')
-    const workspaceRoot = await location.inputValue()
+    // Earlier files-panel tests navigate the location bar, so its current value is not the root —
+    // the placeholder always is.
+    const workspaceRoot = (await location.getAttribute('placeholder')) ?? (await location.inputValue())
     await location.click()
     await location.fill(`${workspaceRoot}/src/index.js`)
     await location.press('Enter')

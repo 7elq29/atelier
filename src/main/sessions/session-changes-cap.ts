@@ -4,6 +4,7 @@ import {
   getPathWorkingTreeNumstat,
   getWorkingTreeNumstatMap,
   getFileDiff,
+  isPathTrackedInGit,
   type WorkingTreeNumstat
 } from '../panels/git'
 import {
@@ -18,6 +19,7 @@ import { resolve } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { SessionStore } from './store'
 import {
+  clearCapPathExistsCache,
   normalizeCapStoragePath,
   normalizeToRepoRelativePath,
   resolveCapGitContext,
@@ -441,6 +443,10 @@ async function capPathWorkingTreeStats(
   }
   const fromGit = await getPathWorkingTreeNumstat(repoRoot, gitPath, hostname)
   if (fromGit) return fromGit
+  // Tracked with nothing to report means the working tree matches HEAD — the edit was reverted or
+  // committed. The baseline comparison below would resurrect the row from the transcript's stale
+  // "before" text and never let it go, so trust git here.
+  if (await isPathTrackedInGit(repoRoot, gitPath, hostname)) return null
   // Gitignored or slow remote git — compare on-disk content to session baseline.
   const fromBaseline = await cheapOutsideCapStats(
     store,
@@ -575,6 +581,7 @@ export async function buildSessionChangesCap(
   const session = store.getSession(sessionId)
   const projectPath = session?.projectPath ?? workspacePath
   const workspaceRoot = session?.worktreePath ?? session?.projectPath ?? workspacePath
+  clearCapPathExistsCache()
   rebuildSessionTouchedPathsFromMessages(store, sessionId, workspaceRoot)
   const paths = store.listSessionTouchedPaths(sessionId)
   const now = new Date().toISOString()
@@ -582,6 +589,9 @@ export async function buildSessionChangesCap(
 
   const canonicalRows: Array<{ row: (typeof paths)[number]; capPath: string }> = []
   const repoRoots = new Set<string>()
+  // Two stored spellings of one file (absolute + repo-relative) canonicalize to the same path;
+  // without this the cap renders the file twice.
+  const seenCapPaths = new Set<string>()
 
   for (const row of paths) {
     const capPath = await canonicalizeStoredCapPath(row.path, workspacePath, hostname, projectPath)
@@ -592,6 +602,8 @@ export async function buildSessionChangesCap(
         store.updateSessionTouchedPathPendingAt(sessionId, capPath, row.lastPendingAt)
       }
     }
+    if (seenCapPaths.has(capPath)) continue
+    seenCapPaths.add(capPath)
     canonicalRows.push({ row, capPath })
     if (!isClaudePlanPath(capPath) && (await isCapPathInGitRepo(workspacePath, capPath, hostname))) {
       const ctx = await resolveCapGitContext(capPath, workspacePath, hostname)

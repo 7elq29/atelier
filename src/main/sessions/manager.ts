@@ -511,7 +511,7 @@ export class SessionManager {
   ): Promise<SessionChangesCap | null> {
     const session = this.getSession(sessionId)
     if (!session) return null
-    this.store.addMessage({
+    const message = this.store.addMessage({
       sessionId,
       role: 'assistant',
       content: JSON.stringify({
@@ -523,6 +523,9 @@ export class SessionManager {
         status: 'pending'
       })
     })
+    // The real harness path pushes every stored message to the renderer, and the cap's plan rows
+    // read their editions out of the renderer's transcript — skipping this leaves the row unopenable.
+    this.sendMessage(sessionId, message)
     const workspaceRoot = session.worktreePath ?? session.projectPath
     const cap = await registerPlanFileInSessionChangesCap(
       this.store,

@@ -1165,7 +1165,12 @@ export default function App(): JSX.Element {
       }
       if (opensInFilesTab) {
         const result = await window.atelier.capOutsideFileDiff(activeSessionId, workspacePath, path)
-        if (!result) return
+        // No diff means no baseline to compare against, not "nothing to show" — a click that opens
+        // nothing at all reads as a broken row.
+        if (!result) {
+          openFileInFiles(path)
+          return
+        }
         setActiveTab('chat')
         setReviewTarget({
           sourceId: -1,
@@ -1177,14 +1182,20 @@ export default function App(): JSX.Element {
         return
       }
       const file = await window.atelier.capGitFileDiff(activeSessionId, workspacePath, path)
-      if (!file) return
+      if (!file) {
+        openFileInFiles(path)
+        return
+      }
       const pair = await window.atelier.gitWorkingTreeFilePair(
         workspacePath,
         file.path,
         file.status,
         session.hostname ?? null
       )
-      if (!pair) return
+      if (!pair) {
+        openFileInFiles(path)
+        return
+      }
       setActiveTab('chat')
       setReviewTarget({
         sourceId: -1,
@@ -1197,6 +1208,7 @@ export default function App(): JSX.Element {
     [
       activeSessionId,
       allSessions,
+      openFileInFiles,
       sessions.statuses,
       sessionWorkspace.workspaceBySession
     ]

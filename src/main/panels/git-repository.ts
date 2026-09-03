@@ -999,7 +999,10 @@ export async function getPathWorkingTreeNumstat(
     )
     const listed = untracked.code === 0 && untracked.stdout.trim().length > 0
     // Plans live under `.claude/plans/` which is often gitignored — still show cap stats when the file exists on disk.
-    if (onDisk || listed) {
+    // A tracked path with nothing to report is clean (reverted or committed), not new: counting its
+    // whole body as additions would pin it in the changes cap for the rest of the session.
+    const tracked = await isPathTrackedInGit(projectPath, filePath, sshHost)
+    if (!tracked && (onDisk || listed)) {
       const diffPath = onDisk ? absFile : filePath
       const diff = await runGitAtRepoRoot(
         projectPath,
@@ -1027,6 +1030,24 @@ export async function getPathWorkingTreeNumstat(
   }
   if (additions === 0 && deletions === 0) return null
   return { additions, deletions }
+}
+
+/**
+ * Whether git itself can see the path as tracked. `getPathWorkingTreeNumstat` returns null both for
+ * "clean" and for "git could not answer", so callers that want to act on "clean" need this to tell
+ * the two apart — a failed probe leaves the path untracked-looking and the caller falls back.
+ */
+export async function isPathTrackedInGit(
+  projectPath: string,
+  filePath: string,
+  sshHost?: string | null
+): Promise<boolean> {
+  const r = await runGitAtRepoRoot(
+    projectPath,
+    ['ls-files', '--error-unmatch', '--', filePath],
+    sshHost
+  )
+  return r.code === 0 && r.stdout.trim().length > 0
 }
 
 export async function listCommitsInRange(
