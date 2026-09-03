@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as monaco from 'monaco-editor'
 import type { FileReadResult, FileTreeNode, DiffFileChange, DiffFileContentPair } from '../../../../shared/panel-types'
 import DiffFullFileEditor from './DiffFullFileEditor'
+import { IconFile, IconFolder } from './tree-icons'
 import { registerEmacsMonacoKeybindings } from '../../editor/emacs-monaco-keybindings'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
 import { ensureAtelierMonacoThemes, monacoThemeId } from '../../editor/atelier-monaco-theme'
@@ -166,24 +167,6 @@ function modelUriForPath(path: string): monaco.Uri {
 function disposeModelForPathIfUnused(tabs: OpenEditorTab[], path: string): void {
   if (tabs.some((t) => t.path === path)) return
   monaco.editor.getModel(modelUriForPath(path))?.dispose()
-}
-
-// ── Icons (paths from the mock's SVG symbol definitions) ─────────────────────
-function IconFolder(): JSX.Element {
-  return (
-    <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
-    </svg>
-  )
-}
-
-function IconFile(): JSX.Element {
-  return (
-    <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 2h8l4 4v16H6z"/>
-      <path d="M14 2v4h4"/>
-    </svg>
-  )
 }
 
 // ── FileTree component ────────────────────────────────────────────────────────

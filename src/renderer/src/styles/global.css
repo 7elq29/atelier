@@ -3023,6 +3023,16 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 .ft-item:hover { background: var(--bg-hover); }
 .ft-item.active { background: var(--bg-active); }
 .ft-item .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ft-item .icon { flex-shrink: 0; }
+.file-tree .ft-item.dir { color: var(--text-secondary); }
+/* Collapse affordance for the Diff changes tree (not in the mock — see Features/diff-file-tree/spec.md). */
+.ft-chevron {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 12px; height: 12px; flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform 120ms ease;
+}
+.ft-chevron.collapsed { transform: rotate(-90deg); }
 .ft-counts { font-family: var(--font-mono); font-size: 13.5px; flex-shrink: 0; }
 .ft-add { color: var(--accent); }
 .ft-del { color: var(--danger); margin-left: 4px; }
