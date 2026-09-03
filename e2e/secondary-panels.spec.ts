@@ -120,6 +120,10 @@ function buildFixtureRepo(): string {
   writeFileSync(join(dir, 'src', 'index.js'), "// entrypoint\nfunction hello() {\n  return 'hello world!'\n}\n\nmodule.exports = { hello }\n")
   writeFileSync(join(dir, 'repo-wide-change.js'), "// changed outside nested session cwd\n")
 
+  // Deep single-child chain — exercises the Diff tree's GitHub-style path compression.
+  mkdirSync(join(dir, 'deep', 'nested', 'chain'), { recursive: true })
+  writeFileSync(join(dir, 'deep', 'nested', 'chain', 'leaf.js'), '// deep leaf\n')
+
   writeFileSync(join(dir, 'a.txt'), 'a\n')
   git(dir, ['add', 'a.txt'])
   git(dir, ['commit', '-q', '-m', 'Add a.txt for session cap e2e'])
@@ -912,6 +916,51 @@ test.describe('07-secondary-panels', () => {
     await page.getByTestId('tab-chat').click()
     await expect(page.getByTestId('composer-input')).toHaveValue(/Please add a test for this\./)
     log('diff panel: inline comment pushed into composer OK')
+  })
+
+  test('diff panel: changes list is a compressed directory tree, not full paths', async () => {
+    await page.getByTestId('tab-diff').click()
+    const diff = page.getByTestId('diff-panel-active')
+    await diff.getByTestId('diff-sub-changes').click()
+
+    // File rows show the basename only; the full path lives on title/data-path.
+    const indexRow = diff.locator('[data-testid="diff-file-row"][data-path="src/index.js"]')
+    await expect(indexRow).toBeVisible()
+    await expect(indexRow.locator('.fname')).toHaveText('index.js')
+    await expect(indexRow).toHaveAttribute('title', 'src/index.js')
+
+    // Its directory is its own row, indented one level less than the file.
+    const srcDir = diff.locator('[data-testid="diff-file-dir"][data-path="src"]')
+    await expect(srcDir.locator('.fname')).toHaveText('src')
+    await expect(srcDir).toHaveCSS('padding-left', '8px')
+    await expect(indexRow).toHaveCSS('padding-left', '20px')
+
+    // A single-child chain collapses into one `deep/nested/chain` row (GitHub-style).
+    const chainDir = diff.locator('[data-testid="diff-file-dir"][data-path="deep/nested/chain"]')
+    await expect(chainDir.locator('.fname')).toHaveText('deep/nested/chain')
+    await expect(diff.locator('[data-testid="diff-file-dir"][data-path="deep"]')).toHaveCount(0)
+    await expect(diff.locator('[data-testid="diff-file-row"][data-path="deep/nested/chain/leaf.js"]')).toBeVisible()
+
+    // Repo-root files stay at depth 0 alongside the top-level directories.
+    const rootRow = diff.locator('[data-testid="diff-file-row"][data-path="repo-wide-change.js"]')
+    await expect(rootRow).toBeVisible()
+    await expect(rootRow).toHaveCSS('padding-left', '8px')
+
+    await page.screenshot({ path: join(artifactsDir, '07-diff-file-tree.png') })
+    await diff.locator('.file-tree').screenshot({ path: join(artifactsDir, '07-diff-file-tree-rail.png') })
+
+    // Directories collapse and expand.
+    await expect(srcDir).toHaveAttribute('aria-expanded', 'true')
+    await srcDir.click()
+    await expect(srcDir).toHaveAttribute('aria-expanded', 'false')
+    await expect(indexRow).toHaveCount(0)
+    await page.screenshot({ path: join(artifactsDir, '07-diff-file-tree-collapsed.png') })
+    await diff.locator('.file-tree').screenshot({ path: join(artifactsDir, '07-diff-file-tree-rail-collapsed.png') })
+    await srcDir.click()
+    await expect(indexRow).toBeVisible()
+
+    await page.getByTestId('tab-chat').click()
+    log('diff panel: directory tree + path compression + collapse OK')
   })
 
   // ── 3. Files panel: real tree, syntax highlighting, image + html preview

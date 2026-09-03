@@ -4,7 +4,7 @@ import { isClaudePlanPath } from '../../shared/claude-plan-path'
 import { expandTildePath } from '../../shared/project-path-autocomplete'
 import { isCapPathOutsideWorkspace } from '../../shared/session-touched-path'
 import { resolveSessionWorkspaceRoot } from '../../shared/plan-mirror-path'
-import { resolveActualGitRepoRoot } from '../panels/git-core'
+import { resolveActualGitRepoRootCached } from '../panels/git-core'
 
 export { resolveSessionWorkspaceRoot } from '../../shared/plan-mirror-path'
 
@@ -42,7 +42,7 @@ export async function resolveCapGitContext(
     absCandidates.push(resolveSessionTouchedAbsolutePath(normalizedCap, workspacePath))
   } else {
     absCandidates.push(resolveSessionTouchedAbsolutePath(normalizedCap, workspacePath))
-    const repoFromWs = await resolveActualGitRepoRoot(expandedWs, hostname)
+    const repoFromWs = await resolveActualGitRepoRootCached(expandedWs, hostname)
     if (repoFromWs) {
       absCandidates.push(resolve(normalizeComparablePath(repoFromWs), normalizedCap))
     }
@@ -54,7 +54,7 @@ export async function resolveCapGitContext(
     if (seen.has(key)) continue
     seen.add(key)
     // Git needs a directory cwd — `rev-parse` fails when cwd is a file path.
-    const repoRootRaw = await resolveActualGitRepoRoot(dirname(abs), hostname)
+    const repoRootRaw = await resolveActualGitRepoRootCached(dirname(abs), hostname)
     if (!repoRootRaw) continue
     const gitRelative = gitRelativeFromRepoRoot(repoRootRaw, abs)
     if (gitRelative) {

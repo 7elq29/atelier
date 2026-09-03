@@ -8,11 +8,19 @@ import { expandTildePath } from '../../shared/project-path-autocomplete'
 import { remoteCdTarget, shQuote } from '../shell-quote'
 import { sshExec, warmSshMux } from '../ssh-exec'
 
+/** Every git call, local or one SSH round trip. Sampled as a delta to attribute refresh cost. */
+let gitInvocations = 0
+
+export function getGitInvocationCount(): number {
+  return gitInvocations
+}
+
 export function runGit(
   cwd: string,
   args: string[],
   sshHost?: string | null
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  gitInvocations += 1
   const resolvedCwd = expandTildePath(cwd.trim(), homedir())
   if (sshHost) {
     return (async () => {
@@ -75,6 +83,47 @@ export async function resolveGitRepoRoot(
 
 export function clearGitRepoRootCache(projectPath: string, sshHost?: string | null): void {
   repoRootCache.delete(repoRootCacheKey(projectPath, sshHost))
+}
+
+/**
+ * Memoized `resolveActualGitRepoRoot`, keyed by the probed directory.
+ *
+ * `resolveCapGitContext` probes one directory per session-touched path and is called 6-8 times
+ * per path across the cap rebuild and hint-merge loops. Unmemoized that is ~150 serial SSH round
+ * trips per refresh on a devpod, which is what pushes a background refresh past its timeout.
+ * `resolveGitRepoRoot` cannot be substituted: callers here need `null` for "not a git checkout"
+ * rather than a fallback to the probed path.
+ */
+const actualRepoRootCache = new Map<string, Promise<string | null>>()
+
+export function resolveActualGitRepoRootCached(
+  projectPath: string,
+  sshHost?: string | null
+): Promise<string | null> {
+  const key = repoRootCacheKey(projectPath, sshHost)
+  const hit = actualRepoRootCache.get(key)
+  if (hit) return hit
+
+  const pending = resolveActualGitRepoRoot(projectPath, sshHost).then((root) => {
+    // Only a hit is durable. A miss means "no repo *yet*" — the directory may not exist until a
+    // tool writes the first file into it (untracked plan files), or the probe may just have lost
+    // its SSH connection. Neither is covered by the invalidation hooks below.
+    if (root === null) actualRepoRootCache.delete(key)
+    return root
+  })
+  actualRepoRootCache.set(key, pending)
+  return pending
+}
+
+/**
+ * Drops every memoized probe for a host. Entries are keyed by arbitrary nested directories, so a
+ * worktree add/remove cannot be invalidated by repo path alone.
+ */
+export function clearActualGitRepoRootCache(sshHost?: string | null): void {
+  const prefix = `${sshHost ?? 'local'}\0`
+  for (const key of actualRepoRootCache.keys()) {
+    if (key.startsWith(prefix)) actualRepoRootCache.delete(key)
+  }
 }
 
 /** Run git with `-C <toplevel>` so repo-root-relative pathspecs match numstat paths. */

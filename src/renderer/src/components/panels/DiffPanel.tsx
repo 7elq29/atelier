@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CommitInfo, DiffFileChange, DiffSummary, WorktreeInfo } from '../../../../shared/panel-types'
 import Linkify, { openExternalLink } from './Linkify'
 import DiffFullFileEditor from './DiffFullFileEditor'
+import { IconChevron, IconFile, IconFolder } from './tree-icons'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
+import { buildDiffFileTree, type DiffTreeNode } from '../../utils/diffFileTree'
 
 type DiffSubTab = 'changes' | 'commits' | 'worktrees'
 type DiffFileViewMode = 'hunks' | 'full'
@@ -140,6 +142,90 @@ function DiffFileCard({
   )
 }
 
+/** Rows of the changes tree; `depth` drives indentation exactly as in the Files tree. */
+function DiffFileTree({
+  nodes,
+  depth,
+  selectedFile,
+  collapsedDirs,
+  onSelectFile,
+  onToggleDir
+}: {
+  nodes: DiffTreeNode[]
+  depth: number
+  selectedFile: string | null
+  collapsedDirs: Set<string>
+  onSelectFile: (path: string) => void
+  onToggleDir: (path: string) => void
+}): JSX.Element {
+  return (
+    <>
+      {nodes.map((node) => {
+        if (node.kind === 'dir') {
+          const collapsed = collapsedDirs.has(node.path)
+          return (
+            <div key={`dir:${node.path}`}>
+              <div
+                className="ft-item dir"
+                style={{ paddingLeft: 8 + depth * 12 }}
+                onClick={() => onToggleDir(node.path)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onToggleDir(node.path)
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-expanded={!collapsed}
+                title={node.path}
+                data-testid="diff-file-dir"
+                data-path={node.path}
+              >
+                <span className={`ft-chevron${collapsed ? ' collapsed' : ''}`}>
+                  <IconChevron />
+                </span>
+                <IconFolder />
+                <span className="fname">{node.label}</span>
+              </div>
+              {!collapsed && (
+                <DiffFileTree
+                  nodes={node.children}
+                  depth={depth + 1}
+                  selectedFile={selectedFile}
+                  collapsedDirs={collapsedDirs}
+                  onSelectFile={onSelectFile}
+                  onToggleDir={onToggleDir}
+                />
+              )}
+            </div>
+          )
+        }
+        return (
+          <div
+            key={`file:${node.path}`}
+            className={`ft-item${selectedFile === node.path ? ' active' : ''}`}
+            style={{ paddingLeft: 8 + depth * 12 }}
+            onClick={() => onSelectFile(node.path)}
+            title={node.path}
+            data-testid="diff-file-row"
+            data-path={node.path}
+          >
+            {/* Keeps file icons in the same column as sibling folder icons. */}
+            <span className="ft-chevron" />
+            <IconFile />
+            <span className="fname">{node.label}</span>
+            <span className="ft-counts">
+              {node.file.additions > 0 && <span className="ft-add">+{node.file.additions}</span>}
+              {node.file.deletions > 0 && <span className="ft-del">-{node.file.deletions}</span>}
+            </span>
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
 function DiffReviewBody({
   files,
   selectedFile,
@@ -181,6 +267,26 @@ function DiffReviewBody({
   onSubmitComment: (file: string, lineKey: string, lineText: string) => void
   onCancelComment: () => void
 }): JSX.Element {
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set())
+  const tree = useMemo(() => buildDiffFileTree(files), [files])
+
+  // A file revealed from the chat cap must be visible, so uncollapse its ancestors.
+  useEffect(() => {
+    if (!selectedFile) return
+    setCollapsedDirs((prev) => {
+      const next = new Set([...prev].filter((dir) => !selectedFile.startsWith(`${dir}/`)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [selectedFile])
+
+  const toggleDir = useCallback((path: string) => {
+    setCollapsedDirs((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(path)) next.add(path)
+      return next
+    })
+  }, [])
+
   return (
     <div className="review-body">
       <div className="file-tree">
@@ -189,20 +295,14 @@ function DiffReviewBody({
           <span className="ft-add">+{files.reduce((n, f) => n + f.additions, 0)}</span>
           <span className="ft-del">−{files.reduce((n, f) => n + f.deletions, 0)}</span>
         </div>
-        {files.map((f) => (
-          <div
-            key={f.path}
-            className={`ft-item${selectedFile === f.path ? ' active' : ''}`}
-            onClick={() => onSelectFile(f.path)}
-            data-testid="diff-file-row"
-          >
-            <span className="fname">{f.path}</span>
-            <span className="ft-counts">
-              {f.additions > 0 && <span className="ft-add">+{f.additions}</span>}
-              {f.deletions > 0 && <span className="ft-del">-{f.deletions}</span>}
-            </span>
-          </div>
-        ))}
+        <DiffFileTree
+          nodes={tree}
+          depth={0}
+          selectedFile={selectedFile}
+          collapsedDirs={collapsedDirs}
+          onSelectFile={onSelectFile}
+          onToggleDir={toggleDir}
+        />
       </div>
       <div className={`diff-area${viewMode === 'full' ? ' diff-area--full-file' : ''}`}>
         {activeFile && (
