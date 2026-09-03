@@ -17,7 +17,7 @@ import type { DiffSummary } from '../../shared/panel-types'
 import type { SessionChangesCap } from '../../shared/session-changes-cap'
 import { sessionChangesCapSignature } from '../../shared/session-changes-cap'
 import { getDiffSummary, getDiffSummaryWithHunks, mergeHintPathsIntoDiffSummary, onWorkingTreeUpdated, probeGitRepo } from '../panels/git'
-import { resolveGitRepoRoot } from '../panels/git-core'
+import { getGitInvocationCount, resolveGitRepoRoot } from '../panels/git-core'
 import { walkFileTree, listWorkspaceFiles } from '../panels/files'
 import type { PtyManager } from '../panels/pty'
 import { logger } from '../logger'
@@ -527,9 +527,11 @@ export class WorkspaceService {
             ? getDiffSummaryWithHunks(workspacePath, session.hostname, true)
             : getDiffSummary(workspacePath, session.hostname, force)
         )
+        const hintsGitCallsAt = getGitInvocationCount()
         const hintsTimed = await timed(() =>
           mergeHintPathsIntoDiffSummary(gitTimed.result, workspacePath, session.hostname, hintPaths)
         )
+        const hintsGitCalls = getGitInvocationCount() - hintsGitCallsAt
         const diff = mergeDiffHunks(prev?.diff, hintsTimed.result)
         const [filesTree, filesList] = await Promise.all([
           includeFiles
@@ -543,6 +545,7 @@ export class WorkspaceService {
               )
             : Promise.resolve(prev?.filesList ?? [])
         ])
+        const capGitCallsAt = getGitInvocationCount()
         const capTimed = skipCapRebuild
           ? { result: prev?.sessionChangesCap ?? { items: [] }, ms: 0 }
           : await timed(() =>
@@ -552,6 +555,7 @@ export class WorkspaceService {
                 session.hostname
               )
             )
+        const capGitCalls = getGitInvocationCount() - capGitCallsAt
         const sessionChangesCap = mergeCapItemsFromDiffSummary(capTimed.result, diff, hintPaths)
         const payload: SessionWorkspacePayload = {
           sessionId: session.id,
@@ -581,6 +585,9 @@ export class WorkspaceService {
           gitMs: gitTimed.ms,
           hintsMs: hintsTimed.ms,
           capMs: capTimed.ms,
+          // Process-wide deltas, so an upper bound while other sessions refresh concurrently.
+          hintsGitCalls,
+          capGitCalls,
           skipCapRebuild,
           diffFiles: diff.files.length,
           sentUpdate,

@@ -1,0 +1,17 @@
+{
+  "host": "qingqin-go.devpod-us-or",
+  "workspace": "/home/user/.atelier/worktrees/c38421a4-1ba9-42cf-94e4-6e298eae8d23",
+  "pathCount": 17,
+  "before": {
+    "label": "uncached (old)",
+    "gitCalls": 272,
+    "ms": 57725,
+    "resolved": 136
+  },
+  "after": {
+    "label": "memoized (fixed)",
+    "gitCalls": 6,
+    "ms": 788,
+    "resolved": 136
+  }
+}

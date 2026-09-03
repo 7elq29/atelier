@@ -12,6 +12,7 @@ import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { warmSshMux, SSH_MAX_CONCURRENT_EXEC_PER_HOST } from '../ssh-exec'
 import {
+  clearActualGitRepoRootCache,
   clearGitRepoRootCache,
   GIT_NO_EXTERNAL_DIFF,
   GIT_PATCH_CONFIG_ARGS,
@@ -127,6 +128,7 @@ class GitRepositoryManager {
   invalidate(projectPath: string, sshHost?: string | null): void {
     const key = repoKey(projectPath, sshHost)
     clearGitRepoRootCache(projectPath, sshHost)
+    clearActualGitRepoRootCache(sshHost)
     this.cache.delete(key)
     this.untrackedGeneration.set(key, (this.untrackedGeneration.get(key) ?? 0) + 1)
     this.dropCommitCachesForRepo(projectPath, sshHost)
