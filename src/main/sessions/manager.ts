@@ -336,7 +336,7 @@ export class SessionManager {
     if (existing) clearTimeout(existing)
     const timer = setTimeout(() => {
       this.capRefreshDebounce.delete(sessionId)
-      void this.refreshSessionWorkspace(sessionId, false).catch(() => undefined)
+      void this.refreshSessionWorkspace(sessionId, false, { skipCapRebuild: true }).catch(() => undefined)
     }, LOCAL_GIT_DEBOUNCE_MS)
     this.capRefreshDebounce.set(sessionId, timer)
   }
