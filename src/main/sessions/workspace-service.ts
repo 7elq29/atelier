@@ -67,7 +67,14 @@ const PRELOAD_DIFF_HUNKS_TIMEOUT_MS = 60_000
 /** Wall-clock cap for essential preload — clears connecting even if remote SSH/files hang. */
 const PRELOAD_ESSENTIALS_TIMEOUT_MS = 45_000
 /** Wall-clock cap for background workspace refresh — clears "Refreshing diff…" if remote git stalls. */
-const REFRESH_WORKSPACE_TIMEOUT_MS = 120_000
+const REFRESH_WORKSPACE_TIMEOUT_MS = (() => {
+  const raw = process.env.ATELIER_REFRESH_WORKSPACE_TIMEOUT_MS
+  if (raw) {
+    const parsed = Number(raw)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return 120_000
+})()
 /** E2E/diagnostic only: reproduce installed-app poll stacking (no coalesce, full cap rebuild). */
 const DIAGNOSTIC_LEGACY_POLL = process.env.ATELIER_DIAGNOSTIC_LEGACY_POLL === '1'
 
@@ -497,6 +504,12 @@ export class WorkspaceService {
     const refreshStartedAt = Date.now()
     const queueEnteredAt = Date.now()
     const silentRefresh = opts?.skipCapRebuild === true && source === 'poll'
+    let refreshEnded = false
+    const endRefreshOnce = (): void => {
+      if (refreshEnded) return
+      refreshEnded = true
+      this.endRefresh(session.id, source, { silent: silentRefresh })
+    }
 
     const run = async (): Promise<SessionWorkspacePayload> => {
       const queueWaitMs = Date.now() - queueEnteredAt
@@ -575,7 +588,7 @@ export class WorkspaceService {
         })
         return payload
       } finally {
-        this.endRefresh(session.id, source, { silent: silentRefresh })
+        endRefreshOnce()
       }
     }
 
@@ -593,6 +606,9 @@ export class WorkspaceService {
         : runWithTimeout()
       return await queued
     } catch (err) {
+      // Promise.race rejects on timeout while run() may still be in flight — clear the
+      // banner here so a stalled remote git call cannot leave uiRefreshingOn forever.
+      endRefreshOnce()
       this.traceRefresh('refreshFailed', session.id, {
         source,
         error: err instanceof Error ? err.message : String(err),
