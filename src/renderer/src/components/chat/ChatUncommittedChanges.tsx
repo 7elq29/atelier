@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { SessionChangesCapItem } from '../../../../shared/session-changes-cap'
+import type { SessionBookmark } from '../../../../shared/session-bookmarks'
 import { isClaudePlanPath } from '../../../../shared/claude-plan-path'
 
 function basenamePath(p: string): string {
@@ -20,12 +21,14 @@ function ChatChangesFileRow({
   additions,
   deletions,
   opensInFilesTab,
+  bookmarked,
   onOpen
 }: {
   path: string
   additions: number
   deletions: number
   opensInFilesTab: boolean
+  bookmarked: boolean
   onOpen: (path: string, opensInFilesTab: boolean) => void
 }): JSX.Element {
   const isPlan = isClaudePlanPath(path)
@@ -38,6 +41,7 @@ function ChatChangesFileRow({
       data-path={path}
       data-opens-in-files-tab={opensInFilesTab ? 'true' : 'false'}
       data-is-plan={isPlan ? 'true' : 'false'}
+      data-bookmarked={bookmarked ? 'true' : 'false'}
       onClick={() => onOpen(path, opensInFilesTab)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -52,6 +56,7 @@ function ChatChangesFileRow({
           Plan
         </span>
       ) : null}
+      {bookmarked ? <BookmarkTag /> : null}
       <span className="chat-changes-stats">
         {additions > 0 && <span className="chat-changes-add">+{additions}</span>}
         {deletions > 0 && <span className="chat-changes-del">−{deletions}</span>}
@@ -60,19 +65,102 @@ function ChatChangesFileRow({
   )
 }
 
+function BookmarkTag(): JSX.Element {
+  return (
+    <span className="chat-changes-bookmark-tag" data-testid="chat-changes-bookmark-tag">
+      Bookmark
+    </span>
+  )
+}
+
+function bookmarkMatchesPath(bookmarkTarget: string, workspaceRoot: string, path: string): boolean {
+  const normalize = (value: string): string =>
+    value.replace(/\\/g, '/').replace(/\/+$/, '')
+  const target = normalize(bookmarkTarget)
+  const capPath = normalize(path)
+  if (target === capPath) return true
+  const relative = capPath.replace(/^\/+/, '')
+  return target === relative || target === `${normalize(workspaceRoot)}/${relative}`
+}
+
+function BookmarkRow({
+  bookmark,
+  onOpen
+}: {
+  bookmark: SessionBookmark
+  onOpen: (bookmark: SessionBookmark) => void
+}): JSX.Element {
+  let label = bookmark.label
+  if (!label && bookmark.kind === 'link') {
+    try {
+      label = new URL(bookmark.target).host
+    } catch {
+      label = bookmark.target
+    }
+  }
+  if (bookmark.kind === 'file') label = basenamePath(bookmark.target)
+
+  return (
+    <div
+      className="chat-changes-file chat-bookmark-row"
+      role="button"
+      tabIndex={0}
+      data-testid="chat-bookmark-row"
+      data-bookmark-kind={bookmark.kind}
+      data-target={bookmark.target}
+      title={bookmark.target}
+      onClick={() => onOpen(bookmark)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen(bookmark)
+        }
+      }}
+    >
+      <span className="fname">{label || bookmark.target}</span>
+      <BookmarkTag />
+    </div>
+  )
+}
+
 export default function ChatUncommittedChanges({
   items,
-  onOpenFile
+  bookmarks,
+  workspaceRoot,
+  onOpenFile,
+  onOpenBookmark
 }: {
   items: SessionChangesCapItem[] | null | undefined
+  bookmarks: readonly SessionBookmark[]
+  workspaceRoot: string
   onOpenFile: (path: string, opensInFilesTab: boolean) => void
+  onOpenBookmark: (bookmark: SessionBookmark) => void
 }): JSX.Element | null {
   const [collapsed, setCollapsed] = useState(true)
 
   const rows = items ?? []
-  if (rows.length === 0) return null
+  if (rows.length === 0 && bookmarks.length === 0) return null
 
-  const title = `${rows.length} change${rows.length === 1 ? '' : 's'}`
+  const changedBookmarks = new Set(
+    bookmarks
+      .filter((bookmark) => bookmark.kind === 'file')
+      .flatMap((bookmark) =>
+        rows
+          .filter((row) => bookmarkMatchesPath(bookmark.target, workspaceRoot, row.path))
+          .map((row) => row.path)
+      )
+  )
+  const standaloneBookmarks = bookmarks.filter(
+    (bookmark) =>
+      bookmark.kind === 'link' ||
+      !rows.some((row) => bookmarkMatchesPath(bookmark.target, workspaceRoot, row.path))
+  )
+  const parts: string[] = []
+  if (rows.length > 0) parts.push(`${rows.length} change${rows.length === 1 ? '' : 's'}`)
+  if (bookmarks.length > 0) {
+    parts.push(`${bookmarks.length} bookmark${bookmarks.length === 1 ? '' : 's'}`)
+  }
+  const title = parts.join(' · ')
 
   return (
     <div
@@ -101,7 +189,15 @@ export default function ChatUncommittedChanges({
               additions={row.additions}
               deletions={row.deletions}
               opensInFilesTab={row.opensInFilesTab}
+              bookmarked={changedBookmarks.has(row.path)}
               onOpen={onOpenFile}
+            />
+          ))}
+          {standaloneBookmarks.map((bookmark) => (
+            <BookmarkRow
+              key={`bookmark:${bookmark.kind}:${bookmark.target}`}
+              bookmark={bookmark}
+              onOpen={onOpenBookmark}
             />
           ))}
         </div>

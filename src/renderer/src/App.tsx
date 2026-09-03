@@ -48,6 +48,7 @@ import { useConfig } from './hooks/useConfig'
 import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig, type AtelierConfig } from '../../shared/config'
 import { useSessions } from './hooks/useSessions'
 import { useSessionWorkspace } from './hooks/useSessionWorkspace'
+import { useSessionBookmarks } from './hooks/useSessionBookmarks'
 import { truncateContextPath } from './utils/truncateContextPath'
 import { useAppNotes } from './hooks/useAppNotes'
 import {
@@ -76,6 +77,10 @@ import { findPlanCapEdition } from '../../shared/plan-cap-editions'
 import { resolveSessionFilePath, collectFilePathCandidates, sessionFileLinkWorkspaceRoot, remapSessionFilePathToWorktree } from './components/chat/file-path-links'
 import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
 import type { DiffSummary, DiffFileChange } from '../../shared/panel-types'
+import type {
+  CreateSessionBookmarkInput,
+  SessionBookmark
+} from '../../shared/session-bookmarks'
 
 function filePathCandidatesForSession(ws: SessionWorkspacePayload | undefined): string[] {
   if (!ws) return []
@@ -185,6 +190,7 @@ export default function App(): JSX.Element {
   const { config, loaded, updateConfig } = useConfig()
   const sessions = useSessions()
   const sessionWorkspace = useSessionWorkspace()
+  const sessionBookmarks = useSessionBookmarks()
   const appNotes = useAppNotes()
 
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -249,6 +255,10 @@ export default function App(): JSX.Element {
   const handleInterruptRef = useRef<(sessionId: string) => Promise<void>>(async () => {})
   const activeSessionRef = useRef<SessionRecord | null>(null)
   const activeAppNoteIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (activeSessionId) void sessionBookmarks.hydrate(activeSessionId)
+  }, [activeSessionId, sessionBookmarks.hydrate])
 
   // Terminal keep-alive: maps ptyId → {cwd, hostname} for terminal-mode sessions
   // that have been visited. These TerminalPanels stay mounted permanently (only CSS
@@ -507,6 +517,7 @@ export default function App(): JSX.Element {
       void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`)
       void window.atelier.ptyKillTmuxSession(`${id}:companion`)
       sessionWorkspace.evictSession(id)
+      sessionBookmarks.evict(id)
       setAliveChatComposers((prev) => {
         if (!prev.has(id)) return prev
         const next = new Set(prev)
@@ -515,7 +526,7 @@ export default function App(): JSX.Element {
       })
       composerRefs.current.delete(id)
     },
-    [activeSessionId, sessions, sessionWorkspace]
+    [activeSessionId, sessions, sessionWorkspace, sessionBookmarks]
   )
 
   const handleDeleteSession = useCallback(
@@ -873,6 +884,29 @@ export default function App(): JSX.Element {
       selectTab('files')
     },
     [activeSessionId, allSessions, sessions.statuses, sessionWorkspace.workspaceBySession, selectTab]
+  )
+
+  const toggleActiveBookmark = useCallback(
+    (bookmark: CreateSessionBookmarkInput, bookmarked: boolean) => {
+      if (!activeSessionId) return
+      if (bookmarked) {
+        void sessionBookmarks.remove(activeSessionId, bookmark.kind, bookmark.target)
+      } else {
+        void sessionBookmarks.add(activeSessionId, bookmark)
+      }
+    },
+    [activeSessionId, sessionBookmarks.add, sessionBookmarks.remove]
+  )
+
+  const openSessionBookmark = useCallback(
+    (bookmark: SessionBookmark) => {
+      if (bookmark.kind === 'link') {
+        void window.atelier.openExternal(bookmark.target)
+        return
+      }
+      openFileInFiles(bookmark.target)
+    },
+    [openFileInFiles]
   )
 
   useEffect(() => {
@@ -1798,6 +1832,8 @@ export default function App(): JSX.Element {
                             filePathCandidates={filePathCandidatesForSession(
                               sessionWorkspace.workspaceBySession[activeSession.id]
                             )}
+                            bookmarks={sessionBookmarks.bookmarksBySession[activeSession.id] ?? []}
+                            onToggleBookmark={toggleActiveBookmark}
                             sdkChrome={sessions.sdkChromeBySession[activeSession.id] ?? null}
                             backgroundTasks={sessions.backgroundTasksBySession[activeSession.id] ?? []}
                             onRespondToPrompt={(requestId, decision) =>
@@ -1926,8 +1962,10 @@ export default function App(): JSX.Element {
                       gitWorkspacePath={session.worktreePath ?? session.projectPath}
                       diffSummary={ws?.diff}
                       sessionChangesCap={ws?.sessionChangesCap}
+                      sessionBookmarks={sessionBookmarks.bookmarksBySession[sessionId] ?? []}
                       mentionFilePaths={mentionPaths}
                       onOpenChangedFile={openChangedFileFromCap}
+                      onOpenBookmark={openSessionBookmark}
                       onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}
                       modelSelection={modelSelectionForSession(sessionId, session, modelSelectionBySession, config)}
                       onModelSelectionChange={(selection) => {

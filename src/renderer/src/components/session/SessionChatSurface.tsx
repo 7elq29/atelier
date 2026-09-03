@@ -4,6 +4,10 @@ import type { SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import type { BackgroundTaskRow } from '../../../../shared/harness-ui-types'
 import type { PromptDecision } from '../../../../shared/session-types'
 import type { ReviewPaneTarget, ReviewComposerComment } from '../../../../shared/review-pane-types'
+import type {
+  CreateSessionBookmarkInput,
+  SessionBookmark
+} from '../../../../shared/session-bookmarks'
 import { useSessionMessages, useTranscriptTruncation } from '../../hooks/useSessionMessages'
 import ChatTranscript from '../chat/ChatTranscript'
 import TrackerRail from '../chat/TrackerRail'
@@ -21,6 +25,8 @@ export function SessionChatSurface({
   onMatchCount,
   onOpenFileInFiles,
   filePathCandidates,
+  bookmarks,
+  onToggleBookmark,
   sdkChrome,
   backgroundTasks,
   onRespondToPrompt,
@@ -44,6 +50,8 @@ export function SessionChatSurface({
   onMatchCount: (count: number) => void
   onOpenFileInFiles: (path: string) => void
   filePathCandidates?: readonly string[]
+  bookmarks: readonly SessionBookmark[]
+  onToggleBookmark: (bookmark: CreateSessionBookmarkInput, bookmarked: boolean) => void
   sdkChrome: SessionSdkChromeEvent | null
   backgroundTasks: BackgroundTaskRow[]
   onRespondToPrompt: (requestId: string, decision: PromptDecision) => void
@@ -96,6 +104,8 @@ export function SessionChatSurface({
           projectRoot={projectRoot}
           filePathCandidates={filePathCandidates}
           onOpenFileInFiles={onOpenFileInFiles}
+          bookmarks={bookmarks}
+          onToggleBookmark={onToggleBookmark}
           sdkChrome={sdkChrome}
           backgroundTasks={backgroundTasks}
           onReviewMessage={onReviewMessage}

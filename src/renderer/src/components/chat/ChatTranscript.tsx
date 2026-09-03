@@ -18,6 +18,10 @@ import ConversationStatusCard from './ConversationStatusCard'
 import BackgroundTasksConversationCard from './BackgroundTasksConversationCard'
 import type { BackgroundTaskRow, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import type { ReviewPaneTarget, ReviewComposerComment } from '../../../../shared/review-pane-types'
+import type {
+  CreateSessionBookmarkInput,
+  SessionBookmark
+} from '../../../../shared/session-bookmarks'
 import { CHAT_TRANSCRIPT_MAX_TURNS } from '../../../../shared/chat-transcript-window'
 
 /** Above this size, skip ReactMarkdown — a 10k+ token reply can freeze the UI for seconds. */
@@ -128,6 +132,8 @@ export default function ChatTranscript({
   projectRoot,
   filePathCandidates,
   onOpenFileInFiles,
+  bookmarks = [],
+  onToggleBookmark,
   searchQuery,
   activeMatchIndex = -1,
   onMatchCount,
@@ -154,6 +160,8 @@ export default function ChatTranscript({
   filePathCandidates?: readonly string[]
   /** Opens a resolved absolute path in the Files tab (assistant markdown file links). */
   onOpenFileInFiles?: (absolutePath: string) => void
+  bookmarks?: readonly SessionBookmark[]
+  onToggleBookmark?: (bookmark: CreateSessionBookmarkInput, bookmarked: boolean) => void
   /** Non-empty while the "Find in conversation" bar is active and has typed text. */
   searchQuery?: string
   /** Which match (in document order) is the current navigation target; -1 means none highlighted as active. */
@@ -426,6 +434,8 @@ export default function ChatTranscript({
             workspaceRoot={workspaceRoot}
             projectRoot={projectRoot}
             filePathCandidates={filePathCandidates}
+            bookmarks={bookmarks}
+            onToggleBookmark={onToggleBookmark}
           />
         </div>
       )
@@ -621,6 +631,8 @@ export default function ChatTranscript({
               workspaceRoot={workspaceRoot}
               projectRoot={projectRoot}
               filePathCandidates={filePathCandidates}
+              bookmarks={bookmarks}
+              onToggleBookmark={onToggleBookmark}
             />
           </div>
         )
@@ -695,6 +707,8 @@ export default function ChatTranscript({
                   projectRoot={projectRoot}
                   filePathCandidates={filePathCandidates}
                   onOpenFileInFiles={onOpenFileInFiles}
+                  bookmarks={bookmarks}
+                  onToggleBookmark={onToggleBookmark}
                 />
               </TranscriptInlineComments>
             ) : (
@@ -704,6 +718,8 @@ export default function ChatTranscript({
                 projectRoot={projectRoot}
                 filePathCandidates={filePathCandidates}
                 onOpenFileInFiles={onOpenFileInFiles}
+                bookmarks={bookmarks}
+                onToggleBookmark={onToggleBookmark}
               />
             )}
           </div>

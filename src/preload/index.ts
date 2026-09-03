@@ -40,6 +40,12 @@ import type {
 } from '../shared/session-types'
 import type { SessionMessagesResult } from '../shared/chat-transcript-window'
 import type {
+  CreateSessionBookmarkInput,
+  SessionBookmark,
+  SessionBookmarkKind,
+  SessionBookmarksUpdatedEvent
+} from '../shared/session-bookmarks'
+import type {
   CommitInfo,
   DiffFileChange,
   DiffFileContentPair,
@@ -188,6 +194,18 @@ const api = {
   reconnectSession: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:reconnect', sessionId),
   getSessionWorkspaceSnapshot: (sessionId: string): Promise<SessionWorkspacePayload | null> =>
     ipcRenderer.invoke('session:getWorkspaceSnapshot', sessionId),
+  listSessionBookmarks: (sessionId: string): Promise<SessionBookmark[]> =>
+    ipcRenderer.invoke('session:listBookmarks', sessionId),
+  addSessionBookmark: (
+    sessionId: string,
+    input: CreateSessionBookmarkInput
+  ): Promise<SessionBookmark[]> => ipcRenderer.invoke('session:addBookmark', sessionId, input),
+  removeSessionBookmark: (
+    sessionId: string,
+    kind: SessionBookmarkKind,
+    target: string
+  ): Promise<SessionBookmark[]> =>
+    ipcRenderer.invoke('session:removeBookmark', sessionId, kind, target),
   getSessionWorkspaceRefreshDiagnostics: (sessionId: string): Promise<{
     sessionId: string
     refreshRefCount: number
@@ -399,6 +417,14 @@ const api = {
     const listener = (_event: unknown, payload: SessionWorkspaceUpdatedEvent): void => callback(payload)
     ipcRenderer.on('session:workspaceUpdated', listener)
     return () => ipcRenderer.removeListener('session:workspaceUpdated', listener)
+  },
+  onSessionBookmarksUpdated: (
+    callback: (event: SessionBookmarksUpdatedEvent) => void
+  ): (() => void) => {
+    const listener = (_event: unknown, payload: SessionBookmarksUpdatedEvent): void =>
+      callback(payload)
+    ipcRenderer.on('session:bookmarksUpdated', listener)
+    return () => ipcRenderer.removeListener('session:bookmarksUpdated', listener)
   },
   onSessionWorkspaceRefreshing: (callback: (event: SessionWorkspaceRefreshingEvent) => void): (() => void) => {
     const listener = (_event: unknown, payload: SessionWorkspaceRefreshingEvent): void => callback(payload)

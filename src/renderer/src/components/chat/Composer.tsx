@@ -4,6 +4,7 @@ import ReviewComposerCommentList from './ReviewComposerCommentList'
 import type { DiffSummary } from '../../../../shared/panel-types'
 import { buildComposerSendText, type ReviewComposerComment } from '../../../../shared/review-pane-types'
 import type { SessionChangesCap } from '../../../../shared/session-changes-cap'
+import type { SessionBookmark } from '../../../../shared/session-bookmarks'
 import { truncateContextPath } from '../../utils/truncateContextPath'
 import { sessionWorktreeBranch } from '../../../../shared/worktree-path'
 import type { ImageAttachment, ModelInfo, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
@@ -307,10 +308,14 @@ interface ComposerProps {
   diffSummary?: DiffSummary | null
   /** Pending files for the chat changes cap. */
   sessionChangesCap?: SessionChangesCap | null
+  /** Session-scoped chat link/file bookmarks shown in the same cap. */
+  sessionBookmarks?: readonly SessionBookmark[]
   /** Preloaded workspace file paths for @-mentions (relative paths). */
   mentionFilePaths?: string[]
   /** Chat changes cap: open Diff › Changes for this repo-relative path. */
   onOpenChangedFile?: (path: string, opensInFilesTab: boolean) => void
+  /** Opens a standalone bookmarked link externally or file in Files. */
+  onOpenBookmark?: (bookmark: SessionBookmark) => void
   /** `/fork` slash command's real action: forks the active session (same as the sidebar's fork action). */
   onFork: () => void
   /** Current model/effort override (10f-enrichment-model-effort-picker); `null` until the user picks something, in which case no override is sent at all (harness default). */
@@ -530,8 +535,10 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   gitWorkspacePath,
   diffSummary,
   sessionChangesCap,
+  sessionBookmarks = [],
   mentionFilePaths,
   onOpenChangedFile,
+  onOpenBookmark,
   onFork,
   modelSelection,
   onModelSelectionChange,
@@ -1069,10 +1076,13 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   return (
     <div className="composer-wrap">
       <div className="composer-stack">
-        {gitWorkspacePath && onOpenChangedFile && (
+        {gitWorkspacePath && onOpenChangedFile && onOpenBookmark && (
           <ChatUncommittedChanges
             items={sessionChangesCap?.items}
+            bookmarks={sessionBookmarks}
+            workspaceRoot={gitWorkspacePath}
             onOpenFile={onOpenChangedFile}
+            onOpenBookmark={onOpenBookmark}
           />
         )}
       <div

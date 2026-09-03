@@ -1,6 +1,11 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import type {
+  CreateSessionBookmarkInput,
+  SessionBookmark
+} from '../../../../shared/session-bookmarks'
+import { normalizeSessionBookmarkTarget } from '../../../../shared/session-bookmarks'
 import { openExternalLink } from '../panels/Linkify'
 import {
   ATELIER_FILE_SCHEME,
@@ -9,12 +14,25 @@ import {
   looksLikeFilePath,
   resolveSessionFilePath
 } from './file-path-links'
+import ChatBookmarkContextMenu, {
+  type ChatBookmarkMenuState
+} from './ChatBookmarkContextMenu'
 
 export type MarkdownLinkOptions = {
   workspaceRoot?: string
   projectRoot?: string
   filePathCandidates?: readonly string[]
   onOpenFileInFiles?: (absolutePath: string) => void
+  onBookmarkRequest?: (
+    event: React.MouseEvent,
+    bookmark: CreateSessionBookmarkInput
+  ) => void
+}
+
+function nodeText(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(nodeText).join('')
+  return ''
 }
 
 /**
@@ -46,7 +64,13 @@ export type MarkdownLinkOptions = {
  * Files tab when `onOpenFileInFiles` is provided.
  */
 export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Components {
-  const { workspaceRoot = '', projectRoot = '', filePathCandidates, onOpenFileInFiles } = options
+  const {
+    workspaceRoot = '',
+    projectRoot = '',
+    filePathCandidates,
+    onOpenFileInFiles,
+    onBookmarkRequest
+  } = options
 
   return {
     a: ({ href, children, ...props }) => {
@@ -57,6 +81,16 @@ export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Com
             {...props}
             href={href}
             data-testid="msg-file-link"
+            onContextMenu={(e) => {
+              if (!onBookmarkRequest) return
+              e.preventDefault()
+              e.stopPropagation()
+              onBookmarkRequest(e, {
+                kind: 'file',
+                target: normalizeSessionBookmarkTarget('file', filePath),
+                label: nodeText(children).trim() || filePath
+              })
+            }}
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
@@ -72,6 +106,16 @@ export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Com
           {...props}
           href={href}
           data-testid="external-link"
+          onContextMenu={(e) => {
+            if (!href || !/^https?:\/\//i.test(href) || !onBookmarkRequest) return
+            e.preventDefault()
+            e.stopPropagation()
+            onBookmarkRequest(e, {
+              kind: 'link',
+              target: normalizeSessionBookmarkTarget('link', href),
+              label: nodeText(children).trim() || href
+            })
+          }}
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
@@ -106,6 +150,16 @@ export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Com
           className={className}
           href={href}
           data-testid="msg-file-link"
+          onContextMenu={(e) => {
+            if (!onBookmarkRequest) return
+            e.preventDefault()
+            e.stopPropagation()
+            onBookmarkRequest(e, {
+              kind: 'file',
+              target: normalizeSessionBookmarkTarget('file', resolved),
+              label: text
+            })
+          }}
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
@@ -127,14 +181,27 @@ export default function MarkdownMessage({
   workspaceRoot,
   projectRoot,
   filePathCandidates,
-  onOpenFileInFiles
+  onOpenFileInFiles,
+  bookmarks = [],
+  onToggleBookmark
 }: {
   content: string
   workspaceRoot?: string
   projectRoot?: string
   filePathCandidates?: readonly string[]
   onOpenFileInFiles?: (absolutePath: string) => void
+  bookmarks?: readonly SessionBookmark[]
+  onToggleBookmark?: (bookmark: CreateSessionBookmarkInput, bookmarked: boolean) => void
 }): JSX.Element {
+  const [bookmarkMenu, setBookmarkMenu] = useState<ChatBookmarkMenuState | null>(null)
+  const closeBookmarkMenu = useCallback(() => setBookmarkMenu(null), [])
+  const onBookmarkRequest = useCallback(
+    (event: React.MouseEvent, bookmark: CreateSessionBookmarkInput) => {
+      if (!onToggleBookmark) return
+      setBookmarkMenu({ x: event.clientX, y: event.clientY, bookmark })
+    },
+    [onToggleBookmark]
+  )
   const processed = useMemo(() => {
     if (!workspaceRoot || !onOpenFileInFiles) return content
     return linkifyFilePathsInMarkdown(
@@ -151,17 +218,32 @@ export default function MarkdownMessage({
         workspaceRoot,
         projectRoot: projectRoot ?? workspaceRoot,
         filePathCandidates,
-        onOpenFileInFiles
+        onOpenFileInFiles,
+        onBookmarkRequest
       }),
-    [workspaceRoot, projectRoot, filePathCandidates, onOpenFileInFiles]
+    [workspaceRoot, projectRoot, filePathCandidates, onOpenFileInFiles, onBookmarkRequest]
   )
 
   return (
-    <div className="md-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {processed}
-      </ReactMarkdown>
-    </div>
+    <>
+      <div className="md-body">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+          {processed}
+        </ReactMarkdown>
+      </div>
+      {bookmarkMenu && onToggleBookmark ? (
+        <ChatBookmarkContextMenu
+          state={bookmarkMenu}
+          bookmarked={bookmarks.some(
+            (item) =>
+              item.kind === bookmarkMenu.bookmark.kind &&
+              item.target === bookmarkMenu.bookmark.target
+          )}
+          onToggle={onToggleBookmark}
+          onClose={closeBookmarkMenu}
+        />
+      ) : null}
+    </>
   )
 }
 
