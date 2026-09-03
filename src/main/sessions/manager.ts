@@ -25,6 +25,13 @@ import type {
 import type { DiffFileChange, DiffFileContentPair } from '../../shared/panel-types'
 import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
 import type { SessionChangesCap } from '../../shared/session-changes-cap'
+import type {
+  CreateSessionBookmarkInput,
+  SessionBookmark,
+  SessionBookmarkKind,
+  SessionBookmarksUpdatedEvent
+} from '../../shared/session-bookmarks'
+import { normalizeSessionBookmarkTarget } from '../../shared/session-bookmarks'
 import { TURN_INTERRUPTED_NOTICE } from '../../shared/session-types'
 import type { SessionMessagesResult } from '../../shared/chat-transcript-window'
 import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig, defaultClaudePermissionModeFromConfig } from '../../shared/config'
@@ -402,6 +409,50 @@ export class SessionManager {
 
   getSessionWorkspaceSnapshot(sessionId: string): SessionWorkspacePayload | null {
     return this.workspace?.getCached(sessionId) ?? null
+  }
+
+  listSessionBookmarks(sessionId: string): SessionBookmark[] {
+    if (!this.store.getSession(sessionId)) throw new Error(`Unknown session: ${sessionId}`)
+    return this.store.listSessionBookmarks(sessionId)
+  }
+
+  addSessionBookmark(sessionId: string, input: CreateSessionBookmarkInput): SessionBookmark[] {
+    if (!this.store.getSession(sessionId)) throw new Error(`Unknown session: ${sessionId}`)
+    const target = normalizeSessionBookmarkTarget(input.kind, input.target)
+    if (!target) throw new Error('Bookmark target is required')
+    if (input.kind === 'link') {
+      const parsed = new URL(target)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('Only HTTP(S) links can be bookmarked')
+      }
+    }
+    this.store.addSessionBookmark(sessionId, {
+      ...input,
+      target,
+      label: input.label.trim().slice(0, 300) || target
+    })
+    return this.sendBookmarksUpdated(sessionId)
+  }
+
+  removeSessionBookmark(
+    sessionId: string,
+    kind: SessionBookmarkKind,
+    target: string
+  ): SessionBookmark[] {
+    if (!this.store.getSession(sessionId)) throw new Error(`Unknown session: ${sessionId}`)
+    this.store.removeSessionBookmark(
+      sessionId,
+      kind,
+      normalizeSessionBookmarkTarget(kind, target)
+    )
+    return this.sendBookmarksUpdated(sessionId)
+  }
+
+  private sendBookmarksUpdated(sessionId: string): SessionBookmark[] {
+    const bookmarks = this.store.listSessionBookmarks(sessionId)
+    const event: SessionBookmarksUpdatedEvent = { sessionId, bookmarks }
+    this.getWindow()?.webContents.send('session:bookmarksUpdated', event)
+    return bookmarks
   }
 
   getSessionWorkspaceRefreshDiagnostics(sessionId: string) {

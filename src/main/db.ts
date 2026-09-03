@@ -324,6 +324,25 @@ const MIGRATIONS: Array<{ name: string; sql?: string; run?: (database: Database.
         database.exec(`ALTER TABLE sessions ADD COLUMN profile_id TEXT;`)
       }
     }
+  },
+  {
+    // Chat response bookmarks: session-scoped links and files promoted into
+    // the changes cap. The composite unique key makes bookmarking idempotent,
+    // while the foreign key removes bookmarks with their owning session.
+    name: '0017_session_bookmarks',
+    sql: `
+      CREATE TABLE IF NOT EXISTS session_bookmarks (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('file', 'link')),
+        target TEXT NOT NULL,
+        label TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (session_id, kind, target)
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_bookmarks_session_created
+        ON session_bookmarks(session_id, created_at DESC);
+    `
   }
 ]
 

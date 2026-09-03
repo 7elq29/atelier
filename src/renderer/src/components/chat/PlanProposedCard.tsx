@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { PlanProposedContent } from '../../../../shared/chat-content'
@@ -9,6 +9,13 @@ import ResolvedPromptFold from './ResolvedPromptFold'
 import TranscriptInlineComments from './TranscriptInlineComments'
 import type { ReviewComposerComment } from '../../../../shared/review-pane-types'
 import { planFoldSummary } from './resolved-prompt-fold'
+import type {
+  CreateSessionBookmarkInput,
+  SessionBookmark
+} from '../../../../shared/session-bookmarks'
+import ChatBookmarkContextMenu, {
+  type ChatBookmarkMenuState
+} from './ChatBookmarkContextMenu'
 
 /**
  * Plan card (05-interactive-prompts) — dedicated card for the SDK's
@@ -29,6 +36,8 @@ export default function PlanProposedCard({
   workspaceRoot,
   projectRoot,
   filePathCandidates,
+  bookmarks = [],
+  onToggleBookmark,
   embedded = false
 }: {
   content: PlanProposedContent
@@ -44,15 +53,23 @@ export default function PlanProposedCard({
   workspaceRoot?: string
   projectRoot?: string
   filePathCandidates?: readonly string[]
+  bookmarks?: readonly SessionBookmark[]
+  onToggleBookmark?: (bookmark: CreateSessionBookmarkInput, bookmarked: boolean) => void
   embedded?: boolean
 }): JSX.Element {
   const [open, setOpen] = useState(false)
+  const [bookmarkMenu, setBookmarkMenu] = useState<ChatBookmarkMenuState | null>(null)
+  const closeBookmarkMenu = useCallback(() => setBookmarkMenu(null), [])
   const resolved = content.status !== 'pending'
   const planMarkdownComponents = createMarkdownComponents({
     workspaceRoot,
     projectRoot,
     filePathCandidates,
-    onOpenFileInFiles: onOpenPlanFile
+    onOpenFileInFiles: onOpenPlanFile,
+    onBookmarkRequest: onToggleBookmark
+      ? (event, bookmark) =>
+          setBookmarkMenu({ x: event.clientX, y: event.clientY, bookmark })
+      : undefined
   })
 
   const planMarkdown = (
@@ -88,6 +105,18 @@ export default function PlanProposedCard({
         {content.status === 'keep_planning' && 'Asked Claude to keep planning.'}
         {content.status === 'expired' && 'This request expired — the turn ended before you could respond.'}
       </div>
+      {bookmarkMenu && onToggleBookmark ? (
+        <ChatBookmarkContextMenu
+          state={bookmarkMenu}
+          bookmarked={bookmarks.some(
+            (item) =>
+              item.kind === bookmarkMenu.bookmark.kind &&
+              item.target === bookmarkMenu.bookmark.target
+          )}
+          onToggle={onToggleBookmark}
+          onClose={closeBookmarkMenu}
+        />
+      ) : null}
     </>
   )
 

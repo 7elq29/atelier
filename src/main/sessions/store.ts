@@ -16,6 +16,11 @@ import {
 } from '../../shared/chat-transcript-window'
 import { extractSearchableText, FTS_SNIPPET_START, FTS_SNIPPET_END } from '../../shared/chat-content'
 import type { SessionFileEdit } from '../../shared/session-file-edits'
+import type {
+  CreateSessionBookmarkInput,
+  SessionBookmark,
+  SessionBookmarkKind
+} from '../../shared/session-bookmarks'
 
 /**
  * Turns free-typed search input into a safe FTS5 MATCH expression
@@ -77,6 +82,26 @@ interface GroupRow {
   sort_order: number
   collapsed: number
   created_at: string
+}
+
+interface SessionBookmarkRow {
+  id: string
+  session_id: string
+  kind: string
+  target: string
+  label: string
+  created_at: string
+}
+
+function toSessionBookmark(row: SessionBookmarkRow): SessionBookmark {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    kind: row.kind as SessionBookmarkKind,
+    target: row.target,
+    label: row.label,
+    createdAt: row.created_at
+  }
 }
 
 function toGroupRecord(row: GroupRow): SessionGroupRecord {
@@ -552,6 +577,14 @@ export class SessionStore {
 
       this.db
         .prepare(
+          `INSERT INTO session_bookmarks (id, session_id, kind, target, label, created_at)
+           SELECT lower(hex(randomblob(16))), ?, kind, target, label, created_at
+           FROM session_bookmarks WHERE session_id = ?`
+        )
+        .run(newId, sourceId)
+
+      this.db
+        .prepare(
           `INSERT INTO session_touched_paths (session_id, path, first_touched_at, last_pending_at)
            SELECT ?, path, first_touched_at, last_pending_at FROM session_touched_paths WHERE session_id = ?`
         )
@@ -824,6 +857,46 @@ export class SessionStore {
       .prepare('SELECT path FROM project_path_history WHERE host_id = ? ORDER BY used_at DESC LIMIT 10')
       .all(hostId) as { path: string }[]
     return rows.map((r) => r.path)
+  }
+
+  // ── Chat response bookmarks ─────────────────────────────────────────
+
+  listSessionBookmarks(sessionId: string): SessionBookmark[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, session_id, kind, target, label, created_at
+         FROM session_bookmarks
+         WHERE session_id = ?
+         ORDER BY created_at DESC, id DESC`
+      )
+      .all(sessionId) as SessionBookmarkRow[]
+    return rows.map(toSessionBookmark)
+  }
+
+  addSessionBookmark(sessionId: string, input: CreateSessionBookmarkInput): SessionBookmark {
+    const id = randomUUID()
+    const createdAt = new Date().toISOString()
+    this.db
+      .prepare(
+        `INSERT INTO session_bookmarks (id, session_id, kind, target, label, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (session_id, kind, target)
+         DO UPDATE SET label = excluded.label`
+      )
+      .run(id, sessionId, input.kind, input.target, input.label, createdAt)
+    const row = this.db
+      .prepare(
+        `SELECT id, session_id, kind, target, label, created_at
+         FROM session_bookmarks WHERE session_id = ? AND kind = ? AND target = ?`
+      )
+      .get(sessionId, input.kind, input.target) as SessionBookmarkRow
+    return toSessionBookmark(row)
+  }
+
+  removeSessionBookmark(sessionId: string, kind: SessionBookmarkKind, target: string): void {
+    this.db
+      .prepare('DELETE FROM session_bookmarks WHERE session_id = ? AND kind = ? AND target = ?')
+      .run(sessionId, kind, target)
   }
 
   // ── Session changes cap (touched paths, commits, git cursor) ───────────

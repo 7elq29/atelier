@@ -6,6 +6,7 @@
 import { ipcMain, dialog, app, type BrowserWindow } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import type { CreateSessionOptions, ImageAttachment, ModelSelection, PromptDecision } from '../../shared/session-types'
+import type { CreateSessionBookmarkInput, SessionBookmarkKind } from '../../shared/session-bookmarks'
 import { logger } from '../logger'
 import { openDatabase } from '../db'
 import type { SessionManager } from './manager'
@@ -196,6 +197,22 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
 
   ipcMain.handle('session:getWorkspaceSnapshot', (_event, sessionId: string) =>
     manager.getSessionWorkspaceSnapshot(sessionId)
+  )
+
+  ipcMain.handle('session:listBookmarks', (_event, sessionId: string) =>
+    manager.listSessionBookmarks(sessionId)
+  )
+
+  ipcMain.handle(
+    'session:addBookmark',
+    (_event, sessionId: string, input: CreateSessionBookmarkInput) =>
+      manager.addSessionBookmark(sessionId, input)
+  )
+
+  ipcMain.handle(
+    'session:removeBookmark',
+    (_event, sessionId: string, kind: SessionBookmarkKind, target: string) =>
+      manager.removeSessionBookmark(sessionId, kind, target)
   )
 
   ipcMain.handle('session:getWorkspaceRefreshDiagnostics', (_event, sessionId: string) =>

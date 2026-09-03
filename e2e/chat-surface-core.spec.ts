@@ -4,14 +4,17 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
+const projectRoot = join(__dirname, '..')
 const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
 const chatLogPath = join(artifactsDir, '03-chat.log')
 
 mkdirSync(artifactsDir, { recursive: true })
 
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
-  const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
+  const app = await electron.launch({
+    args: ['.', `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot
+  })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   return { app, page }
@@ -629,7 +632,24 @@ test.describe('03-chat-surface-core', () => {
     await expect(link).toBeVisible({ timeout: 30_000 })
     await expect(link).toHaveAttribute('href', targetUrl)
 
-    await link.click()
+    await link.click({ button: 'right' })
+    const bookmarkMenu = page.getByTestId('chat-bookmark-context-menu')
+    await expect(bookmarkMenu).toBeVisible()
+    await expect(bookmarkMenu.getByTestId('chat-bookmark-toggle')).toHaveText('Bookmark')
+    await page.screenshot({ path: join(artifactsDir, 'chat-response-bookmarks-context-menu.png') })
+    await bookmarkMenu.getByTestId('chat-bookmark-toggle').click()
+
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect(cap).toBeVisible()
+    const toggle = cap.locator('.chat-changes-toggle')
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+    const bookmarkRow = cap.locator(
+      '[data-testid="chat-bookmark-row"][data-bookmark-kind="link"]'
+    )
+    await expect(bookmarkRow).toContainText('Example Site')
+    await expect(bookmarkRow.getByTestId('chat-changes-bookmark-tag')).toHaveText('Bookmark')
+
+    await bookmarkRow.click()
 
     const openedUrl = await electronApp.evaluate(() => {
       // @ts-expect-error test-only bookkeeping
@@ -637,6 +657,15 @@ test.describe('03-chat-surface-core', () => {
     })
     expect(openedUrl).toBe(targetUrl)
     expect(page.url()).not.toContain('example.com')
+
+    await link.click({ button: 'right' })
+    await expect(page.getByTestId('chat-bookmark-toggle')).toHaveText('Remove bookmark')
+    await page.getByTestId('chat-bookmark-toggle').click()
+    await expect(cap.getByTestId('chat-bookmark-row')).toHaveCount(0)
+
+    await link.click({ button: 'right' })
+    await page.getByTestId('chat-bookmark-toggle').click()
+    await expect(cap.getByTestId('chat-bookmark-row')).toHaveCount(1)
 
     await logTranscriptState(page, sessionId, 'turn5-markdown-link')
   })
@@ -691,24 +720,79 @@ test.describe('03-chat-surface-core', () => {
     await expect(page.getByTestId('files-location-input')).toHaveValue('~/.mcp.json')
   })
 
-  test('assistant file paths in markdown open the Files tab when clicked', async () => {
+  test('assistant file paths in markdown open the Files tab when clicked', async ({}, testInfo) => {
+    testInfo.setTimeout(120_000)
     await page.getByTestId('tab-chat').click()
     await expect(page.getByTestId('composer-input')).toBeVisible()
+    const targetFile = join(projectDir, 'a.txt')
     await page.getByTestId('composer-input').fill(
-      'Reply with exactly this sentence and nothing else, do not use any tools: Update `a.txt` when done.'
+      `Use the Edit tool exactly once to replace the entire contents of ${targetFile} from "a" to "bookmarked change". ` +
+        `After the edit succeeds, reply with exactly this sentence and nothing else: Updated \`${targetFile}\`.`
     )
     await page.getByTestId('send-button').click()
-    await waitForTurnIdle(page, 60_000)
-
+    await expect(page.getByTestId('stop-button')).toBeVisible({ timeout: 5_000 })
     const assistantMsg = page.locator('.msg-assistant[data-testid="transcript-message"]').last()
+    await waitForCondition(
+      page,
+      async () => assistantMsg.locator('[data-testid="msg-file-link"]').count().then((count) => count > 0),
+      60_000
+    )
+    await waitForTurnIdle(page, 60_000)
     await expect(assistantMsg).toBeVisible({ timeout: 30_000 })
 
     const fileLink = assistantMsg.locator('[data-testid="msg-file-link"]').first()
-    await expect(fileLink).toHaveText('a.txt', { timeout: 30_000 })
-    await fileLink.click()
+    await expect(fileLink).toHaveText(targetFile, { timeout: 30_000 })
+    await fileLink.click({ button: 'right' })
+    await expect(page.getByTestId('chat-bookmark-toggle')).toHaveText('Bookmark')
+    await page.getByTestId('chat-bookmark-toggle').click()
 
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect(cap).toBeVisible({ timeout: 15_000 })
+    const toggle = cap.locator('.chat-changes-toggle')
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+    const changedRow = cap
+      .getByTestId('chat-changes-file')
+      .filter({ hasText: 'a.txt' })
+    await expect(changedRow).toHaveCount(1)
+    await expect(changedRow).toHaveAttribute('data-bookmarked', 'true')
+    await expect(changedRow.getByTestId('chat-changes-bookmark-tag')).toHaveText('Bookmark')
+    await expect(cap.locator('[data-testid="chat-bookmark-row"][data-bookmark-kind="file"]')).toHaveCount(0)
+    await expect(cap.locator('.chat-changes-title')).toContainText('1 change')
+    await expect(cap.locator('.chat-changes-title')).toContainText('2 bookmarks')
+    await page.screenshot({ path: join(artifactsDir, 'chat-response-bookmarks-mixed-cap.png') })
+
+    await changedRow.click()
+    await expect(page.getByTestId('response-review-pane')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('response-review-pane')).toHaveAttribute('data-review-kind', 'file')
+    await page.getByTestId('response-review-close').click()
+
+    const standaloneTarget = join(projectDir, 'b.txt')
+    await page.getByTestId('composer-input').fill(
+      `Reply with exactly this Markdown and nothing else, do not use any tools: \`${standaloneTarget}\``
+    )
+    await page.getByTestId('send-button').click()
+    const standaloneLink = page
+      .locator('.msg-assistant[data-testid="transcript-message"]')
+      .getByTestId('msg-file-link')
+      .filter({ hasText: standaloneTarget })
+    await waitForCondition(
+      page,
+      async () => standaloneLink.count().then((count) => count > 0),
+      60_000
+    )
+    await waitForTurnIdle(page, 60_000)
+    await expect(standaloneLink).toHaveText(standaloneTarget)
+    await standaloneLink.click({ button: 'right' })
+    await page.getByTestId('chat-bookmark-toggle').click()
+
+    const standaloneFileBookmark = cap.locator(
+      '[data-testid="chat-bookmark-row"][data-bookmark-kind="file"]'
+    )
+    await expect(standaloneFileBookmark).toHaveCount(1, { timeout: 15_000 })
+    await expect(standaloneFileBookmark).toContainText('b.txt')
+    await standaloneFileBookmark.click()
     await expect(page.getByTestId('files-panel-active')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('files-location-input')).toHaveValue(/a\.txt$/)
+    await expect(page.getByTestId('files-location-input')).toHaveValue(/b\.txt$/)
     await expect(page.getByTestId('files-editor-tab')).toHaveCount(1, { timeout: 10_000 })
   })
 
@@ -798,5 +882,40 @@ test.describe('03-chat-surface-core', () => {
 
     // Restore to light for any later tests / consistency of remaining artifacts.
     await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
+  })
+
+  test('chat bookmarks persist across relaunch and stay isolated to their session', async () => {
+    await electronApp.close()
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+
+    const originalRow = page.locator(
+      `[data-testid="session-row"][data-session-id="${sessionId}"]`
+    )
+    await expect(originalRow).toBeVisible({ timeout: 15_000 })
+    await originalRow.click()
+
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect(cap).toBeVisible({ timeout: 30_000 })
+    const toggle = cap.locator('.chat-changes-toggle')
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+    await expect(
+      cap.locator('[data-testid="chat-bookmark-row"][data-bookmark-kind="link"]')
+    ).toHaveCount(1)
+    await expect(
+      cap.locator('[data-testid="chat-bookmark-row"][data-bookmark-kind="file"]')
+    ).toHaveCount(1)
+    await expect(
+      cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })
+    ).toHaveAttribute('data-bookmarked', 'true')
+
+    const second = await page.evaluate((path) =>
+      window.atelier.createSession({
+        projectPath: path,
+        mode: 'terminal',
+        hostId: 'local',
+        suggestedName: 'Bookmark isolation'
+      }), projectDir)
+    expect(await page.evaluate((id) => window.atelier.listSessionBookmarks(id), second.id)).toEqual([])
+    await page.evaluate((id) => window.atelier.deleteSession(id), second.id)
   })
 })
