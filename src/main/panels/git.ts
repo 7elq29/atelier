@@ -16,6 +16,7 @@ export {
   getWorkingTreeNumstatMap,
   type WorkingTreeNumstat,
   invalidateGitRepository,
+  isPathTrackedInGit,
   latestReflogSubject,
   listCommitChangedPaths,
   listCommitsInRange,
