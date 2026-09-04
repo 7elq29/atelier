@@ -24,32 +24,65 @@ export type HintEntry = {
   label: string
 }
 
+/** Prefix-free codes of a single fixed width — only needed past `k²` targets. */
+function fixedWidthLabels(chars: string[], width: number, count: number): string[] {
+  const labels: string[] = []
+  const build = (prefix: string): boolean => {
+    if (prefix.length === width) {
+      labels.push(prefix)
+      return labels.length >= count
+    }
+    for (const c of chars) {
+      if (build(prefix + c)) return true
+    }
+    return false
+  }
+  build('')
+  return labels
+}
+
+/**
+ * Vimium-style labels: as many one-key targets as possible, two-key codes only for the overflow.
+ *
+ * Reserving the *last* `p` characters as two-key prefixes keeps every prefix disjoint from the
+ * one-key labels, so no label is a prefix of another and each badge's next key is unambiguous.
+ * Labelling everything two-key instead (the previous behaviour) meant that past 17 targets the
+ * badges — which show only the next key — collapsed into walls of the same repeated letter and
+ * nothing could be reached in a single keystroke.
+ */
 export function generateHintLabels(count: number): string[] {
   const chars = [...HINT_LABEL_CHARS]
-  if (count <= chars.length) {
-    return chars.slice(0, count)
-  }
-  // More than 26 chrome targets: two-letter codes for all of them so no
-  // single-letter label is a prefix of another (e.g. "a" vs "aa").
-  const labels: string[] = []
-  for (const a of chars) {
-    for (const b of chars) {
-      labels.push(a + b)
+  const k = chars.length
+  if (count <= 0) return []
+  if (count <= k) return chars.slice(0, count)
+  if (count > k * k) return fixedWidthLabels(chars, 3, count)
+
+  // `p` prefixes yield (k - p) one-key labels plus p * k two-key labels; take the smallest p
+  // that covers `count` so the fewest targets pay for the second keystroke.
+  let p = 1
+  while (p < k && k - p + p * k < count) p += 1
+
+  const labels = chars.slice(0, k - p)
+  for (const prefix of chars.slice(k - p)) {
+    for (const c of chars) {
+      labels.push(prefix + c)
       if (labels.length >= count) return labels
     }
   }
   return labels
 }
 
-/** Badge label shown on screen — numeric session/note rows show the full code (e.g. 11, 12); letter hints show the next key only. */
+/**
+ * Badge label shown on screen: the full code up front, then only what is left to type.
+ *
+ * Letter hints used to render just their next key, which made every two-key label sharing a
+ * prefix paint the same character — a wall of identical badges with no way to tell the targets
+ * apart. Since `generateHintLabels` keeps almost every label one key long, showing the whole
+ * code costs nothing visually and stays unambiguous.
+ */
 export function hintBadgeDisplayLabel(fullLabel: string, typedBuffer: string): string {
-  if (/^[0-9]+$/.test(fullLabel)) {
-    if (!typedBuffer || !fullLabel.startsWith(typedBuffer)) return fullLabel
-    return fullLabel.slice(typedBuffer.length) || fullLabel
-  }
-  if (!fullLabel.startsWith(typedBuffer)) return fullLabel.charAt(0) ?? fullLabel
-  const remaining = fullLabel.slice(typedBuffer.length)
-  return remaining.charAt(0) ?? fullLabel.charAt(fullLabel.length - 1) ?? fullLabel
+  if (!typedBuffer || !fullLabel.startsWith(typedBuffer)) return fullLabel
+  return fullLabel.slice(typedBuffer.length) || fullLabel
 }
 
 function isHintExcluded(el: Element): boolean {
