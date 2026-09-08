@@ -21,6 +21,7 @@ import { refreshSessionChangesCap } from './sessions/session-changes-cap'
 import { createStaticHostResolver } from './sessions/hosts'
 import { registerSessionHandlers } from './sessions/ipc'
 import { registerAppNotesHandlers } from './app-notes/ipc'
+import { registerAppBookmarksHandlers } from './app-bookmarks/ipc'
 import { registerPanelHandlers } from './panels/ipc'
 import { registerSpendStatusHandlers } from './spend-status-ipc'
 import type { PtyManager } from './panels/pty'
@@ -151,6 +152,7 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
   registerDailyNoteHandlers(() => mainWindow)
   registerWeeklyPlanHandlers()
   registerAppNotesHandlers()
+  registerAppBookmarksHandlers()
   registerSessionHandlers(sessionManager, () => mainWindow)
   registerSpendStatusHandlers()
   const panelManagers = registerPanelHandlers(() => mainWindow)

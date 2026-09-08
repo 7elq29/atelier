@@ -90,6 +90,18 @@
   }
   .sidebar-list-pane { flex: 0 0 auto; display: flex; flex-direction: column; }
   .sidebar-list-pane--notes .app-note-row .session-indicator { width: 18px; display: flex; align-items: center; justify-content: center; }
+  .sidebar-list-pane--bookmarks .sidebar-bookmark-row .session-indicator {
+    width: 18px; display: flex; align-items: center; justify-content: center; color: var(--text-tertiary);
+  }
+  .sidebar-list-pane--bookmarks.drop-ready {
+    outline: 1px dashed var(--accent);
+    outline-offset: -2px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border-radius: var(--r-md);
+  }
+  a.md-link[draggable="true"] { cursor: grab; }
+  #modal-sidebar-bookmark .modal-body .input { width: 100%; box-sizing: border-box; }
+  #modal-sidebar-bookmark #sidebarBookmarkUrl { font-family: var(--font-mono); font-size: 12px; }
   .app-note-title-input {
     font: inherit; font-weight: 600; color: inherit; background: transparent; border: none; outline: none;
     min-width: 120px; padding: 2px 4px; border-radius: var(--r-sm);
@@ -320,6 +332,9 @@
   .msg-assistant .md-body :where(li > p), .plan-body .md-body :where(li > p) { margin: 0; }
   .msg-assistant .md-body :where(li + li), .plan-body .md-body :where(li + li) { margin-top: 2px; }
   .msg-assistant .md-body :where(hr), .plan-body .md-body :where(hr) { border: none; border-top: 1px solid var(--border-subtle); margin: 8px 0; }
+  .msg-assistant .md-body a.md-link {
+    color: var(--info, #7fa8c1); text-decoration: underline; text-underline-offset: 2px;
+  }
   .compaction-banner { align-self: center; font-size: 12.5px; color: var(--text-tertiary); background: var(--bg-panel-raised); border: 1px solid var(--border-subtle); border-radius: 100px; padding: 4px 12px; }
 
   /* Tool call ("code card"): a tinted strip with a colored left accent rule, no border box and
@@ -1466,6 +1481,26 @@
             <div class="history-empty-hint hide-on-collapse" id="appNotesEmptyHint">Scratch notes live here — use + above.</div>
           </div>
         </div>
+
+        <div class="sidebar-section-hsep" aria-hidden="true"></div>
+
+        <div
+          class="sidebar-list-pane sidebar-list-pane--bookmarks"
+          id="sidebarBookmarksPane"
+          data-testid="sidebar-bookmarks"
+          ondragover="sidebarBookmarkDragOver(event)"
+          ondragleave="sidebarBookmarkDragLeave(event)"
+          ondrop="sidebarBookmarkDrop(event)"
+        >
+          <div class="sidebar-section-head">
+            <div class="sidebar-pane-label">Bookmarks</div>
+            <button type="button" class="sidebar-action-icon primary" title="Add bookmark" data-testid="new-sidebar-bookmark-button" onclick="openSidebarBookmarkModal()">
+              <svg class="icon" width="16" height="16"><use href="#icon-plus"/></svg>
+            </button>
+          </div>
+          <div class="session-list session-list--natural" id="sidebarBookmarksList" data-testid="sidebar-bookmarks-list"></div>
+          <div class="history-empty-hint hide-on-collapse" id="sidebarBookmarksEmptyHint">Links live here — use + above, or drop from chat.</div>
+        </div>
       </div>
 
       <div class="session-list hidden" id="machinesSidebarList">
@@ -1585,7 +1620,7 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                 </div>
                 <div class="msg-assistant">
                   <div class="md-body">
-                    <p>Good — I now have the correct old runbook URL from the doc: <code>https://engwiki.uberinternal.com/display/LOG/Logging+Failover+Runbook</code></p>
+                    <p>Good — I now have the correct old runbook URL from the doc: <a class="md-link" draggable="true" data-testid="external-link" href="https://engwiki.uberinternal.com/display/LOG/Logging+Failover+Runbook" onclick="event.preventDefault(); openChatBookmark('link', this.href)" ondragstart="onChatLinkDragStart(event)">Logging Failover Runbook</a></p>
                     <p>For your question — I've read the full doc. Here's the goal and suggested steps:</p>
                     <h3>Goal</h3>
                     <p>Integrate logging failover mitigations with <strong>Outage Mitigator (OMG)</strong> so an on-call engineer can apply them in one command during an incident. Three levers:</p>
@@ -1818,7 +1853,7 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                     </button>
                   </div>
                   <div class="chat-changes-body">
-                    <div class="chat-changes-file chat-bookmark-row" data-testid="chat-bookmark-row" data-bookmark-kind="link" title="https://docs.claude.com/en/docs/auth" onclick="openChatBookmark('link','https://docs.claude.com/en/docs/auth')">
+                    <div class="chat-changes-file chat-bookmark-row" data-testid="chat-bookmark-row" data-bookmark-kind="link" draggable="true" title="https://docs.claude.com/en/docs/auth" onclick="openChatBookmark('link','https://docs.claude.com/en/docs/auth')" ondragstart="onChatCapBookmarkDragStart(event)">
                       <span class="fname">Claude Auth docs</span>
                       <span class="chat-changes-bookmark-tag">Bookmark</span>
                     </div>
@@ -2645,6 +2680,28 @@ On branch main. nothing to commit, working tree clean.
   </div>
 </div>
 
+<!-- ===================== MODAL: SIDEBAR BOOKMARK ===================== -->
+<div class="modal-backdrop hidden" id="modal-sidebar-bookmark" onclick="if(event.target===this) closeModal('modal-sidebar-bookmark')">
+  <div class="modal-dialog" style="width:560px;">
+    <div class="modal-header"><h2 id="sidebarBookmarkModalTitle">Add bookmark</h2><button class="btn btn-icon" onclick="closeModal('modal-sidebar-bookmark')">✕</button></div>
+    <div class="modal-body">
+      <div>
+        <div class="field-label">URL</div>
+        <input class="input" id="sidebarBookmarkUrl" type="url" data-testid="sidebar-bookmark-url" placeholder="https://…" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();saveSidebarBookmark();}" />
+      </div>
+      <div style="margin-top:12px;">
+        <div class="field-label">Title <span style="color:var(--text-tertiary); font-weight:400;">(optional)</span></div>
+        <input class="input" id="sidebarBookmarkTitle" type="text" data-testid="sidebar-bookmark-title" placeholder="Shown in the sidebar — leave blank to show the URL" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();saveSidebarBookmark();}" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div style="flex:1;"></div>
+      <button class="btn" onclick="closeModal('modal-sidebar-bookmark')">Cancel</button>
+      <button class="btn btn-primary" data-testid="sidebar-bookmark-save" onclick="saveSidebarBookmark()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== MODAL: COMMAND PALETTE ===================== -->
 <div class="modal-backdrop hidden" id="modal-command-palette" onclick="if(event.target===this) closeModal('modal-command-palette')">
   <div class="modal-dialog">
@@ -3210,6 +3267,153 @@ function openChatBookmark(kind, target) {
     return;
   }
   selectTab('s1', 'files');
+}
+
+/* ===== Sidebar bookmarks (app-wide links — in-memory mock) ===== */
+const sidebarBookmarksState = {
+  seq: 2,
+  editingId: null,
+  items: [
+    { id: 'sb1', url: 'https://docs.claude.com/en/docs/auth', title: 'Claude Auth docs' },
+    { id: 'sb2', url: 'https://engwiki.uberinternal.com/display/LOG/Logging+Failover+Runbook', title: '' }
+  ]
+};
+
+function sidebarBookmarkLabel(item) {
+  const title = (item.title || '').trim();
+  return title || item.url;
+}
+
+function normalizeSidebarBookmarkUrl(raw) {
+  const value = (raw || '').trim();
+  if (!value) return '';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return value;
+  return 'https://' + value;
+}
+
+function renderSidebarBookmarks() {
+  const list = document.getElementById('sidebarBookmarksList');
+  const hint = document.getElementById('sidebarBookmarksEmptyHint');
+  if (!list) return;
+  list.innerHTML = '';
+  if (hint) hint.style.display = sidebarBookmarksState.items.length ? 'none' : '';
+  sidebarBookmarksState.items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'session-row sidebar-bookmark-row hide-on-collapse';
+    row.setAttribute('data-testid', 'sidebar-bookmark-row');
+    row.dataset.bookmarkId = item.id;
+    row.title = item.url;
+    row.onclick = () => window.open(item.url, '_blank', 'noopener');
+    const label = escapeHtml(sidebarBookmarkLabel(item));
+    row.innerHTML = `<span class="session-indicator" aria-hidden="true"><svg class="icon" width="14" height="14"><use href="#icon-link"/></svg></span>
+      <div class="session-main"><div class="session-name">${label}</div></div>
+      <button type="button" class="row-menu-btn hide-on-collapse" title="Bookmark actions" onclick="openSidebarBookmarkMenu(event,'${item.id}')">⋯</button>`;
+    list.appendChild(row);
+  });
+}
+
+function openSidebarBookmarkModal(id) {
+  sidebarBookmarksState.editingId = id || null;
+  const item = id ? sidebarBookmarksState.items.find(x => x.id === id) : null;
+  document.getElementById('sidebarBookmarkModalTitle').textContent = item ? 'Edit bookmark' : 'Add bookmark';
+  document.getElementById('sidebarBookmarkUrl').value = item ? item.url : '';
+  document.getElementById('sidebarBookmarkTitle').value = item ? item.title : '';
+  openModal('modal-sidebar-bookmark');
+  setTimeout(() => document.getElementById('sidebarBookmarkUrl').focus(), 30);
+}
+
+function saveSidebarBookmark() {
+  const url = normalizeSidebarBookmarkUrl(document.getElementById('sidebarBookmarkUrl').value);
+  if (!url) {
+    showToast('URL is required');
+    return;
+  }
+  const title = document.getElementById('sidebarBookmarkTitle').value.trim();
+  const editingId = sidebarBookmarksState.editingId;
+  if (editingId) {
+    const item = sidebarBookmarksState.items.find(x => x.id === editingId);
+    if (item) { item.url = url; item.title = title; }
+  } else {
+    sidebarBookmarksState.seq += 1;
+    sidebarBookmarksState.items.push({ id: 'sb' + sidebarBookmarksState.seq, url, title });
+  }
+  closeModal('modal-sidebar-bookmark');
+  renderSidebarBookmarks();
+}
+
+function deleteSidebarBookmark(id) {
+  sidebarBookmarksState.items = sidebarBookmarksState.items.filter(x => x.id !== id);
+  renderSidebarBookmarks();
+}
+
+function openSidebarBookmarkMenu(e, id) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.querySelectorAll('.session-menu-popup').forEach(p => p.remove());
+  const pop = document.createElement('div');
+  pop.className = 'session-menu-popup';
+  pop.innerHTML = `<div class="smi" onclick="openSidebarBookmarkModal('${id}'); this.closest('.session-menu-popup').remove();"><svg class="icon" width="14" height="14"><use href="#icon-pencil"/></svg> Edit</div>
+    <div class="sm-sep"></div>
+    <div class="smi danger" onclick="deleteSidebarBookmark('${id}'); this.closest('.session-menu-popup').remove();"><svg class="icon" width="14" height="14"><use href="#icon-trash"/></svg> Remove</div>`;
+  pop.style.left = e.clientX + 'px';
+  pop.style.top = e.clientY + 'px';
+  document.body.appendChild(pop);
+  setTimeout(() => document.addEventListener('click', function closeBm(ev) {
+    if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('click', closeBm); }
+  }), 0);
+}
+
+function onChatLinkDragStart(event) {
+  const a = event.currentTarget;
+  const href = a.getAttribute('href') || '';
+  const text = (a.textContent || '').trim();
+  event.dataTransfer.setData('text/uri-list', href);
+  event.dataTransfer.setData('text/plain', href);
+  event.dataTransfer.setData('text/sidebar-bookmark-title', text === href ? '' : text);
+  event.dataTransfer.effectAllowed = 'copy';
+}
+
+function onChatCapBookmarkDragStart(event) {
+  const row = event.currentTarget;
+  const url = row.getAttribute('title') || '';
+  const title = (row.querySelector('.fname')?.textContent || '').trim();
+  event.dataTransfer.setData('text/uri-list', url);
+  event.dataTransfer.setData('text/plain', url);
+  event.dataTransfer.setData('text/sidebar-bookmark-title', title);
+  event.dataTransfer.effectAllowed = 'copy';
+}
+
+function sidebarBookmarkDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
+  document.getElementById('sidebarBookmarksPane')?.classList.add('drop-ready');
+}
+
+function sidebarBookmarkDragLeave(event) {
+  const pane = document.getElementById('sidebarBookmarksPane');
+  if (!pane) return;
+  if (!pane.contains(event.relatedTarget)) pane.classList.remove('drop-ready');
+}
+
+function sidebarBookmarkDrop(event) {
+  event.preventDefault();
+  document.getElementById('sidebarBookmarksPane')?.classList.remove('drop-ready');
+  const uriList = (event.dataTransfer.getData('text/uri-list') || '').split('\n').find(line => line && !line.startsWith('#')) || '';
+  const plain = (event.dataTransfer.getData('text/plain') || '').trim();
+  const url = normalizeSidebarBookmarkUrl(uriList || plain);
+  if (!url || !/^https?:/i.test(url)) {
+    showToast('Drop an http(s) link from chat');
+    return;
+  }
+  if (sidebarBookmarksState.items.some(item => item.url === url)) {
+    showToast('Already in Bookmarks');
+    return;
+  }
+  let title = (event.dataTransfer.getData('text/sidebar-bookmark-title') || '').trim();
+  if (!title || title === url || /^https?:/i.test(title)) title = '';
+  sidebarBookmarksState.seq += 1;
+  sidebarBookmarksState.items.push({ id: 'sb' + sidebarBookmarksState.seq, url, title });
+  renderSidebarBookmarks();
 }
 
 /** Mock working-tree diffs for Diff › Changes (opened from chat changes card). */
@@ -4635,6 +4839,7 @@ window.addEventListener('DOMContentLoaded', () => {
   renderDiffChangesArea('s1', 'session-bootstrap.ts');
   seedDailyNoteMockData();
   renderAppNotesList();
+  renderSidebarBookmarks();
   initTerminalToolboxes();
   aqMultiInit();
   if (location.hash === '#aq-multi') scrollToAqMulti();

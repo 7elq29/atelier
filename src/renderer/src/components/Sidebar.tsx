@@ -4,6 +4,17 @@ import { SessionStatusIndicator } from './SessionStatusIndicator'
 import type { SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
 import type { AppNoteRecord } from '../../../shared/app-note-types'
 import { APP_NOTE_DRAG_MIME } from '../../../shared/app-note-attach'
+import {
+  APP_BOOKMARK_DRAG_MIME,
+  bookmarkLabel,
+  isSupportedBookmarkUrl,
+  normalizeBookmarkUrl,
+  type AppBookmarkDragPayload,
+  type AppBookmarkInput,
+  type AppBookmarkRecord,
+  type AppBookmarkUpdate
+} from '../../../shared/app-bookmark-types'
+import { BookmarkEditModal } from './BookmarkEditModal'
 import type { SessionPromptDot } from '../stores/session-prompt-dot-store'
 import SpendStatusChip from './SpendStatusChip'
 import { handleEmacsTextareaKeyDown } from '../palette-input-keys'
@@ -60,6 +71,13 @@ interface SidebarProps {
   onCreateAppNote: () => void
   onRenameAppNote: (noteId: string, title: string) => void
   onDeleteAppNote: (noteId: string) => void
+
+  // ── sidebar-bookmarks ────────────────────────────────────────────────
+  bookmarks: AppBookmarkRecord[]
+  onCreateBookmark: (input: AppBookmarkInput) => void
+  onUpdateBookmark: (bookmarkId: string, patch: AppBookmarkUpdate) => void
+  onDeleteBookmark: (bookmarkId: string) => void
+  onOpenBookmark: (url: string) => void
 }
 
 const SESSION_COLORS = ['--sc-blue', '--sc-green', '--sc-purple', '--sc-amber', '--sc-rose', '--sc-cyan', '--sc-indigo', '--sc-teal']
@@ -440,6 +458,131 @@ function AppNoteRow({
   )
 }
 
+function BookmarkRow({
+  bookmark,
+  onOpen,
+  onEdit,
+  onDelete
+}: {
+  bookmark: AppBookmarkRecord
+  onOpen: () => void
+  onEdit: () => void
+  onDelete: () => void
+}): JSX.Element {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const menuAnchorRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function handleOutsidePointer(e: MouseEvent): void {
+      if (menuRef.current?.contains(e.target as Node)) return
+      setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleOutsidePointer)
+    return () => document.removeEventListener('mousedown', handleOutsidePointer)
+  }, [menuOpen])
+
+  return (
+    <div
+      ref={menuAnchorRef}
+      className="session-row bookmark-row"
+      data-testid="bookmark-row"
+      data-bookmark-id={bookmark.id}
+      title={bookmark.url}
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setMenuOpen(true)
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
+    >
+      <span className="session-indicator" aria-hidden="true">
+        <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-tertiary)' }}>
+          <path d="M10 14a4.5 4.5 0 0 0 6 .4l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.6 1.5" />
+          <path d="M14 10a4.5 4.5 0 0 0-6-.4l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5" />
+        </svg>
+      </span>
+      <div className="session-main hide-on-collapse">
+        <div className="session-name" data-testid="bookmark-label">
+          {bookmarkLabel(bookmark)}
+        </div>
+      </div>
+      <button
+        className="row-menu-btn hide-on-collapse"
+        data-testid="bookmark-menu-button"
+        title="Bookmark actions"
+        onClick={(e) => {
+          e.stopPropagation()
+          setMenuOpen((v) => !v)
+        }}
+      >
+        ⋯
+      </button>
+      {menuOpen && (
+        <SessionMenuPopup
+          anchorRef={menuAnchorRef}
+          menuRef={menuRef}
+          testId="bookmark-menu"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="smi"
+            data-testid="bookmark-menu-edit"
+            onClick={(e) => {
+              e.stopPropagation()
+              setMenuOpen(false)
+              onEdit()
+            }}
+          >
+            Edit
+          </div>
+          <div className="sm-sep" />
+          <div
+            className="smi danger"
+            data-testid="bookmark-menu-remove"
+            onMouseDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setMenuOpen(false)
+              onDelete()
+            }}
+          >
+            Remove
+          </div>
+        </SessionMenuPopup>
+      )}
+    </div>
+  )
+}
+
+/** Pulls a droppable URL + title out of a chat link drag (or any external link drag). */
+function readBookmarkDrop(dataTransfer: DataTransfer): AppBookmarkDragPayload | null {
+  const raw = dataTransfer.getData(APP_BOOKMARK_DRAG_MIME)
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as AppBookmarkDragPayload
+      if (parsed?.url) return { url: parsed.url, title: parsed.title ?? '' }
+    } catch {
+      // fall through to the plain-text forms below
+    }
+  }
+  const uriList = dataTransfer
+    .getData('text/uri-list')
+    .split('\n')
+    .find((line) => line && !line.startsWith('#'))
+  const url = normalizeBookmarkUrl(uriList || dataTransfer.getData('text/plain'))
+  return url ? { url, title: '' } : null
+}
+
 function SessionRow({
   session,
   active,
@@ -800,11 +943,19 @@ export default function Sidebar({
   onToggleDailyNotesPanel,
   onCreateAppNote,
   onRenameAppNote,
-  onDeleteAppNote
+  onDeleteAppNote,
+  bookmarks,
+  onCreateBookmark,
+  onUpdateBookmark,
+  onDeleteBookmark,
+  onOpenBookmark
 }: SidebarProps): JSX.Element {
   const promptDotsBySession = useSessionPromptDotsMap()
   const [newGroupOpen, setNewGroupOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
+  // null = dialog closed; { bookmark: null } = adding; { bookmark } = editing.
+  const [bookmarkDialog, setBookmarkDialog] = useState<{ bookmark: AppBookmarkRecord | null } | null>(null)
+  const [bookmarkDropReady, setBookmarkDropReady] = useState(false)
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
   const [groupMenuOpenId, setGroupMenuOpenId] = useState<string | null>(null)
   const groupMenuAnchorRef = useRef<HTMLButtonElement>(null)
@@ -1386,7 +1537,72 @@ export default function Sidebar({
             ))}
           </div>
         </div>
+
+        <div className="sidebar-section-hsep" aria-hidden="true" />
+
+        <div
+          className={`sidebar-list-pane sidebar-list-pane--bookmarks${bookmarkDropReady ? ' drop-ready' : ''}`}
+          data-testid="sidebar-bookmarks"
+          onDragOver={(e) => {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'copy'
+            setBookmarkDropReady(true)
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setBookmarkDropReady(false)
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            setBookmarkDropReady(false)
+            const dropped = readBookmarkDrop(e.dataTransfer)
+            if (!dropped || !isSupportedBookmarkUrl(dropped.url)) return
+            onCreateBookmark({ url: dropped.url, title: dropped.title })
+          }}
+        >
+          <div className="sidebar-section-head">
+            <div className="sidebar-pane-label">Bookmarks</div>
+            <button
+              type="button"
+              className="sidebar-action-icon primary"
+              title="Add bookmark"
+              data-testid="new-bookmark-button"
+              onClick={() => setBookmarkDialog({ bookmark: null })}
+            >
+              <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </div>
+          <div className="session-list session-list--natural" data-testid="bookmarks-list">
+            {bookmarks.length === 0 && (
+              <div className="history-empty-hint">Links live here — use + above, or drop one from chat.</div>
+            )}
+            {bookmarks.map((bookmark) => (
+              <BookmarkRow
+                key={bookmark.id}
+                bookmark={bookmark}
+                onOpen={() => onOpenBookmark(bookmark.url)}
+                onEdit={() => setBookmarkDialog({ bookmark })}
+                onDelete={() => onDeleteBookmark(bookmark.id)}
+              />
+            ))}
+          </div>
+        </div>
       </div>
+
+      {bookmarkDialog && (
+        <BookmarkEditModal
+          bookmark={bookmarkDialog.bookmark}
+          onClose={() => setBookmarkDialog(null)}
+          onSave={({ url, title }) => {
+            const editing = bookmarkDialog.bookmark
+            if (editing) onUpdateBookmark(editing.id, { url, title })
+            else onCreateBookmark({ url, title })
+            setBookmarkDialog(null)
+          }}
+        />
+      )}
 
       <div className="hide-on-collapse">
         <SpendStatusChip />

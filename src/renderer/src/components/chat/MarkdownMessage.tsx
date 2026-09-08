@@ -6,6 +6,7 @@ import type {
   SessionBookmark
 } from '../../../../shared/session-bookmarks'
 import { normalizeSessionBookmarkTarget } from '../../../../shared/session-bookmarks'
+import { APP_BOOKMARK_DRAG_MIME, type AppBookmarkDragPayload } from '../../../../shared/app-bookmark-types'
 import { openExternalLink } from '../panels/Linkify'
 import {
   ATELIER_FILE_SCHEME,
@@ -106,6 +107,16 @@ export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Com
           {...props}
           href={href}
           data-testid="external-link"
+          draggable
+          onDragStart={(e) => {
+            if (!href || !/^https?:\/\//i.test(href)) return
+            const label = nodeText(children).trim()
+            const payload: AppBookmarkDragPayload = { url: href, title: label === href ? '' : label }
+            e.dataTransfer.setData(APP_BOOKMARK_DRAG_MIME, JSON.stringify(payload))
+            e.dataTransfer.setData('text/uri-list', href)
+            e.dataTransfer.setData('text/plain', href)
+            e.dataTransfer.effectAllowed = 'copy'
+          }}
           onContextMenu={(e) => {
             if (!href || !/^https?:\/\//i.test(href) || !onBookmarkRequest) return
             e.preventDefault()
