@@ -730,7 +730,7 @@ test.describe('03-chat-surface-core', () => {
     await expect(page.getByTestId('files-location-input')).toHaveValue('~/.mcp.json')
   })
 
-  test('assistant file paths in markdown open the Files tab when clicked', async ({}, testInfo) => {
+  test('assistant file paths open Files directly, but bookmarked files open the review panel', async ({}, testInfo) => {
     testInfo.setTimeout(120_000)
     await page.getByTestId('tab-chat').click()
     await expect(page.getByTestId('composer-input')).toBeVisible()
@@ -830,9 +830,12 @@ test.describe('03-chat-surface-core', () => {
     await expect(standaloneFileBookmark).toHaveCount(1, { timeout: 15_000 })
     await expect(standaloneFileBookmark).toContainText('b.txt')
     await standaloneFileBookmark.click()
-    await expect(page.getByTestId('files-panel-active')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('files-location-input')).toHaveValue(/b\.txt$/)
-    await expect(page.getByTestId('files-editor-tab')).toHaveCount(1, { timeout: 10_000 })
+    const bookmarkReview = page.getByTestId('response-review-pane')
+    await expect(bookmarkReview).toBeVisible({ timeout: 10_000 })
+    await expect(bookmarkReview).toHaveAttribute('data-review-kind', 'file')
+    await expect(bookmarkReview).toHaveAttribute('data-cap-file-path', /b\.txt$/)
+    await expect(page.getByTestId('files-panel-active')).toHaveCount(0)
+    await bookmarkReview.getByTestId('response-review-close').click()
   })
 
   test('user messages are NOT Markdown-rendered: literal ** / ` stay literal', async () => {

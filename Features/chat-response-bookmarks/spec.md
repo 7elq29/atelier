@@ -13,14 +13,15 @@
    gaining a **Bookmark** tag. An unchanged bookmarked file and a bookmarked URL appear as
    standalone rows. Duplicate bookmarks for the same normalized type + target are not created.
 5. Clicking a bookmarked external link opens it through Electron's external-browser IPC path.
-6. Clicking a bookmarked file that is also changed keeps the changed row's existing behavior:
-   it opens the file review pane with its diff. Clicking a standalone bookmarked file activates
-   **Files** and opens that absolute file exactly like a file link in the assistant response.
-   The bookmark itself remains until explicitly removed.
+6. Clicking any bookmarked file keeps **Chat** visible and opens the file in the right-hand
+   review panel. A bookmarked changed-file row opens the existing diff review (current content
+   against its baseline); a standalone bookmarked file opens the same review panel with its
+   current contents and no synthetic baseline. It must not activate the **Files** tab. The
+   bookmark itself remains until explicitly removed.
 
 ## UI
 
-The interactive mock does not contain a bookmark-specific state. Reuse these exact mock
+The interactive mock does not contain a standalone bookmarked-file preview state. Reuse these exact mock
 treatments from `Features/UI-Design/mocks/index.html`:
 
 - Cap and rows: `.chat-changes-card`, `.chat-changes-head`, `.chat-changes-body`,
@@ -29,6 +30,9 @@ treatments from `Features/UI-Design/mocks/index.html`:
   exposed in production as `.chat-changes-bookmark-tag` with text **Bookmark**.
 - Context menu: the established `.session-menu-popup` / `.smi` popup grammar and its
   `var(--bg-panel-raised)`, border, shadow, and hover tokens.
+- File destination: the existing production right-hand `ResponseReviewPanel` treatment used by
+  changed bookmarked files (`.response-review-panel`, file title/path chrome, rendered content).
+  No new visual treatment is introduced.
 
 Bookmarks live in their **own expandable section above the Changes section** (see
 `Features/chat-uncommitted-changes/spec.md`), each header counting only its own rows — e.g.
@@ -53,11 +57,12 @@ expose the full path as a tooltip.
 - A real Electron e2e test obtains an assistant response containing an HTTP(S) link and a
   resolvable file path, then verifies right-click bookmark and remove-bookmark actions.
 - The same test verifies the cap's bookmark tag, changed-file deduplication, URL external-open
-  IPC effect, changed-file review-pane opening, standalone file Files-panel opening, session
-  isolation, and persistence after relaunch.
+  IPC effect, changed-file review-pane opening, standalone file right-hand review-pane opening
+  without switching to **Files**, session isolation, and persistence after relaunch.
 - The e2e captures the open context menu and expanded mixed cap to
-  `e2e-artifacts/chat-response-bookmarks-*.png`; both images are personally compared with
-  `Features/UI-Design/mocks/index.html`.
+  `e2e-artifacts/chat-response-bookmarks-*.png`, plus the standalone file open in
+  `e2e-artifacts/bug-bookmark-file-right-panel.png`; all images are personally compared with
+  `Features/UI-Design/mocks/index.html` and the existing production review pane.
 - `npm run build` is clean.
 - Run every mapped spec from the touched chat and secondary-panel categories in
   `e2e/TEST_CATEGORIES.md`, not only the new assertions.

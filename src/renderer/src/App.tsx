@@ -901,14 +901,45 @@ export default function App(): JSX.Element {
   )
 
   const openSessionBookmark = useCallback(
-    (bookmark: SessionBookmark) => {
+    async (bookmark: SessionBookmark) => {
       if (bookmark.kind === 'link') {
         void window.atelier.openExternal(bookmark.target)
         return
       }
-      openFileInFiles(bookmark.target)
+      const session = activeSessionId ? allSessions.find((s) => s.id === activeSessionId) : null
+      if (claudeCodeSessionDisconnected(session, activeSessionId, sessions.statuses)) return
+      if (!session) return
+
+      const ws = sessionWorkspace.workspaceBySession[session.id]
+      const absolutePath = resolveOpenFilePath(
+        bookmark.target,
+        session,
+        filePathCandidatesForSession(ws)
+      )
+      const result = await window.atelier.filesRead(absolutePath, session.hostname ?? null)
+
+      setActiveTab('chat')
+      setReviewTarget({
+        sourceId: -1,
+        kind: 'file',
+        content:
+          result.kind === 'binary'
+            ? `Binary preview is unavailable for ${bookmark.label || bookmark.target}.`
+            : result.content,
+        capFilePath: absolutePath
+      })
+      window.atelier.log('info', 'bookmark:file opened in review panel', {
+        sessionId: session.id,
+        path: absolutePath,
+        fileKind: result.kind
+      })
     },
-    [openFileInFiles]
+    [
+      activeSessionId,
+      allSessions,
+      sessions.statuses,
+      sessionWorkspace.workspaceBySession
+    ]
   )
 
   useEffect(() => {

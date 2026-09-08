@@ -38,7 +38,7 @@ export function reviewPaneSubtitle(target: ReviewPaneTarget): string {
 }
 
 export function reviewPaneHasDiff(target: ReviewPaneTarget): boolean {
-  if (target.kind === 'file') return true
+  if (target.kind === 'file') return target.previousContent !== undefined
   return target.kind === 'plan' && target.previousContent != null && target.previousContent !== ''
 }
 
