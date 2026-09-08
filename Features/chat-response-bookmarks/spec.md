@@ -30,9 +30,12 @@ treatments from `Features/UI-Design/mocks/index.html`:
 - Context menu: the established `.session-menu-popup` / `.smi` popup grammar and its
   `var(--bg-panel-raised)`, border, shadow, and hover tokens.
 
-The cap header reports both kinds without calling bookmarks changes: for example,
-**2 changes · 1 bookmark**. Bookmark rows are newest-first within their group and appear
-after changed-file rows. URL rows use their visible chat link text when available, falling
+Bookmarks live in their **own expandable section above the Changes section** (see
+`Features/chat-uncommitted-changes/spec.md`), each header counting only its own rows — e.g.
+**2 bookmarks** above **1 change**. A changed file that is also bookmarked stays in Changes
+with its **Bookmark** tag and is therefore not counted in the Bookmarks header; if every
+bookmark is also a changed file, the Bookmarks section is not rendered. Bookmark rows are
+newest-first. URL rows use their visible chat link text when available, falling
 back to the URL host, and expose the full URL as a tooltip. File rows show the basename and
 expose the full path as a tooltip.
 

@@ -2354,7 +2354,8 @@ input[type='range'] {
   border-top-left-radius: var(--r-xl);
   border-top-right-radius: var(--r-xl);
 }
-/* Chat — uncommitted changes cap above composer (Features/UI-Design mock) */
+/* Chat — uncommitted changes cap above composer (Features/UI-Design mock).
+   Two independently expandable lists: Bookmarks above Changes. */
 .chat-changes-card {
   align-self: center;
   width: 95%;
@@ -2365,6 +2366,9 @@ input[type='range'] {
   border-radius: var(--r-xl) var(--r-xl) 0 0;
   overflow: hidden;
 }
+.chat-changes-section + .chat-changes-section {
+  border-top: 1px solid var(--border-subtle);
+}
 .chat-changes-head {
   display: flex;
   align-items: center;
@@ -2372,9 +2376,7 @@ input[type='range'] {
   padding: 0 6px 0 2px;
   height: 26px;
   min-height: 26px;
-  border-bottom: 1px solid var(--border-subtle);
 }
-.chat-changes-card.collapsed .chat-changes-head { border-bottom: none; }
 .chat-changes-toggle {
   display: inline-flex;
   align-items: center;
@@ -2388,6 +2390,7 @@ input[type='range'] {
   padding: 2px 4px;
   font-family: var(--font-ui);
   line-height: 1;
+  width: 100%;
 }
 .chat-changes-toggle .chat-changes-chev {
   display: inline-flex;
@@ -2397,9 +2400,9 @@ input[type='range'] {
   transition: transform .12s ease;
   flex-shrink: 0;
 }
-.chat-changes-card.collapsed .chat-changes-toggle .chat-changes-chev { transform: rotate(-90deg); }
+.chat-changes-section.collapsed .chat-changes-toggle .chat-changes-chev { transform: rotate(-90deg); }
 .chat-changes-body { padding: 2px 4px 4px; display: flex; flex-direction: column; }
-.chat-changes-card.collapsed .chat-changes-body { display: none; }
+.chat-changes-section.collapsed .chat-changes-body { display: none; }
 .chat-changes-file {
   display: flex;
   align-items: center;
