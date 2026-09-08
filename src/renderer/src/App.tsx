@@ -51,6 +51,7 @@ import { useSessionWorkspace } from './hooks/useSessionWorkspace'
 import { useSessionBookmarks } from './hooks/useSessionBookmarks'
 import { truncateContextPath } from './utils/truncateContextPath'
 import { useAppNotes } from './hooks/useAppNotes'
+import { useAppBookmarks } from './hooks/useAppBookmarks'
 import {
   COLLAPSED_SIDEBAR_WIDTH,
   useAppPanelWidths
@@ -192,6 +193,7 @@ export default function App(): JSX.Element {
   const sessionWorkspace = useSessionWorkspace()
   const sessionBookmarks = useSessionBookmarks()
   const appNotes = useAppNotes()
+  const appBookmarks = useAppBookmarks()
 
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [fileQuickOpenOpen, setFileQuickOpenOpen] = useState(false)
@@ -1538,6 +1540,11 @@ export default function App(): JSX.Element {
           onCreateAppNote={() => void createAppNote()}
           onRenameAppNote={(id, title) => void appNotes.updateNote(id, { title })}
           onDeleteAppNote={(id) => void deleteAppNote(id)}
+          bookmarks={appBookmarks.bookmarks}
+          onCreateBookmark={(input) => void appBookmarks.createBookmark(input)}
+          onUpdateBookmark={(id, patch) => void appBookmarks.updateBookmark(id, patch)}
+          onDeleteBookmark={(id) => void appBookmarks.deleteBookmark(id)}
+          onOpenBookmark={(url) => void window.atelier.openExternal(url)}
           />
         </div>
 

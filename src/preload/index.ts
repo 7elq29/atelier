@@ -60,6 +60,7 @@ import type {
 } from '../shared/panel-types'
 import type { SpendStatus } from '../shared/spend-status-types'
 import type { AppNoteRecord, AppNoteUpdate } from '../shared/app-note-types'
+import type { AppBookmarkInput, AppBookmarkRecord, AppBookmarkUpdate } from '../shared/app-bookmark-types'
 import type { ProjectPathSuggestion } from '../shared/project-path-autocomplete'
 import type {
   SessionConnectProgressEvent,
@@ -542,7 +543,14 @@ const api = {
   createAppNote: (title?: string): Promise<AppNoteRecord> => ipcRenderer.invoke('app-note:create', title),
   updateAppNote: (id: string, patch: AppNoteUpdate): Promise<AppNoteRecord> =>
     ipcRenderer.invoke('app-note:update', id, patch),
-  deleteAppNote: (id: string): Promise<void> => ipcRenderer.invoke('app-note:delete', id)
+  deleteAppNote: (id: string): Promise<void> => ipcRenderer.invoke('app-note:delete', id),
+
+  listAppBookmarks: (): Promise<AppBookmarkRecord[]> => ipcRenderer.invoke('app-bookmark:list'),
+  createAppBookmark: (input: AppBookmarkInput): Promise<AppBookmarkRecord> =>
+    ipcRenderer.invoke('app-bookmark:create', input),
+  updateAppBookmark: (id: string, patch: AppBookmarkUpdate): Promise<AppBookmarkRecord> =>
+    ipcRenderer.invoke('app-bookmark:update', id, patch),
+  deleteAppBookmark: (id: string): Promise<void> => ipcRenderer.invoke('app-bookmark:delete', id)
 }
 
 contextBridge.exposeInMainWorld('atelier', api)

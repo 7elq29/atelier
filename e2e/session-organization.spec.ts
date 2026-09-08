@@ -42,6 +42,8 @@ async function createLocalSession(
 ): Promise<string> {
     await openNewSessionModal(page)
   await page.getByTestId('project-path').fill(projectDir)
+  // The path picker is focus-gated and overlays the mode buttons, so drop focus first.
+  await page.getByTestId('project-path').blur()
   await page.getByTestId('mode-claude-code').click()
   await page.getByTestId('initial-prompt').fill(prompt)
   const beforeIds = await page
@@ -221,7 +223,8 @@ test.describe('06-session-organization', () => {
     await page.locator('body').click({ position: { x: 5, y: 5 } })
     const noteRow = page.locator(`[data-note-id="${noteId}"]`)
     await noteRow.getByTestId('app-note-menu-button').click()
-    await noteRow.getByTestId('app-note-menu-delete').click()
+    // The menu is portaled to <body>, so it is not inside the row.
+    await page.getByTestId('app-note-menu-delete').click()
     await expect(page.locator(`[data-note-id="${noteId}"]`)).toHaveCount(0)
     const dbRows = await queryDb<{ id: string }>(page, 'SELECT id FROM app_notes WHERE id = ?', [noteId])
     expect(dbRows).toHaveLength(0)
@@ -276,6 +279,143 @@ test.describe('06-session-organization', () => {
     const relPath = `.atelier/app-notes/untitled-note-${noteId.slice(0, 8)}.md`
     await expect.poll(() => existsSync(join(projectDir, relPath))).toBe(true)
     await page.screenshot({ path: join(artifactsDir, '06-app-note-composer-attach.png') })
+  })
+
+  // ── Sidebar bookmarks ─────────────────────────────────────────────────
+  test('bookmarks: add titled + bare-URL links, edit, open externally, remove, persist across relaunch', async () => {
+    await electronApp.evaluate(({ shell }) => {
+      shell.openExternal = async (url: string) => {
+        // @ts-expect-error test-only bookkeeping read back below
+        globalThis.__lastOpenedExternalUrl = url
+      }
+    })
+
+    const bareUrl = 'https://engwiki.example.com/display/LOG/Logging+Failover+Runbook'
+
+    // Typed without a scheme — the app normalizes it to https://.
+    await page.getByTestId('new-bookmark-button').click()
+    await expect(page.getByTestId('bookmark-modal')).toBeVisible()
+    await page.getByTestId('bookmark-url').fill('docs.claude.com/en/docs/auth')
+    await page.getByTestId('bookmark-title').fill('Claude Auth docs')
+    await page.getByTestId('bookmark-save').click()
+    await expect(page.getByTestId('bookmark-modal')).toHaveCount(0)
+
+    // No title — the row shows the URL itself.
+    await page.getByTestId('new-bookmark-button').click()
+    await page.getByTestId('bookmark-url').fill(bareUrl)
+    await expect(page.getByTestId('bookmark-url')).toHaveValue(bareUrl)
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('bookmark-modal')).toHaveCount(0)
+
+    const rows = page.locator('[data-testid="bookmark-row"]')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.nth(0).getByTestId('bookmark-label')).toHaveText('Claude Auth docs')
+    await expect(rows.nth(1).getByTestId('bookmark-label')).toHaveText(bareUrl)
+    await expect(rows.nth(1)).toHaveAttribute('title', bareUrl)
+
+    await page.getByTestId('sidebar-bookmarks').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(artifactsDir, '06-sidebar-bookmarks-pane.png') })
+
+    // A URL that is too long for the row is ellipsized rather than widening the sidebar.
+    const labelOverflow = await rows.nth(1).getByTestId('bookmark-label').evaluate((el) => ({
+      clipped: el.scrollWidth > el.clientWidth,
+      ellipsis: getComputedStyle(el).textOverflow
+    }))
+    expect(labelOverflow.ellipsis).toBe('ellipsis')
+    expect(labelOverflow.clipped).toBe(true)
+
+    // Edit: retitle the first bookmark through the same dialog.
+    await rows.nth(0).getByTestId('bookmark-menu-button').click()
+    await page.getByTestId('bookmark-menu-edit').click()
+    await expect(page.getByTestId('bookmark-url')).toHaveValue('https://docs.claude.com/en/docs/auth')
+    await page.getByTestId('bookmark-title').fill('Claude auth reference')
+    await page.screenshot({ path: join(artifactsDir, '06-sidebar-bookmark-dialog.png') })
+    await page.getByTestId('bookmark-save').click()
+    await expect(rows.nth(0).getByTestId('bookmark-label')).toHaveText('Claude auth reference')
+
+    // Clicking a row opens the URL in the external browser, not in-app.
+    const urlBefore = page.url()
+    await rows.nth(0).click()
+    await expect
+      .poll(async () =>
+        electronApp.evaluate(() => (globalThis as { __lastOpenedExternalUrl?: string }).__lastOpenedExternalUrl)
+      )
+      .toBe('https://docs.claude.com/en/docs/auth')
+    expect(page.url()).toBe(urlBefore)
+
+    const stored = await queryDb<{ url: string; title: string }>(page, 'SELECT url, title FROM app_bookmarks ORDER BY sort_order')
+    appendOrgLog('bookmarks', stored)
+    expect(stored).toHaveLength(2)
+
+    await electronApp.close()
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+    await expect(page.getByTestId('bookmarks-list')).toBeVisible({ timeout: 15_000 })
+    const rowsAfter = page.locator('[data-testid="bookmark-row"]')
+    await expect(rowsAfter).toHaveCount(2)
+    await expect(rowsAfter.nth(0).getByTestId('bookmark-label')).toHaveText('Claude auth reference')
+
+    // Remove the bare-URL bookmark.
+    await rowsAfter.nth(1).getByTestId('bookmark-menu-button').click()
+    await page.getByTestId('bookmark-menu-remove').click()
+    await expect(page.locator('[data-testid="bookmark-row"]')).toHaveCount(1)
+    await expect
+      .poll(async () => (await queryDb<{ id: string }>(page, 'SELECT id FROM app_bookmarks WHERE url = ?', [bareUrl])).length)
+      .toBe(0)
+  })
+
+  test('bookmarks: drag a link out of an assistant response into the pane; a duplicate drop adds nothing', async () => {
+    const linkUrl = 'https://example.com/atelier-failover-runbook'
+    const linkSession = await createLocalSession(
+      electronApp,
+      page,
+      projectDir,
+      `Reply with exactly this markdown and nothing else: [Failover Runbook](${linkUrl})`
+    )
+
+    appendOrgLog('bookmark-drag-session', { linkSession })
+    // Scoped to the assistant's Markdown anchor — the user's own message renders
+    // the same URL as a linkified <span>, which is not draggable.
+    const assistantLinkSelector = '.msg-assistant a[data-testid="external-link"]'
+    const chatLink = page.locator(assistantLinkSelector).first()
+    await expect(chatLink).toBeVisible({ timeout: 90_000 })
+    await expect(chatLink).toHaveAttribute('draggable', 'true')
+
+    const before = await page.locator('[data-testid="bookmark-row"]').count()
+
+    // Playwright can't drive native HTML5 drag-and-drop, so re-dispatch the real
+    // events: dragstart on the chat link fills the DataTransfer the pane then reads.
+    async function dragChatLinkToPane(): Promise<void> {
+      await page.evaluate((linkSelector) => {
+        const link = document.querySelector(linkSelector)
+        const pane = document.querySelector('[data-testid="sidebar-bookmarks"]')
+        if (!link || !pane) throw new Error('drag targets missing')
+        const dataTransfer = new DataTransfer()
+        link.dispatchEvent(new DragEvent('dragstart', { dataTransfer, bubbles: true, cancelable: true }))
+        pane.dispatchEvent(new DragEvent('dragover', { dataTransfer, bubbles: true, cancelable: true }))
+        ;(window as unknown as { __bookmarkDropTransfer: DataTransfer }).__bookmarkDropTransfer = dataTransfer
+      }, assistantLinkSelector)
+      await expect(page.getByTestId('sidebar-bookmarks')).toHaveClass(/drop-ready/)
+      await page.getByTestId('sidebar-bookmarks').scrollIntoViewIfNeeded()
+      await page.screenshot({ path: join(artifactsDir, '06-sidebar-bookmarks-drop-ready.png') })
+      await page.evaluate(() => {
+        const pane = document.querySelector('[data-testid="sidebar-bookmarks"]')
+        const dataTransfer = (window as unknown as { __bookmarkDropTransfer: DataTransfer }).__bookmarkDropTransfer
+        pane?.dispatchEvent(new DragEvent('drop', { dataTransfer, bubbles: true, cancelable: true }))
+      })
+    }
+
+    await dragChatLinkToPane()
+
+    await expect(page.locator('[data-testid="bookmark-row"]')).toHaveCount(before + 1)
+    const dropped = page.locator(`[data-testid="bookmark-row"][title="${linkUrl}"]`)
+    await expect(dropped).toHaveCount(1)
+    // The link text becomes the title.
+    await expect(dropped.getByTestId('bookmark-label')).toHaveText('Failover Runbook')
+
+    await dragChatLinkToPane()
+    await expect(page.locator('[data-testid="bookmark-row"]')).toHaveCount(before + 1)
+    const dbRows = await queryDb<{ id: string }>(page, 'SELECT id FROM app_bookmarks WHERE url = ?', [linkUrl])
+    expect(dbRows).toHaveLength(1)
   })
 
   // ── Color ─────────────────────────────────────────────────────────────

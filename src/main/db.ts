@@ -343,6 +343,23 @@ const MIGRATIONS: Array<{ name: string; sql?: string; run?: (database: Database.
       CREATE INDEX IF NOT EXISTS idx_session_bookmarks_session_created
         ON session_bookmarks(session_id, created_at DESC);
     `
+  },
+  {
+    // Sidebar bookmarks: app-wide links, unrelated to any session (unlike
+    // session_bookmarks above). URL is unique so re-adding or dropping the
+    // same link twice is a no-op rather than a duplicate row.
+    name: '0018_app_bookmarks',
+    sql: `
+      CREATE TABLE IF NOT EXISTS app_bookmarks (
+        id TEXT PRIMARY KEY,
+        url TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        sort_order REAL NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_app_bookmarks_sort ON app_bookmarks(sort_order);
+    `
   }
 ]
 
