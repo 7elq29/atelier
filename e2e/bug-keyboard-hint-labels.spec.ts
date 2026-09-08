@@ -1,0 +1,127 @@
+/**
+ * Repro for the ⌘-hint labelling regression.
+ *
+ * `generateHintLabels` falls off a cliff at 18 targets: past the 17-letter alphabet it switches
+ * *every* label to a two-letter code starting at "ss". Because a badge only renders the next key
+ * to press, the screen then fills with 17 identical letters, no target is reachable in one
+ * keystroke, and the first target is activated by pressing the same letter twice.
+ *
+ * The allocator is checked directly across target counts (the app's own chrome tops out around a
+ * dozen hintable controls, well under the cliff), and the live overlay is driven in the real app
+ * to prove the badges it paints are still unique and prefix-free.
+ */
+import { test, expect, _electron as electron } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { seedSkipOnboarding } from './e2e-config'
+import {
+  generateHintLabels,
+  hintBadgeDisplayLabel
+} from '../src/renderer/src/keyboard-hints/keyboard-hints'
+
+const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
+const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
+
+function git(cwd: string, args: string[]): string {
+  return execFileSync('git', args, { cwd, encoding: 'utf-8' })
+}
+
+function buildFixtureRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'atelier-e2e-hint-labels-'))
+  git(dir, ['init', '-q'])
+  git(dir, ['config', 'user.email', 'e2e@example.com'])
+  git(dir, ['config', 'user.name', 'E2E Test'])
+  git(dir, ['config', 'commit.gpgsign', 'false'])
+  writeFileSync(join(dir, 'README.md'), '# fixture\n')
+  git(dir, ['add', '.'])
+  git(dir, ['commit', '-q', '-m', 'init'])
+  return dir
+}
+
+/** What the user actually sees on a badge before typing anything. */
+function initialBadges(labels: string[]): string[] {
+  return labels.map((l) => hintBadgeDisplayLabel(l, ''))
+}
+
+test('hint labels stay unique, prefix-free, and mostly single-keystroke', () => {
+  for (const count of [1, 5, 17, 18, 19, 30, 60, 120]) {
+    const labels = generateHintLabels(count)
+    const where = `count=${count}`
+
+    expect(labels, where).toHaveLength(count)
+    expect(new Set(labels).size, `${where}: labels must be unique`).toBe(count)
+
+    // No label may be a strict prefix of another, or the longer one can never be typed.
+    const prefixCollisions = labels.filter((a) => labels.some((b) => b !== a && b.startsWith(a)))
+    expect(prefixCollisions, `${where}: prefix collisions`).toEqual([])
+
+    // Every badge on screen must name a distinct next key, otherwise the user sees a wall of
+    // identical letters and cannot tell which target a keystroke will hit.
+    const badges = initialBadges(labels)
+    const duplicateBadges = [...new Set(badges.filter((b, i) => badges.indexOf(b) !== i))]
+    expect(duplicateBadges, `${where}: duplicate badge letters`).toEqual([])
+
+    // Short labels must be handed out before long ones.
+    const singles = labels.filter((l) => l.length === 1).length
+    expect(singles, `${where}: expected some single-keystroke targets`).toBeGreaterThan(0)
+    expect(
+      labels.filter((l) => l.length > 2),
+      `${where}: labels longer than two keys`
+    ).toEqual([])
+  }
+})
+
+test('⌘ hint overlay paints unique badges in the real app', async () => {
+  test.setTimeout(120_000)
+  const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-hint-labels-'))
+  mkdirSync(userDataDir, { recursive: true })
+  seedSkipOnboarding(userDataDir)
+  const repoDir = buildFixtureRepo()
+
+  const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
+  const page = await app.firstWindow()
+  try {
+    await page.waitForLoadState('domcontentloaded')
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setBounds({ x: 0, y: 0, width: 1800, height: 1150 })
+    })
+    await expect(page.getByTestId('new-session-button')).toBeVisible({ timeout: 20_000 })
+
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId('project-path').fill(repoDir)
+    await page.getByTestId('mode-terminal').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    await expect(page.locator('[data-testid="session-row"]').first()).toBeVisible({ timeout: 30_000 })
+
+    await page.keyboard.down('Meta')
+    const overlay = page.getByTestId('keyboard-hints-overlay')
+    await expect(overlay).toBeVisible({ timeout: 5_000 })
+
+    const letterLabels = await page.$$eval('[data-keyboard-hint-label]', (els) =>
+      els
+        .map((el) => el.getAttribute('data-keyboard-hint-label') ?? '')
+        .filter((l) => /^[a-z]+$/.test(l))
+    )
+    const badgeText = await overlay
+      .locator('.keyboard-hint-badge:not(.keyboard-hint-badge--tab):not(.keyboard-hint-badge--session)')
+      .allTextContents()
+
+    await page.screenshot({ path: join(artifactsDir, 'bug-keyboard-hint-labels.png') })
+    await page.keyboard.up('Meta')
+
+    expect(letterLabels.length).toBeGreaterThan(0)
+
+    const duplicateBadges = [...new Set(badgeText.filter((b, i) => badgeText.indexOf(b) !== i))]
+    expect(duplicateBadges, 'two badges showing the same next key').toEqual([])
+
+    const prefixCollisions = letterLabels.filter((a) =>
+      letterLabels.some((b) => b !== a && b.startsWith(a))
+    )
+    expect(prefixCollisions, 'a label is a prefix of another').toEqual([])
+  } finally {
+    await app.close().catch(() => undefined)
+  }
+})
