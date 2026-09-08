@@ -33,6 +33,7 @@ function buildFixtureRepo(): string {
   git(dir, ['init', '-q'])
   git(dir, ['config', 'user.email', 'e2e@example.com'])
   git(dir, ['config', 'user.name', 'E2E Test'])
+  git(dir, ['config', 'commit.gpgsign', 'false'])
   writeFileSync(join(dir, 'README.md'), '# fixture\n')
   git(dir, ['add', '.'])
   git(dir, ['commit', '-q', '-m', 'init'])
@@ -90,8 +91,7 @@ test('⌘ hint overlay paints unique badges in the real app', async () => {
 
     await page.getByTestId('new-session-button').click()
     await page.getByTestId('project-path').fill(repoDir)
-    await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
+    await page.getByTestId('mode-terminal').click()
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
     await expect(page.locator('[data-testid="session-row"]').first()).toBeVisible({ timeout: 30_000 })
