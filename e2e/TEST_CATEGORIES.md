@@ -99,7 +99,7 @@ iterating.
 |---|---|
 | **Spec files** | `global-nav-and-settings.spec.ts`, `bug-keyboard-hint-labels.spec.ts` |
 | **Source paths** | `src/renderer/src/components/CommandPalette.tsx`, `src/renderer/src/components/SettingsPanel.tsx`, `src/renderer/src/components/Sidebar.tsx` (collapsed rail mode), `src/renderer/src/components/OnboardingWizard.tsx`, `src/renderer/src/components/KeyboardHintsOverlay.tsx`, `src/renderer/src/keyboard-hints/*` |
-| **Catches** | Command palette open/search/empty-state, collapsed sidebar rail toggle, Settings panel (theme light/dark, independent font-size sliders for interface/agent-message/terminal), desktop notification debug trigger, first-run onboarding wizard (shown once, name/email steps). ⌘-hold keyboard hints: label allocation stays unique, prefix-free and single-keystroke for as many targets as the alphabet allows, and the live overlay paints distinguishable badges. |
+| **Catches** | Command palette open/search/empty-state, collapsed sidebar rail toggle, Settings panel (theme light/dark, independent font-size sliders for interface/agent-message/terminal), desktop notification debug trigger, first-run onboarding wizard (shown once, name/email steps). ⌘-hold keyboard hints: label allocation stays unique, prefix-free and single-keystroke for as many targets as the alphabet allows, the live overlay paints distinguishable badges, and a single-digit row label (⌘+1) still activates on ⌘ release once a "1x" row makes it ambiguous. |
 
 ### 10. Secondary Panels (Diff, Files, Ports, Terminal, Worktrees)
 

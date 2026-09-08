@@ -208,6 +208,18 @@ export function findExactHintMatch(entries: HintEntry[], buffer: string): HintEn
   return null
 }
 
+/**
+ * The target whose label *is* the buffer, even when longer labels extend it.
+ *
+ * Numbered row labels are not prefix-free — "1" is also the start of "10" — so `findExactHintMatch`
+ * refuses to fire on "1" while a tenth row exists. Releasing ⌘ ends the input, which is the point
+ * at which the shorter reading is the only one left.
+ */
+export function findCompletedHintMatch(entries: HintEntry[], buffer: string): HintEntry | null {
+  if (!buffer) return null
+  return entries.find((e) => e.label === buffer) ?? null
+}
+
 const HINT_BADGE_VIEWPORT_MARGIN = 4
 const HINT_BADGE_GAP = 2
 /** Matches `.keyboard-hint-badge` (11px mono, padding 2×5, line-height 1). */
@@ -237,10 +249,6 @@ export function layoutHintBadge(rect: DOMRect, label: string): { top: number; le
 }
 
 /** Single character accepted while hint mode is active (digits for sessions, letters for chrome). */
-export function isMetaModifierDown(): boolean {
-  return new KeyboardEvent('keydown').getModifierState('Meta')
-}
-
 export function normalizeHintKeyChar(key: string): string | null {
   if (key.length !== 1) return null
   if (/^[0-9]$/.test(key)) return key

@@ -73,6 +73,81 @@ test('hint labels stay unique, prefix-free, and mostly single-keystroke', () => 
   }
 })
 
+/**
+ * Repro: with ten or more numbered rows the digit labels stop being prefix-free
+ * ("1" is a prefix of "10"), so ⌘+1 waits for a second digit forever — releasing
+ * ⌘ throws the pending buffer away and only ⌘+11 ever jumps anywhere.
+ */
+test('⌘+1 jumps to the first numbered row even when a "1x" row exists', async () => {
+  test.setTimeout(120_000)
+  const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-hint-digit-'))
+  mkdirSync(userDataDir, { recursive: true })
+  seedSkipOnboarding(userDataDir)
+
+  const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
+  const page = await app.firstWindow()
+  try {
+    await page.waitForLoadState('domcontentloaded')
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setBounds({ x: 0, y: 0, width: 1800, height: 1150 })
+    })
+    await expect(page.getByTestId('new-app-note-button')).toBeVisible({ timeout: 20_000 })
+
+    // Daily note + Weekly plan + 10 app notes = 12 numbered rows, so labels reach "10".
+    const noteRows = page.locator('[data-testid="app-note-row"]')
+    while ((await noteRows.count()) < 10) {
+      const before = await noteRows.count()
+      await page.getByTestId('new-app-note-button').click({ timeout: 10_000 })
+      await expect(noteRows).toHaveCount(before + 1)
+    }
+    // Only on-screen rows get numbered, so bring the top of the list back into view.
+    await page.evaluate(() => {
+      document.querySelector('.sidebar-lists-stack')?.scrollTo({ top: 0 })
+    })
+
+    await page.keyboard.down('Meta')
+    await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 5_000 })
+
+    const digitLabels = await page.$$eval('[data-keyboard-hint-label]', (els) =>
+      els.map((el) => el.getAttribute('data-keyboard-hint-label') ?? '').filter((l) => /^[0-9]+$/.test(l))
+    )
+    expect(digitLabels, 'need a two-digit row for this repro').toContain('10')
+
+    // Row "1" is the topmost numbered row; it must be reachable with one keystroke.
+    const firstRowTestId = await page
+      .locator('[data-keyboard-hint-label="1"]')
+      .getAttribute('data-testid')
+    expect(firstRowTestId).toBe('daily-note-row')
+
+    await page.keyboard.press('1')
+    await page.screenshot({ path: join(artifactsDir, 'bug-hint-digit-single-press.png') })
+    await page.keyboard.up('Meta')
+
+    await expect(page.getByTestId('daily-note-row')).toHaveAttribute('data-active', 'true')
+
+    // Committing on release must not cost the two-digit rows their instant activation.
+    await page.evaluate(() => {
+      document.querySelector('.sidebar-lists-stack')?.scrollTo({ top: 0 })
+    })
+    await page.keyboard.down('Meta')
+    await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 5_000 })
+    const twelfthNoteId = await page
+      .locator('[data-keyboard-hint-label="12"]')
+      .getAttribute('data-note-id')
+    expect(twelfthNoteId).toBeTruthy()
+
+    await page.keyboard.press('1')
+    await page.keyboard.press('2')
+    await expect(page.locator(`[data-note-id="${twelfthNoteId}"]`)).toHaveAttribute(
+      'data-active',
+      'true'
+    )
+    await page.keyboard.up('Meta')
+  } finally {
+    await app.close().catch(() => undefined)
+  }
+})
+
 test('⌘ hint overlay paints unique badges in the real app', async () => {
   test.setTimeout(120_000)
   const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-hint-labels-'))

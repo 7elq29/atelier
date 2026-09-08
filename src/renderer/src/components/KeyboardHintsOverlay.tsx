@@ -4,10 +4,10 @@ import {
   activateHintTarget,
   buildHintEntries,
   clearHintLabelAttributes,
+  findCompletedHintMatch,
   findExactHintMatch,
   hintBadgeDisplayLabel,
   type HintEntry,
-  isMetaModifierDown,
   layoutHintBadge,
   matchHintEntries,
   normalizeHintKeyChar,
@@ -120,12 +120,27 @@ export default function KeyboardHintsOverlay({
     }, HINT_HOLD_DELAY_MS)
   }, [beginHintMode, clearActivationTimer])
 
-  const dropHintModeIfMetaReleased = useCallback(() => {
-    if (isMetaModifierDown()) return
-    metaHeldRef.current = false
-    clearActivationTimer()
-    if (entriesRef.current.length > 0) teardown()
-  }, [clearActivationTimer, teardown])
+  const dropHintModeIfMetaReleased = useCallback(
+    (metaStillDown: boolean) => {
+      if (metaStillDown) return
+      metaHeldRef.current = false
+      clearActivationTimer()
+      if (entriesRef.current.length > 0) teardown()
+    },
+    [clearActivationTimer, teardown]
+  )
+
+  /**
+   * ⌘ came up: a buffer that already names a target is a finished choice, not an abandoned one.
+   *
+   * Row labels run past nine, so "1" stays ambiguous with "10" for as long as more digits could
+   * arrive. Releasing ⌘ is what says none will.
+   */
+  const commitPendingHintOnRelease = useCallback(() => {
+    const pending = findCompletedHintMatch(entriesRef.current, bufferRef.current)
+    if (pending) activateHintTarget(pending.element)
+    teardown()
+  }, [teardown])
 
   const abandonHintModeOnFocusLoss = useCallback(() => {
     metaHeldRef.current = false
@@ -173,7 +188,7 @@ export default function KeyboardHintsOverlay({
       }
 
       if (!e.getModifierState('Meta') && entriesRef.current.length > 0) {
-        dropHintModeIfMetaReleased()
+        dropHintModeIfMetaReleased(false)
       }
 
       if (metaHeldRef.current && entriesRef.current.length === 0) {
@@ -215,10 +230,12 @@ export default function KeyboardHintsOverlay({
       if (e.key === 'Meta') {
         clearActivationTimer()
         metaHeldRef.current = false
-        if (entriesRef.current.length > 0) teardown()
+        if (entriesRef.current.length > 0) commitPendingHintOnRelease()
         return
       }
-      if (entriesRef.current.length > 0) dropHintModeIfMetaReleased()
+      // macOS withholds keyup for most keys while ⌘ is down, so trust the event's own state
+      // rather than assuming a released key means a released ⌘ — that dropped the typed buffer.
+      if (entriesRef.current.length > 0) dropHintModeIfMetaReleased(e.getModifierState('Meta'))
     }
 
     function onWindowBlur(): void {
@@ -227,7 +244,8 @@ export default function KeyboardHintsOverlay({
     }
 
     function onWindowFocus(): void {
-      if (entriesRef.current.length > 0) dropHintModeIfMetaReleased()
+      // No event to read ⌘ from here; a refocus is never mid-chord, so end hint mode.
+      abandonHintModeOnFocusLoss()
     }
 
     function onVisibilityChange(): void {
@@ -254,6 +272,7 @@ export default function KeyboardHintsOverlay({
   }, [
     abandonHintModeOnFocusLoss,
     clearActivationTimer,
+    commitPendingHintOnRelease,
     dropHintModeIfMetaReleased,
     refreshBadges,
     scheduleHintMode,
