@@ -57,17 +57,16 @@ async function editFileOnce(
 }
 
 async function expandCap(page: Page): Promise<void> {
-  const cap = page.getByTestId('chat-uncommitted-changes')
-  const toggle = cap.locator('.chat-changes-toggle')
+  const toggle = page.getByTestId('chat-changes-files').locator('.chat-changes-toggle')
   if ((await toggle.getAttribute('aria-expanded')) === 'false') {
     await toggle.click()
   }
 }
 
 async function collapseCap(page: Page): Promise<void> {
-  const cap = page.getByTestId('chat-uncommitted-changes')
-  if ((await cap.count()) === 0) return
-  const toggle = cap.locator('.chat-changes-toggle')
+  const section = page.getByTestId('chat-changes-files')
+  if ((await section.count()) === 0) return
+  const toggle = section.locator('.chat-changes-toggle')
   if ((await toggle.getAttribute('aria-expanded')) === 'true') {
     await toggle.click()
   }
@@ -439,7 +438,7 @@ test.describe('07-secondary-panels', () => {
     await editFileOnce(page, sessionId, editTarget, 'a\n', 'hello from e2e\n')
 
     await expect(cap).toBeVisible({ timeout: 30_000 })
-    await expect(cap).toHaveClass(/collapsed/)
+    await expect(page.getByTestId('chat-changes-files')).toHaveClass(/collapsed/)
     await cap.getByRole('button', { name: /\d+ change/i }).click()
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toBeVisible()
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)

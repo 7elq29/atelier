@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { SessionChangesCapItem } from '../../../../shared/session-changes-cap'
 import type { SessionBookmark } from '../../../../shared/session-bookmarks'
 import { isClaudePlanPath } from '../../../../shared/claude-plan-path'
@@ -123,6 +123,42 @@ function BookmarkRow({
   )
 }
 
+function ChatChangesSection({
+  testId,
+  title,
+  collapsed,
+  onToggle,
+  children
+}: {
+  testId: string
+  title: string
+  collapsed: boolean
+  onToggle: () => void
+  children: ReactNode
+}): JSX.Element {
+  return (
+    <section
+      className={`chat-changes-section${collapsed ? ' collapsed' : ''}`}
+      data-testid={testId}
+    >
+      <div className="chat-changes-head">
+        <button
+          type="button"
+          className="chat-changes-toggle"
+          aria-expanded={!collapsed}
+          onClick={onToggle}
+        >
+          <span className="chat-changes-chev">
+            <ChevronDown />
+          </span>
+          <span className="chat-changes-title">{title}</span>
+        </button>
+      </div>
+      {!collapsed && <div className="chat-changes-body">{children}</div>}
+    </section>
+  )
+}
+
 export default function ChatUncommittedChanges({
   items,
   bookmarks,
@@ -136,7 +172,9 @@ export default function ChatUncommittedChanges({
   onOpenFile: (path: string, opensInFilesTab: boolean) => void
   onOpenBookmark: (bookmark: SessionBookmark) => void
 }): JSX.Element | null {
-  const [collapsed, setCollapsed] = useState(true)
+  // Held here, not per section, so a list that empties and refills reopens as the user left it.
+  const [bookmarksCollapsed, setBookmarksCollapsed] = useState(true)
+  const [filesCollapsed, setFilesCollapsed] = useState(true)
 
   const rows = items ?? []
   if (rows.length === 0 && bookmarks.length === 0) return null
@@ -155,33 +193,34 @@ export default function ChatUncommittedChanges({
       bookmark.kind === 'link' ||
       !rows.some((row) => bookmarkMatchesPath(bookmark.target, workspaceRoot, row.path))
   )
-  const parts: string[] = []
-  if (rows.length > 0) parts.push(`${rows.length} change${rows.length === 1 ? '' : 's'}`)
-  if (bookmarks.length > 0) {
-    parts.push(`${bookmarks.length} bookmark${bookmarks.length === 1 ? '' : 's'}`)
-  }
-  const title = parts.join(' · ')
 
   return (
-    <div
-      className={`chat-changes-card${collapsed ? ' collapsed' : ''}`}
-      data-testid="chat-uncommitted-changes"
-    >
-      <div className="chat-changes-head">
-        <button
-          type="button"
-          className="chat-changes-toggle"
-          aria-expanded={!collapsed}
-          onClick={() => setCollapsed((c) => !c)}
+    <div className="chat-changes-card" data-testid="chat-uncommitted-changes">
+      {standaloneBookmarks.length > 0 && (
+        <ChatChangesSection
+          key="bookmarks"
+          testId="chat-changes-bookmarks"
+          title={`${standaloneBookmarks.length} bookmark${standaloneBookmarks.length === 1 ? '' : 's'}`}
+          collapsed={bookmarksCollapsed}
+          onToggle={() => setBookmarksCollapsed((c) => !c)}
         >
-          <span className="chat-changes-chev">
-            <ChevronDown />
-          </span>
-          <span className="chat-changes-title">{title}</span>
-        </button>
-      </div>
-      {!collapsed && (
-        <div className="chat-changes-body">
+          {standaloneBookmarks.map((bookmark) => (
+            <BookmarkRow
+              key={`bookmark:${bookmark.kind}:${bookmark.target}`}
+              bookmark={bookmark}
+              onOpen={onOpenBookmark}
+            />
+          ))}
+        </ChatChangesSection>
+      )}
+      {rows.length > 0 && (
+        <ChatChangesSection
+          key="files"
+          testId="chat-changes-files"
+          title={`${rows.length} change${rows.length === 1 ? '' : 's'}`}
+          collapsed={filesCollapsed}
+          onToggle={() => setFilesCollapsed((c) => !c)}
+        >
           {rows.map((row) => (
             <ChatChangesFileRow
               key={`file:${row.path}`}
@@ -193,14 +232,7 @@ export default function ChatUncommittedChanges({
               onOpen={onOpenFile}
             />
           ))}
-          {standaloneBookmarks.map((bookmark) => (
-            <BookmarkRow
-              key={`bookmark:${bookmark.kind}:${bookmark.target}`}
-              bookmark={bookmark}
-              onOpen={onOpenBookmark}
-            />
-          ))}
-        </div>
+        </ChatChangesSection>
       )}
     </div>
   )
