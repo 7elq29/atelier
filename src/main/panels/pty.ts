@@ -70,6 +70,29 @@ function resolveLocalPtyCwd(cwd: string): string {
   return homedir()
 }
 
+/**
+ * Turn on tmux's mouse reporting for one session.
+ *
+ * A tmux client owns xterm's alternate buffer, which has no scrollback of its
+ * own, so xterm falls back to translating every wheel notch into ESC[A/ESC[B —
+ * and zsh reads those as "walk the command history". With mouse reporting on,
+ * tmux advertises mouse tracking, xterm forwards the wheel as mouse buttons
+ * instead, and tmux's default WheelUpPane binding scrolls its own history via
+ * `copy-mode -e` (which exits again when you scroll back to the bottom).
+ *
+ * Scoped to our own session (`-t`), never `-g`, so the user's other tmux
+ * sessions and ~/.tmux.conf keep whatever they had.
+ */
+async function tmuxEnableMouse(runner: (args: string[]) => Promise<unknown>, sessionName: string): Promise<void> {
+  try {
+    await runner(['set-option', '-t', sessionName, 'mouse', 'on'])
+    logger.info('pty spawn: tmux mouse reporting enabled', { name: sessionName })
+  } catch (err) {
+    // Non-fatal: the terminal still works, the wheel just keeps walking history.
+    logger.warn('pty spawn: could not enable tmux mouse reporting', { name: sessionName, error: String(err) })
+  }
+}
+
 /** Run a one-line shell script in a detached tmux pane before the user attaches. */
 async function tmuxSendSilentCommand(tmuxBin: string, sessionName: string, script: string): Promise<void> {
   const line = `stty -echo 2>/dev/null; ${script}; stty echo 2>/dev/null`
@@ -199,6 +222,7 @@ export class PtyManager {
           logger.info('pty spawn: tmux session created', { id, name, elapsedMs: elapsed() })
         }
       }
+      await tmuxEnableMouse((tmuxArgs) => execFileAsync(tmuxBin!, tmuxArgs), name)
       // Attach to the (now-guaranteed) existing session. When this client
       // exits (node-pty closes), tmux simply detaches — no SIGHUP to the
       // shell, so the session and its processes survive.
@@ -231,6 +255,10 @@ export class PtyManager {
           ], { timeout: SSH_TIMEOUT })
           logger.info('pty spawn: remote tmux session created', { id, hostname, name, elapsedMs: elapsed() })
         }
+        await tmuxEnableMouse(
+          (tmuxArgs) => execFileAsync('ssh', [...SSH_MUX_OPTS, hostname, 'tmux', ...tmuxArgs], { timeout: SSH_TIMEOUT }),
+          name
+        )
         // `-t` allocates a PTY for the SSH connection so tmux attach gets a
         // real terminal; without it the attach output is garbled.
         shell = 'ssh'
