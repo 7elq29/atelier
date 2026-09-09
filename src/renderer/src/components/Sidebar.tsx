@@ -1108,6 +1108,11 @@ export default function Sidebar({
     }
   }
 
+  // A note surface (daily note, weekly plan, or an app note) takes over the
+  // main pane, so the session it replaced must not keep the selected
+  // background — otherwise two rows look focused at once.
+  const noteSurfaceActive = activeAppNoteId != null || activeDailyNote || activeWeeklyPlan
+
   function row(session: SessionRecord, closed: boolean, sectionGroupId: string | null | undefined, sectionIds: string[]): JSX.Element {
     const dragHandlers = closed
       ? { onDragStart: () => undefined, onDragOver: () => undefined, onDrop: () => undefined }
@@ -1116,7 +1121,7 @@ export default function Sidebar({
       <SessionRow
         key={session.id}
         session={session}
-        active={session.id === activeSessionId && activeAppNoteId == null}
+        active={session.id === activeSessionId && !noteSurfaceActive}
         closed={closed}
         status={displayStatus(session, closed, statuses)}
         dotStatus={sessionDotStatus(session, closed, statuses, staleSessionIds, promptDotsBySession[session.id] ?? null)}

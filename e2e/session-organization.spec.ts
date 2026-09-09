@@ -261,6 +261,40 @@ test.describe('06-session-organization', () => {
     expect(dbRows).toHaveLength(0)
   })
 
+  // Repro: a note surface (daily note, weekly plan, app note) replaces the
+  // session in the main pane, but the sidebar kept the session row's selected
+  // background — so two rows looked focused at the same time.
+  test('bug: focusing a note clears the selected background on the session row', async () => {
+    const sessionId =
+      sessionA ?? (await createLocalSession(electronApp, page, projectDir, 'Reply with exactly the word: HI'))
+    const sessionRow = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+    await sessionRow.click()
+    await expect(sessionRow).toHaveAttribute('data-active', 'true')
+
+    await page.getByTestId('daily-note-row').click()
+    await expect(page.getByTestId('daily-note-row')).toHaveAttribute('data-active', 'true')
+    await expect(sessionRow).toHaveAttribute('data-active', 'false')
+    await expect(sessionRow).not.toHaveClass(/(^|\s)active(\s|$)/)
+    await page.screenshot({ path: join(artifactsDir, '06-note-focus-clears-session-highlight.png') })
+
+    await page.getByTestId('new-app-note-button').click()
+    const appNoteRow = page.locator('[data-testid="app-note-row"]').first()
+    await expect(appNoteRow).toHaveAttribute('data-active', 'true')
+    await expect(sessionRow).toHaveAttribute('data-active', 'false')
+
+    // Going back to the session restores its highlight and drops the note's.
+    await sessionRow.click()
+    await expect(sessionRow).toHaveAttribute('data-active', 'true')
+    await expect(page.getByTestId('daily-note-row')).toHaveAttribute('data-active', 'false')
+    await expect(appNoteRow).toHaveAttribute('data-active', 'false')
+
+    // Leave the notes list as this test found it for the specs that follow.
+    const noteId = (await appNoteRow.getAttribute('data-note-id')) as string
+    await appNoteRow.getByTestId('app-note-menu-button').click()
+    await page.getByTestId('app-note-menu-delete').click()
+    await expect(page.locator(`[data-note-id="${noteId}"]`)).toHaveCount(0)
+  })
+
   test('app notes: drag onto composer attaches as file mention on send', async () => {
     const chatSessionId =
       sessionA ?? (await createLocalSession(electronApp, page, projectDir, 'Reply with exactly the word: ATTACH'))
