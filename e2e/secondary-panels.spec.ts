@@ -1391,6 +1391,54 @@ test.describe('07-secondary-panels', () => {
     log('diff panel: real devpod git state shown OK')
   })
 
+  test('diff panel: DevPod tilde project path resolves against remote home', async () => {
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId('host-option-devpod-us-or').click()
+    await page.getByTestId('project-path').fill('~/dsc/dsc-builder/')
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+    const sessionRow = page.locator('[data-testid="session-row"]').first()
+    const tildeSessionId = await sessionRow.getAttribute('data-session-id')
+    expect(tildeSessionId).toBeTruthy()
+
+    await expect(page.getByTestId('tab-diff')).toBeVisible({ timeout: 20_000 })
+    await page.getByTestId('tab-diff').click()
+    const diff = page.getByTestId('diff-panel-active')
+    await expect(diff).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('diff-empty-not-repo')).toHaveCount(0)
+
+    // Exercise the same real IPC handler once more so main.log carries an
+    // explicit isRepo result for this exact path/host, not just UI evidence.
+    const summary = await page.evaluate(() =>
+      window.atelier.gitDiff('~/dsc/dsc-builder/', 'qingqin-go.devpod-us-or', true)
+    )
+    const mainLog = readFileSync(join(userDataDir, 'logs', 'main.log'), 'utf-8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as {
+        msg?: string
+        event?: string
+        projectPath?: string
+        hostname?: string
+        isRepo?: boolean
+      })
+    const gitTrace = mainLog.findLast(
+      (entry) =>
+        entry.msg === 'panel:git:diff:trace' &&
+        entry.event === 'done' &&
+        entry.projectPath === '~/dsc/dsc-builder/' &&
+        entry.hostname === 'qingqin-go.devpod-us-or'
+    )
+    expect(gitTrace?.isRepo, 'main.log must corroborate the working Diff UI').toBe(true)
+    expect(summary.isRepo).toBe(true)
+
+    await diff.getByTestId('diff-sub-commits').click()
+    await expect(diff.getByTestId('commit-row').first()).toBeVisible({ timeout: 15_000 })
+    await page.screenshot({ path: join(artifactsDir, 'bug-devpod-diff-tilde-after.png') })
+  })
+
   // ── 6e. Real bug: React.StrictMode's mount->cleanup->mount (dev-mode only —
   // see src/renderer/src/main.tsx) fires TerminalPanel's pty-lifecycle effect
   // as spawn(P1) -> kill(P1) -> spawn(P2) for the *same* ptyId, all

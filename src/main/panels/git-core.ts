@@ -21,14 +21,18 @@ export function runGit(
   sshHost?: string | null
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   gitInvocations += 1
-  const resolvedCwd = expandTildePath(cwd.trim(), homedir())
+  const trimmedCwd = cwd.trim()
   if (sshHost) {
     return (async () => {
       await warmSshMux(sshHost)
-      const remote = `cd ${remoteCdTarget(resolvedCwd)} && git ${args.map(shQuote).join(' ')}`
+      // Preserve `~` until this reaches the remote shell. Expanding it here
+      // with local homedir() turns `~/repo` into `/Users/<local>/repo`, which
+      // does not exist on a Linux DevPod. remoteCdTarget maps it to $HOME.
+      const remote = `cd ${remoteCdTarget(trimmedCwd)} && git ${args.map(shQuote).join(' ')}`
       return sshExec(sshHost, remote)
     })()
   }
+  const resolvedCwd = expandTildePath(trimmedCwd, homedir())
   return new Promise((resolve) => {
     execFile('git', args, { cwd: resolvedCwd, maxBuffer: 1024 * 1024 * 32 }, (err, stdout, stderr) => {
       const code = (err as NodeJS.ErrnoException & { code?: number })?.code
