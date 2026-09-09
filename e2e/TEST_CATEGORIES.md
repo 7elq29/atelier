@@ -105,9 +105,9 @@ iterating.
 
 | | |
 |---|---|
-| **Spec files** | `secondary-panels.spec.ts`, `terminal-pty.spec.ts` |
-| **Source paths** | `src/renderer/src/components/panels/*` (`DiffPanel.tsx`, `FilesPanel.tsx`, `PortsPanel.tsx`, `TerminalPanel.tsx`, `TabBar.tsx`, `CompanionTerminalDrawer.tsx`), `src/main/panels/*` (`git.ts`, `files.ts`, `ports.ts`, `pty.ts`, `ipc.ts`) |
-| **Catches** | Tab strip switching (chat/diff/files/ports), git diff sub-tabs (changes/commits/worktrees) including worktree add/merge/remove and diff inline comments, file tree browsing + content/image/HTML preview, port forwarding rows (add/remove/status), real PTY-backed terminal panel and the companion terminal drawer. SSH ControlMaster: verifies that opening a devpod terminal creates a `/tmp/atelier-ssh-*` multiplexing socket (proving `SSH_MUX_OPTS` are applied so subsequent SSH calls reuse the socket instead of doing a full crypto handshake). |
+| **Spec files** | `secondary-panels.spec.ts`, `terminal-pty.spec.ts`, `bug-diff-preload-limit.spec.ts` |
+| **Source paths** | `src/renderer/src/components/panels/*` (`DiffPanel.tsx`, `FilesPanel.tsx`, `PortsPanel.tsx`, `TerminalPanel.tsx`, `TabBar.tsx`, `CompanionTerminalDrawer.tsx`), `src/main/panels/*` (`git.ts`, `git-repository.ts`, `files.ts`, `ports.ts`, `pty.ts`, `ipc.ts`), `src/main/sessions/workspace-service.ts` |
+| **Catches** | Tab strip switching (chat/diff/files/ports), git diff sub-tabs (changes/commits/worktrees) including worktree add/merge/remove and diff inline comments, background preload hydrating at most 10 changed-file patches while keeping the full list and lazy-loading later files on click, file tree browsing + content/image/HTML preview, port forwarding rows (add/remove/status), real PTY-backed terminal panel and the companion terminal drawer. SSH ControlMaster: verifies that opening a devpod terminal creates a `/tmp/atelier-ssh-*` multiplexing socket (proving `SSH_MUX_OPTS` are applied so subsequent SSH calls reuse the socket instead of doing a full crypto handshake). |
 
 ### 11. Daily Notes & Obsidian Sync
 
