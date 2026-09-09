@@ -10,6 +10,12 @@ import type { DiffFileStatus } from '../../shared/panel-types'
 import { logger } from '../logger'
 import * as git from './git'
 import { walkFileTree, walkDirChildren, listWorkspaceFiles, pathIsDirectory, readFileForPreview, writeFileContent } from './files'
+import {
+  deleteEditorBuffer,
+  listEditorBufferPaths,
+  readEditorBuffer,
+  writeEditorBuffer
+} from './editor-buffers'
 import { PtyManager } from './pty'
 import { PortForwardManager } from './ports'
 
@@ -99,7 +105,25 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
   )
   ipcMain.handle('panel:files:isDirectory', (_e, path: string, hostname?: string | null) => pathIsDirectory(path, hostname))
   ipcMain.handle('panel:files:read', (_e, path: string, hostname?: string | null) => readFileForPreview(path, hostname))
-  ipcMain.handle('panel:files:write', (_e, path: string, content: string, hostname?: string | null) => writeFileContent(path, content, hostname))
+  ipcMain.handle('panel:files:write', (_e, path: string, content: string, hostname?: string | null) => {
+    const result = writeFileContent(path, content, hostname)
+    logger.info('panel:files:write', { path, hostname: hostname ?? null, bytes: content.length })
+    return result
+  })
+
+  // ── Unsaved editor buffers (scratch text for un-⌘S'd Files edits) ────
+  ipcMain.handle('panel:files:bufferRead', (_e, path: string, hostname?: string | null) =>
+    readEditorBuffer(path, hostname)
+  )
+  ipcMain.handle('panel:files:bufferWrite', (_e, path: string, content: string, hostname?: string | null) =>
+    writeEditorBuffer(path, content, hostname)
+  )
+  ipcMain.handle('panel:files:bufferDelete', (_e, path: string, hostname?: string | null) =>
+    deleteEditorBuffer(path, hostname)
+  )
+  ipcMain.handle('panel:files:bufferList', (_e, hostname?: string | null) =>
+    listEditorBufferPaths(hostname)
+  )
 
   // ── Terminal (pty) ───────────────────────────────────────────────────
   ipcMain.handle('panel:pty:spawn', async (_e, opts: { id: string; cwd: string; hostname?: string | null; cols: number; rows: number }) => {

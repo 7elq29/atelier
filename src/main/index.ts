@@ -23,6 +23,7 @@ import { registerSessionHandlers } from './sessions/ipc'
 import { registerAppNotesHandlers } from './app-notes/ipc'
 import { registerAppBookmarksHandlers } from './app-bookmarks/ipc'
 import { registerPanelHandlers } from './panels/ipc'
+import { purgeEditorBuffers } from './panels/editor-buffers'
 import { registerSpendStatusHandlers } from './spend-status-ipc'
 import type { PtyManager } from './panels/pty'
 import type { PortForwardManager } from './panels/ports'
@@ -191,6 +192,10 @@ app.whenReady().then(() => {
   manager.markStartupIdleSessions()
   registerIpcHandlers(manager)
 
+  // Unsaved Files-editor text is scoped to one app run, so clear anything a
+  // previous run (or a crash) left behind before the renderer can restore it.
+  purgeEditorBuffers()
+
   logger.info('app ready', { version: app.getVersion(), platform: process.platform, dev: isDev })
 
   mainWindow = createWindow()
@@ -232,6 +237,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
+  // Unsaved editor buffers never outlive the app run (re-entry is a cheap no-op).
+  purgeEditorBuffers()
   if (appQuitHarnessShutdownDone) {
     ptyManager?.killAll()
     portManager?.killAll()
