@@ -209,12 +209,25 @@ function FileTree({
         const isExpanded = expanded.has(n.path)
         const isLoading = loadingDirs.has(n.path)
         const children = dirChildren.get(n.path)
+        const activate = (): void => {
+          if (n.type === 'dir') onToggleDir(n)
+          else onSelect(n)
+        }
         return (
           <div key={n.path}>
             <div
               className={`ft-item${n.type === 'dir' ? ' dir' : ''}${treePathMatches(selected, n.path) ? ' active' : ''}`}
               style={{ paddingLeft: 8 + depth * 12 }}
-              onClick={() => n.type === 'dir' ? onToggleDir(n) : onSelect(n)}
+              onClick={activate}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  activate()
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-expanded={n.type === 'dir' ? isExpanded : undefined}
               data-testid={n.type === 'file' ? 'file-tree-file' : 'file-tree-dir'}
               data-path={n.relativePath}
               data-abs-path={n.path}
