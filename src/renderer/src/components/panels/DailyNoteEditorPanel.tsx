@@ -15,22 +15,30 @@ import {
   formatDailyNoteLabel,
   useDailyNoteNotesSlice
 } from '../../hooks/useDailyNoteNotesSlice'
+import {
+  focusNoteAtRememberedCursor,
+  rememberNoteCursor,
+  type NoteCursorPositions
+} from '../../editor/note-cursor-memory'
 import { openExternalLink } from './Linkify'
 
 export default function DailyNoteEditorPanel({
   initialDate,
   effectiveTheme,
-  onViewDateChange
+  onViewDateChange,
+  cursorPositions
 }: {
   initialDate: string
   effectiveTheme: 'light' | 'dark'
   onViewDateChange?: (date: string) => void
+  cursorPositions: NoteCursorPositions
 }): JSX.Element {
   const slice = useDailyNoteNotesSlice(initialDate)
   const editorHandleRef = useRef<AtomicCodeMirrorEditorHandle | null>(null)
   const saveRef = useRef<(() => void) | null>(null)
   const viewDateRef = useRef(slice.viewDate)
   viewDateRef.current = slice.viewDate
+  const noteKey = `daily:${slice.viewDate}`
 
   useEffect(() => {
     onViewDateChange?.(slice.viewDate)
@@ -44,6 +52,7 @@ export default function DailyNoteEditorPanel({
   const extensions = useMemo(
     () => [
       ...noteEditorLayoutExtensions,
+      rememberNoteCursor(noteKey, cursorPositions),
       dailyNoteImagePasteExtension(async (payload) => {
         const result = await window.atelier.pasteDailyNoteImage(viewDateRef.current, payload)
         return result.embedMarkdown
@@ -63,8 +72,13 @@ export default function DailyNoteEditorPanel({
         ])
       )
     ],
-    []
+    [cursorPositions, noteKey]
   )
+
+  useEffect(() => {
+    if (slice.loading || !slice.vaultConfigured) return
+    return focusNoteAtRememberedCursor(editorHandleRef, noteKey, cursorPositions)
+  }, [cursorPositions, noteKey, slice.editorMountKey, slice.loading, slice.vaultConfigured])
 
   if (!slice.vaultConfigured) {
     return (

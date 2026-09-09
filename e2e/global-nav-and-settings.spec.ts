@@ -39,6 +39,7 @@ async function createTerminalSession(_app: ElectronApplication, page: Page, proj
   await page.getByTestId('new-session-button').click()
   await expect(page.getByTestId('new-session-modal')).toBeVisible()
   await page.getByTestId('project-path').fill(projectDir)
+  await page.getByTestId('project-path').blur()
   await page.getByTestId('mode-terminal').click()
   await page.getByTestId('start-session-button').click()
   await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -123,7 +124,7 @@ test.describe('command palette', () => {
     await input.fill('')
   })
 
-  test('typing a session name and pressing Enter jumps focus to that session', async () => {
+  test('typing a session name and pressing Enter focuses that session terminal', async () => {
     const input = page.getByTestId('command-palette-input')
     // Full name of the *primary* session only — "billing-invoice-tool" does
     // not contain this substring, so this must resolve to exactly one item.
@@ -137,8 +138,11 @@ test.describe('command palette', () => {
 
     const row = page.locator(`[data-testid="session-row"][data-session-id="${primarySessionId}"]`)
     await expect(row).toHaveAttribute('data-active', 'true')
-    const isFocused = await row.evaluate((el) => el === document.activeElement)
-    expect(isFocused).toBe(true)
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.activeElement?.closest('[data-testid="terminal-body"]') != null)
+      )
+      .toBe(true)
   })
 
   test('fuzzy-matching a shared substring shows both similarly named sessions, then narrowing jumps to the right one', async () => {
@@ -161,8 +165,11 @@ test.describe('command palette', () => {
 
     const targetRow = page.locator(`[data-testid="session-row"][data-session-id="${secondarySessionId}"]`)
     await expect(targetRow).toHaveAttribute('data-active', 'true')
-    const isFocused = await targetRow.evaluate((el) => el === document.activeElement)
-    expect(isFocused).toBe(true)
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.activeElement?.closest('[data-testid="terminal-body"]') != null)
+      )
+      .toBe(true)
 
     const otherRow = page.locator(`[data-testid="session-row"][data-session-id="${primarySessionId}"]`)
     await expect(otherRow).toHaveAttribute('data-active', 'false')

@@ -285,6 +285,7 @@ type PendingAppNoteAttach = {
 export interface ComposerHandle {
   setValue(text: string): void
   getValue(): string
+  focus(): void
 }
 
 interface ComposerProps {
@@ -651,6 +652,12 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   }, [active, value, scheduleCursorUpdate])
 
   useEffect(() => {
+    if (!active) return
+    const frame = requestAnimationFrame(() => textareaRef.current?.focus())
+    return () => cancelAnimationFrame(frame)
+  }, [active])
+
+  useEffect(() => {
     return () => {
       if (typingTimer.current) clearTimeout(typingTimer.current)
       if (cursorRafRef.current != null) cancelAnimationFrame(cursorRafRef.current)
@@ -668,6 +675,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       })
     },
     getValue: () => value,
+    focus: () => textareaRef.current?.focus()
   }), [updatePopoverFromCursor, value])
 
   // Git branch at Claude's current path — refreshed when cwd or workspace diff changes.

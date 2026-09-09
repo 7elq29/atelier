@@ -220,6 +220,8 @@ export default function App(): JSX.Element {
   const [weeklyPlanExistsHint, setWeeklyPlanExistsHint] = useState<string | null>(null)
   const [weeklyPlanViewDoc, setWeeklyPlanViewDoc] = useState<WeeklyPlanViewResult | null>(null)
   const composerRefs = useRef<Map<string, ComposerHandle>>(new Map())
+  /** Launch-local caret positions; deliberately never persisted to disk. */
+  const noteCursorPositionsRef = useRef(new Map<string, number>())
   /** Picker overrides until the next session-list refresh picks up persisted model columns. */
   const [modelSelectionBySession, setModelSelectionBySession] = useState<Record<string, ModelSelection>>({})
   const [activeTab, setActiveTab] = useState<SessionTab>('chat')
@@ -689,6 +691,7 @@ export default function App(): JSX.Element {
       if (activeAppNoteId === noteId) {
         setActiveAppNoteId(other[0]?.id ?? null)
       }
+      noteCursorPositionsRef.current.delete(`app:${noteId}`)
       await appNotes.deleteNote(noteId)
     },
     [activeAppNoteId, appNotes]
@@ -984,19 +987,6 @@ export default function App(): JSX.Element {
     await sessions.loadSessionMessages(session.id, { includeMessageId: messageId })
     setPendingJumpMessageId(messageId)
   }
-
-  // Consumes `pendingJumpMessageId` the moment the target row exists in the
-  // real DOM: real `scrollIntoView` (not a mocked scroll) plus a brief
-  // `.msg-jump-highlight` flash so the destination is visually obvious.
-  // "Focus jumped to that session": move real DOM focus to the row, not just
-  // a CSS highlight — provable from Playwright via document.activeElement.
-  useEffect(() => {
-    if (!activeSessionId) return
-    const row = document.querySelector<HTMLElement>(
-      `[data-testid="session-row"][data-session-id="${activeSessionId}"]`
-    )
-    row?.focus()
-  }, [activeSessionId, allSessions.length])
 
   const paletteItems: PaletteItem[] = useMemo(
     () => [
@@ -1471,12 +1461,10 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('keydown', handleChatEscape)
   }, [])
 
-  // A layout effect, not a plain effect: it must remove `inert` *before* the
-  // "focus jumped to that session" effect below (declared earlier, but a
-  // passive effect) tries to call `.focus()` on a session row — a `.focus()`
-  // call on an element still inside an inert container is a no-op, which
-  // broke the command palette's "Enter jumps focus to that session" behavior
-  // when closing the palette and jumping sessions in the same tick.
+  // A layout effect, not a plain effect: it must remove `inert` before the
+  // newly-active session panel's passive autofocus runs. A `.focus()` call
+  // inside an inert container is a no-op when command-palette navigation
+  // closes the overlay and switches sessions in the same tick.
   useLayoutEffect(() => {
     const el = appBodyRef.current
     if (!el) return
@@ -1794,6 +1782,7 @@ export default function App(): JSX.Element {
               initialDate={activeDailyNoteDate}
               effectiveTheme={effectiveTheme}
               onViewDateChange={setActiveDailyNoteDate}
+              cursorPositions={noteCursorPositionsRef.current}
             />
           ) : activeAppNote ? (
             <AppNotesPanel
@@ -1804,6 +1793,7 @@ export default function App(): JSX.Element {
                 await appNotes.updateNote(id, patch)
               }}
               onSelectNote={selectAppNote}
+              cursorPositions={noteCursorPositionsRef.current}
             />
           ) : activeSession ? (
             activeSession.mode === 'terminal' ? (

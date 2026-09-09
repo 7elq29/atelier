@@ -8,6 +8,11 @@ import { Prec } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
 import type { AppNoteRecord } from '../../../../shared/app-note-types'
 import { noteEditorLayoutExtensions } from '../../editor/noteEditorExtensions'
+import {
+  focusNoteAtRememberedCursor,
+  rememberNoteCursor,
+  type NoteCursorPositions
+} from '../../editor/note-cursor-memory'
 import { openExternalLink } from './Linkify'
 
 /** In-app notes — Atomic Editor live-preview markdown (single note at a time). */
@@ -15,13 +20,15 @@ export default function AppNotesPanel({
   notes,
   activeNoteId,
   effectiveTheme,
-  onUpdateNote
+  onUpdateNote,
+  cursorPositions
 }: {
   notes: AppNoteRecord[]
   activeNoteId: string
   effectiveTheme: 'light' | 'dark'
   onUpdateNote: (id: string, patch: { title?: string; content?: string }) => Promise<void>
   onSelectNote: (noteId: string) => void
+  cursorPositions: NoteCursorPositions
 }): JSX.Element {
   const activeNoteIdRef = useRef(activeNoteId)
   activeNoteIdRef.current = activeNoteId
@@ -32,6 +39,7 @@ export default function AppNotesPanel({
 
   const boundNote = notes.find((n) => n.id === activeNoteId)
   const boundNoteContent = boundNote?.content ?? ''
+  const noteKey = `app:${activeNoteId}`
 
   const saveCurrent = useCallback(async () => {
     const noteId = activeNoteIdRef.current
@@ -44,6 +52,7 @@ export default function AppNotesPanel({
   const noteEditorExtensions = useMemo(
     () => [
       ...noteEditorLayoutExtensions,
+      rememberNoteCursor(noteKey, cursorPositions),
       Prec.high(
         keymap.of([
           {
@@ -56,7 +65,7 @@ export default function AppNotesPanel({
         ])
       )
     ],
-    []
+    [cursorPositions, noteKey]
   )
 
   const handleMarkdownChange = useCallback(() => {
@@ -69,6 +78,11 @@ export default function AppNotesPanel({
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [])
+
+  useEffect(
+    () => focusNoteAtRememberedCursor(editorHandleRef, noteKey, cursorPositions),
+    [cursorPositions, noteKey]
+  )
 
   return (
     <div
