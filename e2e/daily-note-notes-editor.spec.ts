@@ -160,7 +160,11 @@ test.describe('Daily note Notes slice editor (sidebar main panel)', () => {
     const editor = page.getByTestId('daily-note-editor')
     await expect(editor).toBeVisible()
     await expect(editor.locator('.cm-content').first()).toHaveCSS('font-size', '15.5px')
-    await editor.click()
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.activeElement?.closest('[data-testid="daily-note-editor"]') != null)
+      )
+      .toBe(true)
     await page.keyboard.press('End')
     await page.keyboard.type(`\n\n${UNIQUE_LINE}`)
 

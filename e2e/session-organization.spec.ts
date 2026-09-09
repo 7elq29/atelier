@@ -198,7 +198,11 @@ test.describe('06-session-organization', () => {
 
     const editor = page.getByTestId('app-note-editor').getByTestId('atomic-note-editor')
     await expect(editor).toBeVisible({ timeout: 10_000 })
-    await editor.click()
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.activeElement?.closest('[data-testid="atomic-note-editor"]') != null)
+      )
+      .toBe(true)
     await page.keyboard.type('# Release checklist\n\n- [ ] Run e2e')
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s')
 
@@ -208,6 +212,33 @@ test.describe('06-session-organization', () => {
         return rows[0]?.content ?? ''
       }, { timeout: 15_000 })
       .toContain('Release checklist')
+
+    const beforeCursorRestore = (
+      await queryDb<{ content: string }>(page, 'SELECT content FROM app_notes LIMIT 1')
+    )[0]!.content
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.press('ArrowLeft')
+
+    await page.locator(`[data-testid="session-row"][data-session-id="${sessionA}"]`).click()
+    await expect(page.locator('.composer-cache-entry.active').getByTestId('composer-input')).toBeFocused()
+    await row.click()
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.activeElement?.closest('[data-testid="atomic-note-editor"]') != null)
+      )
+      .toBe(true)
+    await page.keyboard.type('X')
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s')
+
+    const expectedAfterCursorRestore =
+      `${beforeCursorRestore.slice(0, -3)}X${beforeCursorRestore.slice(-3)}`
+    await expect
+      .poll(async () => {
+        const rows = await queryDb<{ content: string }>(page, 'SELECT content FROM app_notes LIMIT 1')
+        return rows[0]?.content ?? ''
+      }, { timeout: 15_000 })
+      .toBe(expectedAfterCursorRestore)
 
     await page.screenshot({ path: join(artifactsDir, '06-app-notes-editor.png') })
 

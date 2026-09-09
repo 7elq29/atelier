@@ -951,6 +951,12 @@ export default function FilesPanel({
     profileMode && fileTreeRoots!.some((root) => !profileRootTrees.has(root.path))
   const filesTreeLoading = profileMode ? profileTreesLoading : tree === null
 
+  useEffect(() => {
+    if (!active || filesTreeLoading) return
+    const frame = requestAnimationFrame(() => locationInputRef.current?.focus())
+    return () => cancelAnimationFrame(frame)
+  }, [active, filesTreeLoading])
+
   return (
     <div data-testid={active ? 'files-panel-active' : undefined} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {filesTreeLoading ? (

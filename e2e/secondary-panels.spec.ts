@@ -191,6 +191,7 @@ test.describe('07-secondary-panels', () => {
         await page.getByTestId('new-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toBeVisible()
     await page.getByTestId('project-path').fill(sessionProjectPath)
+    await page.getByTestId('project-path').blur()
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
     await page.getByTestId('start-session-button').click()
@@ -682,6 +683,24 @@ test.describe('07-secondary-panels', () => {
     await page.getByTestId('settings-close').click()
     await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
     await page.screenshot({ path: join(artifactsDir, '07-tabbar-dark.png') })
+  })
+
+  test('tab switch focuses the chat input, Files path editor, or terminal', async () => {
+    await page.getByTestId('tab-files').click()
+    const location = page.getByTestId('files-location-input')
+    await expect(location).toBeVisible({ timeout: 15_000 })
+    await expect(location).toBeFocused()
+
+    await page.getByTestId('tab-terminal').click()
+    await expect(page.getByTestId('terminal-body')).toBeVisible({ timeout: 15_000 })
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.activeElement?.closest('[data-testid="terminal-body"]') != null)
+      )
+      .toBe(true)
+
+    await page.getByTestId('tab-chat').click()
+    await expect(page.locator('.composer-cache-entry.active').getByTestId('composer-input')).toBeFocused()
   })
 
   /** Presses a tab and moves the mouse by (dx, dy) without releasing it. */
