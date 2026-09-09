@@ -435,49 +435,10 @@ export default function App(): JSX.Element {
     [sessions.activeSessions, sessions.historySessions]
   )
 
-  const performCloseSession = useCallback(
+  const evictSessionRendererState = useCallback(
     (id: string) => {
-      if (activeSessionId === id) setActiveSessionId(null)
       sessionWorkspace.evictSession(id)
-      setTerminalShellHostBySessionId((prev) => {
-        if (!(id in prev)) return prev
-        const next = { ...prev }
-        delete next[id]
-        return next
-      })
-      setAliveTerminals((prev) => {
-        if (!prev.has(id)) return prev
-        const next = new Map(prev)
-        next.delete(id)
-        return next
-      })
-      setAliveTabTerminals((prev) => {
-        const ptyId = `${id}:tab-terminal`
-        if (!prev.has(ptyId)) return prev
-        const next = new Map(prev)
-        next.delete(ptyId)
-        return next
-      })
-      void window.atelier.ptyKill(id)
-      void window.atelier.ptyKillTmuxSession(id)
-      void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`)
-      void window.atelier.ptyKillTmuxSession(`${id}:companion`)
-      setAliveChatComposers((prev) => {
-        if (!prev.has(id)) return prev
-        const next = new Set(prev)
-        next.delete(id)
-        return next
-      })
-      composerRefs.current.delete(id)
-      void sessions.closeSession(id)
-    },
-    [activeSessionId, sessions, sessionWorkspace]
-  )
-
-  const performDeleteSession = useCallback(
-    (id: string) => {
-      if (activeSessionId === id) setActiveSessionId(null)
-      void sessions.deleteSession(id)
+      sessionBookmarks.evict(id)
       setQueuedMessagesBySession((prev) => {
         if (!(id in prev)) return prev
         const next = { ...prev }
@@ -515,11 +476,10 @@ export default function App(): JSX.Element {
         next.delete(ptyId)
         return next
       })
+      void window.atelier.ptyKill(id)
       void window.atelier.ptyKillTmuxSession(id)
       void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`)
       void window.atelier.ptyKillTmuxSession(`${id}:companion`)
-      sessionWorkspace.evictSession(id)
-      sessionBookmarks.evict(id)
       setAliveChatComposers((prev) => {
         if (!prev.has(id)) return prev
         const next = new Set(prev)
@@ -528,7 +488,25 @@ export default function App(): JSX.Element {
       })
       composerRefs.current.delete(id)
     },
-    [activeSessionId, sessions, sessionWorkspace, sessionBookmarks]
+    [sessionBookmarks, sessionWorkspace]
+  )
+
+  const performCloseSession = useCallback(
+    (id: string) => {
+      if (activeSessionId === id) setActiveSessionId(null)
+      evictSessionRendererState(id)
+      void sessions.closeSession(id)
+    },
+    [activeSessionId, evictSessionRendererState, sessions]
+  )
+
+  const performDeleteSession = useCallback(
+    (id: string) => {
+      if (activeSessionId === id) setActiveSessionId(null)
+      void sessions.deleteSession(id)
+      evictSessionRendererState(id)
+    },
+    [activeSessionId, evictSessionRendererState, sessions]
   )
 
   const handleDeleteSession = useCallback(
@@ -1537,7 +1515,12 @@ export default function App(): JSX.Element {
           onClose={(id) => performCloseSession(id)}
           onDelete={(id) => handleDeleteSession(id)}
           onFork={(id) => void sessions.forkSession(id).then((forked) => void selectSession(forked))}
-          onRestart={(id) => void sessions.restartSession(id).then((forked) => void selectSession(forked))}
+          onRestart={(id) =>
+            void sessions.restartSession(id).then((restarted) => {
+              evictSessionRendererState(id)
+              void selectSession(restarted)
+            })
+          }
           onReconnectSession={(id) => void reconnectSessionById(id)}
           groups={sessions.groups}
           statuses={sessions.statuses}

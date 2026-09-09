@@ -126,6 +126,7 @@ test.describe('02-session-lifecycle', () => {
   let localSessionId: string
   let remoteSessionId: string
   let forkedSessionId: string
+  let restartedSessionId: string
 
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-lifecycle-'))
@@ -144,7 +145,7 @@ test.describe('02-session-lifecycle', () => {
         await openNewSessionModal(page)
 
     await page.getByTestId('project-path').fill(localProjectDir)
-    await page.getByTestId('mode-claude-code').click()
+    await expect(page.getByTestId('mode-claude-code')).toHaveClass(/active/)
     await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
     await page.getByTestId('start-session-button').click()
 
@@ -430,49 +431,64 @@ test.describe('02-session-lifecycle', () => {
   })
 
   // ── 6. Restart ────────────────────────────────────────────────────────
-  test('restart: forks with the same name and closes the original', async () => {
+  test('restart: replaces the original and starts a usable fresh session', async () => {
     const row = page.locator(`[data-testid="session-row"][data-session-id="${forkedSessionId}"]`)
     const nameBefore = await row.getByTestId('session-name').textContent()
 
     await row.getByTestId('session-menu-button').click()
     await page.getByTestId('menu-restart').click()
 
-    // The old (forked) session should close (move to history)...
+    // Restart is replacement, not Close + Fork: the source must not leave a
+    // confusing duplicate behind in History.
     await expect
-      .poll(async () => page.locator(`[data-group="history"] [data-session-id="${forkedSessionId}"]`).count(), {
+      .poll(async () => page.locator(`[data-testid="session-row"][data-session-id="${forkedSessionId}"]`).count(), {
         timeout: 10_000
       })
-      .toBe(1)
+      .toBe(0)
 
-    const closedRows = await queryDb<{ closed_at: string | null }>(
-      page,
-      'SELECT closed_at FROM sessions WHERE id = ?',
-      [forkedSessionId]
-    )
+    const sourceRows = await queryDb<{ id: string }>(page, 'SELECT id FROM sessions WHERE id = ?', [forkedSessionId])
     const allActive = await queryDb<{ id: string; name: string }>(
       page,
       'SELECT id, name FROM sessions WHERE closed_at IS NULL AND id != ? AND id != ?',
       [localSessionId, forkedSessionId]
     )
 
-    expect(closedRows[0].closed_at).not.toBeNull()
+    expect(sourceRows).toEqual([])
     const restarted = allActive.find((s) => s.name === nameBefore)
     expect(restarted).toBeTruthy()
+    restartedSessionId = restarted!.id
+
+    // The replacement has a copied transcript, which previously caused
+    // selectSession() to skip reconnect and leave a dead composer. Prove the
+    // new harness really accepts and streams a turn.
+    const visibleComposer = page.locator('[data-testid="composer-input"]:visible')
+    await expect(visibleComposer).toHaveCount(1, { timeout: 90_000 })
+    await visibleComposer.fill('Reply with exactly the single word: RESTARTED')
+    await page.locator('[data-testid="send-button"]:visible').click()
+    await expect
+      .poll(
+        async () => {
+          const texts = await page.locator('[data-testid="transcript-message"][data-role="assistant"]').allTextContents()
+          return texts.some((text) => text.includes('RESTARTED'))
+        },
+        { timeout: 60_000 }
+      )
+      .toBe(true)
 
     appendMainLog(userDataDir)
   })
 
   // ── 7. Delete ────────────────────────────────────────────────────────
   test('delete: sidebar entry and SQLite rows (session + messages) are both gone', async () => {
-    const historyRow = page.locator(`[data-testid="session-row"][data-session-id="${forkedSessionId}"]`)
-    await expect(historyRow).toBeVisible()
-    await historyRow.getByTestId('session-menu-button').click()
+    const restartedRow = page.locator(`[data-testid="session-row"][data-session-id="${restartedSessionId}"]`)
+    await expect(restartedRow).toBeVisible()
+    await restartedRow.getByTestId('session-menu-button').click()
     await page.getByTestId('menu-delete').click()
 
-    await expect(page.locator(`[data-session-id="${forkedSessionId}"]`)).toHaveCount(0)
+    await expect(page.locator(`[data-session-id="${restartedSessionId}"]`)).toHaveCount(0)
 
-    const sessionRows = await queryDb(page, 'SELECT id FROM sessions WHERE id = ?', [forkedSessionId])
-    const messageRows = await queryDb(page, 'SELECT id FROM messages WHERE session_id = ?', [forkedSessionId])
+    const sessionRows = await queryDb(page, 'SELECT id FROM sessions WHERE id = ?', [restartedSessionId])
+    const messageRows = await queryDb(page, 'SELECT id FROM messages WHERE session_id = ?', [restartedSessionId])
 
     expect(sessionRows.length).toBe(0)
     expect(messageRows.length).toBe(0)
