@@ -1094,6 +1094,74 @@ test.describe('07-secondary-panels', () => {
     log(`files panel: devpod pathIsDirectory OK via ${devpodHost.sshHost}`)
   })
 
+  test('files panel: ⌘ hints label directories and files and activate them', async () => {
+    await waitForTurnIdle(page, 60_000)
+    await approveAllPendingPermissions(page)
+
+    await page.getByTestId('tab-files').click()
+    const files = page.getByTestId('files-panel-active')
+    const srcDir = files.locator('[data-testid="file-tree-dir"][data-path="src"]')
+    const pageFile = files.locator('[data-testid="file-tree-file"][data-path="page.html"]')
+    await expect(srcDir).toBeVisible()
+    await expect(pageFile).toBeVisible()
+
+    await files.getByTestId('files-tree').click({ position: { x: 4, y: 4 } })
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', bubbles: true }))
+    })
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
+    await expect(srcDir).toHaveAttribute('data-keyboard-hint-label', /.+/)
+    await expect(pageFile).toHaveAttribute('data-keyboard-hint-label', /.+/)
+    await page.screenshot({ path: join(artifactsDir, '07-files-tree-keyboard-hints.png') })
+
+    const fileLabel = (await pageFile.getAttribute('data-keyboard-hint-label')) ?? ''
+    expect(fileLabel.length).toBeGreaterThan(0)
+    for (const key of fileLabel) {
+      await page.evaluate((ch) => {
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', { key: ch, metaKey: true, bubbles: true, cancelable: true })
+        )
+      }, key)
+    }
+    await expect(page.getByTestId('keyboard-hints-overlay')).toHaveCount(0)
+    await expect(files.locator('[data-testid="files-editor-tab"][data-path="page.html"]')).toHaveClass(/active/)
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', bubbles: true }))
+    })
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
+    const expandedBefore = await srcDir.getAttribute('aria-expanded')
+    const dirLabel = (await srcDir.getAttribute('data-keyboard-hint-label')) ?? ''
+    expect(dirLabel.length).toBeGreaterThan(0)
+    for (const key of dirLabel) {
+      await page.evaluate((ch) => {
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', { key: ch, metaKey: true, bubbles: true, cancelable: true })
+        )
+      }, key)
+    }
+    await expect(srcDir).toHaveAttribute('aria-expanded', expandedBefore === 'true' ? 'false' : 'true')
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', bubbles: true }))
+    })
+
+    await page.getByTestId('tab-chat').click()
+    await page.getByTestId('tab-strip').click()
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', bubbles: true }))
+    })
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('[data-testid="file-tree-file"][data-keyboard-hint-label]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="file-tree-dir"][data-keyboard-hint-label]')).toHaveCount(0)
+    await page.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', bubbles: true }))
+    })
+    log('files panel: ⌘ hints on dirs and files OK')
+  })
+
   test('files panel: real file tree from disk, text highlighting, image preview', async () => {
     await page.getByTestId('tab-files').click()
     const files = page.getByTestId('files-panel-active')
