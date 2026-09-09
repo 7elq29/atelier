@@ -1421,6 +1421,114 @@ test.describe('02-session-lifecycle (use-worktree)', () => {
     )
   })
 
+  // Regression guard for the real failure this append exists for: a worktree
+  // session whose agent addressed the ORIGINAL checkout by absolute path
+  // (`git -C <repo> commit`), landing the work on the original repo's branch
+  // where the session's Diff panel — which reads the worktree — never sees it.
+  // `cwd` alone can't prevent that, so the boundary is stated in the system
+  // prompt (`worktreeSystemPromptAppend`), and this asserts both that it
+  // reaches the SDK and that a real turn keeps its edits inside the worktree.
+  test('use-worktree: system prompt names the worktree boundary and edits stay out of the original checkout', async () => {
+    test.setTimeout(3 * 60_000)
+    const projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-wt-prompt-'))
+    writeFileSync(join(projectDir, 'notes.txt'), 'original\n')
+    execFileSync('git', ['init'], { cwd: projectDir })
+    execFileSync('git', ['add', 'notes.txt'], { cwd: projectDir })
+    execFileSync(
+      'git',
+      ['-c', 'user.name=test', '-c', 'user.email=test@test.com', 'commit', '-m', 'init'],
+      { cwd: projectDir }
+    )
+
+    await openNewSessionModal(page)
+    await page.getByTestId('mode-claude-code').click()
+    await page.getByTestId('project-path').fill(projectDir)
+    await page.getByTestId('use-worktree-checkbox').check()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 3_000 })
+    await expect
+      .poll(
+        () => page.locator('[data-testid="session-row"][data-status="creating-worktree"]').count(),
+        { timeout: 30_000, intervals: [500] }
+      )
+      .toBe(0)
+
+    const sessionRows = await queryDb<{ id: string; worktree_path: string | null }>(
+      page,
+      'SELECT id, worktree_path FROM sessions ORDER BY created_at DESC LIMIT 1'
+    )
+    const sessionId = sessionRows[0]!.id
+    const worktreePath = sessionRows[0]!.worktree_path!
+    expect(worktreePath).toBeTruthy()
+
+    // Log evidence: the harness appended the boundary block for THIS session,
+    // naming both the worktree and the original checkout.
+    const findAppendLine = (): string =>
+      appendMainLog(userDataDir)
+        .split('\n')
+        .find(
+          (line) =>
+            line.includes('appending instructions to the claude_code preset system prompt') &&
+            line.includes(sessionId)
+        ) ?? ''
+    let appendLine = ''
+    const logDeadline = Date.now() + 20_000
+    while (Date.now() < logDeadline) {
+      appendLine = findAppendLine()
+      if (appendLine) break
+      await page.waitForTimeout(500)
+    }
+    expect(appendLine, 'harness must log the worktree instructions it appended for this session').not.toBe('')
+    const append = JSON.parse(appendLine).append as string
+    expect(append).toContain(worktreePath)
+    expect(append).toContain(projectDir)
+
+    // A real turn that knows about both paths must still write inside the worktree.
+    const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+    await row.click()
+    // Each session keeps its own cached composer, so scope to the active one.
+    const activeComposer = page.locator('.composer-cache-entry.active')
+    await page.evaluate(async (id) => {
+      // default -> plan -> acceptEdits: edits apply without a permission card.
+      await window.atelier.cycleSessionMode(id)
+      await window.atelier.cycleSessionMode(id)
+    }, sessionId)
+    await expect(activeComposer.getByTestId('composer-mode-pill')).toHaveAttribute('data-mode', 'acceptEdits', {
+      timeout: 10_000
+    })
+
+    // Naming the original checkout in the request is the adversarial part: this
+    // is how the production session strayed. Nothing here approves working
+    // there, so the agent must use its own worktree copy of notes.txt.
+    await activeComposer.getByTestId('composer-input').fill(
+      `The repository this worktree came from is checked out at ${projectDir}. ` +
+        'Use the Edit tool once to change the line "original" in notes.txt to "touched", ' +
+        'then reply with the absolute path of the file you edited.'
+    )
+    await activeComposer.getByTestId('send-button').click()
+    const deadline = Date.now() + 90_000
+    while (Date.now() < deadline) {
+      if (!(await activeComposer.getByTestId('stop-button').isVisible().catch(() => false))) break
+      await page.waitForTimeout(300)
+    }
+
+    // A permission card here means the agent reached outside the worktree —
+    // acceptEdits applies worktree edits silently but gates paths beyond it.
+    await expect(
+      page.getByTestId('permission-card'),
+      'no out-of-worktree permission prompt: the edit stayed inside the worktree'
+    ).toHaveCount(0)
+    expect(
+      readFileSync(join(worktreePath, 'notes.txt'), 'utf-8'),
+      'the edit must land in the session worktree'
+    ).toContain('touched')
+    expect(
+      readFileSync(join(projectDir, 'notes.txt'), 'utf-8'),
+      'the original checkout must be left untouched'
+    ).toBe('original\n')
+    await page.screenshot({ path: join(artifactsDir, '02-worktree-prompt-boundary.png') })
+  })
+
   test('use-worktree failure: non-git local path keeps session row with error', async () => {
     const noGitDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-local-no-git-'))
     const countBefore = await page.locator('[data-testid="session-row"]').count()

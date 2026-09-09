@@ -53,6 +53,7 @@ import { parseStructuredContent } from '../../shared/chat-content'
 import type { SessionStore } from './store'
 import { suggestProjectPaths as computeProjectPathSuggestions } from './project-path-suggest'
 import { worktreeRootFromConfig, sessionWorktreePath } from '../../shared/worktree-path'
+import { worktreeSystemPromptAppend } from '../../shared/worktree-prompt'
 import { homeDirForWorktreeHost } from './worktree-home'
 import { createWorktree, removeWorktree, worktreePathExists } from './worktree'
 import { warmRemoteGitHost } from '../panels/git'
@@ -858,6 +859,28 @@ export class SessionManager {
     return expandTildePath(raw, homedir())
   }
 
+  /**
+   * Harness options that tell a worktree-backed session where its boundary is.
+   * `cwd` alone doesn't hold the agent inside the worktree — it can still
+   * reach the original checkout by absolute path (and has: see
+   * `worktreeSystemPromptAppend`'s doc comment), which silently strands the
+   * work outside the Diff panel's view. Empty for sessions without a
+   * worktree, so their system prompt stays exactly as it is today.
+   */
+  private worktreeHarnessOpts(
+    projectPath: string,
+    worktreePath: string | null | undefined,
+    homeDir: string
+  ): { appendSystemPrompt?: string } {
+    if (!worktreePath) return {}
+    return {
+      appendSystemPrompt: worktreeSystemPromptAppend(
+        expandTildePath(worktreePath, homeDir),
+        expandTildePath(projectPath, homeDir)
+      )
+    }
+  }
+
   private resolveHost(hostId: string): RemoteHost | undefined {
     if (hostId === 'local') return undefined
     const host = this.hosts.resolve(hostId)
@@ -1181,7 +1204,8 @@ export class SessionManager {
         host,
         keepAlive: true as const,
         ...this.defaultHarnessModelOpts(),
-        ...this.permissionModeHarnessOpts(permissionMode)
+        ...this.permissionModeHarnessOpts(permissionMode),
+        ...this.worktreeHarnessOpts(opts.projectPath, worktreePath, homeDir)
       }
       const harnessSession = await this.harness.startWithId(sessionId, opts.prompt ?? '', harnessOpts)
 
@@ -1261,6 +1285,11 @@ export class SessionManager {
       cwd: this.resolveHarnessCwd(session.projectPath, session.hostname, session.worktreePath),
       host,
       keepAlive: true,
+      ...this.worktreeHarnessOpts(
+        session.projectPath,
+        session.worktreePath,
+        this.homeDirForStoredSession(session)
+      ),
       ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.effort ? { effort: opts.effort } : {})
@@ -1318,7 +1347,7 @@ export class SessionManager {
    */
   private async *withConversationLostFallback(
     session: SessionRecord,
-    startOpts: { cwd: string; host?: RemoteHost; keepAlive: boolean; permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort'] },
+    startOpts: { cwd: string; host?: RemoteHost; keepAlive: boolean; permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort']; appendSystemPrompt?: string },
     events: AsyncGenerator<HarnessEvent, void, void>
   ): AsyncGenerator<HarnessEvent, void, void> {
     for await (const event of events) {
@@ -1375,7 +1404,7 @@ export class SessionManager {
    */
   private async *startFreshWithRetry(
     session: SessionRecord,
-    startOpts: { cwd: string; host?: RemoteHost; keepAlive: boolean; permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort'] },
+    startOpts: { cwd: string; host?: RemoteHost; keepAlive: boolean; permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort']; appendSystemPrompt?: string },
     initialPrompt?: string
   ): AsyncGenerator<HarnessEvent, void, void> {
     const MAX_ATTEMPTS = 4
