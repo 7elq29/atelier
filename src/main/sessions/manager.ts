@@ -1440,6 +1440,17 @@ export class SessionManager {
         model: modelSelection?.model,
         effort: modelSelection?.effort
       })
+      // closeSession()/restartSession() can invalidate this session while
+      // reconnectHarness() is awaiting SDK/SSH setup. Never resurrect live
+      // state for a row that was closed or atomically replaced in that gap.
+      const currentSession = this.store.getSession(sessionId)
+      if (!currentSession || currentSession.closedAt) {
+        this.connecting.delete(sessionId)
+        this.pendingPanelPreload.delete(sessionId)
+        this.workspacePreloadInFlight.delete(sessionId)
+        void this.harness.interrupt(sessionId).catch(() => undefined)
+        return
+      }
       // NOT cleared here — `harness.resume()` resolving only means the SDK
       // `query()` call was constructed, not that the subprocess has handshaken.
       // `connecting` stays until this session's workspace preload finishes
@@ -1862,10 +1873,56 @@ export class SessionManager {
     return this.decorate(forked)
   }
 
-  restartSession(sourceId: string): SessionRecord {
-    const forked = this.forkSession(sourceId)
-    void this.closeSession(sourceId)
-    return forked
+  async restartSession(sourceId: string): Promise<SessionRecord> {
+    const source = this.getSession(sourceId)
+    if (!source) throw new Error(`Unknown session: ${sourceId}`)
+
+    // Make the copied transcript internally consistent before replacing the
+    // source row. In particular, do not carry an indefinitely-running tool
+    // card into a brand-new harness conversation.
+    this.markInterruptedTurnNoticeIfBusy(sourceId)
+    this.finalizeStaleRunningToolCalls(sourceId, this.live.get(sourceId))
+    this.deliverPendingTurnInterruptedNotice(sourceId)
+
+    const restarted = this.store.restartSession(sourceId)
+    if (!restarted) throw new Error(`Unknown session: ${sourceId}`)
+
+    // Restart replaces rather than archives the old session. Tear down all
+    // source-id runtime state without deleting its worktree: the replacement
+    // deliberately inherited that same checkout.
+    void this.harness.interrupt(sourceId).catch(() => undefined)
+    this.live.delete(sourceId)
+    this.invalidateConsume(sourceId)
+    this.connecting.delete(sourceId)
+    this.creatingWorktree.delete(sourceId)
+    this.pendingPanelPreload.delete(sourceId)
+    this.workspacePreloadInFlight.delete(sourceId)
+    this.clearCapRefreshDebounce(sourceId)
+    this.workspace?.evictSession(sourceId)
+    this.portForwards?.removeAllForSession(sourceId)
+    this.sendTurnState(sourceId, false)
+    this.resetHarnessUiForSession(sourceId)
+
+    this.permissionModes.delete(sourceId)
+    this.modelSelections.delete(sourceId)
+    this.permissionModes.set(restarted.id, source.permissionMode)
+    if (source.modelSelection) {
+      this.modelSelections.set(restarted.id, source.modelSelection)
+    }
+
+    this.sendLifecycle({ type: 'session.deleted', sessionId: sourceId })
+    this.sendLifecycle({ type: 'session.forked', session: this.decorate(restarted), sourceId })
+
+    // A copied transcript made selectSession() believe the new session was
+    // already hydrated, so the renderer skipped its normal reconnect path.
+    // Start the fresh-id harness here, before returning the replacement.
+    try {
+      await this.reconnect(restarted.id)
+    } catch {
+      // reconnect() already logs and persists a visible system error. Still
+      // return/select the replacement so the user can see and retry it.
+    }
+    return this.decorate(restarted)
   }
 
   // ── Close / Delete / Rename / Pin ────────────────────────────────────
@@ -2108,11 +2165,21 @@ export class SessionManager {
         this.applyEvent(sessionId, event)
       }
     } catch (err) {
-      if (!this.store.getSession(sessionId)) return
-      logger.error('consume loop failed', {
-        sessionId,
-        error: err instanceof Error ? err.message : String(err)
-      })
+      // A closed/restarted generation commonly throws while its subprocess
+      // is being interrupted; it no longer owns this session and must not
+      // publish a late failure into the replacement/current UI.
+      if (this.consumeGeneration.get(sessionId) !== generation) return
+      const session = this.store.getSession(sessionId)
+      if (!session || session.closedAt) return
+
+      // Async generators are lazy: startFreshWithRetry() can throw from
+      // harness.startWithId() only after reconnect() has already returned.
+      // Logging alone left `connecting` set forever and produced a dead
+      // session with no visible explanation.
+      this.connecting.delete(sessionId)
+      this.pendingPanelPreload.delete(sessionId)
+      this.workspacePreloadInFlight.delete(sessionId)
+      this.reportHarnessFailure(sessionId, 'event stream', err)
     }
   }
 

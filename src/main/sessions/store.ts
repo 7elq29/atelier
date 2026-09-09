@@ -611,6 +611,26 @@ export class SessionStore {
   }
 
   /**
+   * Replaces a session with a fresh-id copy for Restart.
+   *
+   * Unlike a normal fork, Restart must not retain the source in History.
+   * Wrapping the existing copy and delete operations in one transaction
+   * ensures observers can only see the old row or its replacement, never a
+   * durable duplicate (or neither row after a partial failure).
+   */
+  restartSession(sourceId: string): SessionRecord | undefined {
+    let restartedId: string | undefined
+    const restart = this.db.transaction(() => {
+      const restarted = this.forkSession(sourceId)
+      if (!restarted) return
+      restartedId = restarted.id
+      this.deleteSession(sourceId)
+    })
+    restart()
+    return restartedId ? this.getSession(restartedId) : undefined
+  }
+
+  /**
    * Keeps `messages_fts` (10b-enrichment-full-text-search) in sync with one
    * message row: always deletes any prior indexed text for this id first
    * (simplest correct thing for both a first-time insert and an in-place
