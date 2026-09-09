@@ -26,6 +26,7 @@ export interface UseDailyNoteResult {
   exists: boolean
   vaultConfigured: boolean
   createNote: () => void
+  updateBigThree: (values: string[]) => void
   updateTask: (id: string, patch: Partial<DailyTask>) => void
   /** Parse inline `#tags` from edited text and sync `tags` / `isNote`. */
   updateTaskText: (id: string, rawText: string) => void
@@ -182,6 +183,12 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
     [mutate]
   )
 
+  const updateBigThree = useCallback(
+    (values: string[]) =>
+      mutate((prev) => ({ ...prev, bigThree: values.map((value) => value.trim()).filter(Boolean).slice(0, 3) })),
+    [mutate]
+  )
+
   const updateTaskText = useCallback(
     (id: string, rawText: string) =>
       mutate((prev) => ({
@@ -323,6 +330,7 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
     exists,
     vaultConfigured,
     createNote,
+    updateBigThree,
     updateTask,
     updateTaskText,
     toggleTask,

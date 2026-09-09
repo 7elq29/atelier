@@ -82,6 +82,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
     exists,
     vaultConfigured,
     createNote,
+    updateBigThree,
     toggleTask,
     addTask,
     deleteTask,
@@ -98,6 +99,8 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
   const [addingUnscheduled, setAddingUnscheduled] = useState(false)
   const [unscheduledDraft, setUnscheduledDraft] = useState('')
   const [carryMoveError, setCarryMoveError] = useState<string | null>(null)
+  const [editingBigThree, setEditingBigThree] = useState(false)
+  const [bigThreeDraft, setBigThreeDraft] = useState(['', '', ''])
   // 16-task-move-to-date: "today" for the "Move to..." menu's relative
   // labels (tomorrow/weekday-name/next-week) is the date of the note
   // currently open — the app has no other-date navigation today, so this is
@@ -112,6 +115,20 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
   }, [vaultConfigured, taskSignature, date])
 
   const showCarrySection = Boolean(carry.sourceDate && !carry.loading && carry.tasks.length > 0)
+
+  function beginBigThreeEdit(): void {
+    setBigThreeDraft(Array.from({ length: 3 }, (_, index) => note?.bigThree[index] ?? ''))
+    setEditingBigThree(true)
+  }
+
+  function cancelBigThreeEdit(): void {
+    setEditingBigThree(false)
+  }
+
+  function saveBigThree(): void {
+    updateBigThree(bigThreeDraft)
+    setEditingBigThree(false)
+  }
 
   if (!vaultConfigured) {
     return (
@@ -206,14 +223,70 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
 
       {note.bigThree.length > 0 && (
         <div className="dn-focus-block" data-testid="dn-big-three">
-          <div className="dn-focus-heading">Today's Focus</div>
-          <ul className="dn-focus-list">
-            {note.bigThree.map((item, idx) => (
-              <li key={idx} data-testid="dn-big-three-item">
-                {item}
-              </li>
-            ))}
-          </ul>
+          <div className="dn-focus-heading-row">
+            <div className="dn-focus-heading">Today's Focus</div>
+            {!editingBigThree && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm dn-focus-edit-button"
+                data-testid="dn-big-three-edit"
+                onClick={beginBigThreeEdit}
+              >
+                Edit
+              </button>
+            )}
+          </div>
+          {editingBigThree ? (
+            <div className="dn-focus-editor">
+              {bigThreeDraft.map((value, index) => (
+                <label className="dn-focus-edit-row" key={index}>
+                  <span>{index + 1}.</span>
+                  <input
+                    autoFocus={index === 0}
+                    className="input"
+                    data-testid="dn-big-three-input"
+                    aria-label={`Important priority ${index + 1}`}
+                    value={value}
+                    onChange={(event) =>
+                      setBigThreeDraft((current) =>
+                        current.map((item, itemIndex) => (itemIndex === index ? event.target.value : item))
+                      )
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') saveBigThree()
+                      if (event.key === 'Escape') cancelBigThreeEdit()
+                    }}
+                  />
+                </label>
+              ))}
+              <div className="dn-focus-editor-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  data-testid="dn-big-three-cancel"
+                  onClick={cancelBigThreeEdit}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  data-testid="dn-big-three-save"
+                  onClick={saveBigThree}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          ) : (
+            <ul className="dn-focus-list">
+              {note.bigThree.map((item, idx) => (
+                <li key={idx} data-testid="dn-big-three-item">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
