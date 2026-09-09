@@ -91,6 +91,7 @@ const SESSION_COLORS = ['--sc-blue', '--sc-green', '--sc-purple', '--sc-amber', 
  * all) and closed claude-code sessions (same disconnected gate as startup-idle).
  */
 function displayStatus(session: SessionRecord, closed: boolean, statuses: Record<string, SessionStatus>): SessionStatus {
+  if (session.deletedAt) return 'cleaning-up'
   if (closed && session.mode === 'claude-code') return 'startup-idle'
   if (closed || session.mode === 'terminal') return 'disconnected'
   return statuses[session.id] ?? 'idle'
@@ -133,7 +134,9 @@ function sessionDotStatus(
   staleSessionIds: Set<string>,
   promptDot: SessionPromptDot
 ): string {
-  return staleSessionIds.has(session.id)
+  return session.deletedAt
+    ? 'cleaning-up'
+    : staleSessionIds.has(session.id)
     ? 'stale'
     : dotStatusClass(displayStatus(session, closed, statuses), promptDot)
 }
@@ -668,6 +671,8 @@ function SessionRow({
   }
 
   const isTerminal = session.mode === 'terminal'
+  const cleaningUp = status === 'cleaning-up'
+  const interactionDisabled = cleaningUp || status === 'creating-worktree'
 
   return (
     <div
@@ -680,17 +685,17 @@ function SessionRow({
       data-active={active}
       data-pinned={session.pinned}
       data-status={status}
-      draggable={draggable && status !== 'creating-worktree'}
+      draggable={draggable && !interactionDisabled}
       tabIndex={-1}
-      onClick={status === 'creating-worktree' ? undefined : onSelect}
+      onClick={interactionDisabled ? undefined : onSelect}
       onContextMenu={(e) => {
-        if (status === 'creating-worktree') return
+        if (interactionDisabled) return
         e.preventDefault()
         e.stopPropagation()
         setMenuOpen(true)
         setDetailOpen(false)
       }}
-      onDragStart={status === 'creating-worktree' ? undefined : onDragStart}
+      onDragStart={interactionDisabled ? undefined : onDragStart}
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
@@ -742,6 +747,11 @@ function SessionRow({
             Setting up worktree…{worktreeProgress !== undefined ? ` (${worktreeProgress}%)` : ''}
           </div>
         )}
+        {cleaningUp && (
+          <div className="session-creating-label" data-testid="session-cleanup-label">
+            Cleaning up session…
+          </div>
+        )}
       </div>
       {status === 'creating-worktree' && (
         <div className="session-worktree-progress" data-testid="session-worktree-progress" aria-hidden={worktreeProgress === undefined}>
@@ -751,8 +761,8 @@ function SessionRow({
           />
         </div>
       )}
-      {!closed && session.pinned && <span className="pin-icon hide-on-collapse">📌</span>}
-      {closed && !isTerminal && (
+      {!cleaningUp && !closed && session.pinned && <span className="pin-icon hide-on-collapse">📌</span>}
+      {!cleaningUp && closed && !isTerminal && (
         <button
           type="button"
           className="resume-btn hide-on-collapse"
@@ -766,17 +776,19 @@ function SessionRow({
           Reconnect
         </button>
       )}
-      <button
-        className="row-menu-btn hide-on-collapse"
-        data-testid="session-menu-button"
-        onClick={(e) => {
-          e.stopPropagation()
-          setMenuOpen((v) => !v)
-          setDetailOpen(false)
-        }}
-      >
-        ⋯
-      </button>
+      {!cleaningUp && (
+        <button
+          className="row-menu-btn hide-on-collapse"
+          data-testid="session-menu-button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuOpen((v) => !v)
+            setDetailOpen(false)
+          }}
+        >
+          ⋯
+        </button>
+      )}
       {menuOpen && (
         <SessionMenuPopup
           anchorRef={menuAnchorRef}

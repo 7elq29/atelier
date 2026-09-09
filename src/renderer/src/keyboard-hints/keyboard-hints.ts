@@ -133,7 +133,7 @@ export function collectNumberedRowTargets(root: HTMLElement): HTMLElement[] {
   const rows = [...root.querySelectorAll<HTMLElement>('[data-hint-session-row], [data-hint-note-row]')].filter(
     (el) => {
       if (isHintExcluded(el) || !isElementVisible(el)) return false
-      if (el.getAttribute('data-status') === 'creating-worktree') return false
+      if (['creating-worktree', 'cleaning-up'].includes(el.getAttribute('data-status') ?? '')) return false
       return true
     }
   )

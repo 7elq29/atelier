@@ -117,8 +117,16 @@ test.describe('todo-session-link: task context menu creates linked session', () 
     onDisk = readFileSync(notePath, 'utf-8')
     expect(onDisk).toMatch(/- \[x\].*Standup/)
 
-    rows = await queryDb<{ id: string }>(page, `SELECT id FROM sessions WHERE id = ?`, [sessionId])
-    expect(rows).toHaveLength(0)
+    await expect(row).toHaveAttribute('data-status', 'cleaning-up')
+    await expect(row.getByTestId('session-cleanup-label')).toHaveText('Cleaning up session…')
+    await expect
+      .poll(
+        async () =>
+          (await queryDb<{ id: string }>(page, `SELECT id FROM sessions WHERE id = ?`, [sessionId])).length,
+        { timeout: 10_000 }
+      )
+      .toBe(0)
+    await expect(row).toHaveCount(0)
 
     await page.screenshot({ path: join(artifactsDir, 'todo-session-link-deleted-complete.png') })
   })

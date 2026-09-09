@@ -181,8 +181,31 @@ export async function removeWorktree(
     return
   }
 
-  const branch = `atelier-${sessionId.slice(0, 8)}`
+  let branch = `atelier-${sessionId.slice(0, 8)}`
   const repoPath = resolveRepoPath(projectPath, homeDir)
+
+  // Fork/Restart copies can outlive the session that originally created the
+  // shared worktree. Read the checkout's actual branch before removal so the
+  // final owner deletes the original branch, not a branch derived from its
+  // own newer session id.
+  try {
+    if (hostname) {
+      const remoteCmd = `git -C ${shQuote(worktreePath)} branch --show-current`
+      const result = await execFile('ssh', [...SSH_GIT_OPTS, hostname, '--', remoteCmd], {
+        encoding: 'utf8',
+        timeout: SSH_QUICK_TIMEOUT_MS
+      })
+      branch = result.stdout.trim() || branch
+    } else {
+      const result = await execFile('git', ['-C', worktreePath, 'branch', '--show-current'], {
+        encoding: 'utf8'
+      })
+      branch = result.stdout.trim() || branch
+    }
+  } catch {
+    // A partial/missing checkout has no discoverable branch; retain the
+    // deterministic session-derived fallback used before this change.
+  }
 
   logger.info('worktree: removing', { worktreePath, projectPath, repoPath, branch, hostname })
 

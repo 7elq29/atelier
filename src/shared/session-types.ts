@@ -38,6 +38,12 @@ export interface SessionRecord {
   color: string | null
   createdAt: string
   closedAt: string | null
+  /**
+   * Set as soon as the user requests permanent deletion. While non-null the
+   * sidebar keeps this row visible but disabled until filesystem/worktree
+   * cleanup finishes and the database row is purged.
+   */
+  deletedAt: string | null
   /** Free-form tags (06-session-organization), stored in the session_tags join table. */
   tags: string[]
   /** Freeform per-session note shown in a detail popover (06-session-organization). */
@@ -158,6 +164,7 @@ export type SessionStatus =
   | 'disconnected'
   | 'connecting'
   | 'creating-worktree'
+  | 'cleaning-up'
 
 export interface SessionStatusEvent {
   sessionId: string

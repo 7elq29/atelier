@@ -124,6 +124,11 @@ export function SessionStatusIndicator({ dotStatus }: { dotStatus: string }): JS
       anim = 'anim-blink'
       icon = <IconTree />
       break
+    case 'cleaning-up':
+      tone = 'tone-faint'
+      anim = 'anim-spin'
+      icon = <IconCircleDashed />
+      break
     default:
       icon = null
   }

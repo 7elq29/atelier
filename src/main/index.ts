@@ -199,6 +199,10 @@ app.whenReady().then(() => {
     app.dock?.setBadge('DEV')
   }
 
+  // Let the renderer paint durable "Cleaning up session…" rows before
+  // resuming cleanup left by a prior quit/crash.
+  setTimeout(() => manager.resumePendingSessionCleanup(), 500)
+
   // Fire-and-forget: probe each session's recoverability in the background
   // and push session:stale events to the renderer for any that can't resume.
   // Deliberately delayed so the window has time to render before SSH probes start.

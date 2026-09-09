@@ -505,7 +505,7 @@ export default function App(): JSX.Element {
   const performDeleteSession = useCallback(
     (id: string) => {
       if (activeSessionId === id) setActiveSessionId(null)
-      void sessions.deleteSession(id)
+      void sessions.deleteSession(id).catch(() => undefined)
       evictSessionRendererState(id)
     },
     [activeSessionId, evictSessionRendererState, sessions]

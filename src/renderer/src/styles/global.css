@@ -2771,7 +2771,8 @@ input[type='range'] {
 
 /* Legacy dot rules removed — see Set 1 .session-status above. */
 /* Dim the whole row and block interaction while the worktree is being set up. */
-.session-row[data-status="creating-worktree"] {
+.session-row[data-status="creating-worktree"],
+.session-row[data-status="cleaning-up"] {
   position: relative;
   padding-bottom: 6px;
   opacity: 0.5;
