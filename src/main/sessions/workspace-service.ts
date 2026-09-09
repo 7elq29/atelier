@@ -52,11 +52,12 @@ function diffListSignature(diff: DiffSummary): string {
 /** Keep hydrated hunks when a numstat-only refresh runs (background poll, hydrateSnapshot). */
 function mergeDiffHunks(prev: DiffSummary | undefined, next: DiffSummary): DiffSummary {
   if (!prev?.isRepo || !next.isRepo) return next
+  const previousByPath = new Map(prev.files.map((file) => [file.path, file]))
   return {
     ...next,
     files: next.files.map((f) => {
       if (f.hunks.length > 0) return f
-      const old = prev.files.find((o) => o.path === f.path)
+      const old = previousByPath.get(f.path)
       if (old?.hunks.length) return { ...f, hunks: old.hunks }
       return f
     })

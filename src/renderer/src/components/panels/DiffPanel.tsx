@@ -518,11 +518,12 @@ export default function DiffPanel({
 
   const mergeIncomingSummary = useCallback((diff: DiffSummary, prev: DiffSummary | null): DiffSummary => {
     if (!prev?.isRepo) return diff
+    const previousByPath = new Map(prev.files.map((file) => [file.path, file]))
     return {
       ...diff,
       files: diff.files.map((f) => {
         if (f.hunks.length > 0) return f
-        const old = prev.files.find((o) => o.path === f.path)
+        const old = previousByPath.get(f.path)
         if (old?.hunks.length) return { ...f, hunks: old.hunks }
         return f
       })
@@ -596,9 +597,13 @@ export default function DiffPanel({
   const lastChangesBootstrapKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (workspaceDiff == null) return
+    // Cached panels stay mounted while Chat, Files, or an editor is in front.
+    // Defer a potentially huge tree reconciliation until Diff is actually
+    // visible; `active` joining the dependency list applies the latest
+    // workspace snapshot as soon as the user opens this panel.
+    if (!active || workspaceDiff == null) return
     applySummary(workspaceDiff)
-  }, [workspaceDiff, applySummary])
+  }, [active, workspaceDiff, applySummary])
 
   // Fast numstat bootstrap when workspace preload is still empty. Do not wait on
   // workspaceRefreshing — background poll/cap refresh is independent and can run
