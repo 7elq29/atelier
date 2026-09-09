@@ -321,11 +321,14 @@ class GitRepositoryManager {
   /**
    * Fill working-tree file hunks — one full patch when the changeset is small,
    * otherwise parallel per-file loads (untracked files still need per-path diff).
+   * `maxFiles` limits eager hydration without truncating the returned file list;
+   * selecting a remaining stub uses `loadFileDiff`.
    */
   async hydrateWorkingTreeHunks(
     projectPath: string,
     sshHost?: string | null,
-    baseSummary?: DiffSummary
+    baseSummary?: DiffSummary,
+    maxFiles?: number
   ): Promise<DiffSummary> {
     const key = repoKey(projectPath, sshHost)
     const entry = this.cache.get(key)
@@ -333,14 +336,18 @@ class GitRepositoryManager {
     if (!base?.isRepo || base.files.length === 0) {
       return base ?? { isRepo: false, branch: null, files: [] }
     }
-    if (base.files.every((f) => f.hunks.length > 0)) return base
+    const hydrationCount =
+      maxFiles === undefined
+        ? base.files.length
+        : Math.min(base.files.length, Math.max(0, Math.floor(maxFiles)))
+    if (base.files.slice(0, hydrationCount).every((f) => f.hunks.length > 0)) return base
 
     const hasHead = entry?.hasHead ?? (await runGitAtRepoRoot(projectPath, ['rev-parse', '--verify', 'HEAD'], sshHost)).code === 0
     const target = hasHead ? 'HEAD' : EMPTY_TREE
 
     let files = base.files
 
-    if (files.length <= WORKING_TREE_FULL_PATCH_MAX_FILES) {
+    if (files.length <= WORKING_TREE_FULL_PATCH_MAX_FILES && hydrationCount === files.length) {
       const patch = await runGitDiffPatch(projectPath, ['--no-color', '-U3', target], sshHost)
       if (gitPatchOutputUsable(patch.code, patch.stdout)) {
         const parsed = parseUnifiedDiff(patch.stdout)
@@ -359,7 +366,7 @@ class GitRepositoryManager {
       }
     }
 
-    const needsLoad = files.filter((f) => f.hunks.length === 0)
+    const needsLoad = files.slice(0, hydrationCount).filter((f) => f.hunks.length === 0)
     if (needsLoad.length > 0) {
       const loaded = await mapInConcurrentBatches(
         needsLoad,
@@ -729,11 +736,12 @@ export async function mergeHintPathsIntoDiffSummary(
 export async function getDiffSummaryWithHunks(
   projectPath: string,
   sshHost?: string | null,
-  force = false
+  force = false,
+  maxFiles?: number
 ): Promise<DiffSummary> {
   const summary = await gitRepositories.refreshChanges(projectPath, sshHost, force)
   if (!summary.isRepo || summary.files.length === 0) return summary
-  return gitRepositories.hydrateWorkingTreeHunks(projectPath, sshHost, summary)
+  return gitRepositories.hydrateWorkingTreeHunks(projectPath, sshHost, summary, maxFiles)
 }
 
 /** Back-compat: changes snapshot (file list, empty hunks until gitFileDiff). */

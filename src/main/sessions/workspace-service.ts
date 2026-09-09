@@ -64,6 +64,8 @@ function mergeDiffHunks(prev: DiffSummary | undefined, next: DiffSummary): DiffS
 }
 
 const PRELOAD_DIFF_HUNKS_TIMEOUT_MS = 60_000
+/** Keep the complete changed-file list, but only hydrate this many patches during preload. */
+export const PRELOAD_DIFF_HUNK_FILE_LIMIT = 10
 /** Wall-clock cap for essential preload — clears connecting even if remote SSH/files hang. */
 const PRELOAD_ESSENTIALS_TIMEOUT_MS = 45_000
 /** Wall-clock cap for background workspace refresh — clears "Refreshing diff…" if remote git stalls. */
@@ -83,9 +85,15 @@ async function loadPreloadDiff(
   hostname: string | null,
   sessionId: string
 ): Promise<DiffSummary> {
+  let diff: DiffSummary
   try {
-    return await Promise.race([
-      getDiffSummaryWithHunks(workspacePath, hostname, false),
+    diff = await Promise.race([
+      getDiffSummaryWithHunks(
+        workspacePath,
+        hostname,
+        false,
+        PRELOAD_DIFF_HUNK_FILE_LIMIT
+      ),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('preload diff hunks timed out')), PRELOAD_DIFF_HUNKS_TIMEOUT_MS)
       )
@@ -95,8 +103,18 @@ async function loadPreloadDiff(
       sessionId,
       error: err instanceof Error ? err.message : String(err)
     })
-    return getDiffSummary(workspacePath, hostname, true)
+    diff = await getDiffSummary(workspacePath, hostname, true)
   }
+  const hydratedFiles = diff.files.filter((file) => file.hunks.length > 0).length
+  if (diff.files.length > PRELOAD_DIFF_HUNK_FILE_LIMIT) {
+    logger.info('workspace preload: diff hunks capped', {
+      sessionId,
+      totalFiles: diff.files.length,
+      hydratedFiles,
+      limit: PRELOAD_DIFF_HUNK_FILE_LIMIT
+    })
+  }
+  return diff
 }
 
 async function timed<T>(fn: () => Promise<T>): Promise<{ result: T; ms: number }> {
