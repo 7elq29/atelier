@@ -92,7 +92,19 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-tertiary);
+}
+
+.dn-focus-heading-row {
+  min-height: 26px;
   margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dn-focus-edit-button {
+  min-height: 24px;
+  padding: 2px 7px;
 }
 
 .dn-focus-list {
@@ -102,6 +114,35 @@
   flex-direction: column;
   gap: 4px;
   font-size: 14px;
+}
+
+.dn-focus-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dn-focus-edit-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.dn-focus-edit-row .input {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.dn-focus-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
 }
 
 .dn-section {
