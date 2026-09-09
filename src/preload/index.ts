@@ -501,6 +501,20 @@ const api = {
   filesRead: (path: string, hostname?: string | null): Promise<FileReadResult> => ipcRenderer.invoke('panel:files:read', path, hostname),
   filesWrite: (path: string, content: string, hostname?: string | null): Promise<FileWriteResult> => ipcRenderer.invoke('panel:files:write', path, content, hostname),
 
+  /**
+   * Unsaved Files-editor text, mirrored to `<userData>/editor-buffers` so
+   * navigating between files no longer discards pending edits. Purged on app
+   * startup/quit — never a substitute for `filesWrite`.
+   */
+  filesBufferRead: (path: string, hostname?: string | null): Promise<string | null> =>
+    ipcRenderer.invoke('panel:files:bufferRead', path, hostname),
+  filesBufferWrite: (path: string, content: string, hostname?: string | null): Promise<void> =>
+    ipcRenderer.invoke('panel:files:bufferWrite', path, content, hostname),
+  filesBufferDelete: (path: string, hostname?: string | null): Promise<void> =>
+    ipcRenderer.invoke('panel:files:bufferDelete', path, hostname),
+  filesBufferList: (hostname?: string | null): Promise<string[]> =>
+    ipcRenderer.invoke('panel:files:bufferList', hostname),
+
   ptySpawn: (opts: { id: string; cwd: string; hostname?: string | null; cols: number; rows: number }): Promise<boolean> =>
     ipcRenderer.invoke('panel:pty:spawn', opts),
   ptyWrite: (id: string, data: string): Promise<void> => ipcRenderer.invoke('panel:pty:write', id, data),

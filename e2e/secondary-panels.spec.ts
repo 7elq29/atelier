@@ -1189,6 +1189,83 @@ test.describe('07-secondary-panels', () => {
     log('files panel: real tree + text/image/html preview OK')
   })
 
+  test('files panel: unsaved edits survive navigating away and are written only on ⌘S', async () => {
+    await page.getByTestId('tab-files').click()
+    const files = page.getByTestId('files-panel-active')
+    // The session tree is rooted at `nested/session`, whose `src` is a symlink to the
+    // repo's — so the edited file and this path are the same inode.
+    const indexPath = join(repoDir, 'src', 'index.js')
+    const bufferDir = join(userDataDir, 'editor-buffers')
+    const onDisk = (): string => readFileSync(indexPath, 'utf-8')
+    const diskBefore = onDisk()
+
+    const indexJs = files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')
+    if (!(await indexJs.isVisible())) {
+      await files.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
+    }
+    await indexJs.click()
+    await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
+    await expect(files.getByTestId('files-unsaved-badge')).toHaveCount(0)
+
+    // Real keystrokes into Monaco — the marker must never reach disk before ⌘S.
+    await files.locator('.view-line').first().click()
+    await page.keyboard.press('End')
+    await page.keyboard.type(' // UNSAVED-MARKER')
+    await expect(files.locator('.view-line', { hasText: 'UNSAVED-MARKER' }).first()).toBeVisible()
+
+    await expect(files.getByTestId('files-unsaved-badge')).toBeVisible()
+    await expect(files.getByTestId('files-unsaved-badge')).toContainText('Unsaved')
+    await expect(
+      files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')
+    ).toHaveClass(/dirty/)
+    await expect(indexJs.getByTestId('file-tree-unsaved-dot')).toBeVisible()
+    expect(onDisk()).toBe(diskBefore)
+    await page.screenshot({ path: join(artifactsDir, '07-files-unsaved-buffer.png') })
+
+    // The 400ms buffer-write debounce must have landed a real file under userData.
+    await expect
+      .poll(() => (existsSync(bufferDir) ? readdirSync(bufferDir).length : 0), { timeout: 10_000 })
+      .toBeGreaterThan(0)
+
+    // Navigate away: the tab is reused and the old model dropped — pre-fix this lost the edit.
+    // `.gitkeep` is the only other text file in this session's tree (the rest are symlinked
+    // image/HTML fixtures), and being empty it proves the editor really switched files.
+    await files.locator('[data-testid="file-tree-file"][data-path=".gitkeep"]').click()
+    await expect(files.locator('.view-line', { hasText: 'UNSAVED-MARKER' })).toHaveCount(0)
+    await expect(files.getByTestId('files-unsaved-badge')).toBeVisible()
+
+    // Back again: the buffered text wins over the (still unmodified) disk content.
+    await indexJs.click()
+    await expect(files.locator('.view-line', { hasText: 'UNSAVED-MARKER' }).first()).toBeVisible({ timeout: 10_000 })
+    expect(onDisk()).toBe(diskBefore)
+
+    // ⌘S is a Monaco keybinding, so the editor — not the tree row just clicked — needs focus.
+    await files.locator('.view-line').first().click()
+    await page.keyboard.press('ControlOrMeta+KeyS')
+    await expect.poll(() => onDisk(), { timeout: 10_000 }).toContain('UNSAVED-MARKER')
+    await expect(files.getByTestId('files-unsaved-badge')).toHaveCount(0)
+    await expect(
+      files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')
+    ).not.toHaveClass(/dirty/)
+    // Saving clears the scratch buffer for that path.
+    await expect
+      .poll(() => (existsSync(bufferDir) ? readdirSync(bufferDir).length : 0), { timeout: 10_000 })
+      .toBe(0)
+
+    // The panel writes the path it opened — under the session cwd, not the symlink target.
+    const editedPath = join(sessionProjectPath, 'src', 'index.js')
+    const wroteIndex = readFileSync(join(userDataDir, 'logs', 'main.log'), 'utf-8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { msg?: string; path?: string })
+      .some((entry) => entry.msg === 'panel:files:write' && entry.path === editedPath)
+    expect(wroteIndex).toBe(true)
+
+    // Restore the fixture so later diff/cap tests see the content they expect.
+    writeFileSync(indexPath, diskBefore)
+    log('files panel: unsaved buffer survives navigation, ⌘S writes through OK')
+  })
+
   test('file quick open: split dir/search, shallow dir browse, recursive search opens file', async () => {
     await page.getByTestId('tab-chat').click()
     await page.getByTestId('composer-input').click()
@@ -1932,6 +2009,67 @@ test.describe('07-secondary-panels (session profile files tree)', () => {
     await expect(location).toHaveValue(`${workspaceRoot}/src/marker.txt`)
     await expect(page.locator('[data-testid="file-tree-file"][data-path="src/marker.txt"]')).toHaveClass(/active/)
     log('files panel: profile session location bar opens file by absolute path OK')
+  })
+})
+
+/**
+ * Unsaved editor text is scratch state scoped to one app run, so a real quit +
+ * relaunch must come back with no buffers. Drives the IPC directly — no session
+ * or SDK call is needed to exercise the buffer store's lifecycle.
+ */
+test.describe('07-secondary-panels (editor buffer lifecycle)', () => {
+  let electronApp: ElectronApplication
+  let page: Page
+  let userDataDir: string
+
+  test.beforeAll(async () => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-editor-buffers-'))
+    seedSkipOnboarding(userDataDir)
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+  })
+
+  test.afterAll(async () => {
+    await electronApp.close().catch(() => undefined)
+  })
+
+  test('editor buffers: round-trip through disk, then purge on app restart', async () => {
+    const bufferDir = join(userDataDir, 'editor-buffers')
+    const scratchPath = '/tmp/atelier-e2e-buffer-target.txt'
+
+    await page.evaluate(
+      ({ path, content }) => window.atelier.filesBufferWrite(path, content, null),
+      { path: scratchPath, content: 'pending edit text' }
+    )
+
+    expect(readdirSync(bufferDir).filter((f) => f.endsWith('.json'))).toHaveLength(1)
+    expect(
+      await page.evaluate((path) => window.atelier.filesBufferRead(path, null), scratchPath)
+    ).toBe('pending edit text')
+    expect(await page.evaluate(() => window.atelier.filesBufferList(null))).toContain(scratchPath)
+
+    // A buffer is never the real file — nothing was written to the target path.
+    expect(existsSync(scratchPath)).toBe(false)
+
+    await page.evaluate((path) => window.atelier.filesBufferDelete(path, null), scratchPath)
+    expect(
+      await page.evaluate((path) => window.atelier.filesBufferRead(path, null), scratchPath)
+    ).toBeNull()
+
+    // Re-add one, then quit for real: the buffer must not outlive the app run.
+    await page.evaluate(
+      ({ path, content }) => window.atelier.filesBufferWrite(path, content, null),
+      { path: scratchPath, content: 'text that should not survive a restart' }
+    )
+    expect(readdirSync(bufferDir).filter((f) => f.endsWith('.json'))).toHaveLength(1)
+
+    await electronApp.close()
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+
+    expect(readdirSync(bufferDir).filter((f) => f.endsWith('.json'))).toHaveLength(0)
+    expect(
+      await page.evaluate((path) => window.atelier.filesBufferRead(path, null), scratchPath)
+    ).toBeNull()
+    log('editor buffers: disk round-trip + purge across restart OK')
   })
 })
 

@@ -160,11 +160,23 @@ type OpenEditorTab = {
   isDirty: boolean
 }
 
+/** Coalesces buffer-file writes while typing, like `useDailyNote`'s write debounce. */
+const BUFFER_WRITE_DEBOUNCE_MS = 400
+
 function modelUriForPath(path: string): monaco.Uri {
   return monaco.Uri.parse(`file://${path}`)
 }
 
-function disposeModelForPathIfUnused(tabs: OpenEditorTab[], path: string): void {
+/**
+ * A path with pending edits keeps its model so the undo stack survives tab
+ * reuse/close; the text itself is recoverable from its buffer file either way.
+ */
+function disposeModelForPathIfUnused(
+  tabs: OpenEditorTab[],
+  path: string,
+  unsavedPaths: Set<string>
+): void {
+  if (unsavedPaths.has(path)) return
   if (tabs.some((t) => t.path === path)) return
   monaco.editor.getModel(modelUriForPath(path))?.dispose()
 }
@@ -215,7 +227,11 @@ function FileTree({
               }
               {n.name}
               {n.type === 'file' && dirtyPaths.has(n.path) && (
-                <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', background: 'var(--text-tertiary)', display: 'inline-block', flexShrink: 0 }} />
+                <span
+                  data-testid="file-tree-unsaved-dot"
+                  title="Unsaved edits held in a scratch buffer"
+                  style={{ marginLeft: 'auto', width: 7, height: 7, borderRadius: '50%', background: 'var(--warning)', display: 'inline-block', flexShrink: 0 }}
+                />
               )}
             </div>
             {n.type === 'dir' && isExpanded && children && children.length > 0 && (
@@ -314,6 +330,14 @@ export default function FilesPanel({
   const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const locationInputRef = useRef<HTMLInputElement | null>(null)
   const openTabsRef = useRef(openTabs)
+  /**
+   * Paths with pending edits. The text lives in main-process buffer files
+   * (`filesBuffer*`); this set only drives markers and model retention.
+   */
+  const unsavedPathsRef = useRef<Set<string>>(new Set())
+  const [unsavedPaths, setUnsavedPaths] = useState<Set<string>>(new Set())
+  /** Coalesces per-keystroke buffer writes; flushed before switching files. */
+  const bufferFlushRef = useRef<{ path: string; timer: ReturnType<typeof setTimeout> } | null>(null)
   const activeTabIdRef = useRef<string | null>(null)
   const onOpenFileQuickOpenRef = useRef(onOpenFileQuickOpen)
   onOpenFileQuickOpenRef.current = onOpenFileQuickOpen
@@ -327,10 +351,16 @@ export default function FilesPanel({
   const fileResult = activeTab?.fileResult ?? null
   const selectedPath = activeTab?.path ?? null
   const isDirty = activeTab?.isDirty ?? false
+  // Buffered paths are included so a closed-but-unsaved file still reads as pending.
   const dirtyPaths = useMemo(
-    () => new Set(openTabs.filter((t) => t.isDirty && t.path).map((t) => t.path as string)),
-    [openTabs]
+    () =>
+      new Set([
+        ...openTabs.filter((t) => t.isDirty && t.path).map((t) => t.path as string),
+        ...unsavedPaths
+      ]),
+    [openTabs, unsavedPaths]
   )
+  const unsavedCount = dirtyPaths.size
 
   openTabsRef.current = openTabs
   activeTabIdRef.current = activeTabId
@@ -472,7 +502,10 @@ export default function FilesPanel({
       const stillUsed = openTabsRef.current.some(
         (t) => t.path != null && modelUriForPath(t.path).toString() === prev.uri.toString()
       )
-      if (!stillUsed) prev.dispose()
+      const hasUnsavedEdit = [...unsavedPathsRef.current].some(
+        (p) => modelUriForPath(p).toString() === prev.uri.toString()
+      )
+      if (!stillUsed && !hasUnsavedEdit) prev.dispose()
     }
     modelRef.current = model
 
@@ -592,6 +625,52 @@ export default function FilesPanel({
     }
   }, [showEditor, active, onAddComment, selectedPath, fileResult])
 
+  const markUnsaved = useCallback((path: string, unsaved: boolean) => {
+    if (unsaved) unsavedPathsRef.current.add(path)
+    else unsavedPathsRef.current.delete(path)
+    setUnsavedPaths(new Set(unsavedPathsRef.current))
+  }, [])
+
+  /** Writes any coalesced buffer edit now — must run before switching files. */
+  const flushPendingBuffer = useCallback(async () => {
+    const pending = bufferFlushRef.current
+    if (!pending) return
+    clearTimeout(pending.timer)
+    bufferFlushRef.current = null
+    const model = monaco.editor.getModel(modelUriForPath(pending.path))
+    if (!model) return
+    await window.atelier.filesBufferWrite(pending.path, model.getValue(), hostname)
+  }, [hostname])
+
+  const queueBufferWrite = useCallback(
+    (path: string) => {
+      if (bufferFlushRef.current) {
+        if (bufferFlushRef.current.path !== path) void flushPendingBuffer()
+        else clearTimeout(bufferFlushRef.current.timer)
+      }
+      const timer = setTimeout(() => {
+        bufferFlushRef.current = null
+        const model = monaco.editor.getModel(modelUriForPath(path))
+        if (model) void window.atelier.filesBufferWrite(path, model.getValue(), hostname)
+      }, BUFFER_WRITE_DEBOUNCE_MS)
+      bufferFlushRef.current = { path, timer }
+    },
+    [flushPendingBuffer, hostname]
+  )
+
+  // Restore unsaved markers when the panel remounts (session switch) within one app run.
+  useEffect(() => {
+    let cancelled = false
+    void window.atelier.filesBufferList(hostname).then((paths) => {
+      if (cancelled) return
+      unsavedPathsRef.current = new Set(paths)
+      setUnsavedPaths(new Set(paths))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [hostname])
+
   // ── Save handler — kept in a stable ref so the keybinding closure never goes stale
   const saveCurrentFile = useCallback(async () => {
     const path = selectedPathRef.current
@@ -599,13 +678,22 @@ export default function FilesPanel({
     if (!path || !editor) return
     setSaveError(null)
     setOpenError(null)
-    const result = await window.atelier.filesWrite(path, editor.getValue(), hostname)
+    const content = editor.getValue()
+    const result = await window.atelier.filesWrite(path, content, hostname)
     if (result.ok) {
+      // Drop the queued buffer write so it can't resurrect the marker post-save.
+      const pending = bufferFlushRef.current
+      if (pending?.path === path) {
+        clearTimeout(pending.timer)
+        bufferFlushRef.current = null
+      }
+      await window.atelier.filesBufferDelete(path, hostname)
+      markUnsaved(path, false)
       setOpenTabs((prev) => prev.map((t) => (t.path === path ? { ...t, isDirty: false } : t)))
     } else {
       setSaveError(result.error)
     }
-  }, [hostname])
+  }, [hostname, markUnsaved])
   useEffect(() => { saveCurrentFileRef.current = saveCurrentFile }, [saveCurrentFile])
 
   // ── Mount/update Monaco model when a text file is selected ────────────────
@@ -616,10 +704,12 @@ export default function FilesPanel({
     const sub = model.onDidChangeContent(() => {
       const path = selectedPathRef.current
       if (!path) return
+      markUnsaved(path, true)
+      queueBufferWrite(path)
       setOpenTabs((prev) => prev.map((t) => (t.path === path ? { ...t, isDirty: true } : t)))
     })
     return () => sub.dispose()
-  }, [fileResult, selectedPath, editorEpoch, applyTextFileToEditor])
+  }, [fileResult, selectedPath, editorEpoch, applyTextFileToEditor, markUnsaved, queueBufferWrite])
 
   // ── HTML preview srcdoc must be set imperatively after mount ───────────────
   useEffect(() => {
@@ -757,20 +847,38 @@ export default function FilesPanel({
       return
     }
 
-    const result = cachedResult ?? (await window.atelier.filesRead(path, hostname))
+    // Persist the outgoing file's pending edit before its model can be dropped.
+    if (bufferFlushRef.current) await flushPendingBuffer()
+
+    const diskResult = cachedResult ?? (await window.atelier.filesRead(path, hostname))
     if (mySeq !== openSeqRef.current) return
+
+    // A buffered edit is newer than what's on disk, so it wins on re-open. Gated
+    // on the in-memory path set so opening a clean file adds no IPC round-trip —
+    // extra awaits here widen races with concurrent opens (`openSeqRef`).
+    const buffered =
+      diskResult.kind === 'text' && unsavedPathsRef.current.has(path)
+        ? await window.atelier.filesBufferRead(path, hostname)
+        : null
+    if (mySeq !== openSeqRef.current) return
+    const result =
+      buffered != null && diskResult.kind === 'text'
+        ? { ...diskResult, content: buffered }
+        : diskResult
+    const restoredDirty = buffered != null
+    if (restoredDirty) markUnsaved(path, true)
 
     if (!active) {
       const id = newEditorTabId()
-      setOpenTabs([{ id, path, fileResult: result, isDirty: false }])
+      setOpenTabs([{ id, path, fileResult: result, isDirty: restoredDirty }])
       setActiveTabId(id)
     } else {
       const oldPath = active.path
       setOpenTabs((prev) => {
         const next = prev.map((t) =>
-          t.id === active.id ? { ...t, path, fileResult: result, isDirty: false } : t
+          t.id === active.id ? { ...t, path, fileResult: result, isDirty: restoredDirty } : t
         )
-        if (oldPath) disposeModelForPathIfUnused(next, oldPath)
+        if (oldPath) disposeModelForPathIfUnused(next, oldPath, unsavedPathsRef.current)
         return next
       })
       setActiveTabId(active.id)
@@ -828,7 +936,7 @@ export default function FilesPanel({
       const closed = prev[idx]
       const next = prev.filter((t) => t.id !== tabId)
       if (closed.path) {
-        disposeModelForPathIfUnused(next, closed.path)
+        disposeModelForPathIfUnused(next, closed.path, unsavedPathsRef.current)
         if (modelRef.current && modelUriForPath(closed.path).toString() === modelRef.current.uri.toString()) {
           if (!next.some((t) => t.path === closed.path)) {
             modelRef.current = null
@@ -1061,6 +1169,16 @@ export default function FilesPanel({
             >
               +
             </button>
+            {unsavedCount > 0 && (
+              <span
+                className="files-unsaved-badge"
+                data-testid="files-unsaved-badge"
+                data-unsaved-count={unsavedCount}
+                title="Edits are held in a scratch buffer until you save them. Buffers are discarded when Atelier quits."
+              >
+                {unsavedCount === 1 ? 'Unsaved · ⌘S' : `${unsavedCount} unsaved · ⌘S`}
+              </span>
+            )}
           </div>
         )}
         <div className="files-body">
