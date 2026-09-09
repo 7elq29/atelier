@@ -130,6 +130,7 @@ function toSessionRecord(row: SessionRow, tags: string[] = []): SessionRecord {
     color: row.color,
     createdAt: row.created_at,
     closedAt: row.closed_at,
+    deletedAt: row.deleted_at,
     tags,
     notes: row.notes,
     sortOrder: row.sort_order,
@@ -519,7 +520,37 @@ export class SessionStore {
     return this.getSession(id)
   }
 
-  /** Delete: hard-removes the session row AND all its message rows (distinct from Close). */
+  /** Persist the first phase of permanent deletion so cleanup survives an app restart. */
+  markSessionDeleting(id: string): SessionRecord | undefined {
+    this.db
+      .prepare('UPDATE sessions SET deleted_at = COALESCE(deleted_at, ?), pinned = 0 WHERE id = ?')
+      .run(new Date().toISOString(), id)
+    return this.getSession(id)
+  }
+
+  listSessionsPendingDeletion(): SessionRecord[] {
+    const rows = this.db
+      .prepare('SELECT * FROM sessions WHERE deleted_at IS NOT NULL ORDER BY deleted_at ASC')
+      .all() as SessionRow[]
+    return this.hydrate(rows)
+  }
+
+  /**
+   * Forks and Restart replacements intentionally inherit the source
+   * worktree. Keep that checkout until the final non-deleting owner goes.
+   */
+  hasOtherSessionUsingWorktree(sessionId: string, worktreePath: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1 FROM sessions
+         WHERE id != ? AND worktree_path = ? AND deleted_at IS NULL
+         LIMIT 1`
+      )
+      .get(sessionId, worktreePath)
+    return !!row
+  }
+
+  /** Final delete: hard-removes the session row and all child data after artifact cleanup. */
   deleteSession(id: string): void {
     const del = this.db.transaction(() => {
       // messages_fts isn't a real foreign-keyed child of `messages` (FTS5

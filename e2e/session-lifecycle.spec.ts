@@ -127,6 +127,7 @@ test.describe('02-session-lifecycle', () => {
   let remoteSessionId: string
   let forkedSessionId: string
   let restartedSessionId: string
+  let cleanupFixtureDir: string | undefined
 
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-lifecycle-'))
@@ -138,6 +139,7 @@ test.describe('02-session-lifecycle', () => {
 
   test.afterAll(async () => {
     await electronApp.close().catch(() => undefined)
+    if (cleanupFixtureDir) rmSync(cleanupFixtureDir, { recursive: true, force: true })
   })
 
   // ── 1. Create (local) ──────────────────────────────────────────────
@@ -479,11 +481,33 @@ test.describe('02-session-lifecycle', () => {
   })
 
   // ── 7. Delete ────────────────────────────────────────────────────────
-  test('delete: sidebar entry and SQLite rows (session + messages) are both gone', async () => {
+  test('delete: shows disabled cleanup state, removes session files, then purges SQLite and sidebar', async () => {
     const restartedRow = page.locator(`[data-testid="session-row"][data-session-id="${restartedSessionId}"]`)
     await expect(restartedRow).toBeVisible()
+
+    cleanupFixtureDir = join(homedir(), '.claude', 'projects', `-tmp-atelier-cleanup-${randomUUID()}`)
+    mkdirSync(cleanupFixtureDir, { recursive: true })
+    const sessionFile = join(cleanupFixtureDir, `${restartedSessionId}.jsonl`)
+    const sessionDirectory = join(cleanupFixtureDir, restartedSessionId)
+    writeFileSync(sessionFile, '{"type":"user"}\n')
+    mkdirSync(sessionDirectory)
+    writeFileSync(join(sessionDirectory, 'subagent.jsonl'), '{"type":"assistant"}\n')
+
     await restartedRow.getByTestId('session-menu-button').click()
     await page.getByTestId('menu-delete').click()
+
+    await expect(restartedRow).toHaveAttribute('data-status', 'cleaning-up')
+    await expect(restartedRow.getByTestId('session-cleanup-label')).toHaveText('Cleaning up session…')
+    await expect(restartedRow.getByTestId('session-menu-button')).toHaveCount(0)
+    await expect(restartedRow).toHaveAttribute('draggable', 'false')
+
+    const pendingRows = await queryDb<{ deleted_at: string | null }>(
+      page,
+      'SELECT deleted_at FROM sessions WHERE id = ?',
+      [restartedSessionId]
+    )
+    expect(pendingRows[0]?.deleted_at).toEqual(expect.any(String))
+    await page.screenshot({ path: join(artifactsDir, '02-session-cleaning-up.png') })
 
     await expect(page.locator(`[data-session-id="${restartedSessionId}"]`)).toHaveCount(0)
 
@@ -492,6 +516,8 @@ test.describe('02-session-lifecycle', () => {
 
     expect(sessionRows.length).toBe(0)
     expect(messageRows.length).toBe(0)
+    expect(existsSync(sessionFile)).toBe(false)
+    expect(existsSync(sessionDirectory)).toBe(false)
 
     appendMainLog(userDataDir)
   })
@@ -1211,6 +1237,147 @@ test.describe('02-session-lifecycle', () => {
       // which the assertions above already confirmed.
       expect(textsAfterSettling.some((t) => t.toLowerCase().includes('error'))).toBe(true)
     }
+  })
+})
+
+test.describe('02-session-lifecycle (durable delete cleanup)', () => {
+  let electronApp: ElectronApplication
+  let page: Page
+  let userDataDir: string
+  let fixtureProjectDir: string | undefined
+  let sharedWorktreePath: string | undefined
+  let sharedBranch: string | undefined
+  let claudeFixtureDir: string | undefined
+  let sessionEnvFixtureDir: string | undefined
+
+  test.beforeAll(async () => {
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-delete-cleanup-'))
+    seedSkipOnboarding(userDataDir)
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+  })
+
+  test.afterAll(async () => {
+    await electronApp.close().catch(() => undefined)
+    if (fixtureProjectDir && sharedWorktreePath && existsSync(sharedWorktreePath)) {
+      try {
+        execFileSync('git', ['worktree', 'remove', sharedWorktreePath, '--force'], { cwd: fixtureProjectDir })
+      } catch {
+        // Best-effort fixture cleanup; the product path is asserted in-test.
+      }
+    }
+    if (fixtureProjectDir && sharedBranch) {
+      try {
+        execFileSync('git', ['branch', '-D', sharedBranch], { cwd: fixtureProjectDir })
+      } catch {
+        // Branch may already have been removed by the product.
+      }
+    }
+    if (fixtureProjectDir) rmSync(fixtureProjectDir, { recursive: true, force: true })
+    if (sharedWorktreePath) rmSync(sharedWorktreePath, { recursive: true, force: true })
+    if (claudeFixtureDir) rmSync(claudeFixtureDir, { recursive: true, force: true })
+    if (sessionEnvFixtureDir) rmSync(sessionEnvFixtureDir, { recursive: true, force: true })
+  })
+
+  test('pending deleted_at row stays visible on relaunch while cleanup resumes', async () => {
+    const sessionId = randomUUID()
+    const now = new Date().toISOString()
+    const projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-delete-pending-project-'))
+    await execDb(
+      page,
+      `INSERT INTO sessions
+        (id, name, project_path, mode, created_at, deleted_at, sort_order, last_active_at)
+       VALUES (?, ?, ?, 'terminal', ?, ?, 0, ?)`,
+      [sessionId, 'Pending cleanup session', projectDir, now, now, now]
+    )
+    await execDb(
+      page,
+      `INSERT INTO messages (session_id, role, content, created_at)
+       VALUES (?, 'user', 'cleanup me', ?)`,
+      [sessionId, now]
+    )
+
+    claudeFixtureDir = join(homedir(), '.claude', 'projects', `-tmp-atelier-pending-${randomUUID()}`)
+    mkdirSync(claudeFixtureDir, { recursive: true })
+    const sessionFile = join(claudeFixtureDir, `${sessionId}.jsonl`)
+    writeFileSync(sessionFile, '{"type":"user"}\n')
+    sessionEnvFixtureDir = join(homedir(), '.claude', 'session-env', sessionId)
+    mkdirSync(sessionEnvFixtureDir, { recursive: true })
+    writeFileSync(join(sessionEnvFixtureDir, 'environment'), 'TEST=1\n')
+
+    await electronApp.close()
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+
+    const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+    await expect(row).toBeVisible({ timeout: 2_000 })
+    await expect(row).toHaveAttribute('data-status', 'cleaning-up')
+    await expect(row.getByTestId('session-cleanup-label')).toHaveText('Cleaning up session…')
+    await expect(row).toHaveCount(0, { timeout: 10_000 })
+
+    expect(await queryDb(page, 'SELECT id FROM sessions WHERE id = ?', [sessionId])).toEqual([])
+    expect(await queryDb(page, 'SELECT id FROM messages WHERE session_id = ?', [sessionId])).toEqual([])
+    expect(existsSync(sessionFile)).toBe(false)
+    expect(existsSync(sessionEnvFixtureDir)).toBe(false)
+    const cleanupLog = appendMainLog(userDataDir)
+    expect(cleanupLog).toContain(`"msg":"session cleanup started","sessionId":"${sessionId}"`)
+    expect(cleanupLog).toContain(`"msg":"session cleanup completed","sessionId":"${sessionId}"`)
+    rmSync(projectDir, { recursive: true, force: true })
+  })
+
+  test('deleting a fork preserves its shared worktree until the final owner is deleted', async () => {
+    fixtureProjectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-delete-shared-repo-'))
+    execFileSync('git', ['init', '-b', 'main'], { cwd: fixtureProjectDir })
+    execFileSync(
+      'git',
+      ['-c', 'user.name=test', '-c', 'user.email=test@test.com', 'commit', '--allow-empty', '-m', 'init'],
+      { cwd: fixtureProjectDir }
+    )
+
+    const sourceId = randomUUID()
+    const cloneId = randomUUID()
+    sharedBranch = `atelier-${sourceId.slice(0, 8)}`
+    sharedWorktreePath = join(tmpdir(), `atelier-e2e-shared-worktree-${randomUUID()}`)
+    execFileSync('git', ['worktree', 'add', '-b', sharedBranch, sharedWorktreePath], {
+      cwd: fixtureProjectDir
+    })
+    const now = new Date().toISOString()
+    for (const [id, name, order] of [
+      [sourceId, 'Shared worktree source', 0],
+      [cloneId, 'Shared worktree fork', 1]
+    ] as const) {
+      await execDb(
+        page,
+        `INSERT INTO sessions
+          (id, name, project_path, mode, created_at, sort_order, worktree_path, last_active_at)
+         VALUES (?, ?, ?, 'terminal', ?, ?, ?, ?)`,
+        [id, name, fixtureProjectDir, now, order, sharedWorktreePath, now]
+      )
+    }
+
+    await electronApp.close()
+    ;({ app: electronApp, page } = await launchApp(userDataDir))
+
+    const sourceRow = page.locator(`[data-testid="session-row"][data-session-id="${sourceId}"]`)
+    await sourceRow.getByTestId('session-menu-button').click()
+    await page.getByTestId('menu-delete').click()
+    await expect(sourceRow).toHaveAttribute('data-status', 'cleaning-up')
+    await expect(sourceRow.getByTestId('session-cleanup-label')).toHaveText('Cleaning up session…')
+    const cleanupStyle = await sourceRow.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { opacity: style.opacity, pointerEvents: style.pointerEvents, cursor: style.cursor }
+    })
+    expect(cleanupStyle).toEqual({ opacity: '0.5', pointerEvents: 'none', cursor: 'default' })
+    await page.screenshot({ path: join(artifactsDir, '02-session-cleaning-up.png') })
+    await expect(sourceRow).toHaveCount(0, { timeout: 10_000 })
+    expect(existsSync(sharedWorktreePath)).toBe(true)
+
+    const cloneRow = page.locator(`[data-testid="session-row"][data-session-id="${cloneId}"]`)
+    await cloneRow.getByTestId('session-menu-button').click()
+    await page.getByTestId('menu-delete').click()
+    await expect(cloneRow).toHaveAttribute('data-status', 'cleaning-up')
+    await expect(cloneRow).toHaveCount(0, { timeout: 10_000 })
+    expect(existsSync(sharedWorktreePath)).toBe(false)
+    expect(execFileSync('git', ['branch', '--list', sharedBranch], { cwd: fixtureProjectDir, encoding: 'utf8' }).trim()).toBe('')
+    appendMainLog(userDataDir)
   })
 })
 

@@ -63,6 +63,7 @@ import { WorkspaceService, LOCAL_GIT_DEBOUNCE_MS } from './workspace-service'
 import { scheduleHostStartupReconnect } from './remote-preload-gate'
 import { applyBashCdCommands } from './harness-cwd'
 import { SessionHarnessUiState } from './session-harness-ui'
+import { removeClaudeSessionFiles } from './session-artifact-cleanup'
 import type {
   SessionAuthStatusEvent,
   SessionBackgroundTasksEvent,
@@ -78,6 +79,7 @@ const AUTO_NAME_STARTING_FROM_TURN = 2
 const AUTO_NAME_MAX_WORDS = 3
 const AUTO_NAME_MAX_LEN = 25
 const AUTO_NAME_PROMPT = `Summarize this conversation topic in under ${AUTO_NAME_MAX_WORDS} words (max ${AUTO_NAME_MAX_LEN} characters). Reply with ONLY the title, no punctuation, no quotes.`
+const MIN_SESSION_CLEANUP_VISIBLE_MS = 600
 
 /** Models sometimes ignore the word-count prompt — clamp to one line, ≤3 words, ≤25 chars. */
 function clampSessionTitle(raw: string): string {
@@ -249,6 +251,8 @@ export class SessionManager {
   private readonly connecting = new Set<string>()
   /** Sessions currently being set up with an async worktree creation — see `getStatus()`'s 'creating-worktree' case. */
   private readonly creatingWorktree = new Set<string>()
+  /** Dedupes explicit deletes and startup retries for durable two-phase cleanup. */
+  private readonly sessionCleanupInFlight = new Map<string, Promise<void>>()
   /** Open claude-code sessions left disconnected on launch due to 1h+ inactivity (session-startup-idle). */
   private readonly startupIdle = new Set<string>()
   /** After reconnect(), the first harness event triggers panel preload in the renderer. */
@@ -590,8 +594,9 @@ export class SessionManager {
   // currently-viewed session — via `session:status`, independent of which
   // session (if any) is focused in the renderer.
 
-  /** 'creating-worktree' while the async worktree setup is in flight; 'connecting' while `reconnect()` is in flight; 'startup-idle' when launch skipped auto reconnect due to 1h+ inactivity; 'working'/'waiting' for any session with a live entry this app run; 'idle' otherwise. */
+  /** Durable cleanup wins over every transient runtime status. */
   getStatus(sessionId: string): SessionStatus {
+    if (this.store.getSession(sessionId)?.deletedAt) return 'cleaning-up'
     if (this.creatingWorktree.has(sessionId)) return 'creating-worktree'
     if (this.connecting.has(sessionId)) return 'connecting'
     if (!this.live.has(sessionId) && this.isSessionStartupIdle(sessionId)) return 'startup-idle'
@@ -619,6 +624,7 @@ export class SessionManager {
    */
   markStartupIdleSessions(): void {
     for (const session of this.store.listActiveSessions()) {
+      if (session.deletedAt) continue
       if (session.mode !== 'claude-code') continue
       if (!this.sessionIsStartupIdleEligible(session)) continue
       void this.closeSession(session.id)
@@ -1155,8 +1161,8 @@ export class SessionManager {
         }
       )
       const afterCreate = this.store.getSession(sessionId)
-      if (!afterCreate || afterCreate.closedAt) {
-        logger.info('setupWorktreeAsync: session closed during worktree creation — cleaning up', { sessionId })
+      if (!afterCreate || afterCreate.closedAt || afterCreate.deletedAt) {
+        logger.info('setupWorktreeAsync: session closed or deleting during worktree creation — cleaning up', { sessionId })
         void removeWorktree(
           worktreePath,
           sessionId,
@@ -1975,19 +1981,62 @@ export class SessionManager {
     await completeLinkedDailyTask(this.store, this.getWindow, sessionId)
   }
 
-  deleteSession(sessionId: string): void {
-    const session = this.store.getSession(sessionId)
-    if (session?.worktreePath) {
-      void this.cleanupSessionWorktree(session, { clearStoredPath: false })
+  deleteSession(sessionId: string): Promise<void> {
+    const existing = this.sessionCleanupInFlight.get(sessionId)
+    if (existing) return existing
+
+    const cleanup = this.runSessionCleanup(sessionId).finally(() => {
+      if (this.sessionCleanupInFlight.get(sessionId) === cleanup) {
+        this.sessionCleanupInFlight.delete(sessionId)
+      }
+    })
+    this.sessionCleanupInFlight.set(sessionId, cleanup)
+    return cleanup
+  }
+
+  /** Resume durable cleanup markers left by a quit, crash, or unreachable remote host. */
+  resumePendingSessionCleanup(): void {
+    for (const session of this.store.listSessionsPendingDeletion()) {
+      void this.deleteSession(session.id).catch((err) => {
+        logger.error('session cleanup retry failed', {
+          sessionId: session.id,
+          error: err instanceof Error ? err.message : String(err)
+        })
+      })
     }
+  }
+
+  private async runSessionCleanup(sessionId: string): Promise<void> {
+    const session = this.store.getSession(sessionId)
+    if (!session) return
+
+    const cleanupStartedAt = Date.now()
+    const wasCreatingWorktree = this.creatingWorktree.has(sessionId)
+    const deleting = this.store.markSessionDeleting(sessionId)
+    if (!deleting) return
+    logger.info('session cleanup started', {
+      sessionId,
+      worktreePath: deleting.worktreePath,
+      hostname: deleting.hostname
+    })
+    this.sendLifecycle({ type: 'session.updated', session: this.decorate(deleting) })
+    this.sendStatus(sessionId)
+
     this.markInterruptedTurnNoticeIfBusy(sessionId)
-    void this.harness.interrupt(sessionId).catch(() => undefined)
     const live = this.live.get(sessionId)
     this.finalizeStaleRunningToolCalls(sessionId, live)
+    await this.harness.interrupt(sessionId).catch((err) => {
+      logger.warn('session cleanup: harness interrupt failed (continuing)', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err)
+      })
+    })
     this.live.delete(sessionId)
     this.invalidateConsume(sessionId)
     this.connecting.delete(sessionId)
     this.creatingWorktree.delete(sessionId)
+    this.startupIdle.delete(sessionId)
+    this.worktreeMissingChecked.delete(sessionId)
     this.pendingPanelPreload.delete(sessionId)
     this.workspacePreloadInFlight.delete(sessionId)
     this.clearCapRefreshDebounce(sessionId)
@@ -1995,7 +2044,40 @@ export class SessionManager {
     this.portForwards?.removeAllForSession(sessionId)
     this.sendTurnState(sessionId, false)
     this.resetHarnessUiForSession(sessionId)
+
+    await removeClaudeSessionFiles(deleting)
+
+    const hostname = deleting.hostname
+      ? this.hosts.resolveByHostname(deleting.hostname)?.sshHost
+      : undefined
+    const sharedWorktree =
+      !!deleting.worktreePath &&
+      this.store.hasOtherSessionUsingWorktree(sessionId, deleting.worktreePath)
+    if (sharedWorktree) {
+      logger.info('session cleanup: preserving shared worktree', {
+        sessionId,
+        worktreePath: deleting.worktreePath
+      })
+    } else if (deleting.worktreePath || wasCreatingWorktree) {
+      await this.cleanupSessionWorktree(deleting, { clearStoredPath: false })
+      const homeDir = this.homeDirForStoredSession(deleting)
+      const expectedPath =
+        deleting.worktreePath ??
+        sessionWorktreePath(worktreeRootFromConfig(loadConfig()), sessionId, homeDir)
+      if (await worktreePathExists(expectedPath, hostname)) {
+        throw new Error(`Worktree cleanup did not remove ${expectedPath}`)
+      }
+    }
+
+    const remainingVisibleMs = MIN_SESSION_CLEANUP_VISIBLE_MS - (Date.now() - cleanupStartedAt)
+    if (remainingVisibleMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, remainingVisibleMs))
+    }
+
+    this.permissionModes.delete(sessionId)
+    this.modelSelections.delete(sessionId)
     this.store.deleteSession(sessionId)
+    logger.info('session cleanup completed', { sessionId })
     this.sendLifecycle({ type: 'session.deleted', sessionId })
   }
 
@@ -2947,6 +3029,7 @@ export class SessionManager {
       `atelier-${s.id.replace(/[^a-zA-Z0-9-]/g, '-')}`.slice(0, 50)
 
     for (const session of this.store.listActiveSessions()) {
+      if (session.deletedAt) continue
       if (session.mode === 'terminal') {
         // Terminal sessions can't auto-reconnect — probe tmux and mark stale if dead.
         const name = tmuxName(session)
