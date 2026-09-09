@@ -46,6 +46,16 @@ export interface HarnessStartOptions {
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   /** Optional system prompt append/override, passed through verbatim. */
   systemPrompt?: string
+  /**
+   * Extra instructions appended to Claude Code's own default system prompt
+   * (the SDK's `systemPrompt: { type: 'preset', preset: 'claude_code', append }`
+   * shape). Distinct from `systemPrompt` above, which REPLACES the preset
+   * outright — this keeps the stock prompt and its dynamic sections intact.
+   * Ignored when `systemPrompt` is set, since the two are mutually exclusive
+   * in the SDK's own option. Used for worktree sessions (see
+   * `worktreeSystemPromptAppend`).
+   */
+  appendSystemPrompt?: string
   /** Restrict the built-in tool set available to the agent. */
   allowedTools?: string[]
   /**

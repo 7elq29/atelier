@@ -584,7 +584,17 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       ...(spec.mode === 'resume' ? { resume: sessionId } : { sessionId }),
       model: opts.model ?? resolveDefaultModel(),
       ...(opts.effort ? { effort: opts.effort } : {}),
-      ...(opts.systemPrompt ? { systemPrompt: opts.systemPrompt } : {}),
+      ...(opts.systemPrompt
+        ? { systemPrompt: opts.systemPrompt }
+        : opts.appendSystemPrompt
+          ? {
+              systemPrompt: {
+                type: 'preset' as const,
+                preset: 'claude_code' as const,
+                append: opts.appendSystemPrompt
+              }
+            }
+          : {}),
       ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
       // Local sessions: pass process.env with GUI-safe PATH prefixes so Claude
       // Code hooks (`aifx`, etc.) resolve when Atelier is launched from Dock.
@@ -601,6 +611,13 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       // and ExitPlanMode call is gated through this one callback — see the
       // doc comment on ActiveSession.pendingPrompts and makeCanUseTool below.
       canUseTool: makeCanUseTool(sessionId, active),
+    }
+
+    if (!opts.systemPrompt && opts.appendSystemPrompt) {
+      logger.info('appending instructions to the claude_code preset system prompt', {
+        sessionId,
+        append: opts.appendSystemPrompt
+      })
     }
 
     const query = sdk.query({ prompt: queue, options })
