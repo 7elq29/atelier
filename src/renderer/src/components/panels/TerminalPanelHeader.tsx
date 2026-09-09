@@ -27,7 +27,7 @@ function IconGlobe(): JSX.Element {
   )
 }
 
-function IconToolbox(): JSX.Element {
+export function IconToolbox(): JSX.Element {
   return (
     <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M4 9h16v11H4z" />

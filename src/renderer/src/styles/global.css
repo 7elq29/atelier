@@ -3740,6 +3740,14 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 .term-shell-main > .term-body {
   box-sizing: border-box;
 }
+/* Session Terminal tab / terminal-only: overlay like the mock. Companion
+   keeps the toggle inside `.term-panel-header`, so it stays in-flow. */
+.term-shell-main > .term-toolbox-toggle {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 2;
+}
 .term-panel-header .term-toolbox-toggle {
   position: static;
   flex-shrink: 0;

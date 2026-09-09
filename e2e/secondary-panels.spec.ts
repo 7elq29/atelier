@@ -242,8 +242,14 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('diff-empty-not-repo')).toBeVisible({ timeout: 15_000 })
 
     await page.getByTestId('tab-terminal').click()
-    const altBasename = altProjectPath.split('/').filter(Boolean).pop() ?? altProjectPath
-    await expect(page.getByTestId('terminal-cwd-chip')).toContainText(altBasename, { timeout: 15_000 })
+    await expect(page.getByTestId('terminal-panel-header')).toHaveCount(0)
+    await expect(page.getByTestId('terminal-toolbox-toggle')).toBeVisible()
+    const term = page.getByTestId('terminal-body')
+    await term.click()
+    await page.keyboard.type('pwd')
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => term.textContent(), { timeout: 15_000 }).toContain(altProjectPath)
+    await page.screenshot({ path: join(artifactsDir, '07-terminal-tab-no-header.png') })
 
     await page.screenshot({ path: join(artifactsDir, '07-session-project-path-reload.png') })
     log(`project path changed to ${altProjectPath}`)
@@ -1471,18 +1477,21 @@ test.describe('07-secondary-panels', () => {
   test('terminal toolbox: toggle panel and double-click pastes command into shell', async () => {
     await page.getByTestId('open-local-terminal-button').click()
     await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 10_000 })
-    const term = page.getByTestId('terminal-body')
+    // The shell lives in `.terminal-cache-entry.active`, not inside the
+    // placeholder `terminal-only-session` node.
+    const surface = page.locator('.terminal-cache-entry.active')
+    const term = surface.getByTestId('terminal-body')
     await term.click()
 
-    await page.getByTestId('terminal-toolbox-toggle').click()
-    await expect(page.getByTestId('terminal-toolbox-panel')).toBeVisible()
+    await surface.getByTestId('terminal-toolbox-toggle').click()
+    await expect(surface.getByTestId('terminal-toolbox-panel')).toBeVisible()
 
     const marker = `toolbox-paste-${Date.now()}`
-    await page.getByTestId('terminal-toolbox-add').click()
-    await page.getByTestId('terminal-toolbox-add-label').fill('echo marker')
-    await page.getByTestId('terminal-toolbox-add-command').fill(`echo ${marker}`)
-    await page.getByTestId('terminal-toolbox-add-save').click()
-    await page.locator('.term-toolbox-row').filter({ hasText: 'echo marker' }).dblclick()
+    await surface.getByTestId('terminal-toolbox-add').click()
+    await surface.getByTestId('terminal-toolbox-add-label').fill('echo marker')
+    await surface.getByTestId('terminal-toolbox-add-command').fill(`echo ${marker}`)
+    await surface.getByTestId('terminal-toolbox-add-save').click()
+    await surface.locator('.term-toolbox-row').filter({ hasText: 'echo marker' }).dblclick()
     await page.keyboard.press('Enter')
     await expect.poll(async () => term.textContent(), { timeout: 15_000 }).toContain(marker)
     await page.screenshot({ path: join(artifactsDir, '07-terminal-toolbox.png') })

@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import { DEFAULT_TERMINAL_TOOLBOX_COMMANDS } from '../../../../shared/terminal-toolbox-types'
 import { useConfig } from '../../hooks/useConfig'
 import TerminalPanel, { type TerminalPanelHandle } from './TerminalPanel'
-import TerminalPanelHeader from './TerminalPanelHeader'
+import TerminalPanelHeader, { IconToolbox } from './TerminalPanelHeader'
 import TerminalToolboxPanel from './TerminalToolboxPanel'
 
 export default function TerminalWithToolbox({
@@ -37,18 +37,34 @@ export default function TerminalWithToolbox({
     [updateConfig]
   )
 
+  const toggleToolbox = (): void => setToolboxOpen((o) => !o)
+
   return (
-    <div className="term-shell">
+    <div className="term-shell" data-cwd={cwd}>
       <div className="term-shell-main">
-        <TerminalPanelHeader
-          cwd={cwd}
-          hostname={hostname}
-          shellRemoteHost={shellRemoteHost}
-          variant={variant}
-          toolboxOpen={toolboxOpen}
-          onToggleToolbox={() => setToolboxOpen((o) => !o)}
-          onClose={onClose}
-        />
+        {variant === 'companion' ? (
+          <TerminalPanelHeader
+            cwd={cwd}
+            hostname={hostname}
+            shellRemoteHost={shellRemoteHost}
+            variant={variant}
+            toolboxOpen={toolboxOpen}
+            onToggleToolbox={toggleToolbox}
+            onClose={onClose}
+          />
+        ) : (
+          <button
+            type="button"
+            className="term-toolbox-toggle"
+            data-testid="terminal-toolbox-toggle"
+            title="Command toolbox"
+            aria-label="Command toolbox"
+            aria-expanded={toolboxOpen}
+            onClick={toggleToolbox}
+          >
+            <IconToolbox />
+          </button>
+        )}
         <TerminalPanel ref={termRef} ptyId={ptyId} cwd={cwd} hostname={hostname} active={active} />
       </div>
       {toolboxOpen ? (
