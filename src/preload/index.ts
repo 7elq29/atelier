@@ -30,6 +30,7 @@ import type {
   SessionStatusEvent,
   SessionStreamDeltaEvent,
   SessionStreamEvent,
+  SessionTab,
   SessionMessageRemovedEvent,
   SessionInterruptResult,
   SessionTokenUsageEvent,
@@ -259,6 +260,9 @@ const api = {
     ipcRenderer.invoke('session:setColor', sessionId, color),
   setSessionNotes: (sessionId: string, notes: string): Promise<SessionRecord> =>
     ipcRenderer.invoke('session:setNotes', sessionId, notes),
+  /** Remembers the session's last workspace tab so selecting it again restores that tab (remember-session-tab). */
+  setSessionActiveTab: (sessionId: string, tab: SessionTab): Promise<void> =>
+    ipcRenderer.invoke('session:setActiveTab', sessionId, tab),
   setSessionProjectPath: (sessionId: string, projectPath: string): Promise<SessionRecord> =>
     ipcRenderer.invoke('session:setProjectPath', sessionId, projectPath),
   addSessionTag: (sessionId: string, tag: string): Promise<SessionRecord> =>

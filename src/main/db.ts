@@ -360,6 +360,17 @@ const MIGRATIONS: Array<{ name: string; sql?: string; run?: (database: Database.
       );
       CREATE INDEX IF NOT EXISTS idx_app_bookmarks_sort ON app_bookmarks(sort_order);
     `
+  },
+  {
+    // remember-session-tab: the workspace tab a session was last parked on, so
+    // selecting it again (including after a relaunch) restores that tab rather
+    // than always snapping back to Chat.
+    name: '0019_session_active_tab',
+    run(database) {
+      if (!tableHasColumn(database, 'sessions', 'active_tab')) {
+        database.exec(`ALTER TABLE sessions ADD COLUMN active_tab TEXT NOT NULL DEFAULT 'chat';`)
+      }
+    }
   }
 ]
 

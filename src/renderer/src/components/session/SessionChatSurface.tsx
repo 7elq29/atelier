@@ -12,7 +12,9 @@ import { useSessionMessages, useTranscriptTruncation } from '../../hooks/useSess
 import ChatTranscript from '../chat/ChatTranscript'
 import TrackerRail from '../chat/TrackerRail'
 import ResponseReviewPanel from '../chat/ResponseReviewPanel'
+import { SessionReadyHint } from '../chat/SessionReadyHint'
 import { sessionFileLinkWorkspaceRoot } from '../chat/file-path-links'
+import { sessionWorkspaceLabel } from '../../utils/sessionWorkspaceLabel'
 
 /** Chat transcript + tracker rail — isolated from App so stream deltas skip workspace panels. */
 export function SessionChatSurface({
@@ -116,6 +118,9 @@ export function SessionChatSurface({
           onDeleteComment={onDeleteComment}
           reviewComments={reviewComments}
           busy={busy}
+          // This surface only renders once the session is past the connecting
+          // gate, so an empty transcript here means "connected, nothing said yet".
+          emptyState={<SessionReadyHint workspaceLabel={sessionWorkspaceLabel(session)} />}
         />
       </div>
       <TrackerRail messages={messages} backgroundTasks={backgroundTasks} />

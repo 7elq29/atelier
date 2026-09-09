@@ -50,6 +50,7 @@ import { useSessions } from './hooks/useSessions'
 import { useSessionWorkspace } from './hooks/useSessionWorkspace'
 import { useSessionBookmarks } from './hooks/useSessionBookmarks'
 import { truncateContextPath } from './utils/truncateContextPath'
+import { sessionWorkspaceLabel } from './utils/sessionWorkspaceLabel'
 import { useAppNotes } from './hooks/useAppNotes'
 import { useAppBookmarks } from './hooks/useAppBookmarks'
 import {
@@ -72,6 +73,7 @@ import type {
   SessionRecord,
   SessionStatus
 } from '../../shared/session-types'
+import { restorableSessionTab } from '../../shared/session-types'
 import { FTS_SNIPPET_START, FTS_SNIPPET_END, parseStructuredContent } from '../../shared/chat-content'
 import { isClaudePlanPath } from '../../shared/claude-plan-path'
 import { findPlanCapEdition } from '../../shared/plan-cap-editions'
@@ -162,6 +164,21 @@ function claudeCodeSessionDisconnected(
   return status === 'startup-idle' || status === 'connecting'
 }
 
+/**
+ * A claude-code session whose harness has finished coming up, so the user can
+ * actually send something (session-ready-hint). Deliberately not "status is
+ * idle": a session started from an initial prompt goes straight to `working`,
+ * and it is just as ready to be chatted with.
+ */
+function sessionReadyToChat(
+  session: SessionRecord | undefined,
+  status: SessionStatus | undefined
+): boolean {
+  if (!session || session.mode !== 'claude-code' || session.closedAt) return false
+  if (!status) return false
+  return status !== 'connecting' && status !== 'creating-worktree' && status !== 'startup-idle' && status !== 'disconnected'
+}
+
 function defaultModelSelection(config: AtelierConfig): ModelSelection {
   return {
     model: defaultClaudeModelFromConfig(config),
@@ -226,6 +243,20 @@ export default function App(): JSX.Element {
   const [modelSelectionBySession, setModelSelectionBySession] = useState<Record<string, ModelSelection>>({})
   const [activeTab, setActiveTab] = useState<SessionTab>('chat')
   const [visitedTabs, setVisitedTabs] = useState<Set<SessionTab>>(new Set(['chat']))
+  /**
+   * Last tab per session for this launch (remember-session-tab). The same value
+   * is persisted to SQLite, but the session records in memory aren't refetched
+   * on a tab click, so this map — not `session.activeTab` — is what a
+   * same-launch session switch reads back.
+   */
+  const sessionTabsRef = useRef<Map<string, SessionTab>>(new Map())
+  const [appToast, setAppToast] = useState<string | null>(null)
+  /**
+   * Sessions created this launch that have not yet finished connecting
+   * (session-ready-hint). Only these get the ready announcement — a session
+   * reconnecting after a relaunch is resuming work the user already knows about.
+   */
+  const pendingReadySessionsRef = useRef<Set<string>>(new Set())
   const [workspaceSplitBySession, setWorkspaceSplitBySession] = useState<
     Record<string, WorkspaceSplitState>
   >({})
@@ -489,9 +520,24 @@ export default function App(): JSX.Element {
         return next
       })
       composerRefs.current.delete(id)
+      sessionTabsRef.current.delete(id)
     },
     [sessionBookmarks, sessionWorkspace]
   )
+
+  /**
+   * Switches the workspace tab and remembers it for the session, in memory for
+   * this launch and in SQLite for the next one (remember-session-tab). Every
+   * user-driven tab change goes through here; restoring a remembered tab on
+   * session select deliberately does not, so it can't overwrite what it read.
+   */
+  const rememberActiveTab = useCallback((sessionId: string | null, tab: SessionTab) => {
+    setActiveTab(tab)
+    setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)))
+    if (!sessionId) return
+    sessionTabsRef.current.set(sessionId, tab)
+    void window.atelier.setSessionActiveTab(sessionId, tab)
+  }, [])
 
   const performCloseSession = useCallback(
     (id: string) => {
@@ -545,8 +591,15 @@ export default function App(): JSX.Element {
     setWeeklyPlanViewDoc(null)
     setWeeklyPlanExistsHint(null)
     setActiveSessionId(session.id)
-    setActiveTab('chat')
-    setVisitedTabs(new Set(['chat']))
+    // remember-session-tab: come back to the tab this session was left on. Chat
+    // stays in `visitedTabs` so its transcript is mounted either way; the
+    // restored tab joins it because Ports only mounts once visited.
+    const restoredTab = restorableSessionTab(
+      sessionTabsRef.current.get(session.id) ?? session.activeTab,
+      session.hostname
+    )
+    setActiveTab(restoredTab)
+    setVisitedTabs(new Set<SessionTab>(['chat', restoredTab]))
     const startupIdle =
       session.mode === 'claude-code' &&
       !session.closedAt &&
@@ -719,10 +772,9 @@ export default function App(): JSX.Element {
           return { ...prev, [sessionId]: nextSplit }
         })
       }
-      setActiveTab(tab)
-      setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)))
+      rememberActiveTab(sessionId, tab)
     },
-    [activeSession, activeSessionId, sessions.statuses, workspaceSplitBySession]
+    [activeSession, activeSessionId, rememberActiveTab, sessions.statuses, workspaceSplitBySession]
   )
 
   const activeWorkspaceSplit = activeSessionId ? workspaceSplitBySession[activeSessionId] ?? null : null
@@ -750,10 +802,9 @@ export default function App(): JSX.Element {
         const { [activeSessionId]: _removed, ...rest } = prev
         return rest
       })
-      setActiveTab(remaining)
-      setVisitedTabs((prev) => (prev.has(remaining) ? prev : new Set(prev).add(remaining)))
+      rememberActiveTab(activeSessionId, remaining)
     },
-    [activeSessionId, workspaceSplitBySession]
+    [activeSessionId, rememberActiveTab, workspaceSplitBySession]
   )
 
   const handleWorkspaceSplitDrop = useCallback(
@@ -778,15 +829,10 @@ export default function App(): JSX.Element {
       )
       if (!next) return
       setWorkspaceSplitBySession((prev) => ({ ...prev, [activeSessionId]: next }))
-      setActiveTab(primaryTab)
-      setVisitedTabs((prev) => {
-        const nextVisited = new Set(prev)
-        nextVisited.add(primaryTab)
-        nextVisited.add(secondaryTab)
-        return nextVisited
-      })
+      rememberActiveTab(activeSessionId, primaryTab)
+      setVisitedTabs((prev) => (prev.has(secondaryTab) ? prev : new Set(prev).add(secondaryTab)))
     },
-    [activeSessionId, activeTab, workspaceSplitBySession]
+    [activeSessionId, activeTab, rememberActiveTab, workspaceSplitBySession]
   )
 
   const workspaceTabDrag = useWorkspaceTabDrag(handleWorkspaceSplitDrop)
@@ -802,6 +848,36 @@ export default function App(): JSX.Element {
     },
     [activeSessionId]
   )
+
+  /**
+   * Announces a newly created session the moment its harness is up
+   * (session-ready-hint). The transcript's own hint covers the session you are
+   * looking at; this covers the one you already navigated away from, which
+   * otherwise finishes connecting completely silently.
+   */
+  useEffect(() => {
+    if (pendingReadySessionsRef.current.size === 0) return
+    for (const sessionId of [...pendingReadySessionsRef.current]) {
+      const session = allSessions.find((s) => s.id === sessionId)
+      if (!session) {
+        pendingReadySessionsRef.current.delete(sessionId)
+        continue
+      }
+      if (!sessionReadyToChat(session, sessions.statuses[sessionId])) continue
+      pendingReadySessionsRef.current.delete(sessionId)
+      if (sessionId === activeSessionId) {
+        if (!hasSessionMessages(sessionId)) composerRefs.current.get(sessionId)?.focus()
+      } else {
+        setAppToast(`Session ready to chat — ${sessionWorkspaceLabel(session)}`)
+      }
+    }
+  }, [activeSessionId, allSessions, sessions.statuses])
+
+  useEffect(() => {
+    if (!appToast) return
+    const timer = setTimeout(() => setAppToast(null), 2600)
+    return () => clearTimeout(timer)
+  }, [appToast])
 
   // Switching sessions always closes/clears the in-conversation search bar —
   // matches (and their indices) are only meaningful for the transcript
@@ -899,7 +975,7 @@ export default function App(): JSX.Element {
       )
       const result = await window.atelier.filesRead(absolutePath, session.hostname ?? null)
 
-      setActiveTab('chat')
+      rememberActiveTab(session.id, 'chat')
       setReviewTarget({
         sourceId: -1,
         kind: 'file',
@@ -918,6 +994,7 @@ export default function App(): JSX.Element {
     [
       activeSessionId,
       allSessions,
+      rememberActiveTab,
       sessions.statuses,
       sessionWorkspace.workspaceBySession
     ]
@@ -1138,7 +1215,7 @@ export default function App(): JSX.Element {
           const planMessages = activeMessages.filter(
             (m) => parseStructuredContent(m.content)?.kind === 'plan_proposed'
           )
-          setActiveTab('chat')
+          rememberActiveTab(activeSessionId, 'chat')
           setReviewTarget({
             sourceId: planMessages[planMessages.length - 1]?.id ?? -1,
             kind: 'plan',
@@ -1154,7 +1231,7 @@ export default function App(): JSX.Element {
         const planMessages = activeMessages.filter(
           (m) => parseStructuredContent(m.content)?.kind === 'plan_proposed'
         )
-        setActiveTab('chat')
+        rememberActiveTab(activeSessionId, 'chat')
         setReviewTarget({
           sourceId: planMessages[planMessages.length - 1]?.id ?? -1,
           kind: 'plan',
@@ -1172,7 +1249,7 @@ export default function App(): JSX.Element {
           openFileInFiles(path)
           return
         }
-        setActiveTab('chat')
+        rememberActiveTab(activeSessionId, 'chat')
         setReviewTarget({
           sourceId: -1,
           kind: 'file',
@@ -1197,7 +1274,7 @@ export default function App(): JSX.Element {
         openFileInFiles(path)
         return
       }
-      setActiveTab('chat')
+      rememberActiveTab(activeSessionId, 'chat')
       setReviewTarget({
         sourceId: -1,
         kind: 'file',
@@ -1210,6 +1287,7 @@ export default function App(): JSX.Element {
       activeSessionId,
       allSessions,
       openFileInFiles,
+      rememberActiveTab,
       sessions.statuses,
       sessionWorkspace.workspaceBySession
     ]
@@ -2098,6 +2176,7 @@ export default function App(): JSX.Element {
             ...opts,
             suggestedName: pendingTaskSessionLink?.taskText.trim() || opts.suggestedName
           })
+          if (created.mode === 'claude-code') pendingReadySessionsRef.current.add(created.id)
           let session = created
           if (pendingTaskSessionLink) {
             session = await sessions.linkDailyTask(
@@ -2166,6 +2245,12 @@ export default function App(): JSX.Element {
         onFinish={handleOnboardingFinish}
         onSkip={handleOnboardingSkip}
       />
+
+      {appToast && (
+        <div className="app-toast" data-testid="app-toast" role="status">
+          {appToast}
+        </div>
+      )}
     </div>
   )
 }

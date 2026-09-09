@@ -8,6 +8,26 @@ import { APP_DISPLAY_NAME } from './app-brand'
 
 export type SessionMode = 'terminal' | 'claude-code'
 
+/**
+ * The workspace tabs a claude-code session can be parked on
+ * (07-secondary-panels). Lives here rather than next to `TabBar` because the
+ * last-used tab is a persisted session column read by main and renderer alike.
+ */
+export const SESSION_TABS = ['chat', 'diff', 'files', 'terminal', 'ports'] as const
+
+export type SessionTab = (typeof SESSION_TABS)[number]
+
+/**
+ * Narrows an arbitrary persisted `active_tab` value to a tab this session can
+ * actually show: unknown strings fall back to chat, and so does `'ports'` for
+ * a local session, whose strip has no Ports tab to restore onto.
+ */
+export function restorableSessionTab(tab: string | null | undefined, hostname: string | null): SessionTab {
+  if (!tab || !(SESSION_TABS as readonly string[]).includes(tab)) return 'chat'
+  if (tab === 'ports' && !hostname) return 'chat'
+  return tab as SessionTab
+}
+
 /** System transcript copy shown once after a mid-turn app close/quit (fix-app-quit-interrupted-turn-notice). */
 export const TURN_INTERRUPTED_NOTICE = `The previous turn was stopped because ${APP_DISPLAY_NAME} closed while the assistant was still working. You can continue from the transcript below.`
 
@@ -103,6 +123,13 @@ export interface SessionRecord {
    * Used to skip auto harness reconnect on relaunch when older than 1 hour.
    */
   lastActiveAt: string
+  /**
+   * Workspace tab the user was last on in this session (remember-session-tab),
+   * persisted so switching away and back — or relaunching the app — returns to
+   * Files/Diff/Terminal instead of snapping to Chat. `'chat'` for sessions the
+   * user has never moved off the default tab.
+   */
+  activeTab: SessionTab
   /** Obsidian daily-note task gid linked via todo-session-link. */
   linkedDailyTaskGid: string | null
   /** Date (YYYY-MM-DD) of the note containing `linkedDailyTaskGid`. */
