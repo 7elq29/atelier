@@ -1,6 +1,7 @@
 import { SESSION_TAB_SHORTCUT_LABELS } from '../../keyboard-hints/keyboard-hints'
+import type { SessionTab } from '../../../../shared/session-types'
 
-export type SessionTab = 'chat' | 'diff' | 'files' | 'terminal' | 'ports'
+export type { SessionTab }
 
 /**
  * Tab bar (07-secondary-panels §1): Chat/Diff/Files/Terminal(/Ports for

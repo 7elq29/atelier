@@ -8,8 +8,10 @@ import type {
   PermissionModeValue,
   SessionGroupRecord,
   SessionMode,
-  SessionRecord
+  SessionRecord,
+  SessionTab
 } from '../../shared/session-types'
+import { restorableSessionTab } from '../../shared/session-types'
 import {
   CHAT_TRANSCRIPT_MAX_TURNS,
   type SessionMessagesResult
@@ -65,6 +67,7 @@ interface SessionRow {
   linked_daily_task_gid: string | null
   linked_daily_note_date: string | null
   profile_id: string | null
+  active_tab: string | null
 }
 
 interface MessageRow {
@@ -150,6 +153,10 @@ function toSessionRecord(row: SessionRow, tags: string[] = []): SessionRecord {
     worktreePath: row.worktree_path ?? null,
     profileId: row.profile_id ?? null,
     lastActiveAt: row.last_active_at || row.created_at,
+    // remember-session-tab: narrowed on read so a stale 'ports' row (or any
+    // value written by a newer build) can never select a tab this session's
+    // strip doesn't render.
+    activeTab: restorableSessionTab(row.active_tab, row.hostname),
     linkedDailyTaskGid: row.linked_daily_task_gid ?? null,
     linkedDailyNoteDate: row.linked_daily_note_date ?? null
   }
@@ -292,6 +299,12 @@ export class SessionStore {
 
   setColor(id: string, color: string): SessionRecord | undefined {
     this.db.prepare('UPDATE sessions SET color = ? WHERE id = ?').run(color, id)
+    return this.getSession(id)
+  }
+
+  /** Remembers the workspace tab this session was last on (remember-session-tab). */
+  setActiveTab(id: string, tab: SessionTab): SessionRecord | undefined {
+    this.db.prepare('UPDATE sessions SET active_tab = ? WHERE id = ?').run(tab, id)
     return this.getSession(id)
   }
 

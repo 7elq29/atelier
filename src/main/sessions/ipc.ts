@@ -5,7 +5,7 @@
  */
 import { ipcMain, dialog, app, type BrowserWindow } from 'electron'
 import { writeFile } from 'node:fs/promises'
-import type { CreateSessionOptions, ImageAttachment, ModelSelection, PromptDecision } from '../../shared/session-types'
+import type { CreateSessionOptions, ImageAttachment, ModelSelection, PromptDecision, SessionTab } from '../../shared/session-types'
 import type { CreateSessionBookmarkInput, SessionBookmarkKind } from '../../shared/session-bookmarks'
 import { logger } from '../logger'
 import { openDatabase } from '../db'
@@ -120,6 +120,10 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
   )
 
   ipcMain.handle('session:setColor', (_event, sessionId: string, color: string) => manager.setColor(sessionId, color))
+
+  ipcMain.handle('session:setActiveTab', (_event, sessionId: string, tab: SessionTab) =>
+    manager.setActiveTab(sessionId, tab)
+  )
 
   ipcMain.handle('session:setNotes', (_event, sessionId: string, notes: string) => manager.setNotes(sessionId, notes))
 

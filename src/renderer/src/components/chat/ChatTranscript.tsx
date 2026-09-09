@@ -149,6 +149,7 @@ export default function ChatTranscript({
   transcriptTruncated = false,
   hiddenTurnCount = 0,
   busy = false,
+  emptyState = null,
 }: {
   messages: MessageRecord[]
   /** Resolves a permission/AskUserQuestion/plan card by requestId (05-interactive-prompts). */
@@ -186,6 +187,8 @@ export default function ChatTranscript({
   hiddenTurnCount?: number
   /** While a turn is in flight, render the tail assistant message as plain text (skip Markdown). */
   busy?: boolean
+  /** Shown in place of the (blank) transcript when the session has no messages yet. */
+  emptyState?: JSX.Element | null
 }): JSX.Element {
   function findPreviousPlanMarkdown(currentMessageId: number): string | undefined {
     const idx = messages.findIndex((m) => m.id === currentMessageId)
@@ -840,7 +843,7 @@ export default function ChatTranscript({
           Showing last {CHAT_TRANSCRIPT_MAX_TURNS} conversations — {hiddenTurnCount} earlier hidden
         </div>
       ) : null}
-      {rows}
+      {emptyState && messages.length === 0 ? emptyState : rows}
       <BackgroundTasksConversationCard tasks={backgroundTasks} />
       {sdkChrome && (sdkChrome.status === 'compacting' || sdkChrome.compactFailed) && (
         <ConversationStatusCard chrome={sdkChrome} />

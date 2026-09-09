@@ -20,6 +20,7 @@ import type {
   SessionLifecycleEvent,
   SessionRecord,
   SessionStatus,
+  SessionTab,
   SlashCommandInfo
 } from '../../shared/session-types'
 import type { DiffFileChange, DiffFileContentPair } from '../../shared/panel-types'
@@ -2017,6 +2018,15 @@ export class SessionManager {
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
     this.sendLifecycle({ type: 'session.updated', session })
     return session
+  }
+
+  /**
+   * Persists the session's last workspace tab (remember-session-tab).
+   * Deliberately silent — no `session.updated` lifecycle event — because every
+   * tab click would otherwise refetch and re-render the whole session list.
+   */
+  setActiveTab(sessionId: string, tab: SessionTab): void {
+    this.store.setActiveTab(sessionId, tab)
   }
 
   setNotes(sessionId: string, notes: string): SessionRecord {
