@@ -154,7 +154,39 @@ test.afterAll(async () => {
 test.describe('Daily note Notes slice editor (sidebar main panel)', () => {
   test('opens from sidebar, edits ## Notes body, persists to vault file', async () => {
     await page.getByTestId('daily-note-row').click()
-    await expect(page.getByTestId('main-title')).toHaveText('Daily note')
+    const title = page.getByTestId('main-title')
+    const header = page.getByTestId('daily-note-header-host')
+    const date = page.getByTestId('daily-note-date-label')
+    const sync = page.getByTestId('daily-note-sync-chip')
+
+    await expect(title).toHaveText('Daily note')
+    await expect(header).toBeVisible({ timeout: 10_000 })
+    await expect(date).toContainText('Jul 31, 2026')
+    await expect(sync).toHaveAccessibleName(/Synced|Saving/)
+    await expect(page.getByTestId('daily-note-today')).toHaveCount(0)
+    await expect(page.locator('.daily-note-editor-toolbar')).toHaveCount(0)
+    expect(
+      await header.evaluate(
+        (el) => el.closest('.topbar')?.querySelector('[data-testid="main-title"]')?.textContent === 'Daily note'
+      )
+    ).toBe(true)
+    await expect(date).toHaveCSS('font-size', '11.5px')
+    await expect(sync).toHaveCSS('font-size', '10.5px')
+    await expect(sync).toHaveCSS('border-top-width', '0px')
+
+    const titleBox = await title.boundingBox()
+    const dateBox = await date.boundingBox()
+    const syncBox = await sync.boundingBox()
+    expect(titleBox).not.toBeNull()
+    expect(dateBox).not.toBeNull()
+    expect(syncBox).not.toBeNull()
+    if (titleBox && dateBox && syncBox) {
+      const centers = [titleBox, dateBox, syncBox].map((box) => box.y + box.height / 2)
+      expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(2)
+      expect(titleBox.x).toBeLessThan(dateBox.x)
+      expect(dateBox.x + dateBox.width).toBeLessThan(syncBox.x)
+    }
+
     await expect(page.getByTestId('daily-note-editor-panel')).toBeVisible({ timeout: 10_000 })
 
     const editor = page.getByTestId('daily-note-editor')
@@ -177,6 +209,13 @@ test.describe('Daily note Notes slice editor (sidebar main panel)', () => {
     await expect(page.getByTestId('daily-note-sync-chip')).toContainText(/Synced|Saving/, { timeout: 10_000 })
 
     await page.screenshot({ path: join(artifactsDir, 'daily-note-notes-editor-slice.png') })
+
+    await page.getByTestId('daily-note-prev-day').click()
+    await expect(date).toContainText('Jul 30, 2026')
+    await page.getByTestId('daily-note-next-day').click()
+    await expect(date).toContainText('Jul 31, 2026')
+    await page.getByTestId('daily-note-editor').hover()
+    await page.screenshot({ path: join(artifactsDir, 'daily-note-compact-header.png') })
   })
 
   test('external vault edit to ## Notes propagates into the Atomic editor', async () => {

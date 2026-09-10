@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   AtomicCodeMirrorEditor,
   type AtomicCodeMirrorEditorHandle
@@ -26,12 +27,14 @@ export default function DailyNoteEditorPanel({
   initialDate,
   effectiveTheme,
   onViewDateChange,
-  cursorPositions
+  cursorPositions,
+  headerHost
 }: {
   initialDate: string
   effectiveTheme: 'light' | 'dark'
   onViewDateChange?: (date: string) => void
   cursorPositions: NoteCursorPositions
+  headerHost: HTMLElement | null
 }): JSX.Element {
   const slice = useDailyNoteNotesSlice(initialDate)
   const editorHandleRef = useRef<AtomicCodeMirrorEditorHandle | null>(null)
@@ -102,6 +105,44 @@ export default function DailyNoteEditorPanel({
 
   const syncLabel =
     slice.syncState === 'saving' ? 'Saving…' : slice.syncState === 'external' ? 'Updated from vault' : 'Synced'
+  const headerControls = (
+    <div className="daily-note-header-controls">
+      <div className="daily-date-nav" aria-label="Daily note date">
+        <button
+          type="button"
+          aria-label="Previous day"
+          title="Previous day"
+          data-testid="daily-note-prev-day"
+          onClick={() => slice.shiftDate(-1)}
+        >
+          ←
+        </button>
+        <span className="daily-date-label" data-testid="daily-note-date-label">
+          {formatDailyNoteLabel(slice.viewDate)}
+        </span>
+        <button
+          type="button"
+          aria-label="Next day"
+          title="Next day"
+          data-testid="daily-note-next-day"
+          onClick={() => slice.shiftDate(1)}
+        >
+          →
+        </button>
+      </div>
+      <span
+        className={`daily-sync-chip${slice.syncState === 'synced' ? ' synced' : slice.syncState === 'external' ? ' external' : ''}`}
+        data-testid="daily-note-sync-chip"
+        role="status"
+        aria-live="polite"
+        aria-label={syncLabel}
+        title={syncLabel}
+      >
+        <span className="daily-sync-dot" aria-hidden="true" />
+        <span className="daily-sync-label">{syncLabel}</span>
+      </span>
+    </div>
+  )
 
   return (
     <div
@@ -110,28 +151,7 @@ export default function DailyNoteEditorPanel({
       data-effective-theme={effectiveTheme}
       style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}
     >
-      <div className="daily-note-editor-toolbar">
-        <div className="daily-date-nav" aria-label="Daily note date">
-          <button type="button" title="Previous day" data-testid="daily-note-prev-day" onClick={() => slice.shiftDate(-1)}>
-            ←
-          </button>
-          <button type="button" title="Today" data-testid="daily-note-today" onClick={() => slice.jumpToday()}>
-            Today
-          </button>
-          <button type="button" title="Next day" data-testid="daily-note-next-day" onClick={() => slice.shiftDate(1)}>
-            →
-          </button>
-          <span className="daily-date-label" data-testid="daily-note-date-label">
-            {formatDailyNoteLabel(slice.viewDate)}
-          </span>
-        </div>
-        <span
-          className={`daily-sync-chip${slice.syncState === 'synced' ? ' synced' : slice.syncState === 'external' ? ' external' : ''}`}
-          data-testid="daily-note-sync-chip"
-        >
-          {syncLabel}
-        </span>
-      </div>
+      {headerHost ? createPortal(headerControls, headerHost) : null}
 
       <div className="daily-note-atomic-host" data-testid="daily-note-editor" style={{ flex: 1, minHeight: 0 }}>
         {slice.loading ? (

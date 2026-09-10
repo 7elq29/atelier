@@ -229,6 +229,7 @@ export default function App(): JSX.Element {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [activeAppNoteId, setActiveAppNoteId] = useState<string | null>(null)
   const [activeDailyNoteDate, setActiveDailyNoteDate] = useState<string | null>(null)
+  const [dailyNoteHeaderHost, setDailyNoteHeaderHost] = useState<HTMLDivElement | null>(null)
   const [activeWeeklyPlanOpen, setActiveWeeklyPlanOpen] = useState(false)
   const [weeklyPlanStatus, setWeeklyPlanStatus] = useState<WeeklyPlanStatus | null>(null)
   const [weeklyPlanContext, setWeeklyPlanContext] = useState<
@@ -1638,7 +1639,7 @@ export default function App(): JSX.Element {
 
         <div className="main-area">
           <div
-            className={`topbar${activeAppNote || activeDailyNoteDate ? ' topbar--note-editor' : ''}`}
+            className={`topbar${activeAppNote || activeDailyNoteDate ? ' topbar--note-editor' : ''}${activeDailyNoteDate ? ' topbar--daily-note' : ''}`}
           >
             <div className="topbar-title-group">
               <span
@@ -1674,6 +1675,13 @@ export default function App(): JSX.Element {
                   'Atelier'
                 )}
               </span>
+              {activeDailyNoteDate ? (
+                <div
+                  ref={setDailyNoteHeaderHost}
+                  className="daily-note-header-host"
+                  data-testid="daily-note-header-host"
+                />
+              ) : null}
               {activeWorkspaceLabel && (
                 <span
                   className="topbar-workspace"
@@ -1861,6 +1869,7 @@ export default function App(): JSX.Element {
               effectiveTheme={effectiveTheme}
               onViewDateChange={setActiveDailyNoteDate}
               cursorPositions={noteCursorPositionsRef.current}
+              headerHost={dailyNoteHeaderHost}
             />
           ) : activeAppNote ? (
             <AppNotesPanel
