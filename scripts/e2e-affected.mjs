@@ -235,13 +235,26 @@ function runSelfTest() {
   assert(dailyCss.targets[0].file === 'e2e/daily-note-notes-editor.spec.ts', 'Daily CSS selected the wrong spec')
   assert(dailyCss.targets[0].grep?.includes('opens from sidebar'), 'Daily CSS should select the focused header test')
 
-  const pty = selectAffected([{ path: 'src/main/panels/pty.ts', changedLines: 'set-option mouse on' }])
+  const pty = selectAffected([{ path: 'src/main/panels/pty.ts', changedLines: 'tmuxEnableMouse(sessionName)' }])
   assert(pty.targets.length === 1 && pty.targets[0].file === 'e2e/terminal-pty.spec.ts', 'pty.ts should select terminal-pty only')
 
   const dailyFallback = selectAffected([
     { path: 'src/renderer/src/components/panels/DailyNoteEditorPanel.tsx', changedLines: 'editorHandleRef.current' }
   ])
-  assert(dailyFallback.targets.length === 1 && dailyFallback.targets[0].grep === null, 'Unrecognized Daily Note changes should run its whole spec')
+  assert(
+    dailyFallback.targets.some(
+      (target) => target.file === 'e2e/daily-note-notes-editor.spec.ts' && target.grep === null
+    ),
+    'Unrecognized Daily Note changes should run its whole primary spec'
+  )
+
+  const taskLink = selectAffected([
+    { path: 'src/main/daily-note-session-link.ts', changedLines: 'linkTaskToSession()' }
+  ])
+  assert(
+    taskLink.targets.length === 1 && taskLink.targets[0].file === 'e2e/todo-session-link.spec.ts',
+    'Daily-note session linking should select its focused regression spec'
+  )
 
   const changedSpec = selectAffected([
     { path: 'e2e/model-effort-picker.spec.ts', changedLines: 'test(...)' }
@@ -263,7 +276,7 @@ function runSelfTest() {
     'An unowned shared-CSS hunk must add the broad layout fallback'
   )
 
-  console.log('Affected E2E selector self-test passed (map integrity + 6 selection cases).')
+  console.log('Affected E2E selector self-test passed (map integrity + 7 selection cases).')
 }
 
 function printSelection(changes, result, json) {
