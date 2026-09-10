@@ -151,4 +151,78 @@ test.describe('terminal-pty', () => {
       await app.close().catch(() => undefined)
     }
   })
+
+  /**
+   * Regression: the bottom line used to be sliced in half. FitAddon takes the
+   * row count from the parent's computed height (border-box here, so padding
+   * included) while only subtracting padding declared on `.xterm`, so an inset
+   * on `.term-body` bought a row that didn't fit and `overflow: hidden` cut it
+   * (Features/terminal-pane-fit/spec.md).
+   */
+  test('terminal: the pane fits whole rows, never clipping the last line', async () => {
+    test.setTimeout(90_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-terminal-fit-'))
+    seedSkipOnboarding(userDataDir)
+    const { app, page } = await launchApp(userDataDir)
+
+    try {
+      await page.getByTestId('new-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toBeVisible()
+      await page.getByTestId('project-path').fill(projectRoot)
+      await page.getByTestId('mode-terminal').click()
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+      await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 15_000 })
+      const term = page.getByTestId('terminal-body')
+      await term.click()
+      await expect.poll(async () => term.locator('.xterm-rows').textContent(), { timeout: 20_000 }).toContain('%')
+      await page.waitForTimeout(1_000)
+
+      const measurePaneFit = async (): Promise<{
+        bottomSlack: number
+        rightSlack: number
+        paneHeight: number
+        cellHeight: number
+      }> =>
+        page.evaluate(() => {
+          const body = document.querySelector('.terminal-cache-entry.active .term-body') as HTMLElement
+          const xterm = body.querySelector('.xterm') as HTMLElement
+          const row = body.querySelector('.xterm-rows > div') as HTMLElement
+          const style = getComputedStyle(body)
+          const bodyBox = body.getBoundingClientRect()
+          const xtermBox = xterm.getBoundingClientRect()
+          return {
+            // `.xterm`'s border box has to sit inside `.term-body`'s content box.
+            bottomSlack: bodyBox.bottom - parseFloat(style.paddingBottom) - xtermBox.bottom,
+            rightSlack: bodyBox.right - parseFloat(style.paddingRight) - xtermBox.right,
+            paneHeight: bodyBox.height,
+            cellHeight: parseFloat(getComputedStyle(row).height)
+          }
+        })
+
+      // Heights are spread over one cell so at least one lands in the range that
+      // used to overflow (paneHeight % cellHeight < the pane's vertical inset).
+      for (const height of [800, 803, 806, 809, 812]) {
+        await page.setViewportSize({ width: 1280, height })
+        await page.waitForTimeout(700)
+        const fit = await measurePaneFit()
+        expect(fit.bottomSlack, `bottom of the terminal is clipped at window height ${height}: ${JSON.stringify(fit)}`).toBeGreaterThanOrEqual(0)
+        expect(fit.rightSlack, `right edge of the terminal is clipped at window height ${height}: ${JSON.stringify(fit)}`).toBeGreaterThanOrEqual(0)
+        // A whole row must never be wasted — that would mean the fit is too small.
+        expect(fit.bottomSlack).toBeLessThan(fit.cellHeight + 4)
+      }
+
+      const box = await term.boundingBox()
+      if (box) {
+        await page.screenshot({
+          path: join(artifactsDir, 'terminal-pane-fit-bottom.png'),
+          clip: { x: box.x, y: box.y + box.height - 70, width: Math.min(box.width, 700), height: 70 }
+        })
+      }
+    } finally {
+      await app.close().catch(() => undefined)
+    }
+  })
 })
