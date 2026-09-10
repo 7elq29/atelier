@@ -22,8 +22,8 @@ entry).
 2. **Define validation/done criteria up front** (see §3) — decide what
    "done" looks like before implementing, not after.
 3. Implement.
-4. Run the validation in §3 (targeted e2e run per `e2e/TEST_CATEGORIES.md` —
-   never the full suite by default) and only then call the work complete.
+4. Run the validation in §3 (`npm run test:e2e:affected` — never the full
+ suite by default) and only then call the work complete.
 
 ## 1. Environment basics
 
@@ -32,15 +32,21 @@ entry).
 - `npm run build` — typechecks main/web configs, builds via `electron-vite`,
   and typechecks the e2e suite (`tsc -p tsconfig.e2e.json`). Must be clean
   (zero errors) before any merge.
-- `npm run test:e2e` — runs the Playwright/Electron suite (`playwright
-  test`). This is the only test suite; there is no unit-test layer to
-  substitute for it. Never run the whole thing by default — use
-  `e2e/TEST_CATEGORIES.md` to find the spec file(s) whose source paths
-  overlap the files you changed, and run only those
-  (`npx playwright test e2e/<file>.spec.ts ...`). This applies even to
-  session-creation/bootstrap code (`NewSessionModal.tsx`, `src/main/sessions/*`)
-  — always scope to the matched categor(ies), never fall back to the full
-  suite as a default.
+- `npm run test:e2e` — runs the whole Playwright/Electron suite. This is the
+  only test suite; there is no unit-test layer to substitute for it. Never run
+  the whole thing by default.
+- `npm run test:e2e:affected` — selects and runs the smallest E2E targets for
+  committed branch changes plus working-tree changes, using
+  `e2e/test-impact-map.json`. Inspect without running via
+  `npm run test:e2e:affected:list`; in CI or for an explicit range use
+  `npm run test:e2e:affected -- --base <ref> [--head <ref>]`. The selector can
+  target individual tests inside a large spec and fails closed when a changed
+  `src/**` file has no ownership rule. Add or narrow a map rule instead of
+  expanding an entire category manually.
+- `e2e/TEST_CATEGORIES.md` explains feature ownership and coverage but is not
+  the executable selector. This applies even to session-creation/bootstrap
+  code (`NewSessionModal.tsx`, `src/main/sessions/*`) — use the affected
+  selector, never fall back to the full suite as a default.
 - **No mocking, ever.** Every e2e test drives the real Electron app via
   `_electron.launch({ args: ['.'], cwd: '<project-root>' })` (launch via `.`,
   not a raw script path — otherwise Electron resolves the app name as
@@ -86,18 +92,16 @@ A feature or bug fix is **not complete** until all of the following pass, in
 the task's own isolated worktree:
 
 - [ ] `npm run build` is clean — zero TypeScript errors.
-- [ ] `npm run test:e2e` (targeted) — run only the spec file(s) mapped to
-      your change in `e2e/TEST_CATEGORIES.md` (match by source path, not
-      guesswork), e.g.:
+- [ ] `npm run test:e2e:affected` — run the exact spec/test targets selected
+      from the changed source and diff content by `e2e/test-impact-map.json`,
+      e.g.:
       ```bash
-      npx playwright test e2e/composer-core.spec.ts e2e/composer-mentions-and-commands.spec.ts
+      npm run test:e2e:affected -- --base main
       ```
-      A new/changed spec passing in isolation is not sufficient — run every
-      spec file in the matched categor(ies), including ones you didn't add,
-      to catch same-area regressions. Always targeted — even for
-      session-creation/bootstrap code (`NewSessionModal.tsx`,
-      `src/main/sessions/*`), run the matched categories from
-      `e2e/TEST_CATEGORIES.md`, not the full suite.
+      Review the printed reasons before accepting the run. A new/changed spec
+      passing in isolation is not sufficient if the selector names additional
+      targets. If a changed production file is unmapped, add a narrow rule;
+      do not bypass the fail-closed result or run the full suite as a shortcut.
   - If a failure looks unrelated to your change, confirm it's pre-existing
     flake by rerunning that single spec file in isolation 2+ times before
     dismissing it. Currently known-flaky (timing-dependent, not caused by

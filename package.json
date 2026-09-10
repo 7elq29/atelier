@@ -13,6 +13,8 @@
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build && tsc -p tsconfig.e2e.json",
     "package": "npm run build && electron-builder --config electron-builder.yml",
     "test:e2e": "playwright test",
+    "test:e2e:affected": "node scripts/e2e-affected.mjs",
+    "test:e2e:affected:list": "node scripts/e2e-affected.mjs --list",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
