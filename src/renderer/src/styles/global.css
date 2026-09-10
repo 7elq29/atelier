@@ -3467,33 +3467,45 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   color: var(--accent);
 }
 
-.daily-note-editor-panel .daily-note-editor-toolbar {
-  flex-shrink: 0;
+.topbar--daily-note .topbar-title-group {
+  gap: 14px;
+}
+.topbar--daily-note .title {
+  flex: 0 0 auto;
+}
+.daily-note-header-host {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.daily-note-header-controls {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 24px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-panel);
+  gap: 14px;
 }
-.daily-note-editor-panel .daily-sync-chip {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 100px;
-  border: 1px solid var(--border-default);
+.daily-note-header-controls .daily-sync-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
   color: var(--text-tertiary);
-  background: var(--bg-input);
   margin-left: auto;
 }
-.daily-note-editor-panel .daily-sync-chip.synced {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-dim);
+.daily-note-header-controls .daily-sync-dot {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
 }
-.daily-note-editor-panel .daily-sync-chip.external {
-  border-color: var(--warning);
+.daily-note-header-controls .daily-sync-chip.synced {
+  color: var(--accent);
+}
+.daily-note-header-controls .daily-sync-chip.external {
   color: var(--warning);
-  background: rgba(224, 185, 92, 0.12);
 }
 .daily-note-editor-panel .daily-note-vault-path {
   font-family: var(--font-mono);
@@ -3507,15 +3519,18 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 .daily-date-nav {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  min-width: 0;
 }
 .daily-date-nav button {
-  border: 1px solid var(--border-default);
-  background: var(--bg-input);
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--text-secondary);
   border-radius: var(--r-sm);
-  padding: 4px 8px;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
 }
 .daily-date-nav button:hover {
@@ -3523,11 +3538,22 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   color: var(--text-primary);
 }
 .daily-date-nav .daily-date-label {
-  min-width: 148px;
+  min-width: 0;
   text-align: center;
-  font-weight: 600;
-  color: var(--text-primary);
-  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .daily-note-header-controls .daily-sync-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 .daily-note-editor-panel .daily-note-atomic-host,
 .daily-note-editor-panel .atomic-cm-editor {
