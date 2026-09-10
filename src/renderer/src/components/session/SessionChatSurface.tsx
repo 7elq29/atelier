@@ -109,7 +109,6 @@ export function SessionChatSurface({
           bookmarks={bookmarks}
           onToggleBookmark={onToggleBookmark}
           sdkChrome={sdkChrome}
-          backgroundTasks={backgroundTasks}
           onReviewMessage={onReviewMessage}
           onReviewPlan={onReviewPlan}
           reviewTarget={reviewTarget}

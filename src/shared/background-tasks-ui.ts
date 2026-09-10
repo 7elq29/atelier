@@ -1,6 +1,6 @@
 import type { BackgroundTaskRow } from './harness-ui-types'
 
-/** Max visible characters for background task titles in rail + transcript card. */
+/** Max visible characters for background task titles in the tracker rail. */
 export const BACKGROUND_TASK_TITLE_MAX = 52
 
 export type BackgroundTaskRailFamily = 'monitors' | 'subagents' | 'jobs' | 'shell'
@@ -11,16 +11,6 @@ export function backgroundTaskRailGroup(taskType: string): BackgroundTaskRailFam
   if (t === 'shell') return 'shell'
   if (t === 'subagent') return 'subagents'
   return 'jobs'
-}
-
-/** SDK `task_type: subagent` — distinct from monitors, shell, and generic background jobs. */
-export function isSubagentBackgroundTask(task: BackgroundTaskRow): boolean {
-  return backgroundTaskRailGroup(task.taskType) === 'subagents'
-}
-
-/** Monitors, shell, and non-subagent jobs only — subagents belong in the tracker rail, not the transcript card. */
-export function backgroundTasksForTranscriptCard(tasks: BackgroundTaskRow[]): BackgroundTaskRow[] {
-  return tasks.filter((t) => !isSubagentBackgroundTask(t))
 }
 
 export function truncateBackgroundTaskTitle(text: string, max = BACKGROUND_TASK_TITLE_MAX): string {
@@ -43,24 +33,6 @@ export function backgroundTaskStatusLabel(task: BackgroundTaskRow): string {
   if (task.status === 'pending') return 'starting'
   if (task.status === 'running') return 'running'
   return 'running'
-}
-
-export function backgroundTaskTypeBadgeClass(taskType: string): string {
-  const t = taskType.toLowerCase()
-  if (t === 'shell') return 'shell'
-  if (t === 'monitor') return 'monitor'
-  if (t === 'workflow') return 'workflow'
-  if (t === 'subagent') return 'subagent'
-  return 'job'
-}
-
-export function backgroundTaskTypeBadgeLabel(taskType: string): string {
-  const t = taskType.toLowerCase()
-  if (t === 'monitor') return 'monitor'
-  if (t === 'shell') return 'shell'
-  if (t === 'workflow') return 'workflow'
-  if (t === 'subagent') return 'subagent'
-  return 'job'
 }
 
 export function countActiveBackgroundTasks(tasks: BackgroundTaskRow[]): number {

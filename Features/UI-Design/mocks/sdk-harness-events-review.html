@@ -99,7 +99,7 @@
       </div>
       <p class="sdk-event-surface">
         <code>background_tasks_changed</code> → REPLACE membership; one <code>.tracker-card</code> per family (Monitors, Subagents, Background jobs, Shell).
-        Subagents (<code>task_type: subagent</code>) render only in the tracker rail with SDK status — never in the transcript background card.
+        All families (including jobs and monitors) render only in the tracker rail — there is no transcript “Background tasks” card.
         Row detail (status, MCP subtitle, errors, progress) merges from <code>task_started</code>, <code>task_updated</code>,
         <code>task_progress</code>, <code>task_notification</code> by <code>task_id</code> — not from the changed payload alone.
         Honor <code>skip_transcript</code> on started events.

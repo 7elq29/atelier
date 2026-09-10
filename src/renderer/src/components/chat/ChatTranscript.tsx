@@ -15,8 +15,7 @@ import Linkify from '../panels/Linkify'
 import MessageActions from './MessageActions'
 import TranscriptInlineComments from './TranscriptInlineComments'
 import ConversationStatusCard from './ConversationStatusCard'
-import BackgroundTasksConversationCard from './BackgroundTasksConversationCard'
-import type { BackgroundTaskRow, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
+import type { SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import type { ReviewPaneTarget, ReviewComposerComment } from '../../../../shared/review-pane-types'
 import type {
   CreateSessionBookmarkInput,
@@ -138,7 +137,6 @@ export default function ChatTranscript({
   activeMatchIndex = -1,
   onMatchCount,
   sdkChrome,
-  backgroundTasks = [],
   onReviewMessage,
   onReviewPlan,
   reviewTarget = null,
@@ -171,8 +169,6 @@ export default function ChatTranscript({
   onMatchCount?: (count: number) => void
   /** Live SDK status chrome (compacting / requesting / compact failed). */
   sdkChrome?: SessionSdkChromeEvent | null
-  /** SDK background monitors / jobs / shell (merged task_* state). */
-  backgroundTasks?: BackgroundTaskRow[]
   /** Opens the selected assistant response in the review split pane. */
   onReviewMessage?: (message: MessageRecord) => void
   /** Opens a proposed plan in the review split pane. */
@@ -844,7 +840,6 @@ export default function ChatTranscript({
         </div>
       ) : null}
       {emptyState && messages.length === 0 ? emptyState : rows}
-      <BackgroundTasksConversationCard tasks={backgroundTasks} />
       {sdkChrome && (sdkChrome.status === 'compacting' || sdkChrome.compactFailed) && (
         <ConversationStatusCard chrome={sdkChrome} />
       )}

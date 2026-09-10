@@ -369,7 +369,7 @@ test.describe('08-harness-sdk-events', () => {
     await expect(page.getByTestId('sdk-toast-stack')).toHaveCount(0)
   })
 
-  test('subagent SDK tasks: Subagents rail only — not Background jobs or transcript card', async () => {
+  test('subagent SDK tasks: Subagents rail only — jobs stay in the rail, not the transcript', async () => {
     const ts = new Date().toISOString()
     await page.evaluate(
       ({ sid, timestamp }) =>
@@ -452,13 +452,10 @@ test.describe('08-harness-sdk-events', () => {
 
     await expect(page.getByTestId('background-monitors-card')).toContainText('Watch CI until green')
 
-    const transcriptCard = page.getByTestId('background-tasks-conversation-card')
-    await expect(transcriptCard).toBeVisible()
-    await expect(transcriptCard).toContainText('Rebuild search index')
-    await expect(transcriptCard).toContainText('Watch CI until green')
-    await expect(transcriptCard).not.toContainText('Google Docs')
-    await expect(page.getByTestId('background-tasks-section-jobs')).toBeVisible()
-    await expect(page.getByTestId('background-tasks-section-monitors')).toBeVisible()
+    await expect(page.getByTestId('background-tasks-conversation-card')).toHaveCount(0)
+    await expect(page.getByTestId('background-tasks-section-jobs')).toHaveCount(0)
+    await expect(page.getByTestId('background-tasks-section-monitors')).toHaveCount(0)
+    await expect(page.getByTestId('transcript')).not.toContainText('Background tasks')
 
     await page.screenshot({ path: join(artifactsDir, '08-subagent-vs-background-jobs-rail.png') })
   })
