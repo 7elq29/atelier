@@ -1,0 +1,455 @@
+{
+  "ignore": [
+    "Features/**",
+    "e2e-artifacts/**",
+    "build/**",
+    "release/**",
+    "*.md",
+    ".gitignore"
+  ],
+  "rules": [
+    {
+      "id": "affected-test-tooling-package-script",
+      "paths": ["package.json"],
+      "changedLines": "test:e2e:affected",
+      "targets": []
+    },
+    {
+      "id": "daily-note-header-shared-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "daily-note-header|daily-date-nav|daily-sync-chip|daily-sync-dot|daily-note-editor-toolbar|topbar--daily-note",
+      "targets": [
+        {
+          "file": "e2e/daily-note-notes-editor.spec.ts",
+          "grep": "opens from sidebar, edits"
+        }
+      ]
+    },
+    {
+      "id": "terminal-shared-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "term-body|term-shell|term-panel|terminal-cache|xterm",
+      "targets": [{ "file": "e2e/terminal-pty.spec.ts" }]
+    },
+    {
+      "id": "tracker-shared-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "tracker-rail|tracker-body|tracker-card",
+      "targets": [
+        { "file": "e2e/bug-tracker-rail-width.spec.ts" },
+        { "file": "e2e/bug-tracker-rail-collapse-toggle.spec.ts" }
+      ]
+    },
+    {
+      "id": "daily-note-header-app-shell",
+      "paths": ["src/renderer/src/App.tsx"],
+      "changedLines": "dailyNoteHeaderHost|daily-note-header-host|topbar--daily-note",
+      "targets": [
+        {
+          "file": "e2e/daily-note-notes-editor.spec.ts",
+          "grep": "opens from sidebar, edits"
+        }
+      ]
+    },
+    {
+      "id": "daily-note-header-component",
+      "paths": ["src/renderer/src/components/panels/DailyNoteEditorPanel.tsx"],
+      "changedLines": "createPortal|headerHost|headerControls|daily-note-header|daily-date-nav|daily-sync",
+      "targets": [
+        {
+          "file": "e2e/daily-note-notes-editor.spec.ts",
+          "grep": "opens from sidebar, edits"
+        }
+      ]
+    },
+    {
+      "id": "daily-note-editor",
+      "paths": [
+        "src/renderer/src/components/panels/DailyNoteEditorPanel.tsx",
+        "src/renderer/src/hooks/useDailyNoteNotesSlice.ts",
+        "src/renderer/src/editor/dailyNoteImagePaste.ts",
+        "src/renderer/src/editor/noteEditorExtensions.ts"
+      ],
+      "targets": [{ "file": "e2e/daily-note-notes-editor.spec.ts" }]
+    },
+    {
+      "id": "daily-timeline-editing",
+      "paths": [
+        "src/renderer/src/components/daily-notes/Timeline.tsx",
+        "src/renderer/src/components/daily-notes/TaskItem.tsx",
+        "src/renderer/src/components/daily-notes/CurrentTimeLine.tsx",
+        "src/renderer/src/components/daily-notes/timeline-scale.ts"
+      ],
+      "targets": [
+        { "file": "e2e/bug-daily-notes-time-editing.spec.ts" },
+        { "file": "e2e/obsidian-integration.spec.ts" }
+      ]
+    },
+    {
+      "id": "daily-task-move",
+      "paths": [
+        "src/renderer/src/components/daily-notes/TaskMoveContextMenu.tsx",
+        "src/renderer/src/components/daily-notes/move-date-options.ts",
+        "src/main/daily-note-session-link.ts"
+      ],
+      "targets": [
+        { "file": "e2e/task-move-to-date.spec.ts" },
+        { "file": "e2e/bug-move-task-not-found-in-source-note.spec.ts" },
+        { "file": "e2e/bug-move-task-not-found-gidless-task.spec.ts" }
+      ]
+    },
+    {
+      "id": "daily-sidebar",
+      "paths": [
+        "src/renderer/src/components/daily-notes/DailyNotesSidebar.tsx",
+        "src/renderer/src/hooks/useDailyNote.ts"
+      ],
+      "targets": [
+        { "file": "e2e/obsidian-integration.spec.ts" },
+        { "file": "e2e/daily-big-three-edit.spec.ts" },
+        { "file": "e2e/audit-scroll-experience.spec.ts", "grep": "daily notes" }
+      ]
+    },
+    {
+      "id": "daily-io",
+      "paths": [
+        "src/main/daily-note-io.ts",
+        "src/main/daily-notes-handlers.ts"
+      ],
+      "targets": [
+        { "file": "e2e/obsidian-integration.spec.ts" },
+        { "file": "e2e/bug-57-obsidian-external-edit-timeline-sync.spec.ts" },
+        { "file": "e2e/bug-daily-note-template.spec.ts" },
+        { "file": "e2e/daily-note-notes-editor.spec.ts" },
+        { "file": "e2e/task-move-to-date.spec.ts" }
+      ]
+    },
+    {
+      "id": "terminal-pty",
+      "paths": [
+        "src/main/panels/pty.ts",
+        "src/renderer/src/components/panels/TerminalPanel.tsx"
+      ],
+      "targets": [{ "file": "e2e/terminal-pty.spec.ts" }]
+    },
+    {
+      "id": "terminal-chrome",
+      "paths": [
+        "src/renderer/src/components/panels/TerminalWithToolbox.tsx",
+        "src/renderer/src/components/panels/TerminalPanelHeader.tsx",
+        "src/renderer/src/components/panels/CompanionTerminalDrawer.tsx"
+      ],
+      "targets": [
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "terminal|changing project path"
+        }
+      ]
+    },
+    {
+      "id": "files-panel",
+      "paths": ["src/renderer/src/components/panels/FilesPanel.tsx"],
+      "targets": [
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "files panel:" },
+        { "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts" }
+      ]
+    },
+    {
+      "id": "files-main",
+      "paths": [
+        "src/main/panels/files.ts",
+        "src/main/panels/editor-buffers.ts"
+      ],
+      "targets": [
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "files panel:|editor buffers:" },
+        { "file": "e2e/packaged-app-local-tilde.spec.ts" }
+      ]
+    },
+    {
+      "id": "diff-panel",
+      "paths": ["src/renderer/src/components/panels/DiffPanel.tsx"],
+      "targets": [
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "diff panel:|chat:.*cap" },
+        { "file": "e2e/bug-diff-preload-limit.spec.ts" }
+      ]
+    },
+    {
+      "id": "git-panels",
+      "paths": [
+        "src/main/panels/git.ts",
+        "src/main/panels/git-repository.ts",
+        "src/main/sessions/workspace-service.ts"
+      ],
+      "targets": [
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "diff panel:|worktree|chat:.*cap" },
+        { "file": "e2e/bug-diff-preload-limit.spec.ts" },
+        { "file": "e2e/bug-diff-refreshing-stuck-on-timeout.spec.ts" },
+        { "file": "e2e/diff-session-compare-trace.spec.ts" }
+      ]
+    },
+    {
+      "id": "tab-bar",
+      "paths": ["src/renderer/src/components/panels/TabBar.tsx"],
+      "targets": [
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "tab bar:|tab switch|workspace split:"
+        },
+        { "file": "e2e/session-tab-memory.spec.ts" }
+      ]
+    },
+    {
+      "id": "ports-panel",
+      "paths": [
+        "src/renderer/src/components/panels/PortsPanel.tsx",
+        "src/main/panels/ports.ts"
+      ],
+      "targets": [{ "file": "e2e/secondary-panels.spec.ts", "grep": "ports panel:" }]
+    },
+    {
+      "id": "panel-ipc",
+      "paths": ["src/main/panels/ipc.ts"],
+      "targets": [
+        { "file": "e2e/secondary-panels.spec.ts" },
+        { "file": "e2e/terminal-pty.spec.ts" }
+      ]
+    },
+    {
+      "id": "new-session-modal",
+      "paths": [
+        "src/renderer/src/components/NewSessionModal.tsx",
+        "src/main/sessions/hosts.ts"
+      ],
+      "targets": [
+        { "file": "e2e/session-lifecycle.spec.ts" },
+        { "file": "e2e/bug-new-session-path-history.spec.ts" }
+      ]
+    },
+    {
+      "id": "session-ready",
+      "paths": [
+        "src/renderer/src/components/chat/SessionReadyHint.tsx",
+        "src/renderer/src/components/SessionDisconnectedPanel.tsx"
+      ],
+      "targets": [{ "file": "e2e/session-ready-hint.spec.ts" }]
+    },
+    {
+      "id": "session-cost",
+      "paths": ["src/main/sessions/historical-cost-recompute.ts"],
+      "targets": [
+        { "file": "e2e/session-cost-tracking.spec.ts" },
+        { "file": "e2e/bug-session-cost-historical-backfill.spec.ts" },
+        { "file": "e2e/enrichment-cost-tracking.spec.ts" }
+      ]
+    },
+    {
+      "id": "session-store",
+      "paths": ["src/main/sessions/store.ts"],
+      "targets": [
+        { "file": "e2e/session-lifecycle.spec.ts" },
+        { "file": "e2e/session-organization.spec.ts" },
+        { "file": "e2e/session-tab-memory.spec.ts" },
+        { "file": "e2e/session-cost-tracking.spec.ts" }
+      ]
+    },
+    {
+      "id": "session-manager",
+      "paths": [
+        "src/main/sessions/manager.ts",
+        "src/main/sessions/ipc.ts"
+      ],
+      "targets": [
+        { "file": "e2e/session-lifecycle.spec.ts" },
+        { "file": "e2e/session-ready-hint.spec.ts" },
+        { "file": "e2e/chat-surface-core.spec.ts" }
+      ]
+    },
+    {
+      "id": "harness",
+      "paths": ["src/main/harness/**"],
+      "targets": [
+        { "file": "e2e/harness-sdk-events.spec.ts" },
+        { "file": "e2e/interactive-prompts.spec.ts" },
+        { "file": "e2e/chat-surface-core.spec.ts" }
+      ]
+    },
+    {
+      "id": "composer",
+      "paths": ["src/renderer/src/components/chat/Composer.tsx"],
+      "targets": [
+        { "file": "e2e/composer-core.spec.ts" },
+        { "file": "e2e/composer-mentions-and-commands.spec.ts" },
+        { "file": "e2e/model-effort-picker.spec.ts" },
+        { "file": "e2e/enrichment-image-attachment.spec.ts" }
+      ]
+    },
+    {
+      "id": "transcript",
+      "paths": [
+        "src/renderer/src/components/chat/ChatTranscript.tsx",
+        "src/renderer/src/components/chat/MarkdownMessage.tsx"
+      ],
+      "targets": [
+        { "file": "e2e/chat-surface-core.spec.ts" },
+        { "file": "e2e/chat-transcript-window.spec.ts" },
+        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" }
+      ]
+    },
+    {
+      "id": "message-actions",
+      "paths": [
+        "src/renderer/src/components/chat/MessageActions.tsx",
+        "src/renderer/src/components/chat/TranscriptInlineComments.tsx"
+      ],
+      "targets": [{ "file": "e2e/message-actions.spec.ts" }]
+    },
+    {
+      "id": "permission-card",
+      "paths": ["src/renderer/src/components/chat/PermissionRequestCard.tsx"],
+      "targets": [{ "file": "e2e/interactive-prompts.spec.ts", "grep": "permission" }]
+    },
+    {
+      "id": "plan-card",
+      "paths": ["src/renderer/src/components/chat/PlanProposedCard.tsx"],
+      "targets": [
+        { "file": "e2e/interactive-prompts.spec.ts", "grep": "plan" },
+        { "file": "e2e/bug-plan-card-expired-prompt.spec.ts" }
+      ]
+    },
+    {
+      "id": "ask-user-question",
+      "paths": ["src/renderer/src/components/chat/AskUserQuestionCard.tsx"],
+      "targets": [
+        { "file": "e2e/interactive-prompts.spec.ts", "grep": "AskUserQuestion" },
+        { "file": "e2e/bug-ask-user-question-explicit-submit.spec.ts" }
+      ]
+    },
+    {
+      "id": "tracker-rail",
+      "paths": ["src/renderer/src/components/chat/TrackerRail.tsx"],
+      "targets": [
+        { "file": "e2e/bug-tracker-rail-width.spec.ts" },
+        { "file": "e2e/bug-tracker-rail-collapse-toggle.spec.ts" }
+      ]
+    },
+    {
+      "id": "sidebar",
+      "paths": ["src/renderer/src/components/Sidebar.tsx"],
+      "targets": [
+        { "file": "e2e/session-organization.spec.ts" },
+        { "file": "e2e/global-nav-and-settings.spec.ts", "grep": "sidebar" },
+        { "file": "e2e/weekly-plan-wizard.spec.ts", "grep": "sidebar" }
+      ]
+    },
+    {
+      "id": "settings",
+      "paths": [
+        "src/renderer/src/components/SettingsPanel.tsx",
+        "src/renderer/src/components/OnboardingWizard.tsx"
+      ],
+      "targets": [{ "file": "e2e/global-nav-and-settings.spec.ts" }]
+    },
+    {
+      "id": "keyboard-hints",
+      "paths": [
+        "src/renderer/src/components/KeyboardHintsOverlay.tsx",
+        "src/renderer/src/keyboard-hints/**"
+      ],
+      "targets": [{ "file": "e2e/bug-keyboard-hint-labels.spec.ts" }]
+    },
+    {
+      "id": "app-notes",
+      "paths": [
+        "src/renderer/src/components/panels/AppNotesPanel.tsx",
+        "src/main/app-notes/**"
+      ],
+      "targets": [
+        { "file": "e2e/session-organization.spec.ts", "grep": "note" },
+        { "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts" }
+      ]
+    },
+    {
+      "id": "bookmarks",
+      "paths": [
+        "src/renderer/src/components/BookmarkEditModal.tsx",
+        "src/renderer/src/hooks/useAppBookmarks.ts",
+        "src/main/app-bookmarks/**"
+      ],
+      "targets": [
+        { "file": "e2e/session-organization.spec.ts", "grep": "bookmark" },
+        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" }
+      ]
+    },
+    {
+      "id": "weekly-plan",
+      "paths": [
+        "src/renderer/src/components/panels/WeeklyPlanWizardPanel.tsx",
+        "src/renderer/src/components/panels/WeeklyPlanViewPanel.tsx",
+        "src/main/weekly-note-io.ts",
+        "src/main/weekly-notes-handlers.ts"
+      ],
+      "targets": [{ "file": "e2e/weekly-plan-wizard.spec.ts" }]
+    },
+    {
+      "id": "shell-boot",
+      "paths": [
+        "src/main/index.ts",
+        "src/main/logger.ts",
+        "src/main/config.ts",
+        "src/preload/**"
+      ],
+      "targets": [{ "file": "e2e/app-shell.spec.ts" }]
+    },
+    {
+      "id": "full-text-search",
+      "paths": ["src/renderer/src/components/chat/TranscriptSearchBar.tsx"],
+      "targets": [{ "file": "e2e/enrichment-full-text-search.spec.ts" }]
+    },
+    {
+      "id": "export",
+      "paths": [
+        "src/renderer/src/components/chat/ExportMenu.tsx",
+        "src/main/sessions/export-format.ts"
+      ],
+      "targets": [{ "file": "e2e/enrichment-export-conversation.spec.ts" }]
+    },
+    {
+      "id": "chat-window",
+      "paths": ["src/shared/chat-transcript-window.ts"],
+      "targets": [{ "file": "e2e/chat-transcript-window.spec.ts" }]
+    }
+  ],
+  "fallbacks": [
+    {
+      "id": "shared-css-fallback",
+      "paths": ["src/renderer/src/styles/**"],
+      "targets": [
+        { "file": "e2e/audit-window-resize-layout.spec.ts" },
+        { "file": "e2e/audit-scroll-experience.spec.ts" },
+        { "file": "e2e/app-shell.spec.ts" }
+      ]
+    },
+    {
+      "id": "app-shell-fallback",
+      "paths": ["src/renderer/src/App.tsx"],
+      "targets": [
+        { "file": "e2e/app-shell.spec.ts" },
+        { "file": "e2e/chat-surface-core.spec.ts" },
+        { "file": "e2e/session-organization.spec.ts" }
+      ]
+    },
+    {
+      "id": "shared-types-fallback",
+      "paths": ["src/shared/**"],
+      "targets": [
+        { "file": "e2e/app-shell.spec.ts" },
+        { "file": "e2e/session-lifecycle.spec.ts" }
+      ]
+    },
+    {
+      "id": "runtime-build-config-fallback",
+      "paths": ["package.json", "electron.vite.config.*", "electron-builder.yml"],
+      "targets": [{ "file": "e2e/app-shell.spec.ts" }]
+    }
+  ]
+}

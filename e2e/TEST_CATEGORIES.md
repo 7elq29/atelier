@@ -1,29 +1,30 @@
 # E2E Test Categories
 
-Fast-feedback map from "area of the codebase I'm touching" to "which spec
-files exercise it," so you don't have to run the full suite (or guess) while
-iterating.
+Human-readable ownership and coverage reference. Executable affected-test
+selection lives in `e2e/test-impact-map.json` and
+`scripts/e2e-affected.mjs`; categories are intentionally broader and should
+not be expanded into a test command.
 
 ## How to use this
 
-1. Find the category below whose **source paths** overlap the files you're
-   changing.
-2. Run just that category's specs for a fast local signal, e.g.:
+1. Inspect the affected targets and their selection reasons:
    ```bash
-   npx playwright test e2e/composer-core.spec.ts e2e/composer-mentions-and-commands.spec.ts
+   npm run test:e2e:affected:list
    ```
-3. **This is the validation step itself, not just a speed aid.** Per
-   `CLAUDE.md` §3, a change is validated by running every spec file in the
-   matched categor(ies) — including ones you didn't add — not by running the
-   full suite. Category runs catch regressions in the area you touched; they
-   do not catch cross-feature state bleed (shared sidebar/session state,
-   global CSS, IPC plumbing shared across features) the way a full run would,
-   but CLAUDE.md deliberately accepts that tradeoff for faster iteration —
-   don't run the full suite as a default "just to be safe."
-4. If a spec touches multiple areas (several do — most launch through the
-   same New Session Modal / Composer flow as setup), it's listed under every
-   category it meaningfully covers, not just its "primary" one. When your
-   change overlaps several categories, run all of them together.
+2. Run exactly those targets:
+   ```bash
+   npm run test:e2e:affected
+   ```
+   For a committed range use
+   `npm run test:e2e:affected -- --base <ref> [--head <ref>]`.
+3. Selection is component/file-specific. Shared files such as `global.css`
+   and `App.tsx` use per-hunk rules for recognizable surfaces; any unowned
+   hunk also adds the broader fallback. A changed spec always selects itself.
+4. An unmapped `src/**` file is an error, not permission to skip tests. Add a
+   narrow ownership rule to `e2e/test-impact-map.json`.
+5. The categories below remain useful for understanding feature boundaries,
+   auditing the impact map, and deciding when an intentional broad regression
+   run is warranted. They are not the default command.
 
 ---
 
