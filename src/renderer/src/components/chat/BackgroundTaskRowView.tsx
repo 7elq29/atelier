@@ -1,86 +1,51 @@
 import type { BackgroundTaskRow } from '../../../../shared/harness-ui-types'
 import {
   backgroundTaskStatusLabel,
-  backgroundTaskTypeBadgeClass,
-  backgroundTaskTypeBadgeLabel,
   isBackgroundTaskActive,
   truncateBackgroundTaskTitle,
 } from '../../../../shared/background-tasks-ui'
 
-export default function BackgroundTaskRowView({
-  task,
-  variant,
-}: {
-  task: BackgroundTaskRow
-  variant: 'rail' | 'transcript'
-}): JSX.Element {
+export default function BackgroundTaskRowView({ task }: { task: BackgroundTaskRow }): JSX.Element {
   const running = isBackgroundTaskActive(task)
   const failed = task.status === 'failed' || Boolean(task.error)
   const done = task.done || task.status === 'completed'
   const statusLabel = backgroundTaskStatusLabel(task)
   const fullTitle = task.description
   const displayTitle = truncateBackgroundTaskTitle(fullTitle)
-  const typeClass = backgroundTaskTypeBadgeClass(task.taskType)
-  const typeLabel = backgroundTaskTypeBadgeLabel(task.taskType)
-
-  if (variant === 'rail') {
-    const detail =
-      task.subtitle?.replace(/^last:\s*/i, '') ??
-      (running ? null : statusLabel !== 'done' ? statusLabel : null)
-    const detailWithError = task.error ? `${detail ?? statusLabel} · ${task.error}` : detail
-
-    return (
-      <div
-        className={`background-rail-entry${failed ? ' background-rail-failed' : ''}${done ? ' background-rail-done' : ''}${running ? ' background-rail-running' : ''}`}
-        data-testid="background-rail-item"
-        data-task-id={task.taskId}
-        data-task-status={statusLabel}
-      >
-        <div className="background-rail-head">
-          {running && <span className="spinner" aria-hidden="true" />}
-          {!running && done && !failed && (
-            <span className="background-rail-icon done" aria-hidden="true">
-              ✓
-            </span>
-          )}
-          {!running && failed && (
-            <span className="background-rail-icon failed" aria-hidden="true">
-              !
-            </span>
-          )}
-          {!running && !done && !failed && <span className="background-rail-icon idle" aria-hidden="true" />}
-          <div className="background-rail-body">
-            <span className="background-rail-title" title={fullTitle}>
-              {displayTitle}
-            </span>
-            {detailWithError ? (
-              <span className="background-rail-detail" data-testid="background-rail-sub">
-                {detailWithError}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const detail =
+    task.subtitle?.replace(/^last:\s*/i, '') ??
+    (running ? null : statusLabel !== 'done' ? statusLabel : null)
+  const detailWithError = task.error ? `${detail ?? statusLabel} · ${task.error}` : detail
 
   return (
     <div
-      className={`background-item${failed ? ' failed' : ''}${done ? ' done' : ''}`}
-      data-testid="background-transcript-item"
+      className={`background-rail-entry${failed ? ' background-rail-failed' : ''}${done ? ' background-rail-done' : ''}${running ? ' background-rail-running' : ''}`}
+      data-testid="background-rail-item"
       data-task-id={task.taskId}
       data-task-status={statusLabel}
     >
-      {running && <span className="spinner" />}
-      <span className={`background-type ${typeClass}`}>{typeLabel}</span>
-      <div className="background-body">
-        <div className="background-desc" title={fullTitle}>
-          {displayTitle}
-        </div>
-        <div className="background-sub" data-testid="background-transcript-sub">
-          {statusLabel}
-          {task.subtitle ? ` · ${task.subtitle.replace(/^last:\s*/i, '')}` : ''}
-          {task.error ? ` · ${task.error}` : ''}
+      <div className="background-rail-head">
+        {running && <span className="spinner" aria-hidden="true" />}
+        {!running && done && !failed && (
+          <span className="background-rail-icon done" aria-hidden="true">
+            ✓
+          </span>
+        )}
+        {!running && failed && (
+          <span className="background-rail-icon failed" aria-hidden="true">
+            !
+          </span>
+        )}
+        {!running && !done && !failed && <span className="background-rail-icon idle" aria-hidden="true" />}
+        <div className="background-rail-body">
+          <span className="background-rail-title" title={fullTitle}>
+            {displayTitle}
+          </span>
+          {detailWithError ? (
+            <span className="background-rail-detail" data-testid="background-rail-sub">
+              {detailWithError}
+            </span>
+          ) : null}
         </div>
       </div>
     </div>

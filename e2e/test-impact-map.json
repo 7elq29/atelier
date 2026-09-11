@@ -56,6 +56,12 @@
       ]
     },
     {
+      "id": "background-tasks-shared-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "background-tasks-conversation|background-item|background-type|background-desc|background-sub",
+      "targets": [{ "file": "e2e/harness-sdk-events.spec.ts", "grep": "background" }]
+    },
+    {
       "id": "daily-note-header-app-shell",
       "paths": ["src/renderer/src/App.tsx"],
       "changedLines": "dailyNoteHeaderHost|daily-note-header-host|topbar--daily-note",
@@ -380,10 +386,7 @@
     },
     {
       "id": "transcript",
-      "paths": [
-        "src/renderer/src/components/chat/ChatTranscript.tsx",
-        "src/renderer/src/components/chat/MarkdownMessage.tsx"
-      ],
+      "paths": ["src/renderer/src/components/chat/MarkdownMessage.tsx"],
       "targets": [
         { "file": "e2e/chat-surface-core.spec.ts" },
         { "file": "e2e/chat-transcript-window.spec.ts" },
@@ -392,6 +395,44 @@
         { "file": "e2e/enrichment-full-text-search.spec.ts" },
         { "file": "e2e/enrichment-export-conversation.spec.ts" }
       ]
+    },
+    {
+      "id": "chat-transcript-background-tasks",
+      "paths": [
+        "src/renderer/src/components/chat/ChatTranscript.tsx",
+        "src/renderer/src/components/session/SessionChatSurface.tsx"
+      ],
+      "changedLines": "BackgroundTasksConversationCard|backgroundTasks",
+      "targets": [{ "file": "e2e/harness-sdk-events.spec.ts", "grep": "background" }]
+    },
+    {
+      "id": "chat-transcript",
+      "paths": ["src/renderer/src/components/chat/ChatTranscript.tsx"],
+      "targets": [
+        { "file": "e2e/chat-surface-core.spec.ts" },
+        { "file": "e2e/chat-transcript-window.spec.ts" },
+        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
+        { "file": "e2e/message-actions.spec.ts" },
+        { "file": "e2e/enrichment-full-text-search.spec.ts" },
+        { "file": "e2e/enrichment-export-conversation.spec.ts" }
+      ]
+    },
+    {
+      "id": "session-chat-surface",
+      "paths": ["src/renderer/src/components/session/SessionChatSurface.tsx"],
+      "targets": [
+        { "file": "e2e/chat-surface-core.spec.ts" },
+        { "file": "e2e/harness-sdk-events.spec.ts" }
+      ]
+    },
+    {
+      "id": "background-tasks-ui",
+      "paths": [
+        "src/shared/background-tasks-ui.ts",
+        "src/renderer/src/components/chat/BackgroundTaskRowView.tsx",
+        "src/renderer/src/components/chat/BackgroundTasksConversationCard.tsx"
+      ],
+      "targets": [{ "file": "e2e/harness-sdk-events.spec.ts", "grep": "background" }]
     },
     {
       "id": "message-actions",
@@ -421,6 +462,12 @@
         { "file": "e2e/interactive-prompts.spec.ts", "grep": "AskUserQuestion" },
         { "file": "e2e/bug-ask-user-question-explicit-submit.spec.ts" }
       ]
+    },
+    {
+      "id": "tracker-rail-row-view",
+      "paths": ["src/renderer/src/components/chat/TrackerRail.tsx"],
+      "changedLines": "BackgroundTaskRowView|variant",
+      "targets": [{ "file": "e2e/harness-sdk-events.spec.ts", "grep": "background" }]
     },
     {
       "id": "tracker-rail",

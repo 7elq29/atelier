@@ -26,7 +26,7 @@ See review page threads. Key surfaces: background rail (`task_*`), monitor toast
 
 ## Implementation tiers
 
-1. **Background jobs + monitor toast** — `TrackerRail` cards; IPC `session:backgroundTasks`; toast stack.
+1. **Background jobs + monitor toast** — `TrackerRail` cards only (no transcript “Background tasks” card); IPC `session:backgroundTasks`; toast stack.
 2. **Denials & refusal** — `permission_denied`, `model_refusal_*`.
 3. **Status & reliability** — `status`, `api_retry` text, `rate_limit_event`.
 4. **Transcript & settings** — `local_command_output`, `auth_status`.

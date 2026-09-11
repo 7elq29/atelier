@@ -181,7 +181,7 @@ export default function TrackerRail({
           />
           <div className={`tracker-body${isCardCollapsed('subagents') ? ' collapsed' : ''}`}>
             {sortedSubagents.map((t) => (
-              <BackgroundTaskRowView key={t.taskId} task={t} variant="rail" />
+              <BackgroundTaskRowView key={t.taskId} task={t} />
             ))}
           </div>
         </div>
@@ -200,7 +200,7 @@ export default function TrackerRail({
           />
           <div className={`tracker-body${isCardCollapsed('monitors') ? ' collapsed' : ''}`}>
             {sortedMonitors.map((t) => (
-              <BackgroundTaskRowView key={t.taskId} task={t} variant="rail" />
+              <BackgroundTaskRowView key={t.taskId} task={t} />
             ))}
           </div>
         </div>
@@ -219,7 +219,7 @@ export default function TrackerRail({
           />
           <div className={`tracker-body${isCardCollapsed('jobs') ? ' collapsed' : ''}`}>
             {sortedJobs.map((t) => (
-              <BackgroundTaskRowView key={t.taskId} task={t} variant="rail" />
+              <BackgroundTaskRowView key={t.taskId} task={t} />
             ))}
           </div>
         </div>
@@ -238,7 +238,7 @@ export default function TrackerRail({
           />
           <div className={`tracker-body${isCardCollapsed('shell') ? ' collapsed' : ''}`}>
             {sortedShell.map((t) => (
-              <BackgroundTaskRowView key={t.taskId} task={t} variant="rail" />
+              <BackgroundTaskRowView key={t.taskId} task={t} />
             ))}
           </div>
         </div>
