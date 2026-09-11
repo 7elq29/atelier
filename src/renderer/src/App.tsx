@@ -89,7 +89,7 @@ function filePathCandidatesForSession(ws: SessionWorkspacePayload | undefined): 
   if (!ws) return []
   return collectFilePathCandidates({
     capPaths: ws.sessionChangesCap.items.filter((i) => i.kind === 'file').map((i) => i.path),
-    filesList: ws.filesList,
+    filesList: ws.filesList ?? undefined,
     diffPaths: ws.diff.files.map((f) => f.path)
   })
 }
@@ -2048,7 +2048,7 @@ export default function App(): JSX.Element {
                 if (!session || session.mode !== 'claude-code') return null
                 const composerActive = composerDockVisible && activeSessionId === sessionId
                 const ws = sessionWorkspace.workspaceBySession[sessionId]
-                const mentionPaths = ws?.filesList.map((e) => e.relativePath)
+                const mentionPaths = ws?.filesList?.map((e) => e.relativePath)
                 return (
                   <div
                     key={sessionId}

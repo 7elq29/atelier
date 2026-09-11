@@ -8,8 +8,12 @@ export interface SessionWorkspacePayload {
   hostname: string | null
   diff: DiffSummary
   sessionChangesCap: SessionChangesCap
-  filesTree: FileTreeNode[]
-  filesList: WorkspaceFileEntry[]
+  /**
+   * `null` means "not known" — the walk failed or never ran, so the Files panel
+   * retries instead of rendering an empty workspace. `[]` means really empty.
+   */
+  filesTree: FileTreeNode[] | null
+  filesList: WorkspaceFileEntry[] | null
   tabTerminalPtyId: string
   loadedAt: number
 }

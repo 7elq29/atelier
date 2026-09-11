@@ -32,12 +32,27 @@
       "targets": [{ "file": "e2e/terminal-pty.spec.ts" }]
     },
     {
+      "id": "files-panel-shared-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "files-tree-retry|files-tree-error|files-refresh-btn|files-location-bar",
+      "targets": [{ "file": "e2e/bug-files-walk-failure-visible.spec.ts" }]
+    },
+    {
       "id": "tracker-shared-css",
       "paths": ["src/renderer/src/styles/global.css"],
       "changedLines": "tracker-rail|tracker-body|tracker-card",
       "targets": [
         { "file": "e2e/bug-tracker-rail-width.spec.ts" },
         { "file": "e2e/bug-tracker-rail-collapse-toggle.spec.ts" }
+      ]
+    },
+    {
+      "id": "app-shell-files-list",
+      "paths": ["src/renderer/src/App.tsx"],
+      "changedLines": "filesList|mentionPaths|filePathCandidatesForSession",
+      "targets": [
+        { "file": "e2e/composer-mentions-and-commands.spec.ts", "grep": "mention" },
+        { "file": "e2e/bug-files-walk-failure-visible.spec.ts" }
       ]
     },
     {
@@ -166,7 +181,7 @@
       ],
       "targets": [
         { "file": "e2e/terminal-pty.spec.ts" },
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "terminal|changing project path" }
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|terminal|changing project path" }
       ]
     },
     {
@@ -179,7 +194,7 @@
       "targets": [
         {
           "file": "e2e/secondary-panels.spec.ts",
-          "grep": "terminal|changing project path"
+          "grep": "setup:|terminal|changing project path"
         }
       ]
     },
@@ -187,26 +202,38 @@
       "id": "files-panel",
       "paths": ["src/renderer/src/components/panels/FilesPanel.tsx"],
       "targets": [
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "files panel:" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|files panel:" },
         { "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts" },
-        { "file": "e2e/chat-surface-core.spec.ts", "grep": "file.*Files tab" }
+        { "file": "e2e/chat-surface-core.spec.ts", "grep": "file.*Files tab" },
+        { "file": "e2e/bug-files-walk-failure-visible.spec.ts" }
       ]
     },
     {
       "id": "files-main",
       "paths": ["src/main/panels/files.ts"],
       "targets": [
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "files panel:" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|files panel:" },
         { "file": "e2e/packaged-app-local-tilde.spec.ts" },
         { "file": "e2e/composer-mentions-and-commands.spec.ts", "grep": "mention" },
-        { "file": "e2e/chat-surface-core.spec.ts", "grep": "file.*Files tab" }
+        { "file": "e2e/chat-surface-core.spec.ts", "grep": "file.*Files tab" },
+        { "file": "e2e/bug-files-walk-failure-visible.spec.ts" }
       ]
+    },
+    {
+      "id": "files-walk-failure",
+      "paths": [
+        "src/shared/session-workspace-types.ts",
+        "src/main/sessions/workspace-service.ts",
+        "src/renderer/src/components/panels/FilesPanel.tsx"
+      ],
+      "changedLines": "filesTree|filesList|treeError|treeReloadSeq|reloadTree|walkErrorMessage|logFilesWalkFailure",
+      "targets": [{ "file": "e2e/bug-files-walk-failure-visible.spec.ts" }]
     },
     {
       "id": "editor-buffers",
       "paths": ["src/main/panels/editor-buffers.ts"],
       "targets": [
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "editor buffers:|unsaved edits" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|editor buffers:|unsaved edits" },
         { "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts" }
       ]
     },
@@ -214,7 +241,7 @@
       "id": "diff-panel",
       "paths": ["src/renderer/src/components/panels/DiffPanel.tsx"],
       "targets": [
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "diff panel:|chat:.*cap" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|diff panel:|chat:.*cap" },
         { "file": "e2e/bug-diff-preload-limit.spec.ts" },
         { "file": "e2e/bug-diff-refreshing-stuck-on-timeout.spec.ts" },
         { "file": "e2e/diff-session-compare-trace.spec.ts" },
@@ -229,7 +256,7 @@
         "src/main/sessions/workspace-service.ts"
       ],
       "targets": [
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "diff panel:|worktree|chat:.*cap" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|diff panel:|worktree|chat:.*cap" },
         { "file": "e2e/bug-diff-preload-limit.spec.ts" },
         { "file": "e2e/bug-diff-refreshing-stuck-on-timeout.spec.ts" },
         { "file": "e2e/diff-session-compare-trace.spec.ts" }
@@ -241,7 +268,7 @@
       "targets": [
         {
           "file": "e2e/secondary-panels.spec.ts",
-          "grep": "tab bar:|tab switch|workspace split:"
+          "grep": "setup:|tab bar:|tab switch|workspace split:"
         },
         { "file": "e2e/session-tab-memory.spec.ts" },
         { "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts" }
@@ -253,7 +280,7 @@
         "src/renderer/src/components/panels/PortsPanel.tsx",
         "src/main/panels/ports.ts"
       ],
-      "targets": [{ "file": "e2e/secondary-panels.spec.ts", "grep": "ports panel:" }]
+      "targets": [{ "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|ports panel:" }]
     },
     {
       "id": "panel-ipc",
@@ -526,7 +553,7 @@
       "targets": [
         { "file": "e2e/message-actions.spec.ts" },
         { "file": "e2e/interactive-prompts.spec.ts" },
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "plan" }
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|plan" }
       ]
     },
     {

@@ -100,12 +100,32 @@ function walkLocalDir(root: string, dir: string, matchers: ReturnType<typeof loa
   return nodes.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1))
 }
 
+/**
+ * A walk we cannot perform must not be reported as an empty directory — that
+ * is indistinguishable from "this workspace has no files" and gets cached as a
+ * fact (see Features/files-walk-failure-visible/spec.md). Unreadable *children*
+ * are still skipped by walkLocalDir; only the starting directory is fatal.
+ */
+function assertLocalDirReadable(dir: string): void {
+  try {
+    readdirSync(dir)
+  } catch (err) {
+    // The caller already reports which directory it asked for, so surface the
+    // bare filesystem reason rather than repeating the path.
+    const reason = err instanceof Error ? err.message : String(err)
+    logger.warn('files:tree:failed', { dir, reason })
+    throw new Error(reason)
+  }
+}
+
 function walkLocal(root: string): FileTreeNode[] {
+  assertLocalDirReadable(root)
   const matchers = loadIgnoreMatchers(root)
   return walkLocalDir(root, root, matchers)
 }
 
 function walkLocalChildren(root: string, dir: string): FileTreeNode[] {
+  assertLocalDirReadable(dir)
   const matchers = loadIgnoreMatchers(root)
   return walkLocalDir(root, dir, matchers)
 }
@@ -143,7 +163,7 @@ function normalizeUnderWorkspace(workspaceRoot: string, underDir: string): strin
 function listLocalWorkspaceFiles(workspaceRoot: string, underDir?: string): WorkspaceFileEntry[] {
   const root = resolveLocalPath(workspaceRoot).replace(/\/$/, '')
   const startDir = normalizeUnderWorkspace(root, underDir ? resolveLocalPath(underDir) : root)
-  if (!existsSync(startDir)) return []
+  assertLocalDirReadable(startDir)
   const matchers = loadIgnoreMatchers(root)
   const out: WorkspaceFileEntry[] = []
   collectLocalFiles(root, startDir, matchers, out, { n: 0 })
@@ -207,19 +227,34 @@ function buildRemoteTree(root: string, findOutput: string): FileTreeNode[] {
   )
 }
 
+/**
+ * ssh exits 255 when the connection itself fails (host asleep, expired auth) and
+ * the remote shell exits non-zero when `cd` fails. Either way we learned nothing
+ * about the directory, so this must surface as an error rather than an empty
+ * tree — a devpod blip used to cache "no files" for the session's whole life.
+ */
+function assertRemoteWalkOk(code: number, stderr: string, root: string, sshHost: string, op: string): void {
+  if (code === 0) return
+  const reason = stderr.trim().slice(0, 200)
+  logger.warn('files:tree:remote:failed', { root, sshHost, op, code, stderr: reason })
+  throw new Error(reason || `${op} failed for ${root} on ${sshHost} (exit ${code})`)
+}
+
 async function walkRemote(root: string, sshHost: string): Promise<FileTreeNode[]> {
   const ignoredNames = [...ALWAYS_IGNORED].map((n) => `-name ${shQuote(n)}`).join(' -o ')
   const cmd = `cd ${remoteCdTarget(root)} && find . -maxdepth 1 \\( ${ignoredNames} \\) -prune -o -printf '%Y %P\\n' 2>/dev/null`
-  const { stdout, code } = await sshExec(sshHost, cmd)
+  const { stdout, stderr, code } = await sshExec(sshHost, cmd)
   logger.info('files:tree:remote:done', { root, sshHost, code, lines: stdout.split('\n').length })
+  assertRemoteWalkOk(code, stderr, root, sshHost, 'files tree')
   return buildRemoteTree(root, stdout)
 }
 
 async function walkRemoteChildren(root: string, dir: string, sshHost: string): Promise<FileTreeNode[]> {
   const ignoredNames = [...ALWAYS_IGNORED].map((n) => `-name ${shQuote(n)}`).join(' -o ')
   const cmd = `cd ${remoteCdTarget(dir)} && find . -maxdepth 1 \\( ${ignoredNames} \\) -prune -o -printf '%Y %P\\n' 2>/dev/null`
-  const { stdout, code } = await sshExec(sshHost, cmd)
+  const { stdout, stderr, code } = await sshExec(sshHost, cmd)
   logger.info('files:dir:remote:done', { root, dir, sshHost, code })
+  assertRemoteWalkOk(code, stderr, dir, sshHost, 'files dir')
   return buildRemoteTree(dir, stdout)
 }
 
@@ -228,8 +263,9 @@ async function listRemoteWorkspaceFiles(workspaceRoot: string, sshHost: string, 
   const startDir = normalizeUnderWorkspace(root, underDir ?? root)
   const ignoredNames = [...ALWAYS_IGNORED].map((n) => `-name ${shQuote(n)}`).join(' -o ')
   const cmd = `cd ${remoteCdTarget(startDir)} && find . \\( ${ignoredNames} \\) -prune -o -type f -print 2>/dev/null | head -n ${MAX_ENTRIES}`
-  const { stdout, code } = await sshExec(sshHost, cmd)
+  const { stdout, stderr, code } = await sshExec(sshHost, cmd)
   logger.info('files:list:remote:done', { root, startDir, sshHost, code, lines: stdout.split('\n').length })
+  assertRemoteWalkOk(code, stderr, startDir, sshHost, 'files list')
   const out: WorkspaceFileEntry[] = []
   for (const line of stdout.split('\n')) {
     const trimmed = line.trim()

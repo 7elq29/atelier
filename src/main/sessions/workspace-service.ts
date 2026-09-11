@@ -195,7 +195,7 @@ export class WorkspaceService {
       diffFiles: payload.diff.files?.length ?? 0,
       diffHunksLoaded: payload.diff.files?.filter((f) => f.hunks.length > 0).length ?? 0,
       capItems: payload.sessionChangesCap.items.length,
-      treeEntries: payload.filesTree.length,
+      treeEntries: payload.filesTree?.length ?? null,
       gitDeferred: true
     })
   }
@@ -268,6 +268,16 @@ export class WorkspaceService {
     }
   }
 
+  /** A files walk that failed leaves the snapshot "unknown" (null); the rest of the payload still ships. */
+  private logFilesWalkFailure(sessionId: string, workspacePath: string, kind: 'tree' | 'list', err: unknown): void {
+    logger.warn('workspace files walk failed; leaving files unknown', {
+      sessionId,
+      workspacePath,
+      kind,
+      error: err instanceof Error ? err.message : String(err)
+    })
+  }
+
   private emptyPreloadPayload(session: SessionRecord, tabTerminalPtyId: string): SessionWorkspacePayload {
     const workspacePath = workspacePathFor(session)
     return {
@@ -276,8 +286,10 @@ export class WorkspaceService {
       hostname: session.hostname,
       diff: { isRepo: false, branch: null, files: [] },
       sessionChangesCap: { items: [] },
-      filesTree: [],
-      filesList: [],
+      // null, not [] — the walk never happened, so the Files panel must retry
+      // rather than render a confident "this workspace is empty".
+      filesTree: null,
+      filesList: null,
       tabTerminalPtyId,
       loadedAt: Date.now()
     }
@@ -351,10 +363,20 @@ export class WorkspaceService {
 
       this.sendConnectProgress(session.id, 'files')
       const filesTreeTimed = timed(() =>
-        Promise.resolve(walkFileTree(workspacePath, hostname)).then((r) => (Array.isArray(r) ? r : []))
+        Promise.resolve(walkFileTree(workspacePath, hostname))
+          .then((r) => (Array.isArray(r) ? r : null))
+          .catch((err: unknown) => {
+            this.logFilesWalkFailure(session.id, workspacePath, 'tree', err)
+            return null
+          })
       )
       const filesListTimed = timed(() =>
-        Promise.resolve(listWorkspaceFiles(workspacePath, hostname)).then((r) => (Array.isArray(r) ? r : []))
+        Promise.resolve(listWorkspaceFiles(workspacePath, hostname))
+          .then((r) => (Array.isArray(r) ? r : null))
+          .catch((err: unknown) => {
+            this.logFilesWalkFailure(session.id, workspacePath, 'list', err)
+            return null
+          })
       )
 
       this.sendConnectProgress(session.id, 'terminal')
@@ -552,17 +574,25 @@ export class WorkspaceService {
         )
         const hintsGitCalls = getGitInvocationCount() - hintsGitCallsAt
         const diff = mergeDiffHunks(prev?.diff, hintsTimed.result)
+        // A failed re-walk keeps whatever we already knew (possibly null) instead
+        // of overwriting a good tree with an empty one.
         const [filesTree, filesList] = await Promise.all([
           includeFiles
-            ? Promise.resolve(walkFileTree(workspacePath, session.hostname)).then((r) =>
-                Array.isArray(r) ? r : []
-              )
-            : Promise.resolve(prev?.filesTree ?? []),
+            ? Promise.resolve(walkFileTree(workspacePath, session.hostname))
+                .then((r) => (Array.isArray(r) ? r : null))
+                .catch((err: unknown) => {
+                  this.logFilesWalkFailure(session.id, workspacePath, 'tree', err)
+                  return prev?.filesTree ?? null
+                })
+            : Promise.resolve(prev?.filesTree ?? null),
           includeFiles
-            ? Promise.resolve(listWorkspaceFiles(workspacePath, session.hostname)).then((r) =>
-                Array.isArray(r) ? r : []
-              )
-            : Promise.resolve(prev?.filesList ?? [])
+            ? Promise.resolve(listWorkspaceFiles(workspacePath, session.hostname))
+                .then((r) => (Array.isArray(r) ? r : null))
+                .catch((err: unknown) => {
+                  this.logFilesWalkFailure(session.id, workspacePath, 'list', err)
+                  return prev?.filesList ?? null
+                })
+            : Promise.resolve(prev?.filesList ?? null)
         ])
         const capGitCallsAt = getGitInvocationCount()
         const capTimed = skipCapRebuild

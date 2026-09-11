@@ -326,6 +326,9 @@ export default function FilesPanel({
   }, [hostname])
   const homeDir = hostname ? REMOTE_SESSION_HOME : (localHomeDir ?? '/')
   const [tree, setTree] = useState<FileTreeNode[] | null>(null)
+  /** Non-null when the walk itself failed (SSH down, directory gone) — distinct from an empty workspace. */
+  const [treeError, setTreeError] = useState<string | null>(null)
+  const [treeReloadSeq, setTreeReloadSeq] = useState(0)
   const [profileRootTrees, setProfileRootTrees] = useState<Map<string, FileTreeNode[]>>(new Map())
   const [openTabs, setOpenTabs] = useState<OpenEditorTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
@@ -429,6 +432,8 @@ export default function FilesPanel({
     workspaceScopeRef.current = workspaceScopeKey
 
     setTree(null)
+    setTreeError(null)
+    setTreeReloadSeq(0)
     setOpenTabs([])
     setActiveTabId(null)
     nextTabIdRef.current = 0
@@ -450,12 +455,46 @@ export default function FilesPanel({
   useEffect(() => {
     if (!active) return
     if (fileTreeRootsKey) return
-    if (initialFilesTree != null) {
+    if (initialFilesTree != null && treeReloadSeq === 0) {
       setTree(initialFilesTree)
+      setTreeError(null)
       return
     }
-    void window.atelier.filesTree(projectPath, hostname).then(setTree)
-  }, [active, projectPath, hostname, fileTreeRootsKey, initialFilesTree])
+    let cancelled = false
+    void window.atelier
+      .filesTree(projectPath, hostname)
+      .then((nodes) => {
+        if (cancelled) return
+        setTree(nodes)
+        setTreeError(null)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setTree(null)
+        setTreeError(walkErrorMessage(err) || 'Unknown error')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [active, projectPath, hostname, fileTreeRootsKey, initialFilesTree, treeReloadSeq])
+
+  /** Electron wraps handler errors as `Error invoking remote method 'x': Error: real reason`. */
+  function walkErrorMessage(err: unknown): string {
+    const raw = err instanceof Error ? err.message : String(err)
+    return raw
+      .replace(/^Error invoking remote method '[^']*':\s*/, '')
+      .replace(/^(?:Error|UnhandledSchemeError):\s*/, '')
+      .trim()
+  }
+
+  const reloadTree = useCallback((): void => {
+    setTree(null)
+    setTreeError(null)
+    setDirChildren(new Map())
+    dirChildrenRef.current = new Map()
+    setExpanded(new Set())
+    setTreeReloadSeq((n) => n + 1)
+  }, [])
 
   useEffect(() => {
     if (!active || !fileTreeRootsKey) {
@@ -1070,7 +1109,8 @@ export default function FilesPanel({
   const profileMode = Boolean(fileTreeRoots?.length)
   const profileTreesLoading =
     profileMode && fileTreeRoots!.some((root) => !profileRootTrees.has(root.path))
-  const filesTreeLoading = profileMode ? profileTreesLoading : tree === null
+  const filesWalkFailed = !profileMode && treeError !== null
+  const filesTreeLoading = profileMode ? profileTreesLoading : tree === null && !filesWalkFailed
 
   useEffect(() => {
     if (!active || filesTreeLoading) return
@@ -1085,10 +1125,34 @@ export default function FilesPanel({
           <div className="empty-icon">📁</div>
           <div>Loading files…</div>
         </div>
+      ) : filesWalkFailed ? (
+        <div className="empty-main" style={{ height: '100%' }} data-testid="files-tree-error">
+          <div className="empty-icon icon-standalone">📁</div>
+          <div className="files-tree-error-title">Could not load files from {projectPath}</div>
+          <div className="files-tree-error-detail" data-testid="files-tree-error-detail">
+            {treeError}
+          </div>
+          <button
+            type="button"
+            className="files-tree-retry"
+            data-testid="files-tree-retry"
+            onClick={reloadTree}
+          >
+            Retry
+          </button>
+        </div>
       ) : !profileMode && tree!.length === 0 ? (
-        <div className="empty-main" style={{ height: '100%' }}>
+        <div className="empty-main" style={{ height: '100%' }} data-testid="files-tree-empty">
           <div className="empty-icon icon-standalone">📁</div>
           <div>Project files will appear here</div>
+          <button
+            type="button"
+            className="files-tree-retry"
+            data-testid="files-tree-refresh-empty"
+            onClick={reloadTree}
+          >
+            Refresh
+          </button>
         </div>
       ) : (
         <>
@@ -1126,6 +1190,16 @@ export default function FilesPanel({
               if (e.key === 'Escape') { setLocationEditing(false); setCompletions([]); setLocationInput(browseDirPath ?? selectedPath ?? projectPath); (e.target as HTMLInputElement).blur() }
             }}
           />
+          <button
+            type="button"
+            className="files-refresh-btn"
+            data-testid="files-tree-refresh"
+            title="Re-read this directory"
+            aria-label="Refresh files"
+            onClick={reloadTree}
+          >
+            ↻
+          </button>
           {completions.length > 0 && (
             <div className="files-location-popup">
               {completions.map((n, i) => (
