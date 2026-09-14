@@ -319,6 +319,8 @@ interface ComposerProps {
   onOpenBookmark?: (bookmark: SessionBookmark) => void
   /** `/fork` slash command's real action: forks the active session (same as the sidebar's fork action). */
   onFork: () => void
+  /** `/clear` slash command: wipe transcript + start a fresh CLI conversation. */
+  onClearConversation: () => void
   /** Current model/effort override (10f-enrichment-model-effort-picker); `null` until the user picks something, in which case no override is sent at all (harness default). */
   modelSelection: ModelSelection | null
   /** Fired the moment the user picks a new model/effort — applies starting with the NEXT `onSend`, never the in-flight turn. */
@@ -437,7 +439,7 @@ async function readAttachedImage(file: File | Blob): Promise<AttachedImage | nul
  *   - Four LOCAL, Atelier-only real actions Atelier intercepts (bug #56 —
  *     these never reach `session:sendMessage`, since the SDK has no concept
  *     of any of them):
- *       - `/clear`     — clears the composer (same as selecting-all + delete)
+ *       - `/clear`     — clears the conversation (transcript + SDK session)
  *       - `/interrupt` — stops the current in-flight turn (same real IPC as the Stop button)
  *       - `/fork`      — forks the active session (same real IPC as the sidebar's fork action)
  *       - `/model`     — opens the REAL `ModelPicker` popover (its `open` state
@@ -541,6 +543,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   onOpenChangedFile,
   onOpenBookmark,
   onFork,
+  onClearConversation,
   modelSelection,
   onModelSelectionChange,
   liveSlashCommands,
@@ -724,7 +727,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   // dropped rather than shown twice.
   const slashCommands: SlashCommand[] = useMemo(() => {
     const local: SlashCommand[] = [
-      { cmd: '/clear', desc: 'Clear the composer', run: () => { largePastesRef.current = []; setValue('') } },
+      { cmd: '/clear', desc: 'Clear conversation', run: () => { largePastesRef.current = []; setValue(''); onClearConversation() } },
       { cmd: '/interrupt', desc: 'Stop the current in-flight turn', run: () => onInterrupt() },
       { cmd: '/fork', desc: 'Fork this session into a new one', run: () => onFork() },
       { cmd: '/model', desc: 'Open the model/effort picker', run: () => setModelPickerOpen(true) }
@@ -752,7 +755,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       })
       .map((c) => ({ cmd: `/${c.name}`, desc: c.description || c.argumentHint || 'Session command' }))
     return [...local, ...live]
-  }, [onInterrupt, onFork, liveSlashCommands])
+  }, [onInterrupt, onFork, onClearConversation, liveSlashCommands])
 
 
   // Auto-grow: mirrors mocks/index.html's onComposerInput exactly —

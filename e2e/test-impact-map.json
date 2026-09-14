@@ -344,6 +344,19 @@
       ]
     },
     {
+      "id": "slash-clear",
+      "paths": [
+        "src/main/sessions/manager.ts",
+        "src/main/harness/claude-agent-sdk-harness.ts",
+        "src/renderer/src/components/chat/Composer.tsx",
+        "src/renderer/src/stores/session-messages-store.ts"
+      ],
+      "changedLines": "clearConversation|conversation_reset|conversation cleared|onClearConversation|Clear conversation|messagesCleared",
+      "targets": [
+        { "file": "e2e/composer-mentions-and-commands.spec.ts" }
+      ]
+    },
+    {
       "id": "session-manager",
       "paths": [
         "src/main/sessions/manager.ts",

@@ -32,6 +32,7 @@ import type {
   SessionStreamEvent,
   SessionTab,
   SessionMessageRemovedEvent,
+  SessionMessagesClearedEvent,
   SessionInterruptResult,
   SessionTokenUsageEvent,
   SessionPromptSuggestionEvent,
@@ -245,6 +246,7 @@ const api = {
   sendSessionMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment): Promise<void> =>
     ipcRenderer.invoke('session:sendMessage', sessionId, text, modelSelection, image),
   interruptSession: (sessionId: string): Promise<SessionInterruptResult> => ipcRenderer.invoke('session:interrupt', sessionId),
+  clearConversation: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:clearConversation', sessionId),
   validateModel: (sessionId: string, model: string): Promise<ModelValidationResult> =>
     ipcRenderer.invoke('session:validateModel', sessionId, model),
   forkSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:fork', sessionId),
@@ -321,6 +323,11 @@ const api = {
     const listener = (_event: unknown, payload: SessionMessageRemovedEvent): void => callback(payload)
     ipcRenderer.on('session:messageRemoved', listener)
     return () => ipcRenderer.removeListener('session:messageRemoved', listener)
+  },
+  onSessionMessagesCleared: (callback: (event: SessionMessagesClearedEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionMessagesClearedEvent): void => callback(payload)
+    ipcRenderer.on('session:messagesCleared', listener)
+    return () => ipcRenderer.removeListener('session:messagesCleared', listener)
   },
   /** Token-level live push for an in-progress assistant message (03-chat-surface-core) — see SessionStreamDeltaEvent. */
   onSessionStreamDelta: (callback: (event: SessionStreamDeltaEvent) => void): (() => void) => {

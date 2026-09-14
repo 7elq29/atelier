@@ -68,6 +68,7 @@ interface SessionRow {
   linked_daily_note_date: string | null
   profile_id: string | null
   active_tab: string | null
+  sdk_session_id: string | null
 }
 
 interface MessageRow {
@@ -227,8 +228,8 @@ export class SessionStore {
     const createdAt = new Date().toISOString()
     this.db
       .prepare(
-        `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order, worktree_path, last_active_at, profile_id)
-         VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, @pinned, @color, @createdAt, NULL, NULL, @sortOrder, @worktreePath, @lastActiveAt, @profileId)`
+        `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order, worktree_path, last_active_at, profile_id, sdk_session_id)
+         VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, @pinned, @color, @createdAt, NULL, NULL, @sortOrder, @worktreePath, @lastActiveAt, @profileId, @sdkSessionId)`
       )
       .run({
         id,
@@ -243,7 +244,8 @@ export class SessionStore {
         sortOrder: input.sortOrder ?? Date.now(),
         worktreePath: input.worktreePath ?? null,
         lastActiveAt: createdAt,
-        profileId: input.profileId ?? null
+        profileId: input.profileId ?? null,
+        sdkSessionId: id
       })
     return this.getSession(id)!
   }
@@ -577,8 +579,8 @@ export class SessionStore {
     const fork = this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order, worktree_path, notes, permission_mode, model_id, effort, profile_id, last_active_at, ever_connected, total_cost_usd)
-           VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, 0, @color, @createdAt, NULL, NULL, @sortOrder, @worktreePath, @notes, @permissionMode, @modelId, @effort, @profileId, @lastActiveAt, 0, 0)`
+          `INSERT INTO sessions (id, name, name_locked_by_user, project_path, mode, hostname, group_id, pinned, color, created_at, closed_at, deleted_at, sort_order, worktree_path, notes, permission_mode, model_id, effort, profile_id, last_active_at, ever_connected, total_cost_usd, sdk_session_id)
+           VALUES (@id, @name, 0, @projectPath, @mode, @hostname, @groupId, 0, @color, @createdAt, NULL, NULL, @sortOrder, @worktreePath, @notes, @permissionMode, @modelId, @effort, @profileId, @lastActiveAt, 0, 0, @sdkSessionId)`
         )
         .run({
           id: newId,
@@ -596,7 +598,8 @@ export class SessionStore {
           modelId: source.modelSelection?.model ?? null,
           effort: source.modelSelection?.effort ?? null,
           profileId: source.profileId,
-          lastActiveAt: createdAt
+          lastActiveAt: createdAt,
+          sdkSessionId: newId
         })
 
       const insertTag = this.db.prepare('INSERT OR IGNORE INTO session_tags (session_id, tag) VALUES (?, ?)')
@@ -738,6 +741,28 @@ export class SessionStore {
     this.db.prepare('DELETE FROM messages_fts WHERE rowid = ?').run(id)
     this.db.prepare('DELETE FROM messages WHERE id = ?').run(id)
     return toMessageRecord(existing)
+  }
+
+  /** `/clear`: drop every transcript row (and FTS) for this session. */
+  clearMessages(sessionId: string): void {
+    const clear = this.db.transaction(() => {
+      this.db
+        .prepare('DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE session_id = ?)')
+        .run(sessionId)
+      this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId)
+    })
+    clear()
+  }
+
+  getSdkSessionId(sessionId: string): string {
+    const row = this.db
+      .prepare('SELECT sdk_session_id, id FROM sessions WHERE id = ?')
+      .get(sessionId) as { sdk_session_id: string | null; id: string } | undefined
+    return row?.sdk_session_id || row?.id || sessionId
+  }
+
+  setSdkSessionId(sessionId: string, sdkSessionId: string): void {
+    this.db.prepare('UPDATE sessions SET sdk_session_id = ? WHERE id = ?').run(sdkSessionId, sessionId)
   }
 
   listMessages(sessionId: string): MessageRecord[] {

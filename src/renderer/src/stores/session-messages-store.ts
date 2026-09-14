@@ -208,6 +208,10 @@ export function initSessionMessagesListeners(): () => void {
     )
   })
 
+  const offMessagesCleared = window.atelier.onSessionMessagesCleared(({ sessionId }) => {
+    setSessionMessages(sessionId, [], { transcriptTruncated: false, hiddenTurnCount: 0 })
+  })
+
   const offDelta = window.atelier.onSessionStreamDelta(({ sessionId, messageId, text }) => {
     let byMessage = pendingStreamFlush.get(sessionId)
     if (!byMessage) {
@@ -221,6 +225,7 @@ export function initSessionMessagesListeners(): () => void {
   return () => {
     offMessage()
     offMessageRemoved()
+    offMessagesCleared()
     offDelta()
     if (streamFlushRaf !== 0) {
       cancelAnimationFrame(streamFlushRaf)

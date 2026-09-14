@@ -2136,6 +2136,15 @@ export default function App(): JSX.Element {
                       onOpenChangedFile={openChangedFileFromCap}
                       onOpenBookmark={openSessionBookmark}
                       onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}
+                      onClearConversation={() => {
+                        setQueuedMessagesBySession((prev) => {
+                          if (!(sessionId in prev)) return prev
+                          const next = { ...prev }
+                          delete next[sessionId]
+                          return next
+                        })
+                        void window.atelier.clearConversation(sessionId)
+                      }}
                       modelSelection={modelSelectionForSession(sessionId, session, modelSelectionBySession, config)}
                       onModelSelectionChange={(selection) => {
                         setModelSelectionBySession((prev) => ({ ...prev, [sessionId]: selection }))

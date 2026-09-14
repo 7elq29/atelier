@@ -191,14 +191,27 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
   })
 
   // ── 5. Selecting a slash command runs a REAL action: /clear ────────────
-  test('/clear selection clears the composer for real', async () => {
+  test('/clear selection clears the conversation', async () => {
+    await expect(page.getByTestId('transcript-message').first()).toBeVisible()
     const textarea = activeComposer(page).getByTestId('composer-input')
     await textarea.click()
+    await textarea.fill('')
     await textarea.type('/cle')
     await expect(page.getByTestId('slash-popover')).toBeVisible()
+    await expect(page.locator('[data-testid="slash-item"][data-command="/clear"]')).toContainText('Clear conversation')
     await textarea.press('Enter')
     await expect(page.getByTestId('slash-popover')).toHaveCount(0)
     await expect(textarea).toHaveValue('')
+    await expect(page.getByTestId('transcript-message')).toHaveCount(0, { timeout: 30_000 })
+
+    const remaining = await page.evaluate(
+      (id) => window.atelier.debugQueryDb<{ c: number }>('SELECT COUNT(*) as c FROM messages WHERE session_id = ?', [id]),
+      sessionId
+    )
+    expect(remaining[0]?.c ?? 0).toBe(0)
+
+    mkdirSync(artifactsDir, { recursive: true })
+    await page.screenshot({ path: join(artifactsDir, 'slash-clear-empty-transcript.png') })
   })
 
   // ── 6. Selecting /fork runs the REAL fork action (new session appears) ──
