@@ -31,6 +31,7 @@ import {
 import { readDailyNoteAttachmentDataUrl, saveDailyNotePastedImage } from './daily-note-attachments'
 import { logger } from './logger'
 import { loadConfig } from './config'
+import { resolveDefaultDate } from './calendar-day'
 
 const WATCH_DEBOUNCE_MS = 300
 
@@ -429,17 +430,6 @@ function resolveVaultSettings(): VaultSettings | null {
     notePathPattern: cfg.notePathPattern,
     templatePath: cfg.templatePath
   }
-}
-
-
-/** Today's date as YYYY-MM-DD (local time), overridable for deterministic e2e runs. */
-function resolveDefaultDate(): string {
-  if (process.env.ATELIER_TEST_DATE) return process.env.ATELIER_TEST_DATE
-  const now = new Date()
-  const yyyy = now.getFullYear()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
 }
 
 function sleep(ms: number): Promise<void> {

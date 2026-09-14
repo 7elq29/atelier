@@ -27,6 +27,7 @@ import { purgeEditorBuffers } from './panels/editor-buffers'
 import { registerSpendStatusHandlers } from './spend-status-ipc'
 import type { PtyManager } from './panels/pty'
 import type { PortForwardManager } from './panels/ports'
+import { startCalendarDayMonitor } from './calendar-day'
 
 /** Dev worktree runs via a copied .app bundle, so `app.isPackaged` alone is unreliable. */
 const isDev =
@@ -38,6 +39,7 @@ let ptyManager: PtyManager | null = null
 let portManager: PortForwardManager | null = null
 let sessionManager: SessionManager | null = null
 let workspaceService: WorkspaceService | null = null
+let stopCalendarDayMonitor: (() => void) | null = null
 /** Prevents a second `before-quit` from re-entering async harness teardown. */
 let appQuitHarnessShutdownDone = false
 
@@ -199,6 +201,7 @@ app.whenReady().then(() => {
   logger.info('app ready', { version: app.getVersion(), platform: process.platform, dev: isDev })
 
   mainWindow = createWindow()
+  stopCalendarDayMonitor = startCalendarDayMonitor(() => mainWindow)
   applyDockIconWhenReady()
   if (isDev && process.platform === 'darwin') {
     app.dock?.setBadge('DEV')
@@ -243,6 +246,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   // Unsaved editor buffers never outlive the app run (re-entry is a cheap no-op).
   purgeEditorBuffers()
+  stopCalendarDayMonitor?.()
+  stopCalendarDayMonitor = null
   if (appQuitHarnessShutdownDone) {
     ptyManager?.killAll()
     portManager?.killAll()

@@ -205,6 +205,7 @@ function modelSelectionForSession(
  */
 export default function App(): JSX.Element {
   const [date, setDate] = useState<string | null>(null)
+  const calendarDateRef = useRef<string | null>(null)
   const { config, loaded, updateConfig } = useConfig()
   const sessions = useSessions()
   const sessionWorkspace = useSessionWorkspace()
@@ -345,13 +346,71 @@ export default function App(): JSX.Element {
   }, [reviewTarget])
 
   useEffect(() => {
-    window.atelier.getDefaultDate().then(setDate)
+    window.atelier.getDefaultDate().then((initialDate) => {
+      calendarDateRef.current = initialDate
+      setDate(initialDate)
+    })
   }, [])
 
   const refreshWeeklyPlanStatus = useCallback(async () => {
     const status = await window.atelier.getWeeklyPlanStatus()
     setWeeklyPlanStatus(status)
   }, [])
+
+  useEffect(() => {
+    const applyCalendarDay = (nextDate: string): void => {
+      if (calendarDateRef.current === nextDate) return
+      calendarDateRef.current = nextDate
+
+      // Null means the surface is closed. Preserve that state while retargeting
+      // every open "today" surface to the new day.
+      setDate((current) => (current === null ? null : nextDate))
+      setActiveDailyNoteDate((current) => (current === null ? null : nextDate))
+
+      void (async () => {
+        try {
+          const status = await window.atelier.getWeeklyPlanStatus()
+          setWeeklyPlanStatus(status)
+
+          if (activeWeeklyPlanOpen) {
+            if (status.fileExists) {
+              const doc = await window.atelier.readWeeklyPlanNote(status.isoWeek)
+              setActiveWeeklyPlanOpen(false)
+              setWeeklyPlanContext(null)
+              setWeeklyPlanViewDoc(doc)
+            } else {
+              const context = await window.atelier.loadWeeklyPlanContext()
+              setWeeklyPlanContext(context)
+              setWeeklyPlanViewDoc(null)
+            }
+          } else if (weeklyPlanViewDoc !== null) {
+            if (status.fileExists) {
+              setWeeklyPlanViewDoc(await window.atelier.readWeeklyPlanNote(status.isoWeek))
+            } else {
+              setWeeklyPlanViewDoc(null)
+            }
+          }
+        } catch (err) {
+          window.atelier.log('warn', 'calendar day weekly refresh failed', {
+            error: err instanceof Error ? err.message : String(err)
+          })
+        }
+      })()
+    }
+
+    const unsubscribe = window.atelier.onCalendarDayChanged(({ date: nextDate }) => {
+      applyCalendarDay(nextDate)
+    })
+    const onFocus = (): void => {
+      void window.atelier.getDefaultDate().then(applyCalendarDay)
+    }
+    window.addEventListener('focus', onFocus)
+
+    return () => {
+      unsubscribe()
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [activeWeeklyPlanOpen, weeklyPlanViewDoc])
 
   useEffect(() => {
     if (!loaded) return

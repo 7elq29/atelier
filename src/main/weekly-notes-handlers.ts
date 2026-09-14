@@ -22,21 +22,13 @@ import type { WeeklyPlanCreatePayload, WeeklyPlanDraftPayload, WeeklyPlanSchedul
 import { parseWeeklyPlanWizardDataFromMarkdown } from '../shared/weekly-plan-import'
 import { loadWeeklyPlanScheduleFromDailyNotes } from './weekly-plan-view-load'
 import { syncWeeklyPlanScheduleToDailyNotes } from './weekly-plan-schedule-sync'
+import { resolveDefaultDate } from './calendar-day'
 
 function resolveVaultRoot(): string | null {
   const envRoot = process.env.ATELIER_TEST_VAULT_ROOT ?? process.env.ATELIER_VAULT_ROOT ?? null
   if (envRoot) return envRoot
   const root = loadConfig().vault.root
   return root || null
-}
-
-function resolveDefaultDate(): string {
-  if (process.env.ATELIER_TEST_DATE) return process.env.ATELIER_TEST_DATE
-  const now = new Date()
-  const yyyy = now.getFullYear()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
 }
 
 function resolveVaultScan() {
