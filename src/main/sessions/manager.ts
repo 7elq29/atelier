@@ -34,6 +34,7 @@ import type {
 } from '../../shared/session-bookmarks'
 import { normalizeSessionBookmarkTarget } from '../../shared/session-bookmarks'
 import { TURN_INTERRUPTED_NOTICE } from '../../shared/session-types'
+import { formatHarnessErrorForUser } from '../../shared/harness-error-copy'
 import type { SessionMessagesResult } from '../../shared/chat-transcript-window'
 import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig, defaultClaudePermissionModeFromConfig } from '../../shared/config'
 import { expandTildePath } from '../../shared/project-path-autocomplete'
@@ -1883,7 +1884,7 @@ export class SessionManager {
     const message = this.store.addMessage({
       sessionId,
       role: 'system',
-      content: `Error: ${errorMessage}`
+      content: `Error: ${formatHarnessErrorForUser(errorMessage)}`
     })
     this.sendMessage(sessionId, message)
     // The harness call itself threw (never reached applyEvent's terminal
@@ -2720,7 +2721,7 @@ export class SessionManager {
         const message = this.store.addMessage({
           sessionId,
           role: 'system',
-          content: `Error: ${event.message}`,
+          content: `Error: ${formatHarnessErrorForUser(event.message)}`,
           rawEvent: event
         })
         this.sendMessage(sessionId, message)
@@ -2898,8 +2899,10 @@ export class SessionManager {
    * reality and stops offering dead buttons.
    */
   private formatTurnErrorMessage(event: Extract<HarnessEvent, { type: 'result' }>): string {
-    if (event.errors && event.errors.length > 0) return event.errors.join('\n')
-    if (event.result) return event.result
+    if (event.errors && event.errors.length > 0) {
+      return event.errors.map((item) => formatHarnessErrorForUser(item)).join('\n')
+    }
+    if (event.result) return formatHarnessErrorForUser(event.result)
     switch (event.subtype) {
       case 'error_max_turns':
         return 'Turn stopped: maximum turn limit reached.'
