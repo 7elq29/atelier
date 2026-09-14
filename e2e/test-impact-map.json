@@ -613,12 +613,40 @@
       "targets": [{ "file": "e2e/chat-transcript-window.spec.ts" }]
     },
     {
+      "id": "review-pane",
+      "paths": [
+        "src/renderer/src/components/chat/ResponseReviewPanel.tsx",
+        "src/renderer/src/components/chat/ReviewFileMonacoEditor.tsx",
+        "src/renderer/src/components/chat/ReviewSelectionBubble.tsx",
+        "src/renderer/src/components/chat/ReviewCommentDisplay.tsx",
+        "src/renderer/src/components/chat/review-comment-highlights.ts",
+        "src/renderer/src/components/chat/review-selection-anchor.ts"
+      ],
+      "targets": [
+        { "file": "e2e/ui-review-pane-chrome.spec.ts" },
+        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
+        { "file": "e2e/message-actions.spec.ts" },
+        { "file": "e2e/interactive-prompts.spec.ts", "grep": "plan" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|plan" }
+      ]
+    },
+    {
+      "id": "review-pane-shared-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "response-review",
+      "targets": [
+        { "file": "e2e/ui-review-pane-chrome.spec.ts" },
+        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" }
+      ]
+    },
+    {
       "id": "review-pane-types",
       "paths": ["src/shared/review-pane-types.ts"],
       "targets": [
         { "file": "e2e/message-actions.spec.ts" },
         { "file": "e2e/interactive-prompts.spec.ts" },
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|plan" }
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|plan" },
+        { "file": "e2e/ui-review-pane-chrome.spec.ts" }
       ]
     },
     {

@@ -88,7 +88,7 @@ test('standalone file bookmark opens in the right review panel, not Files', asyn
       'data-has-plan-diff',
       'false'
     )
-    await expect(page.locator('.response-review-sub')).not.toContainText('inline diff')
+    await expect(page.locator('.response-review-sub')).toHaveCount(0)
     await expect(page.getByTestId('response-review-content')).toContainText('Preview me on the right.')
     await expect(
       page.getByTestId('session-workspace-tabs').locator(':scope > [data-tab="chat"]')

@@ -19,24 +19,6 @@ export function reviewPaneTitle(target: ReviewPaneTarget): string {
   return 'Response review'
 }
 
-export function reviewPaneSubtitle(target: ReviewPaneTarget): string {
-  if (target.kind === 'file' && !reviewPaneUsesMarkdown(target)) {
-    return reviewPaneHasDiff(target)
-      ? 'Syntax-highlighted · inline diff · select text to comment'
-      : 'Syntax-highlighted · select text to comment'
-  }
-  if (target.kind === 'file' && reviewPaneHasDiff(target)) {
-    return 'Formatted · inline diff · select text to comment'
-  }
-  if (target.kind === 'file') {
-    return 'Formatted · select text to comment'
-  }
-  if (target.kind === 'plan' && target.previousContent != null && target.previousContent !== '') {
-    return 'Formatted · inline diff · select text to comment'
-  }
-  return 'Formatted · select text to comment'
-}
-
 export function reviewPaneHasDiff(target: ReviewPaneTarget): boolean {
   if (target.kind === 'file') return target.previousContent !== undefined
   return target.kind === 'plan' && target.previousContent != null && target.previousContent !== ''
