@@ -1,3 +1,4 @@
+import { isDailyNoteBulletFromTags } from './daily-note-tags'
 import type { DailyTask } from './daily-note-types'
 
 /** Template / checklist noise in weekly note Big Three sections. */
@@ -28,4 +29,21 @@ export function isDailyNoteNoteLine(task: Pick<DailyTask, 'isNote' | 'section'>)
 /** Checkbox tasks and note bullets (e.g. #meeting) that belong on the weekly schedule. */
 export function isDailyNoteScheduleItem(task: Pick<DailyTask, 'isNote' | 'section'>): boolean {
   return isDailyNoteActionTask(task) || isDailyNoteNoteLine(task)
+}
+
+/**
+ * `#meeting` lines are calendar entries — they still render on the daily
+ * timeline and the weekly schedule, but they are not work the user can carry
+ * forward or promote into a plan, so every todo/idea suggestion surface skips
+ * them.
+ */
+export function isDailyNoteMeetingItem(task: Pick<DailyTask, 'tags'>): boolean {
+  return isDailyNoteBulletFromTags(task.tags)
+}
+
+/** Note bullets offered as weekly-plan Ideas carry-overs (meetings excluded). */
+export function isWeeklyPlanCarryCandidate(
+  task: Pick<DailyTask, 'isNote' | 'section' | 'tags'>
+): boolean {
+  return isDailyNoteNoteLine(task) && !isDailyNoteMeetingItem(task)
 }

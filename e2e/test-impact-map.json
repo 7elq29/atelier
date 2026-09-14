@@ -167,7 +167,8 @@
         { "file": "e2e/obsidian-integration.spec.ts" },
         { "file": "e2e/bug-57-obsidian-external-edit-timeline-sync.spec.ts" },
         { "file": "e2e/bug-daily-notes-time-editing.spec.ts" },
-        { "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts" }
+        { "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts" },
+        { "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts" }
       ]
     },
     {
@@ -542,6 +543,20 @@
       ]
     },
     {
+      "id": "daily-note-task-classification",
+      "paths": [
+        "src/shared/daily-note-tags.ts",
+        "src/shared/weekly-plan-filters.ts",
+        "src/shared/weekly-plan-dedupe.ts"
+      ],
+      "targets": [
+        { "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts" },
+        { "file": "e2e/weekly-plan-wizard.spec.ts" },
+        { "file": "e2e/obsidian-integration.spec.ts" },
+        { "file": "e2e/bug-daily-notes-time-editing.spec.ts" }
+      ]
+    },
+    {
       "id": "weekly-plan",
       "paths": [
         "src/renderer/src/components/panels/WeeklyPlanWizardPanel.tsx",
@@ -549,7 +564,10 @@
         "src/main/weekly-note-io.ts",
         "src/main/weekly-notes-handlers.ts"
       ],
-      "targets": [{ "file": "e2e/weekly-plan-wizard.spec.ts" }]
+      "targets": [
+        { "file": "e2e/weekly-plan-wizard.spec.ts" },
+        { "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts" }
+      ]
     },
     {
       "id": "shell-boot",
