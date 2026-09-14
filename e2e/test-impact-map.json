@@ -9,6 +9,15 @@
   ],
   "rules": [
     {
+      "id": "calendar-day-refresh",
+      "paths": [
+        "src/main/calendar-day.ts",
+        "src/renderer/src/App.tsx"
+      ],
+      "changedLines": "calendar|Calendar|activeDailyNoteDate|weeklyPlanViewDoc|activeWeeklyPlanOpen",
+      "targets": [{ "file": "e2e/calendar-day-refresh.spec.ts" }]
+    },
+    {
       "id": "affected-test-tooling-package-script",
       "paths": ["package.json"],
       "changedLines": "test:e2e:affected",

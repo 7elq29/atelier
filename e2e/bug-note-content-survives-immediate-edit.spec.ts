@@ -84,7 +84,7 @@ test.describe('fix-confirmed: newly-created note survives an immediate task add 
     // No artificial delay here — this is the whole point of the repro: the
     // edit must land while the watcher's self-triggered creation echo is
     // still in-flight (well under its 300ms debounce).
-    await page.locator('[data-testid="add-unscheduled-task"]').click()
+    await page.locator('[data-testid="add-unscheduled-task-btn"]').click()
     const input = page.locator('[data-testid="add-unscheduled-task-input"]')
     await expect(input).toBeVisible()
     await input.fill('Ship the race-condition fix')

@@ -115,6 +115,14 @@ const api = {
   isVaultRootFromEnv: (): Promise<boolean> => ipcRenderer.invoke('daily-note:isVaultRootFromEnv'),
   pickVaultRoot: (): Promise<string | null> => ipcRenderer.invoke('daily-note:pickVaultRoot'),
   getDefaultDate: (): Promise<string> => ipcRenderer.invoke('daily-note:getDefaultDate'),
+  onCalendarDayChanged: (callback: (payload: { date: string }) => void): (() => void) => {
+    const listener = (_event: unknown, payload: { date: string }): void => callback(payload)
+    ipcRenderer.on('calendar:day-changed', listener)
+    return () => ipcRenderer.removeListener('calendar:day-changed', listener)
+  },
+  /** Test-only: changes the pinned date and publishes through the production rollover path. */
+  debugSetCalendarDate: (date: string): Promise<{ date: string }> =>
+    ipcRenderer.invoke('debug:setCalendarDate', date),
   readDailyNote: (date: string): Promise<ReadDailyNoteResult> => ipcRenderer.invoke('daily-note:read', date),
   readDailyNoteNotesSlice: (date: string, createIfMissing?: boolean): Promise<DailyNoteNotesSliceResult> =>
     ipcRenderer.invoke('daily-note:read-notes-slice', date, createIfMissing),
