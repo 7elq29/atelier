@@ -18,7 +18,7 @@ import type {
 import { dedupeCarrySuggestions, dedupeContextLines } from '../shared/weekly-plan-dedupe'
 import {
   isDailyNoteActionTask,
-  isDailyNoteNoteLine,
+  isWeeklyPlanCarryCandidate,
   isWeeklyPlanInstructionLine
 } from '../shared/weekly-plan-filters'
 
@@ -623,7 +623,7 @@ async function scanDailyNotesInWeek(
         } else if (task.status === 'open' || task.status === 'in-progress') {
           open.push({ text, source })
         }
-      } else if (isDailyNoteNoteLine(task)) {
+      } else if (isWeeklyPlanCarryCandidate(task)) {
         carry.push({
           id: `carry_${carryIdx++}`,
           text,

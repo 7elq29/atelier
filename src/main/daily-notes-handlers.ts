@@ -28,6 +28,7 @@ import {
   mergeNotesBodyIntoAfterTasks,
   DEFAULT_NOTES_SECTION_HEADING
 } from './daily-note-io'
+import { isDailyNoteMeetingItem } from '../shared/weekly-plan-filters'
 import { readDailyNoteAttachmentDataUrl, saveDailyNotePastedImage } from './daily-note-attachments'
 import { logger } from './logger'
 import { loadConfig } from './config'
@@ -85,6 +86,7 @@ function collectCarrySuggestionTasks(note: DailyNote): DailyTask[] {
     (t) =>
       !t.isTracker &&
       !t.isNote &&
+      !isDailyNoteMeetingItem(t) &&
       (t.section === 'day-plan' || t.section === 'unscheduled') &&
       (t.status === 'open' || t.status === 'in-progress')
   )
