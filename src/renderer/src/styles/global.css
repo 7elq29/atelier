@@ -1443,7 +1443,11 @@ input[type='range'] {
 .msg-actions button.review-active { color: var(--accent); background: var(--accent-dim); }
 .msg-wrap.response-review-selected { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 4px; border-radius: var(--r-md); }
 
-.response-review-pane { flex-shrink: 0; border-left: 1px solid var(--border-subtle); display: flex; flex-direction: column; min-height: 0; background: var(--bg-panel); min-width: 0; }
+/* .response-review-pane is one surface end to end, on the same document
+   background the Files preview, diff editor and note editors use — so the
+   chrome, the prose and the embedded editor never disagree about what the
+   pane is sitting on. */
+.response-review-pane { flex-shrink: 0; border-left: 1px solid var(--border-subtle); display: flex; flex-direction: column; min-height: 0; background: var(--bg-code); min-width: 0; }
 .response-review-split-handle { width: 5px; flex-shrink: 0; cursor: col-resize; background: transparent; align-self: stretch; }
 .response-review-split-handle:hover { background: var(--accent); }
 .chat-body-row.response-review-open { overflow: hidden; min-height: 0; }
@@ -1451,8 +1455,9 @@ input[type='range'] {
 .chat-body-row.response-review-open .chat-main-col { min-width: 0; flex: 1 1 0; overflow-y: auto; min-height: 0; }
 .chat-body-row.response-review-open .response-review-split-handle,
 .chat-body-row.response-review-open .response-review-pane { align-self: stretch; flex-shrink: 0; }
-.response-review-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); font-size: 14px; font-weight: 600; flex-shrink: 0; }
-.response-review-sub { font-size: 12px; font-weight: 400; color: var(--text-tertiary); margin-right: auto; min-width: 0; }
+/* Compact panel-header language, shared with the terminal and files headers. */
+.response-review-head { display: flex; align-items: center; gap: 8px; min-height: 34px; box-sizing: border-box; padding: 0 6px 0 12px; border-bottom: 1px solid var(--border-subtle); font-size: 13px; font-weight: 600; color: var(--text-secondary); flex-shrink: 0; }
+.response-review-title { white-space: nowrap; flex-shrink: 0; margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .response-review-body { flex: 1; overflow-y: auto; padding: 8px 0; min-height: 0; position: relative; }
 .response-review-rendered-lines {
   padding: 4px 12px 12px;
@@ -1495,7 +1500,7 @@ input[type='range'] {
   padding: 0;
 }
 .response-review-block.mixed {
-  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-code));
   border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border-subtle));
 }
 .response-review-block-content {
@@ -1514,12 +1519,8 @@ input[type='range'] {
   grid-template-columns: 28px minmax(0, 1fr);
   align-items: start;
 }
-.response-review-body--monaco {
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  padding-bottom: 0;
-}
+/* Zero padding so the embedded editor runs edge to edge under the header. */
+.response-review-body--monaco { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
 .response-review-content-grid--monaco {
   flex: 1;
   min-height: 0;
