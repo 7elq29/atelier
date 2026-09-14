@@ -373,12 +373,20 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
   }
 
   async startWithId(sessionId: string, prompt: string, opts: HarnessStartOptions): Promise<HarnessSession> {
-    return this.launch(prompt, opts, { mode: 'fresh-with-id', sessionId })
+    return this.launch(prompt, opts, {
+      mode: 'fresh-with-id',
+      sessionId,
+      cliSessionId: opts.cliSessionId
+    })
   }
 
   async resume(sessionId: string, opts: Partial<HarnessStartOptions> = {}): Promise<HarnessSession> {
     const cwd = opts.cwd ?? process.cwd()
-    return this.launch('', { ...opts, cwd }, { mode: 'resume', sessionId })
+    return this.launch('', { ...opts, cwd }, {
+      mode: 'resume',
+      sessionId,
+      resumeId: opts.resumeSessionId
+    })
   }
 
   async interrupt(sessionId: string): Promise<void> {
@@ -545,10 +553,19 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
   private async launch(
     prompt: string,
     opts: HarnessStartOptions & { cwd: string },
-    spec: { mode: 'fresh' } | { mode: 'fresh-with-id'; sessionId: string } | { mode: 'resume'; sessionId: string },
+    spec:
+      | { mode: 'fresh' }
+      | { mode: 'fresh-with-id'; sessionId: string; cliSessionId?: string }
+      | { mode: 'resume'; sessionId: string; resumeId?: string },
   ): Promise<HarnessSession> {
     const sdk = await loadSdk()
     const sessionId = spec.mode === 'fresh' ? randomUUID() : spec.sessionId
+    const cliSessionId =
+      spec.mode === 'resume'
+        ? (spec.resumeId ?? spec.sessionId)
+        : spec.mode === 'fresh-with-id'
+          ? (spec.cliSessionId ?? spec.sessionId)
+          : sessionId
     const queue = new UserMessageQueue()
     if (prompt) queue.push(userMessage(prompt))
 
@@ -581,7 +598,7 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       cwd: opts.cwd,
       includePartialMessages: true,
       pathToClaudeCodeExecutable: claudeExecutable,
-      ...(spec.mode === 'resume' ? { resume: sessionId } : { sessionId }),
+      ...(spec.mode === 'resume' ? { resume: cliSessionId } : { sessionId: cliSessionId }),
       model: opts.model ?? resolveDefaultModel(),
       ...(opts.effort ? { effort: opts.effort } : {}),
       ...(opts.systemPrompt
@@ -1259,6 +1276,17 @@ function toHarnessEvents(sessionId: string, message: SDKMessage, active: ActiveS
         status: info.status,
         resetsAt: info.resetsAt,
         utilization: info.utilization,
+      },
+    ]
+  }
+
+  if (message.type === 'conversation_reset') {
+    return [
+      {
+        type: 'conversation_reset',
+        sessionId,
+        timestamp,
+        newConversationId: message.new_conversation_id,
       },
     ]
   }

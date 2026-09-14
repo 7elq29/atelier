@@ -73,6 +73,16 @@ export interface HarnessStartOptions {
    */
   host?: RemoteHost
   /**
+   * CLI conversation id for `startWithId` when it should differ from Atelier's
+   * session row id (`/clear` after disconnect). Omitted: use `sessionId`.
+   */
+  cliSessionId?: string
+  /**
+   * CLI conversation id to `--resume` when it should differ from Atelier's
+   * session row id (`SDKConversationResetMessage.new_conversation_id`).
+   */
+  resumeSessionId?: string
+  /**
    * When true, the returned session's event generator stays open past its
    * first turn's `result` — waiting on further `streamInput()` calls into
    * the SAME connection/subprocess (see `ClaudeAgentSdkHarness.normalize()`)
@@ -559,6 +569,12 @@ export type HarnessEvent =
       hookEvent: string
       outcome: 'success' | 'error' | 'cancelled'
       exitCode?: number
+    }
+  | {
+      type: 'conversation_reset'
+      sessionId: string
+      timestamp: string
+      newConversationId: string
     }
   | {
       type: 'worker_shutting_down'

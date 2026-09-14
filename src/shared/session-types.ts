@@ -378,6 +378,11 @@ export interface SessionMessageRemovedEvent {
   messageId: number
 }
 
+/** `/clear` / SDK conversation_reset: the session's transcript was wiped. */
+export interface SessionMessagesClearedEvent {
+  sessionId: string
+}
+
 /**
  * The renderer's answer to a `permission_request` / `ask_user_question` /
  * `plan_proposed` card (05-interactive-prompts), sent over

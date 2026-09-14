@@ -584,6 +584,10 @@ export class SessionManager {
     this.getWindow()?.webContents.send('session:messageRemoved', { sessionId, messageId })
   }
 
+  private sendMessagesCleared(sessionId: string): void {
+    this.getWindow()?.webContents.send('session:messagesCleared', { sessionId })
+  }
+
   /** Live, unpersisted token-level push for the in-progress assistant text message `messageId` — see `SessionStreamDeltaEvent`. */
   private sendStreamDelta(sessionId: string, messageId: number, text: string): void {
     this.getWindow()?.webContents.send('session:streamDelta', { sessionId, messageId, text })
@@ -1301,6 +1305,7 @@ export class SessionManager {
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.effort ? { effort: opts.effort } : {})
     }
+    const sdkSessionId = this.store.getSdkSessionId(session.id)
     if (!session.everConnected) {
       logger.info('reconnectHarness: session never had a real connection, starting fresh (not resume())', {
         sessionId: session.id
@@ -1310,7 +1315,10 @@ export class SessionManager {
         events: this.startFreshWithRetry(session, startOpts, opts.initialPrompt)
       }
     }
-    const harnessSession = await this.harness.resume(session.id, startOpts)
+    const harnessSession = await this.harness.resume(session.id, {
+      ...startOpts,
+      resumeSessionId: sdkSessionId
+    })
     return {
       sessionId: harnessSession.sessionId,
       events: this.withConversationLostFallback(session, startOpts, harnessSession.events)
@@ -1417,7 +1425,10 @@ export class SessionManager {
     const MAX_ATTEMPTS = 4
     const RETRY_DELAYS_MS = [1500, 3000, 5000]
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const fresh = await this.harness.startWithId(session.id, initialPrompt ?? '', startOpts)
+      const fresh = await this.harness.startWithId(session.id, initialPrompt ?? '', {
+        ...startOpts,
+        cliSessionId: this.store.getSdkSessionId(session.id)
+      })
       const iterator = fresh.events[Symbol.asyncIterator]()
       const first = await iterator.next()
       if (first.done) return
@@ -1542,6 +1553,10 @@ export class SessionManager {
   async sendUserMessage(sessionId: string, text: string, override?: ModelSelection, image?: ImageAttachment): Promise<void> {
     const session = this.store.getSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
+    if (!image && text.trim() === '/clear') {
+      await this.clearConversation(sessionId)
+      return
+    }
     // Persisted content is the plain-text string in the common (no image)
     // case, unchanged from before this task. With an image attached, it's
     // JSON-encoded as an ImageAttachmentContent instead — same
@@ -1701,6 +1716,51 @@ export class SessionManager {
       this.connecting.delete(sessionId)
     }
     this.sendStatus(sessionId)
+  }
+
+  /**
+   * `/clear`: wipe the Atelier transcript immediately, then ask the live SDK
+   * (or mint a fresh CLI conversation id if disconnected) so `--resume` cannot
+   * restore the old turns.
+   */
+  async clearConversation(sessionId: string): Promise<void> {
+    const session = this.store.getSession(sessionId)
+    if (!session) throw new Error(`Unknown session: ${sessionId}`)
+    this.wipeConversation(sessionId)
+    if (session.mode !== 'claude-code') return
+    if (this.harness.isActive(sessionId)) {
+      await this.harness.streamInput(sessionId, '/clear')
+      return
+    }
+    const { randomUUID } = await import('node:crypto')
+    this.store.setSdkSessionId(sessionId, randomUUID())
+  }
+
+  private wipeConversation(sessionId: string, newSdkSessionId?: string): void {
+    this.store.clearMessages(sessionId)
+    if (newSdkSessionId) this.store.setSdkSessionId(sessionId, newSdkSessionId)
+    logger.info('conversation cleared', {
+      sessionId,
+      sdkSessionId: newSdkSessionId ?? this.store.getSdkSessionId(sessionId)
+    })
+    const live = this.live.get(sessionId)
+    if (live) {
+      this.expirePendingPrompts(sessionId, live)
+      this.flushBuffer(sessionId, live)
+      this.finishThinkingBlock(sessionId, live, 'completed')
+      this.finalizeStaleRunningToolCalls(sessionId, live)
+      this.clearPendingUserTurn(live)
+      live.busy = false
+      live.interruptRequested = false
+      this.sendTurnState(sessionId, false)
+      this.sendStatus(sessionId)
+    }
+    this.resetHarnessUiForSession(sessionId)
+    this.sendBackgroundTasks(sessionId)
+    this.sendSdkChrome(sessionId)
+    this.sendTokenUsage(sessionId, 0, 0)
+    this.sendPromptSuggestion(sessionId, null)
+    this.sendMessagesCleared(sessionId)
   }
 
   async interrupt(sessionId: string): Promise<SessionInterruptResult> {
@@ -2333,7 +2393,8 @@ export class SessionManager {
       live.interruptRequested &&
       event.type !== 'interrupted' &&
       event.type !== 'error' &&
-      event.type !== 'result'
+      event.type !== 'result' &&
+      event.type !== 'conversation_reset'
     ) {
       return
     }
@@ -2866,6 +2927,11 @@ export class SessionManager {
           rawEvent: event,
         })
         this.sendMessage(sessionId, message)
+        return
+      }
+
+      case 'conversation_reset': {
+        this.wipeConversation(sessionId, event.newConversationId)
         return
       }
 

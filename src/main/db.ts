@@ -371,6 +371,19 @@ const MIGRATIONS: Array<{ name: string; sql?: string; run?: (database: Database.
         database.exec(`ALTER TABLE sessions ADD COLUMN active_tab TEXT NOT NULL DEFAULT 'chat';`)
       }
     }
+  },
+  {
+    // /clear (SDK conversation_reset): Atelier's sessions.id stays stable for
+    // the sidebar row, but the CLI conversation id can change. Persist that
+    // resume id separately so a later reconnect does not --resume the wiped
+    // transcript.
+    name: '0020_session_sdk_session_id',
+    run(database) {
+      if (!tableHasColumn(database, 'sessions', 'sdk_session_id')) {
+        database.exec(`ALTER TABLE sessions ADD COLUMN sdk_session_id TEXT;`)
+      }
+      database.exec(`UPDATE sessions SET sdk_session_id = id WHERE sdk_session_id IS NULL;`)
+    }
   }
 ]
 
