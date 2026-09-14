@@ -9,6 +9,23 @@
   ],
   "rules": [
     {
+      "id": "friendly-claude-exit-error-copy",
+      "paths": ["src/shared/harness-error-copy.ts"],
+      "targets": [{ "file": "e2e/bug-friendly-claude-exit-255.spec.ts" }]
+    },
+    {
+      "id": "friendly-claude-exit-error-transcript",
+      "paths": ["src/renderer/src/components/chat/ChatTranscript.tsx"],
+      "changedLines": "formatSystemTranscriptError|harness-error-copy",
+      "targets": [{ "file": "e2e/bug-friendly-claude-exit-255.spec.ts" }]
+    },
+    {
+      "id": "friendly-claude-exit-error-manager",
+      "paths": ["src/main/sessions/manager.ts"],
+      "changedLines": "formatHarnessErrorForUser",
+      "targets": [{ "file": "e2e/bug-friendly-claude-exit-255.spec.ts" }]
+    },
+    {
       "id": "affected-test-tooling-package-script",
       "paths": ["package.json"],
       "changedLines": "test:e2e:affected",

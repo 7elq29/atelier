@@ -22,6 +22,7 @@ import type {
   SessionBookmark
 } from '../../../../shared/session-bookmarks'
 import { CHAT_TRANSCRIPT_MAX_TURNS } from '../../../../shared/chat-transcript-window'
+import { formatSystemTranscriptError } from '../../../../shared/harness-error-copy'
 
 /** Above this size, skip ReactMarkdown — a 10k+ token reply can freeze the UI for seconds. */
 const LARGE_ASSISTANT_TEXT_CHARS = 48_000
@@ -664,7 +665,7 @@ export default function ChatTranscript({
     } else if (message.role === 'system') {
       nodes.push(
         <div className="msg-system" data-testid="transcript-message" data-role="system" data-message-id={message.id} key={message.id}>
-          {message.content}
+          {formatSystemTranscriptError(message.content)}
         </div>
       )
     } else {
