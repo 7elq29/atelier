@@ -13,12 +13,19 @@
 5. The user sees neutral grey `+` actions beside Sessions, Notes, and
    Bookmarks, so those utility controls do not compete with selected or
    working states that use the green accent.
+6. The user enters the sidebar at **+ New Group** without a redundant Atelier
+   app-mark row consuming space above it.
 
 ## Expected UI
 
 The existing mock is `Features/UI-Design/mocks/index.html`, sidebar Notes and
 Terminals markup around `.sidebar-list-pane--terminals` and
 `.sidebar-list-pane--notes`.
+
+The mock still contains `.sidebar-top` / `.app-mark` but does not contain the
+current `.new-group-row`, so it does not fully cover this case. Update that
+sidebar opening to remove the decorative mark and place a `.new-group-row`
+8px below the top edge before changing production code.
 
 - Remove the `.row-tag` metadata under the fixed Daily note row
   ("Obsidian vault").
@@ -37,6 +44,10 @@ Terminals markup around `.sidebar-list-pane--terminals` and
 - Render `.sidebar-action-icon.primary` with existing `--text-tertiary`
   grey, matching the default sidebar action color. Preserve the existing
   `--text-secondary` hover color and transparent background.
+- Remove `.sidebar-top` and `.app-mark` from the sidebar. Give
+  `.new-group-row` an 8px top margin (with its existing 16px side and 10px
+  bottom margins), reclaiming the former 48px decorative row while preserving
+  breathing room below the title-bar divider.
 
 The mock is updated to these exact treatments before production code.
 
@@ -63,6 +74,8 @@ The mock is updated to these exact treatments before production code.
 - The Weekly plan create button still appears when the file is missing.
 - Sessions, Notes, and Bookmarks `+` icons resolve to `--text-tertiary`, not
   `--accent`, and retain their existing hover behavior.
+- No `.app-mark` is rendered, and **+ New Group** starts 8px below the
+  sidebar's top edge.
 - `npm run build` passes.
 - `npm run test:e2e:affected -- --base main` passes, subject only to documented
   pre-existing failures.

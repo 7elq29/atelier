@@ -54,8 +54,11 @@
     {
       "id": "sidebar-refinement-shared-css",
       "paths": ["src/renderer/src/styles/global.css"],
-      "changedLines": "sidebar-pane-label|sidebar-action-icon|session-name|terminal-session-icon|app-note-row--daily|font-smoothing|font-family",
-      "targets": [{ "file": "e2e/sidebar-refinement.spec.ts" }]
+      "changedLines": "sidebar-pane-label|sidebar-action-icon|session-name|terminal-session-icon|app-note-row--daily|new-group-row|sidebar-top|app-mark|font-smoothing|font-family",
+      "targets": [
+        { "file": "e2e/sidebar-refinement.spec.ts" },
+        { "file": "e2e/app-shell.spec.ts", "grep": "New Group" }
+      ]
     },
     {
       "id": "sidebar-refinement-app",
@@ -66,8 +69,11 @@
     {
       "id": "sidebar-refinement-component",
       "paths": ["src/renderer/src/components/Sidebar.tsx"],
-      "changedLines": "TerminalSessionIcon|terminal-session-icon|weeklyPlanWeekLabel|Obsidian vault|session-meta|row-tag",
-      "targets": [{ "file": "e2e/sidebar-refinement.spec.ts" }]
+      "changedLines": "TerminalSessionIcon|terminal-session-icon|weeklyPlanWeekLabel|Obsidian vault|session-meta|row-tag|new-group-row|app-mark",
+      "targets": [
+        { "file": "e2e/sidebar-refinement.spec.ts" },
+        { "file": "e2e/app-shell.spec.ts", "grep": "New Group" }
+      ]
     },
     {
       "id": "terminal-shared-css",

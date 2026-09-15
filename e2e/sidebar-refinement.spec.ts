@@ -48,6 +48,13 @@ test.describe('sidebar refinement', () => {
     const daily = page.getByTestId('daily-note-row')
     const weekly = page.getByTestId('weekly-plan-row')
 
+    await expect(page.getByTestId('app-mark')).toHaveCount(0)
+    const sidebar = await page.getByTestId('sidebar').boundingBox()
+    const newGroup = await page.getByTestId('new-group-button').boundingBox()
+    expect(sidebar).not.toBeNull()
+    expect(newGroup).not.toBeNull()
+    expect(newGroup!.y - sidebar!.y).toBe(8)
+
     await expect(daily).toContainText('Daily note')
     await expect(daily).not.toContainText('Obsidian vault')
     await expect(daily.locator('.session-meta')).toHaveCount(0)

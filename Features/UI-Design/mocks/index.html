@@ -59,8 +59,7 @@
   .sidebar.collapsed { width: 56px; }
   .sidebar.collapsed .hide-on-collapse { display: none; }
   .sidebar.collapsed .session-row { justify-content: center; padding: 8px 0; }
-  .sidebar-top { padding: 16px 16px 10px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  .app-mark { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, var(--accent), var(--sc-teal)); flex-shrink: 0; }
+  .new-group-row { margin: 8px 16px 10px; }
   .app-name { font-weight: 600; font-size: var(--text-base); flex: 1; }
   .sidebar-search-row { padding: 0 16px 10px; }
   .sidebar-search { display: flex; align-items: center; gap: 6px; background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 100px; padding: 6px 12px; font-size: var(--text-sm); color: var(--text-tertiary); cursor: pointer; }
@@ -1349,8 +1348,8 @@
 
     <!-- ===================== SIDEBAR ===================== -->
     <div class="sidebar" id="sidebar">
-      <div class="sidebar-top">
-        <div class="app-mark"></div>
+      <div class="new-group-row hide-on-collapse">
+        <button class="btn btn-ghost btn-sm">+ New Group</button>
       </div>
       <div class="workspace-toggle-row hide-on-collapse">
         <div class="segmented" id="workspaceToggle">

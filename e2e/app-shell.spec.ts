@@ -71,8 +71,13 @@ test('main-process log file contains "app ready" and IPC entries', async () => {
   copyFileSync(logPath, join(artifactsDir, '00-main.log'))
 })
 
-  test('shell renders app mark in sidebar', async () => {
-    await expect(page.getByTestId('app-mark')).toBeVisible()
+  test('sidebar starts with New Group instead of a decorative app mark', async () => {
+    await expect(page.getByTestId('app-mark')).toHaveCount(0)
+    const sidebar = await page.getByTestId('sidebar').boundingBox()
+    const newGroup = await page.getByTestId('new-group-button').boundingBox()
+    expect(sidebar).not.toBeNull()
+    expect(newGroup).not.toBeNull()
+    expect(newGroup!.y - sidebar!.y).toBe(8)
   })
 
   test('shell renders shared.css design tokens, not Electron/browser defaults', async () => {
