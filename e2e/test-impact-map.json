@@ -601,9 +601,16 @@
       "id": "command-palette",
       "paths": ["src/renderer/src/components/CommandPalette.tsx"],
       "targets": [
-        { "file": "e2e/global-nav-and-settings.spec.ts", "grep": "command palette" },
-        { "file": "e2e/session-organization.spec.ts", "grep": "command palette" },
-        { "file": "e2e/audit-window-resize-layout.spec.ts", "grep": "palette" }
+        { "file": "e2e/global-nav-and-settings.spec.ts", "grep": "opens via keyboard|search/filter-as-you-type|typing a session name|fuzzy-matching a shared substring|theme toggle from the palette|Tab cannot escape the palette" },
+        { "file": "e2e/enrichment-full-text-search.spec.ts", "grep": "command palette" }
+      ]
+    },
+    {
+      "id": "command-palette-no-chat-search-app",
+      "paths": ["src/renderer/src/App.tsx"],
+      "changedLines": "searchContent|searchSessionContent|searchMessages|jumpToMessage|MessageSearchHit|FTS_SNIPPET",
+      "targets": [
+        { "file": "e2e/enrichment-full-text-search.spec.ts", "grep": "command palette" }
       ]
     },
     {

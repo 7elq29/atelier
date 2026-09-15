@@ -30,8 +30,9 @@ async function createSessionWithReply(
   prompt: string,
   expectedSnippet: string
 ): Promise<string> {
-    await openNewSessionModal(page)
+  await openNewSessionModal(page)
   await page.getByTestId('project-path').fill(projectDir)
+  await page.getByTestId('project-path').blur()
   await page.getByTestId('mode-claude-code').click()
   await page.getByTestId('initial-prompt').fill(prompt)
   await page.getByTestId('start-session-button').click()
@@ -233,8 +234,8 @@ test.describe('10b-enrichment-full-text-search', () => {
     await page.getByTestId('transcript-search-input').press('Escape')
   })
 
-  // ── Cross-session content search via the command palette ───────────────
-  test('command palette: extended Session results match message content, not just session name', async () => {
+  // ── Command palette does not search chat message bodies ────────────────
+  test('command palette: Session results match session name, not message content', async () => {
     if (process.platform === 'darwin') {
       await page.keyboard.press('Meta+k')
     } else {
@@ -242,28 +243,12 @@ test.describe('10b-enrichment-full-text-search', () => {
     }
     await expect(page.getByTestId('command-palette')).toBeVisible()
 
-    // "quantum" appears only in session B's reply text, never in either
-    // session's NAME (session names are auto-derived from the first words of
-    // the prompt, which don't happen to include "quantum") — proves this is
-    // a real content match, not the pre-existing name-substring filter.
+    // "quantum" appears in session B's transcript, not in either session
+    // name (names come from the first words of the prompt).
     await page.getByTestId('command-palette-input').fill('quantum')
-
-    // Both the user's own initial prompt and the real assistant reply in
-    // session B contain "quantum lighthouse" (the prompt spells out the
-    // exact sentence to reply with), so this can legitimately match more
-    // than one row — `.first()` is enough to prove content search works.
-    const contentItem = page.locator('[data-testid="command-palette-item"]', { hasText: 'quantum lighthouse' }).first()
-    await expect(contentItem).toBeVisible({ timeout: 5_000 })
-    await page.screenshot({ path: join(artifactsDir, '10b-palette-content-search.png') })
-
-    await contentItem.click()
-    await expect(page.getByTestId('command-palette-backdrop')).toHaveCount(0)
-
-    // Jumped to session B and scrolled/flashed the matching message — this
-    // message only exists in session B's transcript, so its visibility here
-    // is itself proof the palette navigated to the right session.
-    const targetMessage = page.locator('[data-testid="transcript-message"]').filter({ hasText: 'quantum lighthouse' }).first()
-    await expect(targetMessage).toBeVisible({ timeout: 15_000 })
-    await expect(targetMessage).toBeInViewport()
+    await expect(page.getByTestId('command-palette-empty')).toBeVisible()
+    await expect(page.locator('[data-testid="command-palette-item"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="command-palette-item"]', { hasText: '— in' })).toHaveCount(0)
+    await page.screenshot({ path: join(artifactsDir, '10b-palette-no-chat-search.png') })
   })
 })

@@ -67,13 +67,12 @@ import type {
 } from '../../shared/weekly-plan-types'
 import type {
   ImageAttachment,
-  MessageSearchHit,
   ModelSelection,
   SessionRecord,
   SessionStatus
 } from '../../shared/session-types'
 import { restorableSessionTab } from '../../shared/session-types'
-import { FTS_SNIPPET_START, FTS_SNIPPET_END, parseStructuredContent } from '../../shared/chat-content'
+import { parseStructuredContent } from '../../shared/chat-content'
 import { isClaudePlanPath } from '../../shared/claude-plan-path'
 import { findPlanCapEdition } from '../../shared/plan-cap-editions'
 import { resolveSessionFilePath, collectFilePathCandidates, sessionFileLinkWorkspaceRoot, remapSessionFilePathToWorktree } from './components/chat/file-path-links'
@@ -1124,17 +1123,6 @@ export default function App(): JSX.Element {
     })
   }
 
-  // Cross-session content-search jump (10b-enrichment-full-text-search):
-  // opens (or switches to) `sessionId`'s transcript, then requests a
-  // scroll+flash on `messageId` once its row is actually rendered.
-  async function jumpToMessage(session: SessionRecord, messageId: number): Promise<void> {
-    if (session.id !== activeSessionId) {
-      await selectSession(session)
-    }
-    await sessions.loadSessionMessages(session.id, { includeMessageId: messageId })
-    setPendingJumpMessageId(messageId)
-  }
-
   const paletteItems: PaletteItem[] = useMemo(
     () => [
       {
@@ -1182,31 +1170,6 @@ export default function App(): JSX.Element {
     ],
     [config.theme, config.sidebarCollapsed, allSessions, toggleDailyNotesPanel]
   )
-
-  // Cross-session content search (10b-enrichment-full-text-search): the
-  // command palette's "Session" results extended to also match message
-  // *content*, not just session name (the mock only ever defined name
-  // matching — see CommandPalette.tsx's doc comment for why this reuses the
-  // exact same `cp-item` row rather than adding a new palette page/modal).
-  // Backed by `window.atelier.searchMessages` -> SQLite FTS5. Stripped of
-  // its `FTS_SNIPPET_START/END` markers here since `PaletteItem.label` is
-  // plain text, not markup.
-  async function searchSessionContent(query: string): Promise<PaletteItem[]> {
-    const hits: MessageSearchHit[] = await window.atelier.searchMessages(query)
-    return hits
-      .map((hit): PaletteItem | null => {
-        const session = allSessions.find((s) => s.id === hit.sessionId)
-        if (!session) return null
-        const snippet = hit.snippet.split(FTS_SNIPPET_START).join('').split(FTS_SNIPPET_END).join('')
-        return {
-          id: `session-content-${hit.sessionId}-${hit.messageId}`,
-          label: `${snippet} — in ${hit.sessionName}`,
-          category: 'Session',
-          run: () => void jumpToMessage(session, hit.messageId)
-        }
-      })
-      .filter((item): item is PaletteItem => item !== null)
-  }
 
   function handleOnboardingFinish(identity: { name: string; email: string }): void {
     updateConfig({ onboardingCompleted: true, gitIdentity: identity })
@@ -2225,7 +2188,6 @@ export default function App(): JSX.Element {
         isOpen={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         items={paletteItems}
-        searchContent={searchSessionContent}
       />
 
       {activeSession?.mode === 'claude-code' && !activeAppNote && (
