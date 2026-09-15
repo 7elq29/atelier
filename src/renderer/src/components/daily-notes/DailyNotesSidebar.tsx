@@ -164,7 +164,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
     return (
       <div className="daily-notes-panel" data-testid="daily-notes-panel">
         <div className="dn-head">
-          <span className="dtitle">Daily Notes — {date}</span>
+          <span className="dtitle">{date}</span>
           <button className="btn btn-icon btn-sm dn-close-button" data-testid="daily-notes-close" onClick={onClose}>
             ×
           </button>
@@ -195,7 +195,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
     <div className="daily-notes-panel" data-testid="daily-notes-panel" ref={containerRef}>
       <div className="dn-head">
         <div className="dn-head-info">
-          <span className="dtitle">Daily Notes — {date}</span>
+          <span className="dtitle">{date}</span>
           <div className="dn-progress-row" data-testid="dn-progress">
             <span className="dn-progress-label">
               {doneCount}/{totalActionable} tasks done

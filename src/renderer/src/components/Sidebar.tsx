@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useRef, useState } from 'react'
+import './sidebar-utility.css'
 import { SessionMenuPopup } from './SessionMenuPopup'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
 import type { SessionGroupRecord, SessionRecord, SessionStatus } from '../../../shared/session-types'
@@ -1201,39 +1202,78 @@ export default function Sidebar({
 
   return (
     <div className={'sidebar' + (collapsed ? ' collapsed' : '')} data-testid="sidebar">
-      <div className="new-group-row hide-on-collapse">
-        {newGroupOpen ? (
-          <input
-            className="input"
-            autoFocus
-            data-testid="new-group-input"
-            placeholder="Group name…"
-            value={newGroupName}
-            onChange={(e) => setNewGroupName(e.target.value)}
-            onBlur={() => {
-              const trimmed = newGroupName.trim()
-              if (trimmed) onCreateGroup(trimmed)
-              setNewGroupName('')
-              setNewGroupOpen(false)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+      <div className="sidebar-top-row" data-testid="sidebar-top-row">
+        <div className="sidebar-utility-row" data-testid="sidebar-utility-row">
+        <button
+          className="sidebar-utility-button"
+          title="Toggle sidebar collapse"
+          data-testid="sidebar-collapse-toggle"
+          onClick={onToggleCollapse}
+        >
+          <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M9 4v16" />
+            <path d={collapsed ? 'm13 9 3 3-3 3' : 'm16 9-3 3 3 3'} />
+          </svg>
+        </button>
+        <button
+          className={`sidebar-utility-button hide-on-collapse${dailyNotesPanelOpen ? ' active' : ''}`}
+          title="Daily notes"
+          data-testid="toggle-daily-notes-panel"
+          aria-pressed={dailyNotesPanelOpen}
+          onClick={onToggleDailyNotesPanel}
+        >
+          <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+          </svg>
+        </button>
+        <button
+          className="sidebar-utility-button"
+          title="Settings"
+          data-testid="open-settings-button"
+          onClick={onOpenSettings}
+        >
+          <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V20a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H4.4a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 6.05 7.4a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34A1.7 1.7 0 0 0 10 4.49V4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87 1.7 1.7 0 0 0 1.56 1.04h.09a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1.04z" />
+          </svg>
+        </button>
+        </div>
+        <div className="new-group-row hide-on-collapse">
+          {newGroupOpen ? (
+            <input
+              className="input"
+              autoFocus
+              data-testid="new-group-input"
+              placeholder="Group name…"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onBlur={() => {
                 const trimmed = newGroupName.trim()
                 if (trimmed) onCreateGroup(trimmed)
                 setNewGroupName('')
                 setNewGroupOpen(false)
-              }
-              if (e.key === 'Escape') {
-                setNewGroupName('')
-                setNewGroupOpen(false)
-              }
-            }}
-          />
-        ) : (
-          <button className="btn btn-ghost btn-sm" data-testid="new-group-button" onClick={() => setNewGroupOpen(true)}>
-            + New Group
-          </button>
-        )}
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const trimmed = newGroupName.trim()
+                  if (trimmed) onCreateGroup(trimmed)
+                  setNewGroupName('')
+                  setNewGroupOpen(false)
+                }
+                if (e.key === 'Escape') {
+                  setNewGroupName('')
+                  setNewGroupOpen(false)
+                }
+              }}
+            />
+          ) : (
+            <button className="btn btn-ghost btn-sm" data-testid="new-group-button" onClick={() => setNewGroupOpen(true)}>
+              + New Group
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="sidebar-lists-stack hide-on-collapse">
@@ -1634,38 +1674,6 @@ export default function Sidebar({
 
       <div className="hide-on-collapse">
         <SpendStatusChip />
-      </div>
-      <div className="sidebar-bottom">
-        <div className="user-avatar" />
-        <button
-          className="btn btn-icon btn-sm"
-          title="Toggle sidebar collapse"
-          data-testid="sidebar-collapse-toggle"
-          onClick={onToggleCollapse}
-          style={{ marginLeft: 'auto' }}
-        >
-          {collapsed ? '⇥' : '⇤'}
-        </button>
-        <button
-          className={`btn btn-icon btn-sm hide-on-collapse${dailyNotesPanelOpen ? ' active' : ''}`}
-          title="Daily notes"
-          data-testid="toggle-daily-notes-panel"
-          aria-pressed={dailyNotesPanelOpen}
-          onClick={onToggleDailyNotesPanel}
-        >
-          <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-          </svg>
-        </button>
-        <button
-          className="btn btn-icon btn-sm"
-          title="Settings"
-          data-testid="open-settings-button"
-          onClick={onOpenSettings}
-        >
-          ⚙
-        </button>
       </div>
     </div>
   )

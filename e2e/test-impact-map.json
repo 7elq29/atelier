@@ -54,7 +54,7 @@
     {
       "id": "sidebar-refinement-shared-css",
       "paths": ["src/renderer/src/styles/global.css"],
-      "changedLines": "sidebar-pane-label|sidebar-action-icon|session-name|terminal-session-icon|app-note-row--daily|new-group-row|sidebar-top|app-mark|font-smoothing|font-family",
+      "changedLines": "sidebar-pane-label|sidebar-action-icon|session-name|terminal-session-icon|app-note-row--daily|new-group-row|sidebar-top|sidebar-utility|user-avatar|app-mark|font-smoothing|font-family",
       "targets": [
         { "file": "e2e/sidebar-refinement.spec.ts" },
         { "file": "e2e/app-shell.spec.ts", "grep": "New Group" }
@@ -68,11 +68,14 @@
     },
     {
       "id": "sidebar-refinement-component",
-      "paths": ["src/renderer/src/components/Sidebar.tsx"],
-      "changedLines": "TerminalSessionIcon|terminal-session-icon|weeklyPlanWeekLabel|Obsidian vault|session-meta|row-tag|new-group-row|app-mark",
+      "paths": [
+        "src/renderer/src/components/Sidebar.tsx",
+        "src/renderer/src/components/sidebar-utility.css"
+      ],
+      "changedLines": "TerminalSessionIcon|terminal-session-icon|weeklyPlanWeekLabel|Obsidian vault|session-meta|row-tag|new-group-row|sidebar-utility|user-avatar|app-mark",
       "targets": [
         { "file": "e2e/sidebar-refinement.spec.ts" },
-        { "file": "e2e/app-shell.spec.ts", "grep": "New Group" }
+        { "file": "e2e/app-shell.spec.ts", "grep": "sidebar starts with compact utilities" }
       ]
     },
     {
@@ -185,11 +188,18 @@
       "targets": [{ "file": "e2e/todo-session-link.spec.ts" }]
     },
     {
+      "id": "daily-notes-panel-date-title",
+      "paths": ["src/renderer/src/components/daily-notes/DailyNotesSidebar.tsx"],
+      "changedLines": "dtitle|Daily Notes —",
+      "targets": [{ "file": "e2e/calendar-day-refresh.spec.ts" }]
+    },
+    {
       "id": "daily-sidebar",
       "paths": [
         "src/renderer/src/components/daily-notes/DailyNotesSidebar.tsx",
         "src/renderer/src/hooks/useDailyNote.ts"
       ],
+      "changedLines": "AddTaskInput|beginBigThree|saveBigThree|showCarrySection|createNote|useCarrySuggestions|useDailyNote",
       "targets": [
         { "file": "e2e/obsidian-integration.spec.ts" },
         { "file": "e2e/daily-big-three-edit.spec.ts" },
@@ -588,6 +598,7 @@
     {
       "id": "sidebar",
       "paths": ["src/renderer/src/components/Sidebar.tsx"],
+      "changedLines": "SessionRow|AppNoteRow|BookmarkRow|SessionDetailPopover|groupList|agentActive|terminalActive|bookmarks\\.map|appNotes\\.map|onNewSession|onOpenLocalTerminal|onCreateAppNote|onCreateBookmark|onDelete|onClose|onFork|onRestart|onReconnect|onAddTag|onRemoveTag|onSetNotes|onSetColor|onSetProjectPath|dragHandlers",
       "targets": [
         { "file": "e2e/app-shell.spec.ts" },
         { "file": "e2e/session-lifecycle.spec.ts" },
@@ -598,8 +609,15 @@
       ]
     },
     {
+      "id": "command-palette-escape-running-chat",
+      "paths": ["src/renderer/src/components/CommandPalette.tsx"],
+      "changedLines": "stopPropagation",
+      "targets": [{ "file": "e2e/bug-command-palette-escape-running-chat.spec.ts" }]
+    },
+    {
       "id": "command-palette",
       "paths": ["src/renderer/src/components/CommandPalette.tsx"],
+      "changedLines": "searchContent|setQuery|setSelectedIndex|setContentItems|ArrowDown|ArrowUp|handleBackdropClick|command-palette-backdrop|command-palette-input|command-palette-results|command-palette-item|cp-dialog|cp-input|cp-empty",
       "targets": [
         { "file": "e2e/global-nav-and-settings.spec.ts", "grep": "command palette" },
         { "file": "e2e/session-organization.spec.ts", "grep": "command palette" },
@@ -797,7 +815,7 @@
     {
       "id": "composer-responsive-actions-css",
       "paths": ["src/renderer/src/styles/global.css"],
-      "changedLines": "composer-primary-actions|composer-model-label|context-usage|context-bar|stop-btn|send-btn|28px|50%",
+      "changedLines": "composer-primary-actions|composer-model-label|context-usage|context-bar|stop-btn|send-btn|28px",
       "targets": [
         { "file": "e2e/composer-core.spec.ts" },
         { "file": "e2e/model-effort-picker.spec.ts" }
