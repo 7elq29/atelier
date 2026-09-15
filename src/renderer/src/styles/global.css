@@ -3156,7 +3156,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 .diff-sub-tabs .diff-files-toggle .icon { width: 14px; height: 14px; }
 .diff-sub-content { flex: 1; display: flex; min-height: 0; flex-direction: column; }
 .diff-sub-content.hidden { display: none; }
-.review-body { flex: 1; display: flex; min-height: 0; min-width: 0; overflow: hidden; }
+.review-body { flex: 1; display: flex; min-height: 0; min-width: 0; overflow: hidden; margin-right: 48px; }
 .review-body.diff-vertical-list .file-tree { display: none; }
 .review-body.diff-vertical-list.file-tree-expanded .file-tree { display: block; }
 .review-body.diff-vertical-list .diff-area {
