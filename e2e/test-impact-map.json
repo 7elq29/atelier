@@ -670,6 +670,12 @@
       ]
     },
     {
+      "id": "review-pane-file-word-wrap",
+      "paths": ["src/renderer/src/components/chat/ReviewFileMonacoEditor.tsx"],
+      "changedLines": "wordWrap|wrappingIndent",
+      "targets": [{ "file": "e2e/ui-review-pane-chrome.spec.ts" }]
+    },
+    {
       "id": "review-pane-shared-css",
       "paths": ["src/renderer/src/styles/global.css"],
       "changedLines": "response-review",
