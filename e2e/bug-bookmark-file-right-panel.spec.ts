@@ -151,7 +151,7 @@ test('standalone file bookmark opens in the right review panel, not Files', asyn
     const log = readFileSync(logPath, 'utf8')
     expect(log).toContain('"msg":"app ready"')
     expect(log).toContain('"msg":"session:create invoked"')
-    expect(log).toContain('"msg":"bookmark:file opened in review panel"')
+    expect(log).toContain('"msg":"bookmark:file opened in dedicated review pane"')
   } finally {
     await app.close().catch(() => undefined)
   }

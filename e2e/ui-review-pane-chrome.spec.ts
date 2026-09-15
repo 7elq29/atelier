@@ -98,7 +98,7 @@ test('file review pane: editor is full-bleed and the title bar matches panel hea
 
     const logPath = join(userDataDir, 'logs', 'main.log')
     await expect.poll(() => existsSync(logPath)).toBe(true)
-    expect(readFileSync(logPath, 'utf8')).toContain('"msg":"bookmark:file opened in review panel"')
+    expect(readFileSync(logPath, 'utf8')).toContain('"msg":"bookmark:file opened in dedicated review pane"')
 
     // Bug repro: with Monaco's wordWrap disabled, the first source line is a
     // single very wide view line and the editor exposes horizontal overflow.

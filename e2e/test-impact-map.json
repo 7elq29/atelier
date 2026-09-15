@@ -532,7 +532,8 @@
       "paths": ["src/renderer/src/components/chat/ChatUncommittedChanges.tsx"],
       "targets": [
         { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
-        { "file": "e2e/chat-surface-core.spec.ts", "grep": "assistant file paths open Files directly" },
+        { "file": "e2e/bug-changes-popover-escape-running-chat.spec.ts" },
+        { "file": "e2e/chat-surface-core.spec.ts", "grep": "create session:|changed files and file bookmarks" },
         { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|chat:" }
       ]
     },
