@@ -133,7 +133,7 @@
 }
 .sidebar-action-icon {
   width: 28px;
-  height: 28px;
+  height: 1.75rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -896,8 +896,7 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   border: none;
   background: transparent;
   color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font: 13px var(--font-mono);
   text-align: left;
   outline: none;
 }
@@ -1396,7 +1395,7 @@ input[type='range'] {
   font-size: 0.9em;
 }
 :is(.msg-assistant, .msg-user) .md-body :where(a), .plan-body .md-body :where(a) {
-  color: var(--info);
+  color: var(--info, #7fa8c1);
   cursor: pointer;
   font-weight: 400;
   text-decoration: none;
@@ -1481,8 +1480,7 @@ input[type='range'] {
 .response-review-source {
   margin: 0;
   padding: 2px 8px;
-  font-family: var(--font-mono);
-  font-size: 13px;
+  font: 13px var(--font-mono);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -2927,7 +2925,8 @@ input[type='range'] {
 /* Tabs keep the button pointer cursor: they are clicked far more often than they
    are dragged, and :active would show the hand on a plain mousedown too. The hand
    appears only once a drag is actually in flight. */
-body.dragging-workspace-tab .tab-strip button.workspace-tab-draggable { cursor: grabbing; }
+body.dragging-workspace-tab .tab-strip button.workspace-tab-draggable,
+body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cursor: grabbing; }
 .tab-strip .tab-drag-grip { font-size: 10px; color: var(--text-disabled); letter-spacing: -1px; user-select: none; }
 .session-workspace-tabs {
   flex: 1;
@@ -2935,6 +2934,65 @@ body.dragging-workspace-tab .tab-strip button.workspace-tab-draggable { cursor: 
   flex-direction: column;
   min-height: 0;
   position: relative;
+}
+.workspace-shell {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.workspace-shell > [data-main-content] { flex: 1; min-width: 0; }
+.workspace-tool-rail {
+  width: 44px;
+  flex: 0 0 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.workspace-tool-button {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.workspace-tool-button:hover { color: var(--text-primary); background: transparent; }
+.workspace-tool-button.active { color: var(--text-primary); background: transparent; }
+.workspace-tool-button.active svg { stroke: var(--text-primary); }
+.workspace-tool-button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.workspace-tool-badge {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: var(--text-secondary);
+  color: var(--bg-panel);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
 }
 /* Panes live in three different subtrees — the tab slots, the Diff/Files
    keep-alive layer, and the terminal keep-alive layer — but all three sit in the
@@ -2982,11 +3040,16 @@ body.dragging-workspace-tab .tab-strip button.workspace-tab-draggable { cursor: 
 .terminal-tab-slot {
   pointer-events: none;
 }
-.workspace-split-pane-close {
+.workspace-pane-head {
   position: absolute;
-  top: 6px;
+  top: 8px;
   right: 8px;
-  z-index: 3;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.workspace-pane-head button {
   width: 18px;
   height: 18px;
   display: flex;
@@ -3001,7 +3064,7 @@ body.dragging-workspace-tab .tab-strip button.workspace-tab-draggable { cursor: 
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-sm);
 }
-.workspace-split-pane-close:hover {
+.workspace-pane-head button:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -3070,12 +3133,38 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 .workspace-drop-bottom { left: 0; right: 0; bottom: 0; height: 28%; }
 
 /* ===== Diff tab ===== */
-.diff-sub-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--border-subtle); }
+.diff-sub-tabs {
+  display: flex;
+  gap: 2px;
+  margin-right: 48px;
+  padding: 8px 8px 0 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.diff-sub-tabs::-webkit-scrollbar { display: none; }
 .diff-sub-tabs button { background: transparent; border: none; color: var(--text-secondary); font-size: 14px; padding: 6px 10px; border-radius: 6px 6px 0 0; cursor: pointer; }
 .diff-sub-tabs button.active { background: var(--bg-panel-raised); color: var(--text-primary); }
+.diff-sub-tabs .diff-files-toggle {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--r-sm);
+}
+.diff-sub-tabs .diff-files-toggle .icon { width: 14px; height: 14px; }
 .diff-sub-content { flex: 1; display: flex; min-height: 0; flex-direction: column; }
 .diff-sub-content.hidden { display: none; }
 .review-body { flex: 1; display: flex; min-height: 0; min-width: 0; overflow: hidden; }
+.review-body.diff-vertical-list .file-tree { display: none; }
+.review-body.diff-vertical-list.file-tree-expanded .file-tree { display: block; }
+.review-body.diff-vertical-list .diff-area {
+  display: block;
+  padding: 12px;
+}
+.diff-stacked-file { margin-bottom: 16px; }
+.diff-stacked-file:last-child { margin-bottom: 0; }
+.diff-stacked-file .diff-file-card { margin-bottom: 0; }
 .file-tree { width: 240px; flex-shrink: 0; border-right: 1px solid var(--border-subtle); overflow-y: auto; padding: 8px; min-height: 0; }
 .ft-summary { font-size: 12.5px; color: var(--text-tertiary); padding: 4px 8px 10px; }
 .ft-item { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border-radius: var(--r-sm); font-size: 14px; cursor: pointer; }
@@ -3191,6 +3280,68 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 .ext-link { color: var(--accent); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
 
 /* ===== Files tab ===== */
+.files-path-bar {
+  min-height: 38px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 64px 4px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-panel-raised);
+  color: var(--text-tertiary);
+  position: relative;
+}
+.files-path-bar > .icon { flex: 0 0 auto; width: 14px; height: 14px; }
+.files-path-field {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  background: var(--bg-input);
+  overflow-x: auto;
+  cursor: text;
+}
+.files-path-crumbs {
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.files-path-crumb { display: inline-flex; align-items: center; }
+.files-path-separator { color: var(--text-disabled); padding: 0 1px; }
+.files-path-segment {
+  padding: 1px 3px;
+  border: 0;
+  background: transparent;
+  color: var(--info);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.files-path-segment:hover { color: var(--text-primary); text-decoration: underline; }
+.files-path-segment.current { color: var(--text-secondary); cursor: default; }
+.files-path-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.files-path-bar.editing .files-path-field {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.files-path-bar.invalid .files-path-field { border-color: var(--danger); }
+.files-path-bar .files-refresh-btn { position: absolute; right: 43px; }
 .files-location-bar { display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; font-family: var(--font-mono); font-size: 13px; color: var(--text-tertiary); background: var(--bg-panel); position: relative; }
 .files-location-bar input { flex: 1; border: none; background: transparent; color: var(--text-primary); font-family: inherit; font-size: inherit; outline: none; min-width: 0; }
 .files-location-bar input::placeholder { color: var(--text-disabled); }
@@ -3427,6 +3578,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   padding: 2px 8px; border-radius: 100px; background: var(--accent-dim); color: var(--accent);
 }
 .files-body-inner { flex: 1; display: flex; min-height: 0; }
+.files-body-inner--directory .file-view { width: 100%; }
 .files-tree { width: 240px; flex-shrink: 0; border-right: 1px solid var(--border-subtle); overflow-y: auto; padding: 8px; }
 .files-tree-root { margin-bottom: 10px; }
 .files-tree-root:last-child { margin-bottom: 0; }
@@ -3452,6 +3604,9 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 }
 .files-dir-listing-item:hover { background: var(--bg-hover); }
 .files-dir-listing-item.dir { color: var(--text-secondary); }
+.files-directory-row .entry-name { flex: 1; min-width: 0; }
+.files-directory-row .entry-meta { color: var(--text-tertiary); font-size: 12px; }
+.files-directory-row .entry-chevron { color: var(--text-disabled); font-size: 18px; }
 .file-view { flex: 1; overflow: auto; padding: 14px 18px; }
 .file-view pre { margin: 0; font-family: var(--font-mono); font-size: 14px; line-height: 1.6; color: var(--text-secondary); }
 .file-view .find-row { display: flex; gap: 8px; padding: 6px 0 12px; }

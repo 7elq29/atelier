@@ -61,6 +61,7 @@ function DiffFileHeader({
 
 function DiffFileCard({
   activeFile,
+  lineKeyPrefix = '',
   fileDiffLoading,
   commentingLine,
   commentText,
@@ -70,6 +71,7 @@ function DiffFileCard({
   onCancelComment
 }: {
   activeFile: DiffFileChange
+  lineKeyPrefix?: string
   fileDiffLoading: boolean
   commentingLine: string | null
   commentText: string
@@ -90,7 +92,7 @@ function DiffFileCard({
         ) : null}
         {activeFile.hunks.map((hunk, hi) =>
           hunk.lines.map((line, li) => {
-            const lineKey = `${hi}-${li}`
+            const lineKey = `${lineKeyPrefix}${hi}-${li}`
             return (
               <div key={lineKey}>
                 <div className={`diff-line ${line.kind === 'add' ? 'add' : line.kind === 'del' ? 'del' : 'ctx'}`}>
@@ -245,7 +247,9 @@ function DiffReviewBody({
   onToggleCommentLine,
   onCommentTextChange,
   onSubmitComment,
-  onCancelComment
+  onCancelComment,
+  stacked = false,
+  treeExpanded = true
 }: {
   files: DiffFileChange[]
   selectedFile: string | null
@@ -266,6 +270,8 @@ function DiffReviewBody({
   onCommentTextChange: (text: string) => void
   onSubmitComment: (file: string, lineKey: string, lineText: string) => void
   onCancelComment: () => void
+  stacked?: boolean
+  treeExpanded?: boolean
 }): JSX.Element {
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set())
   const tree = useMemo(() => buildDiffFileTree(files), [files])
@@ -288,7 +294,7 @@ function DiffReviewBody({
   }, [])
 
   return (
-    <div className="review-body">
+    <div className={`review-body${stacked ? ' diff-vertical-list' : ''}${treeExpanded ? ' file-tree-expanded' : ''}`}>
       <div className="file-tree">
         <div className="ft-summary" data-testid="diff-file-summary">
           {files.length} file{files.length === 1 ? '' : 's'} changed ·{' '}
@@ -305,7 +311,32 @@ function DiffReviewBody({
         />
       </div>
       <div className={`diff-area${viewMode === 'full' ? ' diff-area--full-file' : ''}`}>
-        {activeFile && (
+        {stacked && viewMode === 'hunks' ? (
+          files.map((file) => (
+            <section className="diff-stacked-file" data-diff-file-path={file.path} key={file.path}>
+              <DiffFileHeader
+                file={file}
+                viewMode="hunks"
+                onToggleViewMode={() => {
+                  onSelectFile(file.path)
+                  onToggleViewMode()
+                }}
+                fileDiffLoading={fileDiffLoading && selectedFile === file.path}
+              />
+              <DiffFileCard
+                activeFile={file}
+                lineKeyPrefix={`${file.path}:`}
+                fileDiffLoading={fileDiffLoading && selectedFile === file.path}
+                commentingLine={commentingLine}
+                commentText={commentText}
+                onToggleCommentLine={onToggleCommentLine}
+                onCommentTextChange={onCommentTextChange}
+                onSubmitComment={onSubmitComment}
+                onCancelComment={onCancelComment}
+              />
+            </section>
+          ))
+        ) : activeFile ? (
           <>
             <DiffFileHeader
               file={activeFile}
@@ -336,7 +367,7 @@ function DiffReviewBody({
               />
             )}
           </>
-        )}
+        ) : null}
       </div>
     </div>
   )
@@ -371,7 +402,8 @@ export default function DiffPanel({
   onRevealCommitHandled,
   workspaceDiff,
   workspaceRefreshing = false,
-  onRefreshWorkspace
+  onRefreshWorkspace,
+  rightPanel = false
 }: {
   /** Git cwd for changes, file diffs, and commits (session worktree when set). */
   workspacePath: string
@@ -401,6 +433,8 @@ export default function DiffPanel({
   workspaceRefreshing?: boolean
   /** Request immediate git refresh in main (Diff › Changes). */
   onRefreshWorkspace?: () => void
+  /** Right-side tool panes hide the tree and stack all changed files. */
+  rightPanel?: boolean
 }): JSX.Element {
   const [sub, setSub] = useState<DiffSubTab>('changes')
   const [summary, setSummary] = useState<DiffSummary | null>(null)
@@ -421,6 +455,7 @@ export default function DiffPanel({
   const [commitFileDiffLoading, setCommitFileDiffLoading] = useState(false)
   const [changesViewMode, setChangesViewMode] = useState<DiffFileViewMode>('hunks')
   const [commitViewMode, setCommitViewMode] = useState<DiffFileViewMode>('hunks')
+  const [changesTreeExpanded, setChangesTreeExpanded] = useState(false)
   const loadedHunksRef = useRef<Set<string>>(new Set())
   const summaryRef = useRef<DiffSummary | null>(null)
   const commitLoadedHunksRef = useRef<Set<string>>(new Set())
@@ -696,6 +731,10 @@ export default function DiffPanel({
   }, [selectedFile, loadFileHunks])
 
   useEffect(() => {
+    if (rightPanel) setChangesTreeExpanded(false)
+  }, [rightPanel])
+
+  useEffect(() => {
     setChangesViewMode('hunks')
   }, [selectedFile])
 
@@ -869,6 +908,19 @@ export default function DiffPanel({
   return (
     <div data-testid={active ? 'diff-panel-active' : undefined} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <div className="diff-sub-tabs">
+        {sub === 'changes' && rightPanel ? (
+          <button
+            type="button"
+            className={`diff-files-toggle${changesTreeExpanded ? ' active' : ''}`}
+            data-testid="diff-files-toggle"
+            aria-expanded={changesTreeExpanded}
+            title={changesTreeExpanded ? 'Hide changed files' : 'Show changed files'}
+            onClick={() => setChangesTreeExpanded((expanded) => !expanded)}
+          >
+            <IconFolder />
+            Files
+          </button>
+        ) : null}
         <button className={sub === 'changes' ? 'active' : ''} onClick={() => selectSub('changes')} data-testid="diff-sub-changes">
           Changes
         </button>
@@ -913,6 +965,8 @@ export default function DiffPanel({
               onCommentTextChange={setCommentText}
               onSubmitComment={submitComment}
               onCancelComment={() => setCommentingLine(null)}
+              stacked={rightPanel}
+              treeExpanded={!rightPanel || changesTreeExpanded}
             />
           </div>
         ))}

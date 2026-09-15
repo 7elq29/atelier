@@ -22,6 +22,33 @@ function basenamePath(p: string): string {
   return i >= 0 ? p.slice(i + 1) : p
 }
 
+function pathCrumbs(path: string, finalIsFile: boolean): Array<{ label: string; path: string; directory: boolean }> {
+  const normalized = path.replace(/\/+$/, '') || '/'
+  if (normalized === '~') return [{ label: '~', path: '~', directory: true }]
+  if (normalized.startsWith('~')) {
+    const parts = normalized.slice(2).split('/').filter(Boolean)
+    const crumbs = [{ label: '~', path: '~', directory: true }]
+    for (let index = 0; index < parts.length; index += 1) {
+      crumbs.push({
+        label: parts[index]!,
+        path: `~/${parts.slice(0, index + 1).join('/')}`,
+        directory: !finalIsFile || index < parts.length - 1
+      })
+    }
+    return crumbs
+  }
+  const parts = normalized.split('/').filter(Boolean)
+  const crumbs = [{ label: '/', path: '/', directory: true }]
+  for (let index = 0; index < parts.length; index += 1) {
+    crumbs.push({
+      label: parts[index]!,
+      path: `/${parts.slice(0, index + 1).join('/')}`,
+      directory: !finalIsFile || index < parts.length - 1
+    })
+  }
+  return crumbs
+}
+
 /** Resolve location-bar / listing paths against the session workspace root. */
 function resolveBrowsePath(inputPath: string, workspaceRoot: string, homeDir: string): string {
   const trimmed = inputPath.trim().replace(/\/$/, '')
@@ -344,6 +371,7 @@ export default function FilesPanel({
   const [completionIdx, setCompletionIdx] = useState(0)
   const dirChildrenRef = useRef<Map<string, FileTreeNode[]>>(new Map())
   const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const completionSeqRef = useRef(0)
   const locationInputRef = useRef<HTMLInputElement | null>(null)
   const openTabsRef = useRef(openTabs)
   /**
@@ -773,12 +801,14 @@ export default function FilesPanel({
   // ── Completion fetch (debounced 120ms) ────────────────────────────────────
   function fetchCompletions(input: string): void {
     if (completionTimerRef.current) clearTimeout(completionTimerRef.current)
+    const seq = ++completionSeqRef.current
     completionTimerRef.current = setTimeout(async () => {
       if (!input) { setCompletions([]); return }
       const { dir, prefix } = resolveLocationCompletionQuery(input, browseRoot, homeDir)
       const listRoot = filesDirListRootForPath(dir, browseRoot, fileTreeRoots)
       try {
         const children = await window.atelier.filesDir(listRoot, dir || listRoot, hostname)
+        if (seq !== completionSeqRef.current) return
         const lower = prefix.toLowerCase()
         const matches = children.filter((n) => n.name.toLowerCase().startsWith(lower))
         setCompletions(matches.slice(0, 12))
@@ -1009,6 +1039,11 @@ export default function FilesPanel({
   async function handleLocationCommit(inputPath: string): Promise<void> {
     const path = inputPath.trim()
     if (!path) return
+    completionSeqRef.current += 1
+    if (completionTimerRef.current) {
+      clearTimeout(completionTimerRef.current)
+      completionTimerRef.current = null
+    }
     const resolvedPath = resolveBrowsePath(path, browseRoot, homeDir)
     const mySeq = ++openSeqRef.current
     locationCommitInFlightRef.current = true
@@ -1113,10 +1148,26 @@ export default function FilesPanel({
   const filesTreeLoading = profileMode ? profileTreesLoading : tree === null && !filesWalkFailed
 
   useEffect(() => {
-    if (!active || filesTreeLoading) return
-    const frame = requestAnimationFrame(() => locationInputRef.current?.focus())
-    return () => cancelAnimationFrame(frame)
-  }, [active, filesTreeLoading])
+    if (!active || filesTreeLoading || filesWalkFailed) return
+    if (browseDirPath || selectedPath || capDiff || browseDirLoading) return
+    void openDirectoryInView(projectPath)
+    // Opening sets browseDirPath synchronously, which makes this a one-shot
+    // initialization for each workspace scope.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, filesTreeLoading, filesWalkFailed, workspaceScopeKey])
+
+  const displayedPath = browseDirPath ?? selectedPath ?? projectPath
+  const displayedPathIsFile = !browseDirPath && Boolean(selectedPath)
+  const crumbs = pathCrumbs(displayedPath, displayedPathIsFile)
+
+  function beginLocationEdit(): void {
+    setLocationInput(displayedPath)
+    setLocationEditing(true)
+    requestAnimationFrame(() => {
+      locationInputRef.current?.focus()
+      locationInputRef.current?.select()
+    })
+  }
 
   return (
     <div data-testid={active ? 'files-panel-active' : undefined} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -1141,62 +1192,97 @@ export default function FilesPanel({
             Retry
           </button>
         </div>
-      ) : !profileMode && tree!.length === 0 ? (
-        <div className="empty-main" style={{ height: '100%' }} data-testid="files-tree-empty">
-          <div className="empty-icon icon-standalone">📁</div>
-          <div>Project files will appear here</div>
-          <button
-            type="button"
-            className="files-tree-retry"
-            data-testid="files-tree-refresh-empty"
-            onClick={reloadTree}
-          >
-            Refresh
-          </button>
-        </div>
       ) : (
         <>
-        <div className={`files-location-bar${locationEditing ? ' editing' : ''}`}>
+        <div
+          className={`files-path-bar${locationEditing ? ' editing' : ''}${openError ? ' invalid' : ''}`}
+          data-testid="files-path-bar"
+          onClick={(event) => {
+            const target = event.target as HTMLElement
+            if (!target.closest('.files-path-segment, .files-refresh-btn')) beginLocationEdit()
+          }}
+        >
           <IconFolder />
-          <input
-            ref={locationInputRef}
-            data-testid="files-location-input"
-            value={locationInput}
-            placeholder={projectPath}
-            onFocus={() => setLocationEditing(true)}
-            onBlur={() => {
-              // Delay so click on a completion item fires first
-              setTimeout(() => {
-                if (locationCommitInFlightRef.current) return
-                setLocationEditing(false)
-                setCompletions([])
-                setLocationInput(browseDirPath ?? selectedPath ?? projectPath)
-              }, 150)
-            }}
-            onChange={(e) => { setLocationInput(e.target.value); fetchCompletions(e.target.value) }}
-            onKeyDown={(e) => {
-              if (completions.length > 0) {
-                if (e.key === 'ArrowDown') { e.preventDefault(); setCompletionIdx((i) => Math.min(i + 1, completions.length - 1)); return }
-                if (e.key === 'ArrowUp') { e.preventDefault(); setCompletionIdx((i) => Math.max(i - 1, 0)); return }
-                if (e.key === 'Tab') {
-                  e.preventDefault(); acceptCompletion(completions[completionIdx]); return
-                }
-              }
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                setCompletions([])
-                void handleLocationCommit(locationInput)
-              }
-              if (e.key === 'Escape') { setLocationEditing(false); setCompletions([]); setLocationInput(browseDirPath ?? selectedPath ?? projectPath); (e.target as HTMLInputElement).blur() }
-            }}
-          />
+          <div className="files-path-field" data-testid="files-path-field" onClick={beginLocationEdit}>
+            {locationEditing ? (
+              <input
+                ref={locationInputRef}
+                className="files-path-input"
+                data-testid="files-location-input"
+                value={locationInput}
+                placeholder={projectPath}
+                onClick={(event) => event.stopPropagation()}
+                onBlur={() => {
+                  // Delay so click on a completion item fires first.
+                  setTimeout(() => {
+                    if (locationCommitInFlightRef.current) return
+                    setLocationEditing(false)
+                    setCompletions([])
+                    setLocationInput(displayedPath)
+                  }, 150)
+                }}
+                onChange={(e) => { setLocationInput(e.target.value); fetchCompletions(e.target.value) }}
+                onKeyDown={(e) => {
+                  if (completions.length > 0) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setCompletionIdx((i) => Math.min(i + 1, completions.length - 1)); return }
+                    if (e.key === 'ArrowUp') { e.preventDefault(); setCompletionIdx((i) => Math.max(i - 1, 0)); return }
+                    if (e.key === 'Tab') {
+                      e.preventDefault(); acceptCompletion(completions[completionIdx]); return
+                    }
+                  }
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    setCompletions([])
+                    void handleLocationCommit(locationInput)
+                  }
+                  if (e.key === 'Escape') {
+                    setLocationEditing(false)
+                    setCompletions([])
+                    setLocationInput(displayedPath)
+                    ;(e.target as HTMLInputElement).blur()
+                  }
+                }}
+              />
+            ) : (
+              <div className="files-path-crumbs" data-testid="files-path-crumbs">
+                {crumbs.map((crumb, index) => (
+                  <span className="files-path-crumb" key={crumb.path}>
+                    {index > 0 && crumbs[index - 1]?.label !== '/' ? (
+                      <span className="files-path-separator">/</span>
+                    ) : null}
+                    {crumb.directory ? (
+                      <button
+                        type="button"
+                        className="files-path-segment"
+                        data-testid="files-path-segment"
+                        data-path={crumb.path}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void openDirectoryInView(crumb.path)
+                        }}
+                      >
+                        {crumb.label}
+                      </button>
+                    ) : (
+                      <span className="files-path-segment current">{crumb.label}</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className="files-refresh-btn"
             data-testid="files-tree-refresh"
             title="Re-read this directory"
             aria-label="Refresh files"
-            onClick={reloadTree}
+            onClick={(event) => {
+              event.stopPropagation()
+              setBrowseDirPath(null)
+              setBrowseDirChildren(null)
+              reloadTree()
+            }}
           >
             ↻
           </button>
@@ -1216,7 +1302,7 @@ export default function FilesPanel({
             </div>
           )}
         </div>
-        {(openTabs.length > 0 || (tree?.length ?? 0) > 0 || (fileTreeRoots?.length ?? 0) > 0) && (
+        {openTabs.length > 0 && (
           <div className="files-editor-tabs" data-testid="files-editor-tabs">
             {openTabs.map((tab) => {
               const rel = tab.path
@@ -1282,42 +1368,7 @@ export default function FilesPanel({
               </span>
             </div>
           )}
-          <div className="files-body-inner">
-          <div className="files-tree" data-testid="files-tree" ref={treeScrollRef}>
-            {fileTreeRoots?.length ? (
-              fileTreeRoots.map((root) => (
-                <div className="files-tree-root" key={root.path} data-testid="files-tree-root">
-                  <div className="files-tree-root-label">
-                    <span className="root-kind">{root.label}</span> {root.path}
-                  </div>
-                  <FileTree
-                    nodes={profileRootTrees.get(root.path) ?? []}
-                    depth={0}
-                    selected={treeSelectedPath}
-                    dirtyPaths={dirtyPaths}
-                    expanded={expanded}
-                    loadingDirs={loadingDirs}
-                    dirChildren={dirChildren}
-                    onSelect={(n) => void handleSelect(n)}
-                    onToggleDir={(n) => void handleToggleDir(n)}
-                  />
-                </div>
-              ))
-            ) : (
-              <FileTree
-                nodes={tree ?? []}
-                depth={0}
-                selected={treeSelectedPath}
-                dirtyPaths={dirtyPaths}
-                expanded={expanded}
-                loadingDirs={loadingDirs}
-                dirChildren={dirChildren}
-                onSelect={(n) => void handleSelect(n)}
-                onToggleDir={(n) => void handleToggleDir(n)}
-              />
-            )}
-          </div>
-
+          <div className="files-body-inner files-body-inner--directory">
           <div
             className="file-view"
             ref={fileViewRef}
@@ -1358,7 +1409,7 @@ export default function FilesPanel({
             {/* Non-text overlays: cover Monaco with an absolute panel when needed */}
             {!capDiff && browseDirPath && (
               <div
-                className="files-dir-listing"
+                className="files-dir-listing files-directory-view"
                 data-testid="files-dir-listing"
                 style={{ position: 'absolute', inset: 0, overflow: 'auto', zIndex: 5, background: 'var(--bg-code)' }}
               >
@@ -1374,7 +1425,7 @@ export default function FilesPanel({
                     <button
                       key={n.path}
                       type="button"
-                      className={`files-dir-listing-item${n.type === 'dir' ? ' dir' : ''}`}
+                      className={`files-dir-listing-item files-directory-row${n.type === 'dir' ? ' directory dir' : ' file'}`}
                       data-testid={n.type === 'dir' ? 'files-dir-listing-dir' : 'files-dir-listing-file'}
                       onClick={() => {
                         if (n.type === 'dir') void openDirectoryInView(n.path)
@@ -1382,7 +1433,9 @@ export default function FilesPanel({
                       }}
                     >
                       {n.type === 'dir' ? <IconFolder /> : <IconFile />}
-                      <span>{n.name}</span>
+                      <span className="entry-name">{n.name}</span>
+                      <span className="entry-meta">{n.type === 'dir' ? 'Folder' : ''}</span>
+                      {n.type === 'dir' ? <span className="entry-chevron">›</span> : null}
                     </button>
                   ))
                 )}

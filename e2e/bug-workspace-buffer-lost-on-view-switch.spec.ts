@@ -103,12 +103,11 @@ async function createClaudeCodeSession(projectPath: string): Promise<string> {
 async function openIndexJsInFilesTab(): Promise<void> {
   await page.getByTestId('tab-files').click()
   const files = page.getByTestId('files-panel-active')
-  await expect(files.getByTestId('files-tree')).toContainText('src', { timeout: 20_000 })
-  const indexJs = files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')
-  if (!(await indexJs.isVisible())) {
-    await files.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
-  }
-  await indexJs.click()
+  await files.getByTestId('files-path-bar').click({ position: { x: 2, y: 2 } })
+  const input = files.getByTestId('files-location-input')
+  const workspaceRoot = (await input.getAttribute('placeholder')) ?? ''
+  await input.fill(`${workspaceRoot}/src/index.js`)
+  await input.press('Enter')
   await expect(files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')).toHaveClass(/active/, {
     timeout: 20_000
   })
@@ -249,6 +248,7 @@ test.describe('bug: Files/Diff buffer lost when switching between a session and 
 
     await page.getByTestId('tab-diff').click()
     const diff = page.getByTestId('diff-panel-active')
+    await diff.getByTestId('diff-files-toggle').click()
     const indexRow = diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })
     await expect(indexRow).toBeVisible({ timeout: 30_000 })
     await indexRow.click()

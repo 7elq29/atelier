@@ -666,38 +666,78 @@ test.describe('07-secondary-panels', () => {
     log('cap restore after relaunch OK')
   })
 
-  // ── 1. Tab bar: switching hides/shows via class, doesn't unmount ───────
-  test('tab bar: switches Chat/Diff/Files/Terminal via hidden-class toggle', async () => {
+  // ── 1. Secondary tools: icon rail + deterministic right pane ───────────
+  test('tool rail: opens, replaces, enlarges, restores, and closes the right pane', async () => {
+    const strip = page.getByTestId('tab-strip')
+    const rail = page.getByTestId('workspace-tool-rail')
+    const workspace = page.getByTestId('session-workspace-tabs')
+
     await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    await expect(strip.getByTestId('tab-diff')).toHaveCount(0)
+    await expect(strip.getByTestId('tab-files')).toHaveCount(0)
+    await expect(strip.getByTestId('tab-terminal')).toHaveCount(0)
+    await expect(rail).toBeVisible()
+    await expect(page.getByTestId('tab-diff')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     await expect(page.locator('.tab-content[data-tab="chat"]')).not.toHaveClass(/hidden/)
     await expect(page.locator('.tab-content[data-tab="diff"]')).toHaveClass(/hidden/)
 
     await page.getByTestId('tab-diff').click()
+    await expect(workspace).toHaveClass(/session-workspace-tabs--split-row/)
     await expect(page.getByTestId('tab-diff')).toHaveClass(/active/)
-    await expect(page.locator('.tab-content[data-tab="diff"]')).not.toHaveClass(/hidden/)
+    const neutralIconColor = await page.evaluate(() => {
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--text-primary)'
+      document.body.appendChild(probe)
+      const color = getComputedStyle(probe).color
+      probe.remove()
+      return color
+    })
+    await expect(page.getByTestId('tab-diff')).toHaveCSS('color', neutralIconColor)
+    const neutralBadgeColor = await page.evaluate(() => {
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--text-secondary)'
+      document.body.appendChild(probe)
+      const color = getComputedStyle(probe).color
+      probe.remove()
+      return color
+    })
+    await expect(page.getByTestId('tab-diff-count')).toHaveCSS('background-color', neutralBadgeColor)
+    await expect(page.locator('.tab-content[data-tab="diff"]')).toHaveClass(/workspace-split-pane--secondary/)
+    await expect(page.locator('.tab-content[data-tab="chat"]')).toHaveClass(/workspace-split-pane--primary/)
+    await expect(page.getByTestId('workspace-tool-pane-actions')).toHaveCount(1)
+    await page.screenshot({ path: join(artifactsDir, 'secondary-tool-rail-diff-right.png') })
+
+    await page.getByTestId('tab-files').click()
+    await expect(page.locator('.tab-content[data-tab="diff"]')).toHaveClass(/hidden/)
+    await expect(page.locator('.tab-content[data-tab="files"]')).toHaveClass(/workspace-split-pane--secondary/)
+    await expect(page.getByTestId('tab-files')).toHaveClass(/active/)
+    await page.screenshot({ path: join(artifactsDir, 'secondary-tool-rail-files-right.png') })
+
+    await page.getByTestId('workspace-split-pane-enlarge').click()
+    await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
     await expect(page.locator('.tab-content[data-tab="chat"]')).toHaveClass(/hidden/)
+    await expect(page.locator('.tab-content[data-tab="files"]')).not.toHaveClass(/hidden/)
+    await expect(page.getByTestId('workspace-split-pane-enlarge')).toHaveAttribute(
+      'aria-label',
+      'Restore split view'
+    )
+    await expect(rail).toBeVisible()
+    await page.screenshot({ path: join(artifactsDir, 'secondary-tool-rail-files-enlarged.png') })
 
-    await page.screenshot({ path: join(artifactsDir, '07-tabbar.png') })
-    await page.getByTestId('tab-chat').click()
-
-    // Both themes, per e2e-test-plan.md's UI-match requirement, at minimum for the tab bar.
-    await page.getByTestId('open-settings-button').click()
-    await page.getByTestId('theme-light-btn').click()
-    await page.getByTestId('settings-close').click()
-    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
-    await page.screenshot({ path: join(artifactsDir, '07-tabbar-light.png') })
-
-    await page.getByTestId('open-settings-button').click()
-    await page.getByTestId('theme-dark-btn').click()
-    await page.getByTestId('settings-close').click()
-    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
-    await page.screenshot({ path: join(artifactsDir, '07-tabbar-dark.png') })
+    await page.getByTestId('workspace-split-pane-enlarge').click()
+    await expect(workspace).toHaveClass(/session-workspace-tabs--split-row/)
+    await page.getByTestId('workspace-split-pane-close').click()
+    await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
+    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
   })
 
-  test('tab switch focuses the chat input, Files path editor, or terminal', async () => {
+  test('tool switch focuses the Files path editor on edit and the terminal', async () => {
     await page.getByTestId('tab-files').click()
+    const pathField = page.getByTestId('files-path-field')
+    await expect(page.getByTestId('files-path-crumbs')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('files-location-input')).toHaveCount(0)
+    await page.getByTestId('files-path-bar').click({ position: { x: 2, y: 2 } })
     const location = page.getByTestId('files-location-input')
-    await expect(location).toBeVisible({ timeout: 15_000 })
     await expect(location).toBeFocused()
 
     await page.getByTestId('tab-terminal').click()
@@ -708,7 +748,7 @@ test.describe('07-secondary-panels', () => {
       )
       .toBe(true)
 
-    await page.getByTestId('tab-chat').click()
+    await page.getByTestId('workspace-split-pane-close').click()
     await expect(page.locator('.composer-cache-entry.active').getByTestId('composer-input')).toBeFocused()
   })
 
@@ -825,8 +865,7 @@ test.describe('07-secondary-panels', () => {
     await expect(workspace).toHaveClass(/session-workspace-tabs--split/)
     await expect(page.locator('.tab-content[data-tab="chat"]')).toHaveClass(/workspace-split-pane/)
     await expect(page.locator('.tab-content[data-tab="diff"]')).toHaveClass(/workspace-split-pane/)
-    await expect(page.getByTestId('tab-diff')).toHaveCount(0)
-    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    await expect(page.getByTestId('tab-diff')).toHaveClass(/active/)
     await page.screenshot({ path: join(artifactsDir, 'workspace-split-chat-composer-row.png') })
     const splitMainLog = readFileSync(join(userDataDir, 'logs', 'main.log'), 'utf8')
     expect(splitMainLog).toContain('session:openReady')
@@ -856,23 +895,12 @@ test.describe('07-secondary-panels', () => {
       contentClearsComposer: true
     })
 
-    await page.getByTestId('tab-files').click()
-    await expect(page.locator('.tab-content[data-tab="files"]')).not.toHaveClass(/hidden/)
-    await expect(page.getByTestId('tab-diff')).toHaveCount(0)
-    await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
-
-    await page.getByTestId('tab-chat').click()
-    await expect(workspace).toHaveClass(/session-workspace-tabs--split/)
-    await expect(page.getByTestId('tab-diff')).toHaveCount(0)
-    await page.screenshot({ path: join(artifactsDir, '07-workspace-split-restore.png') })
-
-    // Each pane carries its own close control — without one there is no way out
-    // of a split, since the secondary tab is hidden from the strip.
+    // Only the tool pane has controls; Chat remains visually headerless.
     const closeButtons = page.getByTestId('workspace-split-pane-close')
-    await expect(closeButtons).toHaveCount(2)
+    await expect(closeButtons).toHaveCount(1)
     await page.screenshot({ path: join(artifactsDir, '07-workspace-split-pane-close.png') })
 
-    // Closing the Diff pane leaves Chat fullscreen and returns Diff to the strip.
+    // Closing the Diff pane leaves Chat fullscreen and the rail available.
     await page.locator('[data-testid="workspace-split-pane-close"][data-tab="diff"]').click()
     await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
     await expect(page.getByTestId('workspace-split-pane-close')).toHaveCount(0)
@@ -959,7 +987,7 @@ test.describe('07-secondary-panels', () => {
 
     const workspace = page.getByTestId('session-workspace-tabs')
     await expect(workspace).toHaveClass(/session-workspace-tabs--split-row/)
-    await expect(page.getByTestId('tab-terminal')).toHaveCount(0)
+    await expect(page.getByTestId('tab-terminal')).toHaveClass(/active/)
     await expect(page.locator('.terminal-cache-entry.active')).toHaveClass(/workspace-split-pane--secondary/)
 
     const geometry = await page.evaluate(() => {
@@ -1003,20 +1031,22 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('diff-panel-active')).toBeVisible({ timeout: 30_000 })
     await expect(page.getByTestId('diff-refreshing')).toHaveCount(0, { timeout: 30_000 })
     const diff = page.getByTestId('diff-panel-active')
-    await expect(diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })).toBeVisible({ timeout: 30_000 })
+    const indexStack = diff.locator('[data-diff-file-path="src/index.js"]')
+    await expect(indexStack).toBeVisible({ timeout: 30_000 })
+    await expect(diff.locator('.file-tree')).toBeHidden()
+    expect(await diff.locator('.diff-stacked-file').count()).toBeGreaterThanOrEqual(3)
     expect(Date.now() - t0).toBeLessThan(30_000)
     log(`diff tab ready in ${Date.now() - t0}ms`)
-    await expect(diff.getByTestId('diff-file-row').filter({ hasText: 'repo-wide-change.js' })).toBeVisible()
-    const indexRow = diff.getByTestId('diff-file-row').filter({ hasText: 'index.js' })
-    await indexRow.click()
-    await expect(diff.locator('.diff-line.add').first()).toContainText('hello world!')
+    await expect(diff.locator('[data-diff-file-path="repo-wide-change.js"]')).toBeVisible()
+    await expect(indexStack.locator('.diff-line.add').first()).toContainText('hello world!')
+    await page.screenshot({ path: join(artifactsDir, 'secondary-tool-rail-diff-stacked.png') })
 
-    await diff.getByTestId('diff-file-expand-btn').click()
+    await indexStack.getByTestId('diff-file-expand-btn').click()
     await expect(diff.getByTestId('diff-full-file-ready')).toBeVisible({ timeout: 15_000 })
     await expect(diff.locator('.diff-full-line-add').first()).toBeVisible()
     await page.screenshot({ path: join(artifactsDir, '07-diff-full-file.png') })
     await diff.getByTestId('diff-file-expand-btn').click()
-    await expect(diff.getByTestId('diff-file-card')).toBeVisible()
+    expect(await diff.locator('.diff-stacked-file').count()).toBeGreaterThanOrEqual(3)
     await expect(diff.locator('.diff-line.add').first()).toContainText('hello world!')
 
     await diff.getByTestId('diff-add-comment-btn').first().click()
@@ -1063,6 +1093,10 @@ test.describe('07-secondary-panels', () => {
     await page.getByTestId('tab-diff').click()
     const diff = page.getByTestId('diff-panel-active')
     await diff.getByTestId('diff-sub-changes').click()
+    await expect(diff.locator('.file-tree')).toBeHidden()
+    await expect(diff.getByTestId('diff-files-toggle')).toHaveAttribute('aria-expanded', 'false')
+    await diff.getByTestId('diff-files-toggle').click()
+    await expect(diff.locator('.file-tree')).toBeVisible()
 
     // File rows show the basename only; the full path lives on title/data-path.
     const indexRow = diff.locator('[data-testid="diff-file-row"][data-path="src/index.js"]')
@@ -1145,16 +1179,16 @@ test.describe('07-secondary-panels', () => {
   test('files panel: opening a directory shows clickable listing in content pane', async () => {
     await page.getByTestId('tab-files').click()
     const files = page.getByTestId('files-panel-active')
+    await expect(files.getByTestId('files-tree')).toHaveCount(0)
+    await expect(files.getByTestId('files-dir-listing')).toBeVisible({ timeout: 10_000 })
     const location = files.getByTestId('files-location-input')
-    await location.click()
+    await files.getByTestId('files-path-bar').click({ position: { x: 2, y: 2 } })
     await location.fill('src/')
     await location.press('Enter')
     await expect(files.getByTestId('files-dir-listing')).toBeVisible({ timeout: 10_000 })
-    await expect(files.locator('[data-testid="file-tree-dir"][data-path="src"]')).toHaveClass(/active/)
     await expect(files.getByTestId('files-dir-listing-file').filter({ hasText: 'index.js' })).toBeVisible()
     await files.getByTestId('files-dir-listing-file').filter({ hasText: 'index.js' }).click()
     await expect(files.getByTestId('files-editor-tab')).toHaveCount(1)
-    await expect(files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')).toHaveClass(/active/)
     await expect(files.getByTestId('files-dir-listing')).toHaveCount(0)
     log('files panel: directory listing in content pane OK')
   })
@@ -1162,16 +1196,13 @@ test.describe('07-secondary-panels', () => {
   test('files panel: location bar opens nested file by absolute path', async () => {
     await page.getByTestId('tab-files').click()
     const files = page.getByTestId('files-panel-active')
+    await files.getByTestId('files-path-bar').click({ position: { x: 2, y: 2 } })
     const location = files.getByTestId('files-location-input')
-    // Earlier files-panel tests navigate the location bar, so its current value is not the root —
-    // the placeholder always is.
-    const workspaceRoot = (await location.getAttribute('placeholder')) ?? (await location.inputValue())
-    await location.click()
+    const workspaceRoot = (await location.getAttribute('placeholder')) ?? ''
     await location.fill(`${workspaceRoot}/src/index.js`)
     await location.press('Enter')
     await expect(files.getByTestId('files-editor-tab')).toHaveCount(1)
-    await expect(location).toHaveValue(`${workspaceRoot}/src/index.js`)
-    await expect(files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')).toHaveClass(/active/)
+    await expect(files.getByTestId('files-path-crumbs')).toContainText('index.js')
     log('files panel: absolute path location bar open OK')
   })
 
@@ -1192,94 +1223,49 @@ test.describe('07-secondary-panels', () => {
     log(`files panel: devpod pathIsDirectory OK via ${devpodHost.sshHost}`)
   })
 
-  test('files panel: ⌘ hints label directories and files and activate them', async () => {
-    await waitForTurnIdle(page, 60_000)
-    await approveAllPendingPermissions(page)
-
+  test('files panel: one path bar supports breadcrumb and typed navigation', async () => {
     await page.getByTestId('tab-files').click()
     const files = page.getByTestId('files-panel-active')
-    const srcDir = files.locator('[data-testid="file-tree-dir"][data-path="src"]')
-    const pageFile = files.locator('[data-testid="file-tree-file"][data-path="page.html"]')
-    await expect(srcDir).toBeVisible()
-    await expect(pageFile).toBeVisible()
+    await expect(files.getByTestId('files-path-crumbs')).toBeVisible()
+    await expect(files.getByTestId('files-location-input')).toHaveCount(0)
 
-    await files.getByTestId('files-tree').click({ position: { x: 4, y: 4 } })
-    await page.evaluate(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', bubbles: true }))
-    })
-    await page.waitForTimeout(300)
-    await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
-    await expect(srcDir).toHaveAttribute('data-keyboard-hint-label', /.+/)
-    await expect(pageFile).toHaveAttribute('data-keyboard-hint-label', /.+/)
-    await page.screenshot({ path: join(artifactsDir, '07-files-tree-keyboard-hints.png') })
+    const rootSegment = files.locator(`[data-testid="files-path-segment"][data-path="${sessionProjectPath}"]`)
+    await rootSegment.click()
+    await files.getByTestId('files-dir-listing-dir').filter({ hasText: 'src' }).click()
+    await expect(files.getByTestId('files-path-crumbs')).toContainText('src')
+    await rootSegment.click()
+    await expect(files.getByTestId('files-dir-listing-dir').filter({ hasText: 'src' })).toBeVisible()
 
-    const fileLabel = (await pageFile.getAttribute('data-keyboard-hint-label')) ?? ''
-    expect(fileLabel.length).toBeGreaterThan(0)
-    for (const key of fileLabel) {
-      await page.evaluate((ch) => {
-        window.dispatchEvent(
-          new KeyboardEvent('keydown', { key: ch, metaKey: true, bubbles: true, cancelable: true })
-        )
-      }, key)
-    }
-    await expect(page.getByTestId('keyboard-hints-overlay')).toHaveCount(0)
-    await expect(files.locator('[data-testid="files-editor-tab"][data-path="page.html"]')).toHaveClass(/active/)
-
-    await page.evaluate(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', bubbles: true }))
-    })
-    await page.waitForTimeout(300)
-    await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
-    const expandedBefore = await srcDir.getAttribute('aria-expanded')
-    const dirLabel = (await srcDir.getAttribute('data-keyboard-hint-label')) ?? ''
-    expect(dirLabel.length).toBeGreaterThan(0)
-    for (const key of dirLabel) {
-      await page.evaluate((ch) => {
-        window.dispatchEvent(
-          new KeyboardEvent('keydown', { key: ch, metaKey: true, bubbles: true, cancelable: true })
-        )
-      }, key)
-    }
-    await expect(srcDir).toHaveAttribute('aria-expanded', expandedBefore === 'true' ? 'false' : 'true')
-    await page.evaluate(() => {
-      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', bubbles: true }))
-    })
-
-    await page.getByTestId('tab-chat').click()
-    await page.getByTestId('tab-strip').click()
-    await page.evaluate(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', bubbles: true }))
-    })
-    await page.waitForTimeout(300)
-    await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
-    await expect(page.locator('[data-testid="file-tree-file"][data-keyboard-hint-label]')).toHaveCount(0)
-    await expect(page.locator('[data-testid="file-tree-dir"][data-keyboard-hint-label]')).toHaveCount(0)
-    await page.evaluate(() => {
-      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', bubbles: true }))
-    })
-    log('files panel: ⌘ hints on dirs and files OK')
+    await files.getByTestId('files-path-bar').click({ position: { x: 2, y: 2 } })
+    const input = files.getByTestId('files-location-input')
+    await expect(input).toBeFocused()
+    await input.fill(`${sessionProjectPath}/src`)
+    await input.press('Enter')
+    await expect(files.getByTestId('files-path-crumbs')).toContainText('src')
+    await expect(files.getByTestId('files-dir-listing-file').filter({ hasText: 'index.js' })).toBeVisible()
+    log('files panel: breadcrumb + editable path navigation OK')
   })
 
-  test('files panel: real file tree from disk, text highlighting, image preview', async () => {
+  test('files panel: real directory browser, text highlighting, image preview', async () => {
     await page.getByTestId('tab-files').click()
+    await page.getByTestId('workspace-split-pane-enlarge').click()
     const files = page.getByTestId('files-panel-active')
-    await expect(files.getByTestId('files-tree')).toContainText('src')
-    await expect(files.getByTestId('files-tree')).toContainText('logo.png')
-    await expect(files.getByTestId('files-tree')).toContainText('page.html')
-    // Symlinks follow their target type in the tree (dir link → folder icon, file link → file icon).
-    await expect(files.locator('[data-testid="file-tree-dir"][data-path="src"]')).toBeVisible()
-    await expect(files.locator('[data-testid="file-tree-file"][data-path="logo.png"]')).toBeVisible()
-    await expect(files.locator('[data-testid="file-tree-file"][data-path="page.html"]')).toBeVisible()
+    await files.locator(`[data-testid="files-path-segment"][data-path="${sessionProjectPath}"]`).click()
+    await expect(files.getByTestId('files-dir-listing-dir').filter({ hasText: 'src' })).toBeVisible()
+    await expect(files.getByTestId('files-dir-listing-file').filter({ hasText: 'logo.png' })).toBeVisible()
+    await expect(files.getByTestId('files-dir-listing-file').filter({ hasText: 'page.html' })).toBeVisible()
 
-    const indexJs = files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')
-    if (!(await indexJs.isVisible())) {
-      await files.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
+    const openPath = async (relativePath: string): Promise<void> => {
+      await files.getByTestId('files-path-bar').click({ position: { x: 2, y: 2 } })
+      const input = files.getByTestId('files-location-input')
+      await input.fill(`${sessionProjectPath}/${relativePath}`)
+      await input.press('Enter')
     }
-    await indexJs.click()
+    await openPath('src/index.js')
     await expect(files.getByTestId('files-editor-tab')).toHaveCount(1)
     await expect(files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')).toHaveClass(/active/)
 
-    await files.locator('[data-testid="file-tree-file"][data-path="logo.png"]').click()
+    await openPath('logo.png')
     await expect(files.getByTestId('files-editor-tab')).toHaveCount(1)
     await expect(files.locator('[data-testid="files-editor-tab"][data-path="logo.png"]')).toHaveClass(/active/)
     await expect(files.getByTestId('file-preview-image')).toBeVisible()
@@ -1288,11 +1274,7 @@ test.describe('07-secondary-panels', () => {
     await expect(files.getByTestId('files-editor-tab')).toHaveCount(2)
     await expect(files.locator('[data-testid="files-editor-tab"][data-path="logo.png"]')).toHaveCount(2)
 
-    const indexJsTree = files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')
-    if (!(await indexJsTree.isVisible())) {
-      await files.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
-    }
-    await indexJsTree.click()
+    await openPath('src/index.js')
     await expect(files.getByTestId('files-editor-tab')).toHaveCount(2)
     await expect(files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')).toHaveClass(/active/)
     await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
@@ -1324,35 +1306,23 @@ test.describe('07-secondary-panels', () => {
     await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
     await expect.poll(monacoBg).toBe('rgb(23, 21, 15)')
 
-    await files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]').click()
-    await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
-    await files.locator('.monaco-editor .margin').hover({ position: { x: 12, y: 40 } })
-    await expect(files.getByTestId('files-line-comment-btn')).toBeVisible({ timeout: 5_000 })
-    await files.getByTestId('files-line-comment-btn').click()
-    await files.getByTestId('files-comment-input').fill('Review this line in Files.')
-    await files.getByTestId('files-comment-submit').click()
-    await page.getByTestId('tab-chat').click()
-    await expect(page.getByTestId('composer-input')).toHaveValue(/Review this line in Files\./)
-    await page.getByTestId('tab-files').click()
-    log('files panel: line comment pushed into composer OK')
-
-    await files.locator('[data-testid="file-tree-file"][data-path="logo.png"]').click()
+    await openPath('logo.png')
     await expect(files.getByTestId('file-preview-image')).toBeVisible()
     const src = await files.getByTestId('file-preview-image').getAttribute('src')
     expect(src).toMatch(/^data:image\/png;base64,/)
 
-    await files.locator('[data-testid="file-tree-file"][data-path="page.html"]').click()
+    await openPath('page.html')
     await expect(files.getByTestId('file-preview-html')).toBeVisible()
 
     const previewFrame = files.frameLocator('[data-testid="file-preview-html"]')
     await expect(previewFrame.locator('h1')).toHaveText('Fixture page')
 
     await page.evaluate((id) => window.atelier.refreshSessionWorkspace(id, true), sessionId)
-    await files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]').click()
+    await openPath('src/index.js')
     await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
 
     await page.screenshot({ path: join(artifactsDir, '07-files.png') })
-    log('files panel: real tree + text/image/html preview OK')
+    log('files panel: real directory browser + text/image/html preview OK')
   })
 
   test('files panel: unsaved edits survive navigating away and are written only on ⌘S', async () => {
@@ -1365,11 +1335,16 @@ test.describe('07-secondary-panels', () => {
     const onDisk = (): string => readFileSync(indexPath, 'utf-8')
     const diskBefore = onDisk()
 
-    const indexJs = files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')
-    if (!(await indexJs.isVisible())) {
-      await files.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
+    await files.getByTestId('files-path-bar').click({ position: { x: 2, y: 2 } })
+    const workspaceRoot = (await files.getByTestId('files-location-input').getAttribute('placeholder')) ?? sessionProjectPath
+    await files.getByTestId('files-location-input').press('Escape')
+    const openRelative = async (relativePath: string): Promise<void> => {
+      await files.getByTestId('files-path-bar').click({ position: { x: 2, y: 2 } })
+      const input = files.getByTestId('files-location-input')
+      await input.fill(`${workspaceRoot}/${relativePath}`)
+      await input.press('Enter')
     }
-    await indexJs.click()
+    await openRelative('src/index.js')
     await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 10_000 })
     await expect(files.getByTestId('files-unsaved-badge')).toHaveCount(0)
 
@@ -1384,7 +1359,6 @@ test.describe('07-secondary-panels', () => {
     await expect(
       files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')
     ).toHaveClass(/dirty/)
-    await expect(indexJs.getByTestId('file-tree-unsaved-dot')).toBeVisible()
     expect(onDisk()).toBe(diskBefore)
     await page.screenshot({ path: join(artifactsDir, '07-files-unsaved-buffer.png') })
 
@@ -1396,12 +1370,12 @@ test.describe('07-secondary-panels', () => {
     // Navigate away: the tab is reused and the old model dropped — pre-fix this lost the edit.
     // `.gitkeep` is the only other text file in this session's tree (the rest are symlinked
     // image/HTML fixtures), and being empty it proves the editor really switched files.
-    await files.locator('[data-testid="file-tree-file"][data-path=".gitkeep"]').click()
+    await openRelative('.gitkeep')
     await expect(files.locator('.view-line', { hasText: 'UNSAVED-MARKER' })).toHaveCount(0)
     await expect(files.getByTestId('files-unsaved-badge')).toBeVisible()
 
     // Back again: the buffered text wins over the (still unmodified) disk content.
-    await indexJs.click()
+    await openRelative('src/index.js')
     await expect(files.locator('.view-line', { hasText: 'UNSAVED-MARKER' }).first()).toBeVisible({ timeout: 10_000 })
     expect(onDisk()).toBe(diskBefore)
 
@@ -1478,14 +1452,10 @@ test.describe('07-secondary-panels', () => {
   test('file quick open: Ctrl+X Ctrl+F from Files Monaco editor opens palette', async () => {
     await page.getByTestId('tab-files').click()
     const files = page.getByTestId('files-panel-active')
-    await expect(files.getByTestId('files-tree')).toBeVisible({ timeout: 15_000 })
-    await expect(files.locator('[data-testid="file-tree-dir"][data-path="src"]')).toBeVisible({ timeout: 15_000 })
-
-    const indexJs = files.locator('[data-testid="file-tree-file"][data-path="src/index.js"]')
-    if (!(await indexJs.isVisible())) {
-      await files.locator('[data-testid="file-tree-dir"][data-path="src"]').click()
-    }
-    await indexJs.click()
+    await files.getByTestId('files-path-bar').click({ position: { x: 2, y: 2 } })
+    const input = files.getByTestId('files-location-input')
+    await input.fill(`${sessionProjectPath}/src/index.js`)
+    await input.press('Enter')
     await expect(files.locator('[data-testid="files-editor-tab"][data-path="src/index.js"]')).toHaveClass(/active/)
     await expect(files.locator('.view-line', { hasText: 'hello world!' }).first()).toBeVisible({ timeout: 15_000 })
     await files.locator('.view-line').first().click()
@@ -2157,26 +2127,19 @@ test.describe('07-secondary-panels (session profile files tree)', () => {
 
     await expect(page.getByTestId('tab-strip')).toBeVisible({ timeout: 10_000 })
     await page.getByTestId('tab-files').click()
-    await expect(page.getByTestId('files-tree')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('files-profile-bar')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('files-profile-bar')).toContainText('Multi-root profile')
-    await expect(page.locator('[data-testid="files-tree-root"]')).toHaveCount(4)
-    const tree = page.getByTestId('files-tree')
-    await expect(tree).toContainText('src')
-    await expect(tree).toContainText('Features')
-    await expect(tree).toContainText('docs')
-    await expect(tree).toContainText('e2e')
-    await expect(tree).toContainText('marker.txt')
+    await expect(page.getByTestId('files-tree')).toHaveCount(0)
+    await expect(page.getByTestId('files-dir-listing-dir').filter({ hasText: 'src' })).toBeVisible()
     await page.screenshot({ path: join(artifactsDir, '07-profile-files-multi-root.png') })
 
+    await page.getByTestId('files-path-bar').click({ position: { x: 2, y: 2 } })
     const location = page.getByTestId('files-location-input')
-    const workspaceRoot = await location.inputValue()
-    await location.click()
+    const workspaceRoot = (await location.getAttribute('placeholder')) ?? ''
     await location.fill(`${workspaceRoot}/src/marker.txt`)
     await location.press('Enter')
     await expect(page.getByTestId('files-editor-tab')).toHaveCount(1)
-    await expect(location).toHaveValue(`${workspaceRoot}/src/marker.txt`)
-    await expect(page.locator('[data-testid="file-tree-file"][data-path="src/marker.txt"]')).toHaveClass(/active/)
+    await expect(page.getByTestId('files-path-crumbs')).toContainText('marker.txt')
     log('files panel: profile session location bar opens file by absolute path OK')
   })
 })

@@ -23,6 +23,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   activeTab,
   workspaceSplit,
   onCloseSplitPane,
+  onToggleMaximizePane,
   activeSessionDisconnected,
   sessionMainInForeground,
   effectiveTheme,
@@ -52,6 +53,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   activeTab: SessionTab
   workspaceSplit: WorkspaceSplitState | null
   onCloseSplitPane: (tab: SessionTab) => void
+  onToggleMaximizePane: (tab: SessionTab) => void
   activeSessionDisconnected: boolean
   /** False while a note/weekly-plan surface owns the main area — keeps the layer inert. */
   sessionMainInForeground: boolean
@@ -109,8 +111,14 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
             }
             data-session-id={sessionId}
           >
-            <div className={tabContentClass(diffVisible)} data-tab="diff">
-              <WorkspaceSplitPaneClose tab="diff" visibility={diffVisible} onClose={onCloseSplitPane} />
+            <div className={`${tabContentClass(diffVisible)} workspace-pane--tool`} data-tab="diff">
+              <WorkspaceSplitPaneClose
+                tab="diff"
+                visibility={diffVisible}
+                onClose={onCloseSplitPane}
+                onToggleMaximize={onToggleMaximizePane}
+                maximized={split?.fullscreenTab === 'diff'}
+              />
               <DiffPanel
                 workspacePath={workspacePath}
                 repoRoot={session.projectPath}
@@ -130,11 +138,22 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
                 revealCommitSeq={panelsVisible ? revealCommitSeq : 0}
                 onRevealCommitHandled={onRevealCommitHandled}
                 onAddComment={onAddComment}
+                rightPanel={
+                  split?.direction === 'row' &&
+                  !split.fullscreenTab &&
+                  (diffVisible === 'split-primary' || diffVisible === 'split-secondary')
+                }
               />
             </div>
 
-            <div className={tabContentClass(filesVisible)} data-tab="files">
-              <WorkspaceSplitPaneClose tab="files" visibility={filesVisible} onClose={onCloseSplitPane} />
+            <div className={`${tabContentClass(filesVisible)} workspace-pane--tool`} data-tab="files">
+              <WorkspaceSplitPaneClose
+                tab="files"
+                visibility={filesVisible}
+                onClose={onCloseSplitPane}
+                onToggleMaximize={onToggleMaximizePane}
+                maximized={split?.fullscreenTab === 'files'}
+              />
               <FilesPanel
                 projectPath={workspacePath}
                 sessionId={sessionId}

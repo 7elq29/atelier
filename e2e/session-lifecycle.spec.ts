@@ -1859,10 +1859,10 @@ test.describe('02-session-lifecycle — AI conformance connect', () => {
     await expect(page.getByText('Not a git repository')).toHaveCount(0)
 
     await page.getByTestId('tab-files').click()
-    await expect(page.getByTestId('files-tree')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('files-dir-listing')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('session-disconnected-panel')).toHaveCount(0)
     await expect
-      .poll(async () => page.locator('[data-testid="files-tree-root"], [data-testid="file-tree-dir"]').count(), {
+      .poll(async () => page.locator('[data-testid="files-dir-listing-dir"], [data-testid="files-dir-listing-file"]').count(), {
         timeout: 15_000
       })
       .toBeGreaterThan(0)

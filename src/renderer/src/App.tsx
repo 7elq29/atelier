@@ -12,17 +12,15 @@ import TranscriptSearchBar from './components/chat/TranscriptSearchBar'
 import Composer, { type ComposerHandle } from './components/chat/Composer'
 import SdkToastStack from './components/chat/SdkToastStack'
 import TabBar, { type SessionTab } from './components/panels/TabBar'
+import WorkspaceToolRail, { type WorkspaceToolTab } from './components/panels/WorkspaceToolRail'
 import {
-  applyStripTabSelect,
   createSplit,
   isChatTabVisible,
   isSplitLayoutVisible,
-  isTabHiddenFromStrip,
   isTerminalTabVisible,
   isWorkspaceSplittableTab,
   resolveTabVisibility,
   splitDirectionForEdge,
-  stripActiveTab,
   tabContentClass
 } from './workspace-split/workspace-split-logic'
 import type { WorkspaceSplitState } from './workspace-split/workspace-split-types'
@@ -671,6 +669,14 @@ export default function App(): JSX.Element {
     )
     setActiveTab(restoredTab)
     setVisitedTabs(new Set<SessionTab>(['chat', restoredTab]))
+    setWorkspaceSplitBySession((prev) => {
+      if (restoredTab === 'chat') {
+        const { [session.id]: _removed, ...rest } = prev
+        return rest
+      }
+      const split = createSplit('chat', restoredTab, prev[session.id]?.splitRatio ?? 0.5, 'row')
+      return split ? { ...prev, [session.id]: split } : prev
+    })
     const startupIdle =
       session.mode === 'claude-code' &&
       !session.closedAt &&
@@ -832,50 +838,66 @@ export default function App(): JSX.Element {
     (tab: SessionTab): void => {
       if (claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)) return
       const sessionId = activeSessionId
-      const split = sessionId ? workspaceSplitBySession[sessionId] ?? null : null
-      const { split: nextSplit } = applyStripTabSelect(tab, split)
-      if (sessionId && nextSplit !== split) {
+      if (!sessionId) return
+      if (tab === 'chat') {
         setWorkspaceSplitBySession((prev) => {
-          if (!nextSplit) {
-            const { [sessionId]: _, ...rest } = prev
-            return rest
-          }
-          return { ...prev, [sessionId]: nextSplit }
+          const { [sessionId]: _removed, ...rest } = prev
+          return rest
         })
+        rememberActiveTab(sessionId, 'chat')
+        return
       }
+      const splitRatio = workspaceSplitBySession[sessionId]?.splitRatio ?? 0.5
+      const nextSplit = createSplit('chat', tab, splitRatio, 'row')
+      if (!nextSplit) return
+      setWorkspaceSplitBySession((prev) => ({ ...prev, [sessionId]: nextSplit }))
       rememberActiveTab(sessionId, tab)
     },
     [activeSession, activeSessionId, rememberActiveTab, sessions.statuses, workspaceSplitBySession]
   )
 
   const activeWorkspaceSplit = activeSessionId ? workspaceSplitBySession[activeSessionId] ?? null : null
-  const stripTab = stripActiveTab(activeTab, activeWorkspaceSplit)
   const splitLayoutVisible = isSplitLayoutVisible(activeWorkspaceSplit)
-  const hiddenStripTabs = useMemo(() => {
-    if (!activeWorkspaceSplit) return undefined
-    const hidden = new Set<SessionTab>()
-    if (isTabHiddenFromStrip('diff', activeWorkspaceSplit)) hidden.add('diff')
-    if (isTabHiddenFromStrip('files', activeWorkspaceSplit)) hidden.add('files')
-    if (isTabHiddenFromStrip('chat', activeWorkspaceSplit)) hidden.add('chat')
-    if (isTabHiddenFromStrip('terminal', activeWorkspaceSplit)) hidden.add('terminal')
-    if (isTabHiddenFromStrip('ports', activeWorkspaceSplit)) hidden.add('ports')
-    return hidden.size > 0 ? hidden : undefined
+  const activeWorkspaceTool = useMemo<WorkspaceToolTab | null>(() => {
+    if (!activeWorkspaceSplit) return null
+    const visible = [
+      activeWorkspaceSplit.fullscreenTab,
+      activeWorkspaceSplit.secondaryTab,
+      activeWorkspaceSplit.primaryTab
+    ].find((tab): tab is WorkspaceToolTab => Boolean(tab && tab !== 'chat'))
+    return visible ?? null
   }, [activeWorkspaceSplit])
 
-  /** Closing one pane dismisses the split and leaves the other tab fullscreen. */
+  /** Tool close always returns to the owning Chat pane. */
   const handleWorkspaceSplitPaneClose = useCallback(
-    (tab: SessionTab) => {
+    (_tab: SessionTab) => {
       if (!activeSessionId) return
-      const split = workspaceSplitBySession[activeSessionId] ?? null
-      if (!split) return
-      const remaining = tab === split.primaryTab ? split.secondaryTab : split.primaryTab
       setWorkspaceSplitBySession((prev) => {
         const { [activeSessionId]: _removed, ...rest } = prev
         return rest
       })
-      rememberActiveTab(activeSessionId, remaining)
+      rememberActiveTab(activeSessionId, 'chat')
+      requestAnimationFrame(() => composerRefs.current.get(activeSessionId)?.focus())
     },
-    [activeSessionId, rememberActiveTab, workspaceSplitBySession]
+    [activeSessionId, rememberActiveTab]
+  )
+
+  const handleWorkspaceToolToggleMaximize = useCallback(
+    (tab: SessionTab) => {
+      if (!activeSessionId || tab === 'chat') return
+      setWorkspaceSplitBySession((prev) => {
+        const split = prev[activeSessionId]
+        if (!split || (split.primaryTab !== tab && split.secondaryTab !== tab)) return prev
+        return {
+          ...prev,
+          [activeSessionId]: {
+            ...split,
+            fullscreenTab: split.fullscreenTab === tab ? null : tab
+          }
+        }
+      })
+    },
+    [activeSessionId]
   )
 
   const handleWorkspaceSplitDrop = useCallback(
@@ -1793,13 +1815,8 @@ export default function App(): JSX.Element {
             {activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanSurface && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
               <>
                 <TabBar
-                  activeTab={stripTab}
+                  activeTab={activeWorkspaceSplit ? 'diff' : activeTab}
                   onSelect={selectTab}
-                  showPorts={Boolean(activeSession.hostname)}
-                  diffChangedCount={activeDiffChangedCount}
-                  hiddenTabs={hiddenStripTabs}
-                  onTabPress={workspaceTabDrag.trackTabPress}
-                  didDragTab={workspaceTabDrag.didDrag}
                 />
                 <div className="topbar-spacer" />
                 <TranscriptSearchBar
@@ -1814,6 +1831,7 @@ export default function App(): JSX.Element {
             )}
           </div>
 
+          <div className="workspace-shell">
           {/* Content area below topbar — position:relative anchors terminal + composer keep-alive layers */}
           <div
             data-main-content
@@ -1884,12 +1902,14 @@ export default function App(): JSX.Element {
                   return (
                     <div
                       key={`${ptyId}:${info.cwd}`}
-                      className={`terminal-cache-entry${isActive ? ' active' : ''}${paneClass}`}
+                      className={`terminal-cache-entry workspace-pane--tool${isActive ? ' active' : ''}${paneClass}`}
                     >
                       <WorkspaceSplitPaneClose
                         tab="terminal"
                         visibility={terminalVisibility}
                         onClose={handleWorkspaceSplitPaneClose}
+                        onToggleMaximize={handleWorkspaceToolToggleMaximize}
+                        maximized={activeWorkspaceSplit?.fullscreenTab === 'terminal'}
                       />
                       <TerminalWithToolbox
                         ptyId={ptyId}
@@ -1919,6 +1939,7 @@ export default function App(): JSX.Element {
                 activeTab={activeTab}
                 workspaceSplit={activeWorkspaceSplit}
                 onCloseSplitPane={handleWorkspaceSplitPaneClose}
+                onToggleMaximizePane={handleWorkspaceToolToggleMaximize}
                 activeSessionDisconnected={activeSessionDisconnected}
                 sessionMainInForeground={sessionMainInForeground}
                 effectiveTheme={effectiveTheme}
@@ -2005,11 +2026,6 @@ export default function App(): JSX.Element {
                     className={tabContentClass(resolveTabVisibility('chat', activeTab, activeWorkspaceSplit))}
                     data-tab="chat"
                   >
-                    <WorkspaceSplitPaneClose
-                      tab="chat"
-                      visibility={resolveTabVisibility('chat', activeTab, activeWorkspaceSplit)}
-                      onClose={handleWorkspaceSplitPaneClose}
-                    />
                     <div className="chat-tab-wrap" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
                       {activeSessionDisconnected ? (
                         <SessionDisconnectedPanel
@@ -2104,9 +2120,18 @@ export default function App(): JSX.Element {
 
                       {Boolean(activeSession.hostname) && (
                         <div
-                          className={tabContentClass(resolveTabVisibility('ports', activeTab, activeWorkspaceSplit))}
+                          className={`${tabContentClass(
+                            resolveTabVisibility('ports', activeTab, activeWorkspaceSplit)
+                          )} workspace-pane--tool`}
                           data-tab="ports"
                         >
+                          <WorkspaceSplitPaneClose
+                            tab="ports"
+                            visibility={resolveTabVisibility('ports', activeTab, activeWorkspaceSplit)}
+                            onClose={handleWorkspaceSplitPaneClose}
+                            onToggleMaximize={handleWorkspaceToolToggleMaximize}
+                            maximized={activeWorkspaceSplit?.fullscreenTab === 'ports'}
+                          />
                           {visitedTabs.has('ports') && (
                             <PortsPanel sessionId={activeSession.id} sshHost={activeSession.hostname as string} />
                           )}
@@ -2229,6 +2254,22 @@ export default function App(): JSX.Element {
                 )
               })}
             </div>
+          ) : null}
+          </div>
+          {activeSession &&
+          !activeAppNote &&
+          !activeDailyNoteDate &&
+          !activeWeeklyPlanSurface &&
+          activeSession.mode === 'claude-code' &&
+          !activeSessionDisconnected ? (
+            <WorkspaceToolRail
+              activeTool={activeWorkspaceTool}
+              showPorts={Boolean(activeSession.hostname)}
+              diffChangedCount={activeDiffChangedCount}
+              onSelect={selectTab}
+              onToolPress={workspaceTabDrag.trackTabPress}
+              didDragTool={workspaceTabDrag.didDrag}
+            />
           ) : null}
           </div>
         </div>
