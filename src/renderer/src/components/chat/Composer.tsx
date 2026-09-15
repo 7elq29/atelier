@@ -11,6 +11,7 @@ import type { ImageAttachment, ModelInfo, ModelSelection, ModelValidationResult,
 import { modelLabelForSelection, resolveModelPickerOptions } from './model-picker-options'
 import type { SessionRateLimitEvent, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
+import ComposerMarkdownInput from './ComposerMarkdownInput'
 import {
   APP_NOTE_DRAG_MIME,
   appNoteAttachRelativePath,
@@ -498,11 +499,6 @@ const CARET_MIRROR_PROPS = [
 let caretMirrorDiv: HTMLDivElement | null = null
 let caretMirrorMarker: HTMLSpanElement | null = null
 
-/** Calculates the pixel position of the caret within a textarea using the
- *  mirror-div technique: clones the textarea's styles into a hidden div,
- *  inserts a marker span at `position`, and reads its offset coordinates.
- *  Returns coordinates relative to the textarea element's top-left corner
- *  (including its own padding), adjusted for the current scroll position. */
 function getCaretCoordinates(ta: HTMLTextAreaElement, position: number): { top: number; left: number } {
   if (!caretMirrorDiv) {
     caretMirrorDiv = document.createElement('div')
@@ -581,7 +577,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   // open the SAME real popover the footer button opens.
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
 
-  // Block cursor state
   const [cursorPhase, setCursorPhase] = useState<'typing' | 'idle' | 'unfocused'>('unfocused')
   const [cursorPos, setCursorPos] = useState<{ top: number; left: number } | null>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -592,13 +587,11 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const ta = textareaRef.current
     if (!ta) return
     const coords = getCaretCoordinates(ta, ta.selectionStart ?? 0)
-    // Add the textarea's own offset within .composer-box (its offsetParent).
     setCursorPos({ top: coords.top + ta.offsetTop, left: coords.left + ta.offsetLeft })
   }, [active])
 
   const scheduleCursorUpdate = useCallback(() => {
-    if (!active) return
-    if (cursorRafRef.current != null) return
+    if (!active || cursorRafRef.current != null) return
     cursorRafRef.current = requestAnimationFrame(() => {
       cursorRafRef.current = null
       updateCursorPos()
@@ -757,16 +750,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     return [...local, ...live]
   }, [onInterrupt, onFork, onClearConversation, liveSlashCommands])
 
-
-  // Auto-grow: mirrors mocks/index.html's onComposerInput exactly —
-  // `height = 'auto'` first (so shrinking on delete works, not just
-  // growing), then clamp to the 160px cap; beyond that the textarea's own
-  // `overflow` (default for a textarea) scrolls instead of growing further.
-  // `overflow-y` is set explicitly (not left to the CSS default `auto`)
-  // because `scrollHeight` can exceed `clientHeight` by a stray sub-pixel
-  // even when content fits on screen, which made the native scrollbar
-  // flash in briefly with nothing to actually scroll to.
-  // Skipped for hidden cached composers — synced when the session becomes active.
   useEffect(() => {
     if (!active) return
     const ta = textareaRef.current
@@ -942,7 +925,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     })()
   }
 
-  /** Recomputes trigger state from the token immediately before the cursor — re-run on every keystroke, mirroring the mock's `onComposerInput`, but cursor-anchored rather than end-of-value-anchored so it still works if the user edits mid-string. */
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>): void {
     const text = e.target.value
     largePastesRef.current = largePastesRef.current.filter((entry) => text.includes(entry.display))
@@ -1067,10 +1049,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       return
     }
 
-    // Readline/Emacs navigation and kill-line bindings.
-    // These fire regardless of popover state (they're editing bindings, not
-    // popover-navigation bindings) — the popover guard above only intercepts
-    // ArrowUp/Down, Enter, Tab, and Escape.
     if (handleEmacsTextareaKeyDown(e, value, setValue)) return
   }
 
@@ -1234,32 +1212,43 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           onUpdateCommentBody={onUpdateReviewCommentBody ?? (() => undefined)}
           onDeleteComment={onDeleteReviewComment ?? (() => undefined)}
         />
-        <textarea
-          ref={textareaRef}
-          data-testid="composer-input"
-          placeholder={
-            harnessDisconnected
-              ? 'Reconnect to continue chatting…'
-              : value.trim() === '' && promptSuggestion
-                ? promptSuggestion
-                : 'Message Atelier…'
-          }
-          className={value.trim() === '' && promptSuggestion ? 'composer-input-has-suggestion' : undefined}
-          rows={1}
-          value={value}
-          readOnly={harnessDisconnected}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onKeyUp={onTextareaKeyActivity}
-          onSelect={syncPopoverFromTextarea}
-          onClick={() => {
-            scheduleCursorUpdate()
-            syncPopoverFromTextarea()
-          }}
-          onFocus={onTextareaFocus}
-          onBlur={onTextareaBlur}
-          onPaste={handlePaste}
-        />
+        <div className="composer-input-stack">
+          {value.length > 0 && (
+            <ComposerMarkdownInput
+              value={value}
+              selectionStart={textareaRef.current?.selectionStart ?? value.length}
+              selectionEnd={textareaRef.current?.selectionEnd ?? value.length}
+              scrollTop={textareaRef.current?.scrollTop ?? 0}
+            />
+          )}
+          <textarea
+            ref={textareaRef}
+            data-testid="composer-input"
+            placeholder={
+              harnessDisconnected
+                ? 'Reconnect to continue chatting…'
+                : value.trim() === '' && promptSuggestion
+                  ? promptSuggestion
+                  : 'Message Atelier…'
+            }
+            className={value.trim() === '' && promptSuggestion ? 'composer-input-has-suggestion' : undefined}
+            rows={1}
+            value={value}
+            readOnly={harnessDisconnected}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onKeyUp={onTextareaKeyActivity}
+            onSelect={syncPopoverFromTextarea}
+            onScroll={scheduleCursorUpdate}
+            onClick={() => {
+              scheduleCursorUpdate()
+              syncPopoverFromTextarea()
+            }}
+            onFocus={onTextareaFocus}
+            onBlur={onTextareaBlur}
+            onPaste={handlePaste}
+          />
+        </div>
         {cursorPos && (cursorPhase !== 'unfocused' || value.length > 0) && (
           <span
             aria-hidden="true"
