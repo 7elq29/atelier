@@ -1368,11 +1368,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             <span className="mode-icon">{MODE_ICON[mode]}</span>
             <span>{MODE_LABEL[mode]}</span>
           </span>
-          {value.trim() === '' && promptSuggestion && !harnessDisconnected && (
-            <span className="composer-suggestion-hint" data-testid="composer-suggestion-hint">
-              Tab to fill
-            </span>
-          )}
           {rateLimit?.warnLabel && (
             <span className="composer-status-chip warn" data-testid="composer-rate-limit-chip">
               {rateLimit.warnLabel}

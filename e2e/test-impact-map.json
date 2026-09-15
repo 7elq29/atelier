@@ -460,6 +460,15 @@
       ]
     },
     {
+      "id": "composer-prompt-suggestion-hint-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "composer-suggestion-hint",
+      "targets": [
+        { "file": "e2e/bug-composer-tab-to-fill-hint.spec.ts" },
+        { "file": "e2e/composer-core.spec.ts", "grep": "UI-match" }
+      ]
+    },
+    {
       "id": "composer",
       "paths": [
         "src/renderer/src/components/chat/Composer.tsx",
@@ -473,7 +482,8 @@
         { "file": "e2e/bug-slash-model-command-missing.spec.ts" },
         { "file": "e2e/bug-model-picker-option-list.spec.ts" },
         { "file": "e2e/enrichment-image-attachment.spec.ts" },
-        { "file": "e2e/harness-sdk-events.spec.ts" }
+        { "file": "e2e/harness-sdk-events.spec.ts" },
+        { "file": "e2e/bug-composer-tab-to-fill-hint.spec.ts" }
       ]
     },
     {

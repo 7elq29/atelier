@@ -2496,7 +2496,6 @@ input[type='range'] {
 .composer-markdown-input .cm-focused {
   outline: none;
 }
-.composer-suggestion-hint { font-size: 10px; color: var(--text-disabled); margin-left: auto; flex-shrink: 0; letter-spacing: 0.02em; }
 /* Context bar — fused inside the top of the composer box, variant C */
 .context-bar { display: flex; align-items: center; gap: 6px; padding: 7px 14px 4px; border-radius: var(--r-xl) var(--r-xl) 0 0; flex-wrap: nowrap; overflow: hidden; }
 .context-bar-item { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; flex-shrink: 1; max-width: min(100%, 280px); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
