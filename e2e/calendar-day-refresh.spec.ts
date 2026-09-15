@@ -66,11 +66,11 @@ test.afterAll(async () => {
   await electronApp?.close()
 })
 
-test('open daily surfaces and weekly status follow a calendar-day change', async () => {
+test('open daily surfaces follow a calendar-day change', async () => {
   const sidebar = page.getByTestId('daily-notes-panel')
   await expect(sidebar).toContainText(`Daily Notes — ${SUNDAY}`)
   await expect(sidebar.getByTestId('timeline-task')).toContainText('Sunday timeline marker')
-  await expect(page.getByTestId('weekly-plan-row')).toContainText('Sep 7 – 13, 2026')
+  await expect(page.getByTestId('weekly-plan-row').locator('.session-meta')).toHaveCount(0)
 
   await page.getByTestId('daily-note-row').click()
   await expect(page.getByTestId('daily-note-date-label')).toContainText('Sun, Sep 13')
@@ -80,7 +80,7 @@ test('open daily surfaces and weekly status follow a calendar-day change', async
   await expect(sidebar).toContainText(`Daily Notes — ${MONDAY}`)
   await expect(sidebar.getByTestId('timeline-task')).toContainText('Monday timeline marker')
   await expect(page.getByTestId('daily-note-date-label')).toContainText('Mon, Sep 14')
-  await expect(page.getByTestId('weekly-plan-row')).toContainText('Sep 14 – 20, 2026')
+  await expect(page.getByTestId('weekly-plan-row').locator('.session-meta')).toHaveCount(0)
   await expect(sidebar.getByTestId('current-time-line')).toBeVisible()
 
   mkdirSync(artifactsDir, { recursive: true })
@@ -104,7 +104,6 @@ test('open daily surfaces and weekly status follow a calendar-day change', async
 
 test('an open weekly view reloads for the new ISO week', async () => {
   await page.evaluate((date) => window.atelier.debugSetCalendarDate(date), SUNDAY)
-  await expect(page.getByTestId('weekly-plan-row')).toContainText('Sep 7 – 13, 2026')
   await page.getByTestId('weekly-plan-row').click()
   await expect(page.getByTestId('weekly-plan-view-path')).toContainText(`${SUNDAY_WEEK}.md`)
   await expect(page.getByTestId('weekly-plan-view-panel')).toContainText('Sunday timeline marker')

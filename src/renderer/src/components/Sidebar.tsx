@@ -59,7 +59,6 @@ interface SidebarProps {
   appNotes: AppNoteRecord[]
   activeAppNoteId: string | null
   activeDailyNote: boolean
-  weeklyPlanWeekLabel: string
   weeklyPlanFileExists: boolean
   activeWeeklyPlan: boolean
   onSelectWeeklyPlanRow: () => void
@@ -82,6 +81,26 @@ interface SidebarProps {
 
 const SESSION_COLORS = ['--sc-blue', '--sc-green', '--sc-purple', '--sc-amber', '--sc-rose', '--sc-cyan', '--sc-indigo', '--sc-teal']
 
+/** Stable identity glyph for terminal sessions; agent rows continue to show live status. */
+function TerminalSessionIcon(): JSX.Element {
+  return (
+    <svg
+      className="terminal-session-icon"
+      data-testid="terminal-session-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="m7 9 3 3-3 3" />
+      <path d="M13 15h4" />
+    </svg>
+  )
+}
 
 /**
  * 06-session-organization concurrent status: a session's DISPLAY status
@@ -702,8 +721,15 @@ function SessionRow({
       {showWaitingInputAlert && (
         <span className="session-waiting-input-alert" data-testid="session-waiting-input-alert" aria-hidden />
       )}
-      <span className="session-indicator" title={`Status: ${status}${status === 'creating-worktree' && worktreeProgress !== undefined ? ` · ${worktreeProgress}%` : ''}`}>
-        <SessionStatusIndicator dotStatus={dotStatus} />
+      <span
+        className="session-indicator"
+        title={
+          isTerminal
+            ? 'Terminal'
+            : `Status: ${status}${status === 'creating-worktree' && worktreeProgress !== undefined ? ` · ${worktreeProgress}%` : ''}`
+        }
+      >
+        {isTerminal ? <TerminalSessionIcon /> : <SessionStatusIndicator dotStatus={dotStatus} />}
       </span>
       <div className="session-main hide-on-collapse">
         {editing ? (
@@ -944,7 +970,6 @@ export default function Sidebar({
   appNotes,
   activeAppNoteId,
   activeDailyNote,
-  weeklyPlanWeekLabel,
   weeklyPlanFileExists,
   activeWeeklyPlan,
   onSelectWeeklyPlanRow,
@@ -1486,9 +1511,6 @@ export default function Sidebar({
               </span>
               <div className="session-main">
                 <div className="session-name">Daily note</div>
-                <div className="session-meta">
-                  <span className="row-tag">Obsidian vault</span>
-                </div>
               </div>
             </div>
             <div
@@ -1515,14 +1537,6 @@ export default function Sidebar({
               </span>
               <div className="session-main">
                 <div className="session-name">Weekly plan</div>
-                <div className="session-meta">
-                  <span
-                    className="row-tag"
-                    style={weeklyPlanFileExists ? undefined : { color: 'var(--warning)' }}
-                  >
-                    {weeklyPlanWeekLabel}
-                  </span>
-                </div>
               </div>
               {!weeklyPlanFileExists ? (
                 <button

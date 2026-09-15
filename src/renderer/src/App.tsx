@@ -1668,7 +1668,6 @@ export default function App(): JSX.Element {
           appNotes={appNotes.notes}
           activeAppNoteId={activeAppNoteId}
           activeDailyNote={activeDailyNoteDate !== null}
-          weeklyPlanWeekLabel={weeklyPlanStatus?.weekDateRange ?? '…'}
           weeklyPlanFileExists={weeklyPlanStatus?.fileExists ?? false}
           activeWeeklyPlan={activeWeeklyPlanSurface}
           onSelectWeeklyPlanRow={() => void onWeeklyPlanRowClick()}
