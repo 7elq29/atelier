@@ -4,13 +4,16 @@ import { mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const mainEntry = join(__dirname, '..', 'out', 'main', 'index.js')
+const projectRoot = join(__dirname, '..')
 const artifactsDir = join(__dirname, '..', 'e2e-artifacts')
 
 mkdirSync(artifactsDir, { recursive: true })
 
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
-  const app = await electron.launch({ args: [mainEntry, `--user-data-dir=${userDataDir}`] })
+  const app = await electron.launch({
+    args: ['.', `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot
+  })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   return { app, page }
@@ -42,7 +45,7 @@ async function seedUserTurns(page: Page, sessionId: string, count: number): Prom
 }
 
 test.describe('chat-transcript-window', () => {
-  test('shows only the last 40 conversations with a truncation banner', async () => {
+  test('shows only the last 20 conversations with a truncation banner', async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-transcript-window-'))
     seedE2eConfig(userDataDir)
     seedSkipOnboarding(userDataDir)
@@ -61,7 +64,7 @@ test.describe('chat-transcript-window', () => {
       return session.id
     }, projectDir)
 
-    await seedUserTurns(page, sessionId, 41)
+    await seedUserTurns(page, sessionId, 21)
 
     await page.reload()
     await page.waitForLoadState('domcontentloaded')
@@ -71,19 +74,21 @@ test.describe('chat-transcript-window', () => {
     await row.click()
 
     await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTestId('transcript-history-truncated')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('transcript-history-truncated')).toContainText('40 conversations')
-    await expect(page.getByTestId('transcript-history-truncated')).toContainText('1 earlier hidden')
+    const truncationBanner = page.getByTestId('transcript-history-truncated')
+    await expect(truncationBanner).toBeVisible({ timeout: 10_000 })
+    await expect(truncationBanner).toContainText('20 conversations')
+    await expect(truncationBanner).toContainText('1 earlier hidden')
 
     await expect(page.locator('[data-testid="transcript-message"]').filter({ hasText: 'seed-turn-1-user' })).toHaveCount(0)
-    await expect(page.locator('[data-testid="transcript-message"]').filter({ hasText: 'seed-turn-41-user' })).toHaveCount(1)
+    await expect(page.locator('[data-testid="transcript-message"]').filter({ hasText: 'seed-turn-21-user' })).toHaveCount(1)
 
     const result = await page.evaluate((id) => window.atelier.listSessionMessages(id), sessionId)
     expect(result.transcriptTruncated).toBe(true)
     expect(result.hiddenTurnCount).toBe(1)
-    expect(result.messages.filter((m) => m.role === 'user').length).toBe(40)
+    expect(result.messages.filter((m) => m.role === 'user').length).toBe(20)
 
-    await page.screenshot({ path: join(artifactsDir, 'chat-transcript-window-41-turns.png') })
+    await truncationBanner.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(artifactsDir, 'chat-transcript-window-21-turns.png') })
 
     await app.close()
   })

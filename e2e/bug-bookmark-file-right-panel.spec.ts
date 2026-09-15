@@ -19,6 +19,7 @@ function fixtureRepo(): string {
   execFileSync('git', ['config', 'user.email', 'e2e@example.com'], { cwd: dir })
   execFileSync('git', ['config', 'user.name', 'E2E'], { cwd: dir })
   writeFileSync(join(dir, 'bookmarked.md'), '# Bookmarked file\n\nPreview me on the right.\n')
+  writeFileSync(join(dir, 'changed.txt'), 'before\n')
   execFileSync('git', ['add', '.'], { cwd: dir })
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: dir })
   return dir
@@ -65,10 +66,46 @@ test('standalone file bookmark opens in the right review panel, not Files', asyn
       { sessionId: session.id, target: filePath }
     )
 
-    const bookmarks = page.getByTestId('chat-changes-bookmarks')
-    await expect(bookmarks).toBeVisible({ timeout: 15_000 })
-    const toggle = bookmarks.locator('.chat-changes-toggle')
-    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+    writeFileSync(join(repoDir, 'changed.txt'), 'after\n')
+    await page.evaluate(
+      ({ sessionId }) =>
+        window.atelier
+          .debugExecDb(
+            `INSERT OR REPLACE INTO session_touched_paths
+             (session_id, path, first_touched_at, last_pending_at)
+             VALUES (?, 'changed.txt', datetime('now'), datetime('now'))`,
+            [sessionId]
+          )
+          .then(() => window.atelier.refreshSessionWorkspace(sessionId, true)),
+      { sessionId: session.id }
+    )
+
+    const bookmarksButton = page.getByTestId('composer-bookmarks-button')
+    const changesButton = page.getByTestId('composer-changes-button')
+    await expect(bookmarksButton).toBeVisible({ timeout: 15_000 })
+    await expect(changesButton).toBeVisible({ timeout: 15_000 })
+    await expect(bookmarksButton.getByTestId('composer-context-count')).toHaveText('1')
+    await expect(changesButton.getByTestId('composer-context-count')).toHaveText('1')
+    await bookmarksButton.click()
+
+    const bookmarks = page.getByTestId('chat-uncommitted-changes')
+    await expect(bookmarks).toBeVisible()
+    await expect(bookmarks).toHaveAttribute('data-list-kind', 'bookmarks')
+    await page.screenshot({
+      path: join(artifactsDir, 'chat-composer-bookmark-icon-popover.png')
+    })
+
+    await changesButton.click()
+    await expect(bookmarks).toHaveAttribute('data-list-kind', 'changes')
+    await expect(bookmarks.getByTestId('chat-changes-file')).toContainText('changed.txt')
+    await page.keyboard.press('Escape')
+    await expect(bookmarks).toHaveCount(0)
+
+    await changesButton.click()
+    await page.getByTestId('composer-input').click()
+    await expect(bookmarks).toHaveCount(0)
+
+    await bookmarksButton.click()
     const bookmark = bookmarks.locator(
       '[data-testid="chat-bookmark-row"][data-bookmark-kind="file"]'
     )

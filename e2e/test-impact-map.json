@@ -430,7 +430,10 @@
     },
     {
       "id": "composer",
-      "paths": ["src/renderer/src/components/chat/Composer.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/Composer.tsx",
+        "src/renderer/src/components/chat/ComposerMarkdownInput.tsx"
+      ],
       "targets": [
         { "file": "e2e/composer-core.spec.ts" },
         { "file": "e2e/composer-mentions-and-commands.spec.ts" },
@@ -440,6 +443,35 @@
         { "file": "e2e/bug-model-picker-option-list.spec.ts" },
         { "file": "e2e/enrichment-image-attachment.spec.ts" },
         { "file": "e2e/harness-sdk-events.spec.ts" }
+      ]
+    },
+    {
+      "id": "composer-context-bookmarks-changes",
+      "paths": ["src/renderer/src/components/chat/ChatUncommittedChanges.tsx"],
+      "targets": [
+        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
+        { "file": "e2e/chat-surface-core.spec.ts", "grep": "assistant file paths open Files directly" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|chat:" }
+      ]
+    },
+    {
+      "id": "composer-context-bookmarks-changes-host",
+      "paths": ["src/renderer/src/components/chat/Composer.tsx"],
+      "changedLines": "ChatUncommittedChanges|composer-context|chat-changes|context-bar-spacer",
+      "targets": [
+        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
+        { "file": "e2e/chat-surface-core.spec.ts", "grep": "assistant file paths open Files directly" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|chat:" }
+      ]
+    },
+    {
+      "id": "composer-context-bookmarks-changes-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "composer-context|chat-changes",
+      "targets": [
+        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
+        { "file": "e2e/chat-surface-core.spec.ts", "grep": "assistant file paths open Files directly" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|chat:" }
       ]
     },
     {
@@ -685,6 +717,29 @@
         { "file": "e2e/message-actions.spec.ts" },
         { "file": "e2e/interactive-prompts.spec.ts", "grep": "plan" },
         { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|plan" }
+      ]
+    },
+    {
+      "id": "review-pane-file-word-wrap",
+      "paths": ["src/renderer/src/components/chat/ReviewFileMonacoEditor.tsx"],
+      "changedLines": "wordWrap|wrappingIndent",
+      "targets": [{ "file": "e2e/ui-review-pane-chrome.spec.ts" }]
+    },
+    {
+      "id": "chat-prose-shared-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "transcript|msg-user|msg-assistant|md-body|msg-wrap ",
+      "targets": [
+        { "file": "e2e/ui-chat-transcript-typography.spec.ts" }
+      ]
+    },
+    {
+      "id": "composer-markdown-shared-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "composer-box|composer-input-stack|composer-markdown-input",
+      "targets": [
+        { "file": "e2e/ui-chat-transcript-typography.spec.ts" },
+        { "file": "e2e/composer-core.spec.ts" }
       ]
     },
     {

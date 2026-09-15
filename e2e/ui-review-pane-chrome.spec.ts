@@ -7,7 +7,7 @@
  */
 import { test, expect, _electron as electron } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { seedSkipOnboarding } from './e2e-config'
@@ -17,6 +17,7 @@ const artifactsDir = join(projectRoot, 'e2e-artifacts')
 
 /** The app's compact panel-header height, shared with the terminal header. */
 const PANEL_HEADER_HEIGHT = 34
+const LONG_LINE_MARKER = 'LONG_LINE_MUST_WRAP'
 
 function fixtureRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'atelier-review-pane-chrome-'))
@@ -26,7 +27,10 @@ function fixtureRepo(): string {
   // No `.md` extension → review pane renders the Monaco (syntax-highlighted) variant.
   writeFileSync(
     join(dir, 'instructions.txt'),
-    Array.from({ length: 24 }, (_, i) => `Line ${i + 1}: review pane chrome fixture content.`).join('\n')
+    [
+      `${LONG_LINE_MARKER}: ${'This sentence must stay inside the right review pane. '.repeat(12)}`,
+      ...Array.from({ length: 23 }, (_, i) => `Line ${i + 2}: review pane chrome fixture content.`)
+    ].join('\n')
   )
   execFileSync('git', ['add', '.'], { cwd: dir })
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: dir })
@@ -76,11 +80,10 @@ test('file review pane: editor is full-bleed and the title bar matches panel hea
       { sessionId: session.id, target: join(repoDir, 'instructions.txt') }
     )
 
-    const bookmarks = page.getByTestId('chat-changes-bookmarks')
-    await expect(bookmarks).toBeVisible({ timeout: 15_000 })
-    const toggle = bookmarks.locator('.chat-changes-toggle')
-    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
-    await bookmarks
+    const bookmarksButton = page.getByTestId('composer-bookmarks-button')
+    await expect(bookmarksButton).toBeVisible({ timeout: 15_000 })
+    await bookmarksButton.click()
+    await page.getByTestId('chat-changes-bookmarks')
       .locator('[data-testid="chat-bookmark-row"][data-bookmark-kind="file"]')
       .click()
 
@@ -91,6 +94,28 @@ test('file review pane: editor is full-bleed and the title bar matches panel hea
 
     await page.screenshot({ path: join(artifactsDir, 'ui-review-pane-file-chrome.png') })
     await pane.screenshot({ path: join(artifactsDir, 'ui-review-pane-file-chrome-closeup.png') })
+    await pane.screenshot({ path: join(artifactsDir, 'bug-review-pane-long-line-overflow.png') })
+
+    const logPath = join(userDataDir, 'logs', 'main.log')
+    await expect.poll(() => existsSync(logPath)).toBe(true)
+    expect(readFileSync(logPath, 'utf8')).toContain('"msg":"bookmark:file opened in review panel"')
+
+    // Bug repro: with Monaco's wordWrap disabled, the first source line is a
+    // single very wide view line and the editor exposes horizontal overflow.
+    const longLineLayout = await pane.getByTestId('response-review-file-monaco').evaluate(
+      (editorRoot, marker) => {
+        const host = editorRoot.closest('.response-review-file-monaco-host') as HTMLElement
+        const line = [...editorRoot.querySelectorAll<HTMLElement>('.view-line')]
+          .find((candidate) => candidate.textContent?.includes(marker))
+        if (!line) throw new Error('Monaco long-line layout was not rendered')
+        return {
+          lineWidth: line.getBoundingClientRect().width,
+          hostWidth: host.getBoundingClientRect().width
+        }
+      },
+      LONG_LINE_MARKER
+    )
+    expect(longLineLayout.lineWidth).toBeLessThanOrEqual(longLineLayout.hostWidth)
 
     const head = pane.locator('.response-review-head')
 
