@@ -1,4 +1,4 @@
-import type { SessionTab } from './TabBar'
+import type { SessionTab } from '../../../../shared/session-types'
 
 export type WorkspaceToolTab = Exclude<SessionTab, 'chat'>
 

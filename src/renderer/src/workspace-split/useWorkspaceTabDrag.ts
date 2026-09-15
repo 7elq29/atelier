@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import type { SessionTab } from '../components/panels/TabBar'
+import type { SessionTab } from '../../../shared/session-types'
 import type { WorkspaceSplitEdge } from './workspace-split-types'
 
 /**

@@ -83,11 +83,17 @@ async function selectSessionRow(id: string): Promise<void> {
 }
 
 /**
- * Both the selected tab button and the pane that tab owns, since the Files and
- * Terminal panels stay mounted for every session and only the showing one
- * carries its `active` test id.
+ * The Chat pill no longer exists, so Chat is verified by its visible pane.
+ * Tool selections still verify both the active rail button and owned pane.
  */
 async function expectActiveTab(tab: 'chat' | 'files' | 'terminal'): Promise<void> {
+  if (tab === 'chat') {
+    await expect(page.getByTestId('tab-chat')).toHaveCount(0)
+    await expect(
+      page.getByTestId('session-workspace-tabs').locator('.tab-content[data-tab="chat"]')
+    ).not.toHaveClass(/hidden/)
+    return
+  }
   await expect(page.getByTestId(`tab-${tab}`)).toHaveClass(/active/, { timeout: 20_000 })
   if (tab === 'files') {
     await expect(page.getByTestId('files-panel-active')).toBeVisible({ timeout: 20_000 })
@@ -97,9 +103,6 @@ async function expectActiveTab(tab: 'chat' | 'files' | 'terminal'): Promise<void
     await expect(page.getByTestId('terminal-body')).toBeVisible({ timeout: 20_000 })
     return
   }
-  await expect(
-    page.getByTestId('session-workspace-tabs').locator('.tab-content[data-tab="chat"]')
-  ).not.toHaveClass(/hidden/)
 }
 
 test.describe.configure({ mode: 'serial' })

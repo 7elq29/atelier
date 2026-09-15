@@ -294,9 +294,9 @@ interface ComposerProps {
   sessionBookmarks?: readonly SessionBookmark[]
   /** Preloaded workspace file paths for @-mentions (relative paths). */
   mentionFilePaths?: string[]
-  /** Chat changes cap: open Diff › Changes for this repo-relative path. */
+  /** Chat changes cap: open the file in the dedicated right-side review renderer. */
   onOpenChangedFile?: (path: string, opensInFilesTab: boolean) => void
-  /** Opens a standalone bookmarked link externally or file in Files. */
+  /** Opens a bookmarked link externally or a bookmarked file in the review renderer. */
   onOpenBookmark?: (bookmark: SessionBookmark) => void
   /** Removes a standalone bookmark from the in-chat Bookmarks list. */
   onRemoveBookmark?: (bookmark: SessionBookmark) => void

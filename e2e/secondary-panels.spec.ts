@@ -172,6 +172,14 @@ test.describe('07-secondary-panels', () => {
   let sessionProjectPath: string
   let sessionId: string
 
+  async function returnToChat(): Promise<void> {
+    const toolClose = page.getByTestId('workspace-split-pane-close')
+    if (await toolClose.count()) await toolClose.click()
+    const reviewClose = page.getByTestId('response-review-close')
+    if (await reviewClose.count()) await reviewClose.click()
+    await expect(page.locator('.tab-content[data-tab="chat"]')).toBeVisible()
+  }
+
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-panels-'))
     seedSkipOnboarding(userDataDir)
@@ -202,6 +210,8 @@ test.describe('07-secondary-panels', () => {
     expect(sessionId).toBeTruthy()
 
     await expect(page.getByTestId('tab-strip')).toBeVisible()
+    await expect(page.getByTestId('tab-chat')).toHaveCount(0)
+    await expect(page.getByTestId('workspace-tool-rail')).toBeVisible()
   })
 
   test('session detail: changing project path reloads diff and terminal cwd', async () => {
@@ -271,7 +281,7 @@ test.describe('07-secondary-panels', () => {
 
   test('chat: untracked plan file appears in session changes cap', async () => {
     test.setTimeout(60_000)
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     await waitForTurnIdle(page, 60_000)
     const planRel = '.claude/plans/e2e-plan.md'
     const planAbs = join(sessionProjectPath, planRel)
@@ -302,7 +312,7 @@ test.describe('07-secondary-panels', () => {
 
   test('chat: inline ExitPlanMode plan registers in cap without writing file', async () => {
     test.setTimeout(60_000)
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     await waitForTurnIdle(page, 60_000)
     const planRel = '.claude/plans/plan-logging-failover-runbook-log-1167.md'
     const planBody = '# Plan: Logging Failover Runbook — LOG-1167\n\n1. First step\n'
@@ -328,7 +338,7 @@ test.describe('07-secondary-panels', () => {
 
   test('chat: plan file in cap shows Plan tag and opens review pane', async () => {
     test.setTimeout(60_000)
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     await waitForTurnIdle(page, 60_000)
     const planRel = '.claude/plans/plan-e2e-review-from-cap.md'
     const planBody = [
@@ -382,13 +392,13 @@ test.describe('07-secondary-panels', () => {
     await expect(page.getByTestId('composer-input')).toHaveValue('')
     await expect(page.getByTestId('composer-input')).not.toContainText(/Re plan/)
     await expect(page.getByTestId('tab-diff')).not.toHaveClass(/active/)
-    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    await expect(page.getByTestId('tab-chat')).toHaveCount(0)
     log('plan cap row opens plan review pane OK')
   })
 
   test('chat: plan cap +/- reflects plan review diff between transcript editions', async () => {
     test.setTimeout(60_000)
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     await waitForTurnIdle(page, 60_000)
     const planRel = '.claude/plans/plan-e2e-editions.md'
     await page.evaluate(
@@ -431,7 +441,7 @@ test.describe('07-secondary-panels', () => {
 
   test('chat: session changes cap — file row, git stats, diff navigation', async () => {
     test.setTimeout(120_000)
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     await waitForTurnIdle(page, 60_000)
     const cap = page.getByTestId('chat-uncommitted-changes')
     await collapseCap(page)
@@ -457,10 +467,30 @@ test.describe('07-secondary-panels', () => {
     await expect(reviewPane).toBeVisible({ timeout: 15_000 })
     await expect(reviewPane).toHaveAttribute('data-review-kind', 'file')
     await expect(reviewPane).toHaveAttribute('data-cap-file-path', 'a.txt')
-    await expect(page.getByTestId('response-review-title')).toHaveText('a.txt')
-    await expect(reviewPane).toHaveAttribute('data-has-plan-diff', 'true')
-    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
     await expect(page.getByTestId('tab-diff')).not.toHaveClass(/active/)
+    await expect(page.getByTestId('tab-files')).not.toHaveClass(/active/)
+    const reviewGeometry = await page.evaluate(() => {
+      const surface = document.querySelector<HTMLElement>('[data-testid="main-surface"]')
+      const pane = document.querySelector<HTMLElement>('[data-testid="response-review-pane"]')
+      const composer = document.querySelector<HTMLElement>('.composer-cache-entry.active')
+      if (!surface || !pane || !composer) return null
+      const surfaceRect = surface.getBoundingClientRect()
+      const paneRect = pane.getBoundingClientRect()
+      const composerRect = composer.getBoundingClientRect()
+      return {
+        rightAligned: Math.abs(surfaceRect.right - paneRect.right) <= 2,
+        halfWidth: Math.abs(paneRect.width - surfaceRect.width / 2) <= 8,
+        composerEndsBeforeReview: composerRect.right <= paneRect.left + 2
+      }
+    })
+    expect(reviewGeometry).toEqual({
+      rightAligned: true,
+      halfWidth: true,
+      composerEndsBeforeReview: true
+    })
+    await page.screenshot({
+      path: join(artifactsDir, 'secondary-tool-rail-chat-change-review-right.png')
+    })
 
     const snap = await page.evaluate((id) => window.atelier.getSessionWorkspaceSnapshot(id), sessionId)
     const fileItem = snap?.sessionChangesCap?.items.find((i) => i.kind === 'file' && i.path === 'a.txt')
@@ -470,17 +500,17 @@ test.describe('07-secondary-panels', () => {
     }
 
     await page.screenshot({ path: join(artifactsDir, '07-chat-uncommitted-changes.png') })
-    log('chat session changes cap -> file review pane OK')
-    await page.getByTestId('tab-chat').click()
+    log('chat session changes cap -> dedicated review right pane OK')
+    await returnToChat()
   })
 
-  test('chat: file review renders .py as source not markdown', async () => {
+  test('chat: changed .py file opens as source in the dedicated review pane', async () => {
     test.setTimeout(60_000)
     const pyRel = 'mcp-script.py'
     const pyAbs = join(repoDir, pyRel)
     const pyContent = '#!/usr/bin/env python3\n# Step 1: Get all tool calls\nprint("ok")\n'
     writeFileSync(pyAbs, pyContent)
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     await waitForTurnIdle(page, 60_000)
 
     const toolContent = JSON.stringify({
@@ -525,16 +555,18 @@ test.describe('07-secondary-panels', () => {
     await expect(reviewPane).toBeVisible({ timeout: 15_000 })
     await expect(reviewPane).toHaveAttribute('data-review-kind', 'file')
     await expect(reviewPane.getByTestId('response-review-file-monaco')).toBeVisible()
-    await expect(reviewPane.getByTestId('response-review-file-monaco-host')).toContainText('# Step 1: Get all tool calls')
+    await expect(reviewPane.getByTestId('response-review-file-monaco-host')).toContainText(
+      '# Step 1: Get all tool calls'
+    )
     await expect(reviewPane.locator('h1, h2, h3')).toHaveCount(0)
-    log('py file review renders as source OK')
+    log('py file opens in dedicated review pane as source OK')
   })
 
   test('chat: outside-workspace cap file opens Files tab with inline diff', async () => {
     test.setTimeout(60_000)
     const outsidePath = join(tmpdir(), `atelier-e2e-outside-cap-${Date.now()}.json`)
     writeFileSync(outsidePath, '{"after":true}\n')
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     await waitForTurnIdle(page, 60_000)
 
     const toolContent = JSON.stringify({
@@ -585,12 +617,13 @@ test.describe('07-secondary-panels', () => {
     await expect(reviewPane).toBeVisible({ timeout: 15_000 })
     await expect(reviewPane).toHaveAttribute('data-review-kind', 'file')
     await expect(reviewPane).toHaveAttribute('data-cap-file-path', outsidePath)
-    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
     await expect(page.getByTestId('tab-files')).not.toHaveClass(/active/)
     await expect(page.getByTestId('tab-diff')).not.toHaveClass(/active/)
-    await expect(reviewPane.getByTestId('response-review-content')).toBeVisible()
-    log('outside-workspace cap -> file review pane OK')
-    await page.getByTestId('tab-chat').click()
+    await page.screenshot({
+      path: join(artifactsDir, 'secondary-tool-rail-chat-change-review-outside-right.png')
+    })
+    log('outside-workspace cap -> dedicated review right pane OK')
+    await returnToChat()
   })
 
   test('chat: second edit on same file keeps a single cap row', async () => {
@@ -652,7 +685,7 @@ test.describe('07-secondary-panels', () => {
     await electronApp.close()
     ;({ app: electronApp, page } = await launchApp(userDataDir))
     await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     await waitForTurnIdle(page, 60_000)
     // `cap` belongs to the page that was just closed — the restored cap lives on the new one.
     const relaunchedCap = page.getByTestId('chat-uncommitted-changes')
@@ -672,10 +705,9 @@ test.describe('07-secondary-panels', () => {
     const rail = page.getByTestId('workspace-tool-rail')
     const workspace = page.getByTestId('session-workspace-tabs')
 
-    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
-    await expect(strip.getByTestId('tab-diff')).toHaveCount(0)
-    await expect(strip.getByTestId('tab-files')).toHaveCount(0)
-    await expect(strip.getByTestId('tab-terminal')).toHaveCount(0)
+    await expect(page.getByTestId('tab-chat')).toHaveCount(0)
+    await expect(strip).toBeVisible()
+    await expect(strip.locator('button')).toHaveCount(0)
     await expect(rail).toBeVisible()
     await expect(page.getByTestId('tab-diff')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     await expect(page.locator('.tab-content[data-tab="chat"]')).not.toHaveClass(/hidden/)
@@ -728,7 +760,7 @@ test.describe('07-secondary-panels', () => {
     await expect(workspace).toHaveClass(/session-workspace-tabs--split-row/)
     await page.getByTestId('workspace-split-pane-close').click()
     await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
-    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    await expect(page.getByTestId('tab-chat')).toHaveCount(0)
   })
 
   test('tool switch focuses the Files path editor on edit and the terminal', async () => {
@@ -796,11 +828,10 @@ test.describe('07-secondary-panels', () => {
     await page.mouse.move(ws.x + ws.width / 2, ws.y + ws.height / 2, { steps: 10 })
   }
 
-  test('tab bar: a small movement stays a click; only a deliberate drag engages', async () => {
+  test('tool rail: a small movement stays a click; only a deliberate drag engages', async () => {
     // A tab press must tolerate some wobble. Native HTML5 drag engaged after about
     // four pixels and then swallowed the click, so sloppy clicks did nothing.
-    await page.getByTestId('tab-chat').click()
-    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    await returnToChat()
 
     await pressTabAndMoveBy('files', 5, 3)
     await expect(page.getByTestId('workspace-drop-zone-right')).toHaveCSS('opacity', '0')
@@ -813,23 +844,22 @@ test.describe('07-secondary-panels', () => {
     // Past the threshold the gesture becomes a drag. Released over the middle of
     // the workspace, away from every edge band, it splits nothing — and must not
     // be taken as a click on the tab either.
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     await engageDragOverMiddle('files')
     await expect(page.getByTestId('workspace-drag-ghost')).toBeVisible()
     await expect(page.getByTestId('workspace-drop-zone-top')).not.toHaveClass(/active/)
     await page.mouse.up()
 
     await expect(page.getByTestId('session-workspace-tabs')).not.toHaveClass(/--split/)
-    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    await expect(page.getByTestId('tab-chat')).toHaveCount(0)
 
     // Having been dragged must not leave a tab unclickable.
     await page.getByTestId('tab-files').click()
     await expect(page.getByTestId('tab-files')).toHaveClass(/active/)
-    await page.getByTestId('tab-chat').click()
-    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    await returnToChat()
   })
 
-  test('tab bar: tabs show the grab cursor only while a drag is in flight', async () => {
+  test('tool rail: icons show the grab cursor only while a drag is in flight', async () => {
     const filesTab = page.getByTestId('tab-files')
     await expect(filesTab).toHaveCSS('cursor', 'pointer')
 
@@ -838,11 +868,11 @@ test.describe('07-secondary-panels', () => {
     await page.mouse.up()
 
     await expect(filesTab).toHaveCSS('cursor', 'pointer')
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
   })
 
-  test('workspace split: drag Diff beside Chat, Files fullscreen preserves split, Chat restores', async () => {
-    await page.getByTestId('tab-chat').click()
+  test('workspace split: drag Diff beside Chat and close restores Chat', async () => {
+    await returnToChat()
     const workspace = page.getByTestId('session-workspace-tabs')
 
     // All four drop targets stay visible for the whole drag, with only the one
@@ -905,7 +935,7 @@ test.describe('07-secondary-panels', () => {
     await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
     await expect(page.getByTestId('workspace-split-pane-close')).toHaveCount(0)
     await expect(page.getByTestId('tab-diff')).toHaveCount(1)
-    await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    await expect(page.getByTestId('tab-chat')).toHaveCount(0)
     await expect(page.locator('.tab-content[data-tab="chat"]')).not.toHaveClass(/workspace-split-pane/)
 
     // Dropping on the bottom edge stacks the panes instead of placing them side
@@ -981,7 +1011,7 @@ test.describe('07-secondary-panels', () => {
     // and the split is invisible.
     await page.getByTestId('tab-terminal').click()
     await expect(page.locator('.terminal-cache-entry.active')).toHaveCount(1)
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
 
     await dragTabToEdge('terminal', 'right')
 
@@ -1084,7 +1114,7 @@ test.describe('07-secondary-panels', () => {
 
     await page.screenshot({ path: join(artifactsDir, '07-diff.png') })
 
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     await expect(page.getByTestId('composer-input')).toHaveValue(/Please add a test for this\./)
     log('diff panel: inline comment pushed into composer OK')
   })
@@ -1134,7 +1164,7 @@ test.describe('07-secondary-panels', () => {
     await srcDir.click()
     await expect(indexRow).toBeVisible()
 
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     log('diff panel: directory tree + path compression + collapse OK')
   })
 
@@ -1174,7 +1204,7 @@ test.describe('07-secondary-panels', () => {
       .toBe(true)
 
     await page.screenshot({ path: join(artifactsDir, 'secondary-tool-rail-diff-jump.png') })
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     log('diff panel: tree click jumps to the stacked file OK')
   })
 
@@ -1447,7 +1477,7 @@ test.describe('07-secondary-panels', () => {
   })
 
   test('file quick open: split dir/search, shallow dir browse, recursive search opens file', async () => {
-    await page.getByTestId('tab-chat').click()
+    await returnToChat()
     await page.getByTestId('composer-input').click()
     await page.keyboard.down('Control')
     await page.keyboard.press('KeyX')

@@ -5,7 +5,7 @@ import type { SessionWorkspacePayload } from '../../../../shared/session-workspa
 import { resolveSessionProfileFileTree } from '../../../../shared/session-profile-resolve'
 import DiffPanel from '../panels/DiffPanel'
 import FilesPanel from '../panels/FilesPanel'
-import type { SessionTab } from '../panels/TabBar'
+import type { SessionTab } from '../../../../shared/session-types'
 import {
   isSplitLayoutVisible,
   resolveTabVisibility,

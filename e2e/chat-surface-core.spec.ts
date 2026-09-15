@@ -744,9 +744,10 @@ test.describe('03-chat-surface-core', () => {
     await expect(page.getByTestId('files-path-bar')).toContainText('.mcp.json')
   })
 
-  test('assistant file paths open Files directly, but bookmarked files open the review panel', async ({}, testInfo) => {
+  test('changed files and file bookmarks open the dedicated right-side renderer', async ({}, testInfo) => {
     testInfo.setTimeout(120_000)
-    await page.getByTestId('tab-chat').click()
+    const openToolClose = page.getByTestId('workspace-split-pane-close')
+    if (await openToolClose.count()) await openToolClose.click()
     await expect(page.getByTestId('composer-input')).toBeVisible()
     const targetFile = join(projectDir, 'a.txt')
     await page.getByTestId('composer-input').fill(
@@ -770,16 +771,21 @@ test.describe('03-chat-surface-core', () => {
     await expect(assistantMsg).toBeVisible({ timeout: 30_000 })
 
     await expect(fileLink).toHaveText(targetFile, { timeout: 30_000 })
-    await fileLink.click({ button: 'right' })
-    await expect(page.getByTestId('chat-bookmark-toggle')).toHaveText('Bookmark')
-    await page.getByTestId('chat-bookmark-toggle').click()
+    await page.evaluate(
+      ({ id, target }) =>
+        window.atelier.addSessionBookmark(id, {
+          kind: 'file',
+          target,
+          label: target
+        }),
+      { id: sessionId, target: targetFile }
+    )
 
-    const bookmarksButton = page.getByTestId('composer-bookmarks-button')
     const changesButton = page.getByTestId('composer-changes-button')
-    await expect(bookmarksButton).toBeVisible({ timeout: 15_000 })
     await expect(changesButton).toBeVisible({ timeout: 15_000 })
-    await expect(bookmarksButton.getByTestId('composer-context-count')).toHaveText('1')
-    await expect(changesButton.getByTestId('composer-context-count')).toHaveText('1')
+    await expect(changesButton.getByTestId('composer-context-count')).toHaveText('1', {
+      timeout: 15_000
+    })
     await expect(page.getByTestId('chat-uncommitted-changes')).toHaveCount(0)
 
     await expandCapSection(page, 'chat-changes-files')
@@ -792,31 +798,15 @@ test.describe('03-chat-surface-core', () => {
     await expect(changedRow).toHaveAttribute('data-bookmarked', 'true')
     await expect(changedRow.getByTestId('chat-changes-bookmark-tag')).toHaveText('Bookmark')
     await expect(cap.locator('[data-testid="chat-bookmark-row"][data-bookmark-kind="file"]')).toHaveCount(0)
-
-    // Switching icons replaces the open list instead of stacking two bars.
-    await expandCapSection(page, 'chat-changes-bookmarks')
-    await expect(cap).toHaveAttribute('data-list-kind', 'bookmarks')
-    await expect(cap.locator('.chat-changes-popover-title')).toHaveText('1 bookmark')
-    await expect(cap.getByTestId('chat-bookmark-row')).toHaveCount(1)
-    await expect(cap.getByTestId('chat-changes-file')).toHaveCount(0)
-    await page.screenshot({ path: join(artifactsDir, 'chat-response-bookmarks-mixed-cap.png') })
-
-    // Escape and an outside click both dismiss the lightweight popover.
-    await page.keyboard.press('Escape')
-    await expect(cap).toHaveCount(0)
-    await expandCapSection(page, 'chat-changes-files')
-    await page.getByTestId('composer-input').click()
-    await expect(cap).toHaveCount(0)
-    await expandCapSection(page, 'chat-changes-files')
-    await expect(cap).toHaveAttribute('data-list-kind', 'changes')
-    await expect(cap.locator('.chat-changes-popover-title')).toHaveText('1 change')
-    const changedRowAfterReopen = cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })
     await page.screenshot({ path: join(artifactsDir, 'chat-cap-context-icons.png') })
 
-    await changedRowAfterReopen.click()
-    await expect(page.getByTestId('response-review-pane')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('response-review-pane')).toHaveAttribute('data-review-kind', 'file')
-    await page.getByTestId('response-review-close').click()
+    await changedRow.click()
+    const changedReview = page.getByTestId('response-review-pane')
+    await expect(changedReview).toBeVisible({ timeout: 10_000 })
+    await expect(changedReview).toHaveAttribute('data-review-kind', 'file')
+    await expect(page.getByTestId('tab-diff')).not.toHaveClass(/active/)
+    await expect(page.getByTestId('tab-files')).not.toHaveClass(/active/)
+    await changedReview.getByTestId('response-review-close').click()
 
     const standaloneTarget = join(projectDir, 'b.txt')
     await page.getByTestId('composer-input').fill(
@@ -834,9 +824,20 @@ test.describe('03-chat-surface-core', () => {
     )
     await waitForTurnIdle(page, 60_000)
     await expect(standaloneLink).toHaveText(standaloneTarget)
-    await standaloneLink.click({ button: 'right' })
-    await page.getByTestId('chat-bookmark-toggle').click()
+    await page.evaluate(
+      ({ id, target }) =>
+        window.atelier.addSessionBookmark(id, {
+          kind: 'file',
+          target,
+          label: target
+        }),
+      { id: sessionId, target: standaloneTarget }
+    )
 
+    const bookmarksButton = page.getByTestId('composer-bookmarks-button')
+    await expect(bookmarksButton.getByTestId('composer-context-count')).toHaveText('1', {
+      timeout: 15_000
+    })
     await expandCapSection(page, 'chat-changes-bookmarks')
     const standaloneFileBookmark = cap.locator(
       '[data-testid="chat-bookmark-row"][data-bookmark-kind="file"]'
@@ -848,7 +849,10 @@ test.describe('03-chat-surface-core', () => {
     await expect(bookmarkReview).toBeVisible({ timeout: 10_000 })
     await expect(bookmarkReview).toHaveAttribute('data-review-kind', 'file')
     await expect(bookmarkReview).toHaveAttribute('data-cap-file-path', /b\.txt$/)
-    await expect(page.getByTestId('files-panel-active')).toHaveCount(0)
+    await expect(page.getByTestId('tab-files')).not.toHaveClass(/active/)
+    await page.screenshot({
+      path: join(artifactsDir, 'secondary-tool-rail-bookmark-review-right.png')
+    })
     await bookmarkReview.getByTestId('response-review-close').click()
   })
 

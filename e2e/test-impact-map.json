@@ -336,7 +336,10 @@
       "paths": [
         "src/renderer/src/components/panels/WorkspaceToolRail.tsx",
         "src/renderer/src/components/session/SessionWorkspacePanels.tsx",
+        "src/renderer/src/workspace-split/WorkspaceSplitDragGhost.tsx",
         "src/renderer/src/workspace-split/WorkspaceSplitPaneClose.tsx",
+        "src/renderer/src/workspace-split/useWorkspaceTabDrag.ts",
+        "src/renderer/src/workspace-split/workspace-split-logic.ts",
         "src/renderer/src/workspace-split/workspace-split-types.ts"
       ],
       "targets": [

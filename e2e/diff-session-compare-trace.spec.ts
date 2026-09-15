@@ -59,7 +59,8 @@ async function activateSession(page: Page, sessionId: string): Promise<{ stepMs:
   await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
   stepMs.clickRow = Date.now() - t
   t = Date.now()
-  await page.getByTestId('tab-chat').click()
+  const close = page.getByTestId('workspace-split-pane-close')
+  if (await close.count()) await close.click()
   stepMs.clickChat = Date.now() - t
   return { stepMs }
 }
@@ -166,7 +167,7 @@ async function runDiffSessionCompareTrace(opts: { legacyPoll: boolean }): Promis
     await page.waitForTimeout(20_000)
 
     const fixRay = await openDiffWithSnapshots(page, SESSIONS.fixRay.id, SESSIONS.fixRay.name)
-    await page.getByTestId('tab-chat').click()
+    await page.getByTestId('workspace-split-pane-close').click()
     const aiConf = await openDiffWithSnapshots(page, SESSIONS.aiConf.id, SESSIONS.aiConf.name)
 
     await page.waitForTimeout(5000)

@@ -1879,7 +1879,7 @@ test.describe('02-session-lifecycle — AI conformance connect', () => {
       .poll(async () => term.textContent(), { timeout: 20_000 })
       .toContain('.atelier/worktrees')
 
-    await page.getByTestId('tab-chat').click()
+    await page.getByTestId('workspace-split-pane-close').click()
     await expect(page.getByTestId('composer-input')).toBeVisible()
 
     const log = appendMainLog(conformanceUserData)
