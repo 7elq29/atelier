@@ -124,6 +124,8 @@ test.describe('04-composer-core', () => {
 
     const footer = activeComposer(page).locator('.composer-footer')
     await expect(footer).toBeVisible()
+    await expect(footer).toHaveCSS('padding-bottom', '6px')
+    await expect(activeComposer(page).getByTestId('composer-input')).toHaveCSS('padding-bottom', '4px')
     const footerBox = await footer.boundingBox()
     const buttonBox = await sendButton.boundingBox()
     expect(footerBox).not.toBeNull()
@@ -214,6 +216,10 @@ test.describe('04-composer-core', () => {
     const contextRing = composer.getByTestId('token-usage')
     await expect(contextRing).toBeVisible({ timeout: 30_000 })
     await expect(contextRing).toHaveClass(/context-usage-ring/)
+    await expect(
+      composer.getByTestId('composer-context-bar').locator('[data-testid="composer-mode-pill"] + [data-testid="token-usage"]')
+    ).toBeVisible()
+    await expect(composer.locator('.composer-footer').getByTestId('token-usage')).toHaveCount(0)
     await expect(contextRing).toHaveAttribute('title', /\d[\d,]* \/ \d[\d,]* context tokens \(\d+%\)/)
     await expect(contextRing.locator('.context-usage-progress')).toHaveCount(1)
     await expect(contextRing).toHaveText('')

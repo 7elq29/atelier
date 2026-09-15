@@ -550,7 +550,7 @@
   .composer-box textarea::-webkit-scrollbar-track { background: transparent; margin: 10px 0; }
   .composer-box textarea::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 4px; }
   .composer-box textarea::-webkit-scrollbar-corner { background: transparent; }
-  .composer-footer { display: flex; align-items: center; gap: 8px; padding: 8px 14px 12px; flex-wrap: wrap; }
+  .composer-footer { display: flex; align-items: center; gap: 8px; padding: 4px 14px 6px; flex-wrap: wrap; }
   .composer-footer .spacer { flex: 1; }
   .footer-btn { display: flex; align-items: center; gap: 6px; font-size: 14.5px; color: var(--text-tertiary); background: transparent; border: none; cursor: pointer; padding: 5px 8px; border-radius: 6px; }
   .footer-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
@@ -1872,6 +1872,9 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                   <span class="mode-pill mode-default context-bar-mode" id="mode-pill-s1" data-testid="composer-mode-pill" data-mode="default" onclick="cycleMode('s1')" title="Click or press Shift+Tab to cycle mode">
                     <span class="mode-icon" id="mode-icon-s1"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="3.5" fill="currentColor"/></svg></span><span id="mode-label-s1">Default</span>
                   </span>
+                  <span class="context-usage-ring" title="18,400 / 200,000 context tokens (9%)" aria-label="Context window 9% used">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><circle class="context-usage-track" cx="10" cy="10" r="7"/><circle class="context-usage-progress" cx="10" cy="10" r="7" pathLength="100" stroke-dasharray="9 100"/></svg>
+                  </span>
                   <span class="context-bar-spacer" aria-hidden="true"></span>
                   <span class="context-bar-item">
                     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 7.2V16.8M6 9.5a6 6 0 0 0 6 6h4"/></svg>
@@ -1907,9 +1910,6 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                 </div>
                 <div class="composer-footer" id="composer-footer-s1">
                   <button class="footer-btn" onclick="attachDemoImage('s1')"><svg class="icon" width="14" height="14"><use href="#icon-paperclip"/></svg> Attach</button>
-                  <span class="context-usage-ring" title="18,400 / 200,000 context tokens (9%)" aria-label="Context window 9% used">
-                    <svg viewBox="0 0 20 20" aria-hidden="true"><circle class="context-usage-track" cx="10" cy="10" r="7"/><circle class="context-usage-progress" cx="10" cy="10" r="7" pathLength="100" stroke-dasharray="9 100"/></svg>
-                  </span>
                   <div class="spacer"></div>
                 </div>
               </div>

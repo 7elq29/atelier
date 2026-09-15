@@ -10,10 +10,11 @@
    never covers typed text.
 3. Returning to one visual line moves the controls back into the input row.
 4. Context-window usage is represented by a circular progress ring in the
-   footer. Hover text and its accessible label retain exact used/maximum token
-   counts and percentage; usage at or above 70% uses the warning color.
+   top status bar immediately after the mode control. Hover text and its
+   accessible label retain exact used/maximum token counts and percentage;
+   usage at or above 70% uses the warning color.
 5. The top status bar no longer shows the working path. It shows the current
-   mode on the left and the git branch on the right.
+   mode on the left, then the context ring, and the git branch on the right.
 6. Mode is always a neutral icon-and-text control: Default, Plan mode, Accept
    edits, or Auto. Clicking it and pressing Shift+Tab keep their existing
    cycling behavior.
@@ -37,6 +38,7 @@ existing Atelier mock does not cover it. Update
 - `.context-usage-ring`, `.context-usage-track`, and
   `.context-usage-progress` for the 18px circular context indicator.
 - `.context-bar-mode` for the neutral icon-and-text mode control on the left.
+- `.context-usage-ring` immediately after `.context-bar-mode`.
 - `.context-bar-spacer` before `.composer-context-branch` to right-align the
   branch and existing worktree/context actions.
 - `.composer-turn-action-active::before` for the moving circular border around
@@ -46,7 +48,8 @@ Reuse the existing `.footer-btn`, `.send-btn`, `.stop-btn`, `.composer-footer`,
 `--bg-hover`, `--border-default`, `--text-tertiary`, and `--warning` tokens.
 The input reserves enough right padding for inline controls and the rendered
 Markdown mirror uses the same padding. Send and Stop are 28px circles with
-14px icons.
+14px icons. The composer footer uses `4px 14px 6px` padding so the box sits
+closer to the input text.
 
 ## Done criteria
 
@@ -54,8 +57,9 @@ Markdown mirror uses the same padding. Send and Stop are 28px circles with
   states place the action group correctly in a real Electron E2E.
 - Model picker selection, Send, Stop, and queue/send behavior remain wired to
   their existing actions in either placement.
-- The context indicator renders as a circular SVG ring with exact usage in its
-  title/accessible label.
+- The context indicator renders as a circular SVG ring immediately after the
+  mode control in `.context-bar`, with exact usage in its title/accessible
+  label, and is absent from `.composer-footer`.
 - The working path and `Path` label are absent from `.context-bar`.
 - Mode is inside `.context-bar`, absent from `.composer-footer`, and has no
   mode-specific foreground, background, or border color.
