@@ -2418,12 +2418,12 @@ input[type='range'] {
   border-top-right-radius: var(--r-xl);
   background: transparent;
   color: var(--text-primary);
-  padding: 14px 18px 8px;
+  padding: 14px 18px 4px;
   font-family: var(--font-ui);
   font-size: 1em;
   resize: none;
   outline: none;
-  min-height: 52px;
+  min-height: 44px;
   max-height: 160px;
   line-height: var(--composer-line-height);
   overflow-x: hidden;
@@ -2490,7 +2490,7 @@ input[type='range'] {
   box-sizing: border-box;
   max-width: none;
   margin: 0;
-  padding: 14px 18px 8px;
+  padding: 14px 18px 4px;
   caret-color: transparent;
 }
 .composer-markdown-input .cm-focused {
@@ -2543,7 +2543,7 @@ input[type='range'] {
 .composer-box textarea::-webkit-scrollbar-track { background: transparent; margin: 10px 0; }
 .composer-box textarea::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 4px; }
 .composer-box textarea::-webkit-scrollbar-corner { background: transparent; }
-.composer-footer { display: flex; align-items: center; gap: 8px; padding: 8px 14px 12px; flex-wrap: wrap; }
+.composer-footer { display: flex; align-items: center; gap: 8px; padding: 4px 14px 6px; flex-wrap: wrap; }
 .composer-footer .spacer { flex: 1; }
 .footer-btn { display: flex; align-items: center; gap: 6px; font-size: 14.5px; color: var(--text-tertiary); background: transparent; border: none; cursor: pointer; padding: 5px 8px; border-radius: 6px; }
 .footer-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }

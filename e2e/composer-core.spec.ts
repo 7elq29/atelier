@@ -124,6 +124,8 @@ test.describe('04-composer-core', () => {
 
     const footer = activeComposer(page).locator('.composer-footer')
     await expect(footer).toBeVisible()
+    await expect(footer).toHaveCSS('padding-bottom', '6px')
+    await expect(activeComposer(page).getByTestId('composer-input')).toHaveCSS('padding-bottom', '4px')
     const footerBox = await footer.boundingBox()
     const buttonBox = await sendButton.boundingBox()
     expect(footerBox).not.toBeNull()

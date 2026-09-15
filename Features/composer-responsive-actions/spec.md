@@ -46,7 +46,8 @@ Reuse the existing `.footer-btn`, `.send-btn`, `.stop-btn`, `.composer-footer`,
 `--bg-hover`, `--border-default`, `--text-tertiary`, and `--warning` tokens.
 The input reserves enough right padding for inline controls and the rendered
 Markdown mirror uses the same padding. Send and Stop are 28px circles with
-14px icons.
+14px icons. The composer footer uses `4px 14px 6px` padding so the box sits
+closer to the input text.
 
 ## Done criteria
 
