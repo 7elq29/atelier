@@ -15,6 +15,23 @@ export interface LogEntry {
 
 let stream: WriteStream | undefined
 let logFilePath: string | undefined
+let stdoutMirrorAvailable = true
+
+function isBrokenStdoutPipe(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === 'EPIPE'
+}
+
+// Playwright owns Electron's stdout pipe. During teardown its read end can
+// disappear before background main-process work has finished logging. A
+// broken stdout mirror must not become an uncaught Electron exception; the
+// durable file stream remains the source of truth.
+process.stdout.on('error', (error: NodeJS.ErrnoException) => {
+  if (isBrokenStdoutPipe(error)) {
+    stdoutMirrorAvailable = false
+    return
+  }
+  throw error
+})
 
 /**
  * Resolves the log file path under the app's user-data dir and lazily opens
@@ -57,8 +74,19 @@ function write(entry: LogEntry): void {
   const line = JSON.stringify(entry)
   getStream().write(line + '\n')
   // Mirror to stdout for `npm run dev` visibility.
-  // eslint-disable-next-line no-console
-  console.log(line)
+  if (!stdoutMirrorAvailable || process.stdout.destroyed) return
+  try {
+    // eslint-disable-next-line no-console
+    console.log(line)
+  } catch (error) {
+    // Some stream implementations throw synchronously instead of emitting
+    // the stdout `error` event handled above.
+    if (isBrokenStdoutPipe(error)) {
+      stdoutMirrorAvailable = false
+      return
+    }
+    throw error
+  }
 }
 
 function makeLogger(processName: 'main' | 'renderer') {

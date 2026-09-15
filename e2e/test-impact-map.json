@@ -691,6 +691,12 @@
       ]
     },
     {
+      "id": "logger-epipe",
+      "paths": ["src/main/logger.ts"],
+      "changedLines": "stdoutMirrorAvailable|isBrokenStdoutPipe|process\\.stdout",
+      "targets": [{ "file": "e2e/bug-logger-epipe.spec.ts" }]
+    },
+    {
       "id": "shell-boot",
       "paths": [
         "src/main/index.ts",
