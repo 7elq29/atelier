@@ -2498,13 +2498,25 @@ input[type='range'] {
 }
 .composer-suggestion-hint { font-size: 10px; color: var(--text-disabled); margin-left: auto; flex-shrink: 0; letter-spacing: 0.02em; }
 /* Context bar — fused inside the top of the composer box, variant C */
-.context-bar { display: flex; align-items: center; gap: 6px; padding: 7px 14px 4px; border-radius: var(--r-xl) var(--r-xl) 0 0; flex-wrap: wrap; row-gap: 2px; overflow-x: auto; scrollbar-width: thin; }
-.context-bar-item { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; flex-shrink: 0; max-width: min(100%, 280px); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.context-bar { display: flex; align-items: center; gap: 6px; padding: 7px 14px 4px; border-radius: var(--r-xl) var(--r-xl) 0 0; flex-wrap: nowrap; overflow: hidden; }
+.context-bar-item { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); white-space: nowrap; flex-shrink: 1; max-width: min(100%, 280px); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .context-bar-label { font-size: 10px; font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-quaternary, var(--text-tertiary)); opacity: 0.85; flex-shrink: 0; }
 .context-bar-value { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
 .context-bar-item--icon-only { flex-shrink: 0; min-width: auto; overflow: visible; padding: 2px 4px; border-radius: 4px; cursor: default; }
 .context-bar-item--icon-only:hover { background: var(--bg-hover); color: var(--text-secondary); }
 .context-bar-sep { color: var(--border-strong); font-size: 10px; flex-shrink: 0; }
+.context-bar-status {
+  min-width: 0;
+  max-width: 180px;
+  font-size: 11px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.context-bar-status [data-testid='composer-turn-status-text'] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .context-bar-spacer { flex: 1; min-width: 8px; }
 .context-bar-divider { height: 1px; background: var(--border-subtle); margin: 0 14px; }
 
@@ -2578,13 +2590,13 @@ input[type='range'] {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   background: var(--bg-hover);
   color: var(--text-secondary);
   border: 1px solid var(--border-default);
-  border-radius: 8px;
+  border-radius: 50%;
   cursor: pointer;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }

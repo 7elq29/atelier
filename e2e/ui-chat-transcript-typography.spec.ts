@@ -65,13 +65,70 @@ test('chat prose, user input, and margins use a calm responsive rhythm', async (
     await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 90_000 })
 
     const composerInput = page.getByTestId('composer-input')
+    const decoratedLinkInput = 'I opened https://example.com/docs and i'
+    await composerInput.fill(decoratedLinkInput)
+    await expect(composerInput).toHaveJSProperty('selectionStart', decoratedLinkInput.length)
+    const composerMarkdown = page.locator('.composer-markdown-input')
+    await expect(composerMarkdown.locator('.cm-line')).toContainText(decoratedLinkInput)
+    await expect(page.locator('.composer-cursor')).toBeVisible()
+    await page.screenshot({
+      path: join(artifactsDir, 'bug-composer-cursor-after-decorated-link.png')
+    })
+    await page.locator('.composer-box').screenshot({
+      path: join(artifactsDir, 'bug-composer-cursor-font-centered-closeup.png')
+    })
+    const logPath = await page.evaluate(() => window.atelier.getLogFilePath())
+    await expect.poll(() => readFileSync(logPath, 'utf-8'), { timeout: 15_000 }).toMatch(/"msg":"session:create invoked"/)
+    const sessionLog = readFileSync(logPath, 'utf-8')
+      .split('\n')
+      .filter((line) => line.includes('"msg":"session:create invoked"') || line.includes('"event":"session.created"'))
+      .join('\n')
+    writeFileSync(join(artifactsDir, 'bug-composer-cursor-after-decorated-link.log'), `${sessionLog}\n`)
+
+    const cursorAlignment = await page.evaluate(() => {
+      const cursor = document.querySelector<HTMLElement>('.composer-cursor')
+      const content = document.querySelector<HTMLElement>('.composer-markdown-input .cm-content')
+      if (!cursor || !content) return null
+      const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT)
+      let node = walker.nextNode()
+      while (node) {
+        const text = node.textContent ?? ''
+        const index = text.lastIndexOf('and i')
+        if (index >= 0) {
+          const range = document.createRange()
+          range.setStart(node, index + 'and i'.length - 1)
+          range.setEnd(node, index + 'and i'.length)
+          const character = range.getBoundingClientRect()
+          const block = cursor.getBoundingClientRect()
+          return {
+            cursorLeft: block.left,
+            cursorTop: block.top,
+            cursorHeight: block.height,
+            characterRight: character.right,
+            characterTop: character.top,
+            characterHeight: character.height,
+            fontSize: Number.parseFloat(getComputedStyle(content).fontSize)
+          }
+        }
+        node = walker.nextNode()
+      }
+      return null
+    })
+    expect(cursorAlignment).not.toBeNull()
+    expect(cursorAlignment!.cursorLeft).toBeGreaterThanOrEqual(cursorAlignment!.characterRight - 1)
+    expect(Math.abs(cursorAlignment!.cursorHeight - cursorAlignment!.fontSize)).toBeLessThanOrEqual(1)
+    const cursorCenter = cursorAlignment!.cursorTop + cursorAlignment!.cursorHeight / 2
+    const characterCenter = cursorAlignment!.characterTop + cursorAlignment!.characterHeight / 2
+    expect(Math.abs(cursorCenter - characterCenter)).toBeLessThanOrEqual(1)
+    await composerInput.type('!')
+    await expect(composerInput).toHaveValue(`${decoratedLinkInput}!`)
+
     await composerInput.fill(
       '**Update dashboard**\n\n' +
         '1. Match call and session conformity\n' +
         '2. Add pie chart\n' +
         '3. Add trend line'
     )
-    const composerMarkdown = page.locator('.composer-markdown-input')
     await expect(composerMarkdown.locator('.cm-atomic-strong')).toContainText('Update dashboard')
     await expect(composerMarkdown.locator('.cm-atomic-list-marker').first()).toBeVisible()
     await composerInput.press('Control+Home')
