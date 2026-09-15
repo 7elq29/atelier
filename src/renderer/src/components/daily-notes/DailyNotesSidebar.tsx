@@ -98,6 +98,8 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
   const { weights, startResize } = useSectionResize(sectionsRef)
   const [addingUnscheduled, setAddingUnscheduled] = useState(false)
   const [unscheduledDraft, setUnscheduledDraft] = useState('')
+  const [unscheduledExpanded, setUnscheduledExpanded] = useState(true)
+  const [trackersExpanded, setTrackersExpanded] = useState(true)
   const [carryMoveError, setCarryMoveError] = useState<string | null>(null)
   const [editingBigThree, setEditingBigThree] = useState(false)
   const [bigThreeDraft, setBigThreeDraft] = useState(['', '', ''])
@@ -308,28 +310,45 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
         />
       </div>
 
-      <div className="dn-resize-handle" onMouseDown={startResize('timeline', 'unscheduled')} />
+      {unscheduledExpanded && (
+        <div className="dn-resize-handle" onMouseDown={startResize('timeline', 'unscheduled')} />
+      )}
 
       <div
-        className="dn-section"
-        style={{ flex: `${weights.unscheduled} 1 0px` }}
+        className={`dn-section${unscheduledExpanded ? '' : ' dn-section-collapsed'}`}
+        style={unscheduledExpanded ? { flex: `${weights.unscheduled} 1 0px` } : { flex: '0 0 auto' }}
         data-testid="unscheduled-section"
       >
         <div className="dn-section-head dn-section-head-row">
-          <span>Unscheduled</span>
           <button
             type="button"
-            className="btn btn-icon btn-sm"
-            data-testid="add-unscheduled-task-btn"
+            className="dn-section-head-toggle"
+            data-testid="unscheduled-section-toggle"
+            aria-expanded={unscheduledExpanded}
             onClick={() => {
+              setUnscheduledExpanded((expanded) => !expanded)
+              setAddingUnscheduled(false)
               setUnscheduledDraft('')
-              setAddingUnscheduled(true)
             }}
           >
-            +
+            <span className={`dn-chevron${unscheduledExpanded ? ' expanded' : ''}`} aria-hidden="true">▶</span>
+            <span>Unscheduled</span>
           </button>
+          {unscheduledExpanded && (
+            <button
+              type="button"
+              className="btn btn-icon btn-sm"
+              data-testid="add-unscheduled-task-btn"
+              onClick={() => {
+                setUnscheduledDraft('')
+                setAddingUnscheduled(true)
+              }}
+            >
+              +
+            </button>
+          )}
         </div>
-        {addingUnscheduled && (
+        {unscheduledExpanded && addingUnscheduled && (
           <div className="dn-inline-add">
             <DailyNoteTaskInput
               autoFocus
@@ -355,40 +374,42 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
             />
           </div>
         )}
-        <div
-          className="dn-section-body scroll-y"
-          data-testid="unscheduled-body"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault()
-            const id = e.dataTransfer.getData('text/task-id')
-            if (id) moveTask(id, 'unscheduled', undefined)
-          }}
-        >
-          {unscheduledTasks.map((task) => (
-            <TaskItem
-              key={task.id}
-              task={task}
-              onToggle={toggleTask}
-              onDelete={deleteTask}
-              onUpdateText={updateTaskText}
-              onUpdateTask={updateTask}
-              onUpdateTags={(id, tags) =>
-                updateTask(id, { tags, isNote: isDailyNoteBulletFromTags(tags) })
-              }
-              moveDateOptions={moveDateOptions}
-              onMoveToDate={moveTaskToDate}
-              onCreateSessionFromTask={onCreateSessionFromTask}
-            />
-          ))}
-        </div>
+        {unscheduledExpanded && (
+          <div
+            className="dn-section-body scroll-y"
+            data-testid="unscheduled-body"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault()
+              const id = e.dataTransfer.getData('text/task-id')
+              if (id) moveTask(id, 'unscheduled', undefined)
+            }}
+          >
+            {unscheduledTasks.map((task) => (
+              <TaskItem
+                key={task.id}
+                task={task}
+                onToggle={toggleTask}
+                onDelete={deleteTask}
+                onUpdateText={updateTaskText}
+                onUpdateTask={updateTask}
+                onUpdateTags={(id, tags) =>
+                  updateTask(id, { tags, isNote: isDailyNoteBulletFromTags(tags) })
+                }
+                moveDateOptions={moveDateOptions}
+                onMoveToDate={moveTaskToDate}
+                onCreateSessionFromTask={onCreateSessionFromTask}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
-      {showCarrySection ? (
+      {unscheduledExpanded && showCarrySection ? (
         <div className="dn-resize-handle" onMouseDown={startResize('unscheduled', 'carry')} />
-      ) : (
+      ) : unscheduledExpanded && trackersExpanded ? (
         <div className="dn-resize-handle" onMouseDown={startResize('unscheduled', 'trackers')} />
-      )}
+      ) : null}
 
       {showCarrySection && carry.sourceDate && (
         <>
@@ -421,33 +442,48 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
               ))}
             </div>
           </div>
-          <div className="dn-resize-handle" onMouseDown={startResize('carry', 'trackers')} />
+          {trackersExpanded && (
+            <div className="dn-resize-handle" onMouseDown={startResize('carry', 'trackers')} />
+          )}
         </>
       )}
 
       <div
-        className="dn-section"
-        style={{ flex: `${weights.trackers} 1 0px` }}
+        className={`dn-section${trackersExpanded ? '' : ' dn-section-collapsed'}`}
+        style={trackersExpanded ? { flex: `${weights.trackers} 1 0px` } : { flex: '0 0 auto' }}
         data-testid="trackers-section"
       >
-        <div className="dn-section-head">Trackers</div>
-        <div className="dn-section-body scroll-y" data-testid="trackers-body">
-          {trackerTasks.map((task) => (
-            <TaskItem
-              key={task.id}
-              task={task}
-              testId="tracker-task"
-              draggable={false}
-              onToggle={toggleTask}
-              onDelete={deleteTask}
-              onUpdateText={updateTaskText}
-              onUpdateTask={updateTask}
-              onUpdateTags={(id, tags) =>
-                updateTask(id, { tags, isNote: isDailyNoteBulletFromTags(tags) })
-              }
-            />
-          ))}
+        <div className="dn-section-head">
+          <button
+            type="button"
+            className="dn-section-head-toggle"
+            data-testid="trackers-section-toggle"
+            aria-expanded={trackersExpanded}
+            onClick={() => setTrackersExpanded((expanded) => !expanded)}
+          >
+            <span className={`dn-chevron${trackersExpanded ? ' expanded' : ''}`} aria-hidden="true">▶</span>
+            <span>Trackers</span>
+          </button>
         </div>
+        {trackersExpanded && (
+          <div className="dn-section-body scroll-y" data-testid="trackers-body">
+            {trackerTasks.map((task) => (
+              <TaskItem
+                key={task.id}
+                task={task}
+                testId="tracker-task"
+                draggable={false}
+                onToggle={toggleTask}
+                onDelete={deleteTask}
+                onUpdateText={updateTaskText}
+                onUpdateTask={updateTask}
+                onUpdateTags={(id, tags) =>
+                  updateTask(id, { tags, isNote: isDailyNoteBulletFromTags(tags) })
+                }
+              />
+            ))}
+          </div>
+        )}
       </div>
       </div>
     </div>

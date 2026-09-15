@@ -198,17 +198,19 @@
 
 /* ---- Section collapse (UC-15) ---- */
 
+.dn-section.dn-section-collapsed {
+  min-height: 0;
+}
+
 .dn-section-head-toggle {
   width: 100%;
+  display: flex;
+  align-items: center;
   background: transparent;
   border: none;
   cursor: pointer;
   gap: 6px;
   text-align: left;
-}
-
-/* When the toggle is a child inside a row (Unscheduled), reset browser button defaults */
-.dn-section-head-row .dn-section-head-toggle {
   font-size: inherit;
   font-weight: inherit;
   letter-spacing: inherit;
@@ -760,16 +762,26 @@
   gap: 9px;
   font-size: 15px;
   padding: 7px 0;
+  position: relative;
 }
 .dn-task-chip.done .dn-task-text-clamp {
   text-decoration: line-through;
   color: var(--text-tertiary);
 }
+.dn-task-chip .dn-task-tag-add {
+  position: absolute;
+  top: 7px;
+  right: 32px;
+}
 .dn-task-chip-remove {
-  margin-left: auto;
+  position: absolute;
+  top: 7px;
+  right: 0;
   opacity: 0;
 }
-.dn-task-chip:hover .dn-task-chip-remove {
+.dn-task-chip:hover .dn-task-chip-remove,
+.dn-task-chip .dn-task-chip-remove:focus-visible,
+.dn-task-chip .dn-task-tag-add:focus-visible {
   opacity: 1;
 }
 
