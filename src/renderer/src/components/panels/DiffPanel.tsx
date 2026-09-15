@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ForwardedRef, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { CommitInfo, DiffFileChange, DiffSummary, WorktreeInfo } from '../../../../shared/panel-types'
 import Linkify, { openExternalLink } from './Linkify'
 import DiffFullFileEditor from './DiffFullFileEditor'
@@ -350,6 +350,7 @@ function DiffReviewBody({
       <div
         ref={diffAreaRef}
         className={`diff-area${viewMode === 'full' ? ' diff-area--full-file' : ''}`}
+        tabIndex={0}
       >
         {stacked && viewMode === 'hunks' ? (
           files.map((file) => (
@@ -419,63 +420,70 @@ function defaultCommitFilePath(files: DiffFileChange[]): string | null {
   return withStats?.path ?? files[0]?.path ?? null
 }
 
+export interface DiffPanelHandle {
+  focus(): void
+}
+
 /**
  * Diff/Review panel (07-secondary-panels §2): SCM-first changes list with
  * lazy per-file hunks, lazy commits/worktrees sub-tabs, and background refresh
  * while mounted (VS Code–style remote git economics via session-scoped cache in main).
  */
-export default function DiffPanel({
-  workspacePath,
-  repoRoot,
-  hostname,
-  onAddComment,
-  active = true,
-  effectiveTheme,
-  panelScopeKey,
-  revealChangePath,
-  revealChangeSeq = 0,
-  onRevealChangeHandled,
-  injectDiffFile,
-  injectDiffFileSeq = 0,
-  revealCommitHash,
-  revealCommitSeq = 0,
-  onRevealCommitHandled,
-  workspaceDiff,
-  workspaceRefreshing = false,
-  onRefreshWorkspace,
-  rightPanel = false
-}: {
-  /** Git cwd for changes, file diffs, and commits (session worktree when set). */
-  workspacePath: string
-  /** Main repo root for worktree list/add/merge/remove (`.atelier/worktrees`). */
-  repoRoot: string
-  hostname?: string | null
-  onAddComment: (note: string) => void
-  /** When false, panel stays mounted but skips lazy sub-tab loads tied to visibility. */
-  active?: boolean
-  effectiveTheme: 'light' | 'dark'
-  /** Stable id for Monaco model URIs (session id). */
-  panelScopeKey: string
-  /** Repo-relative path to select on Changes (from chat uncommitted-changes cap). */
-  revealChangePath?: string
-  revealChangeSeq?: number
-  onRevealChangeHandled?: () => void
-  /** Cap file preloaded from its own git repo (nested repo when session cwd is `~`). */
-  injectDiffFile?: DiffFileChange
-  injectDiffFileSeq?: number
-  /** Full commit hash to open on Commits (from chat changes cap). */
-  revealCommitHash?: string
-  revealCommitSeq?: number
-  onRevealCommitHandled?: () => void
-  /** Preloaded / pushed diff summary from main workspace service. */
-  workspaceDiff?: DiffSummary | null
-  /** Main-process workspace diff refresh in flight for this session. */
-  workspaceRefreshing?: boolean
-  /** Request immediate git refresh in main (Diff › Changes). */
-  onRefreshWorkspace?: () => void
-  /** Right-side tool panes hide the tree and stack all changed files. */
-  rightPanel?: boolean
-}): JSX.Element {
+const DiffPanel = forwardRef(function DiffPanel(
+  {
+    workspacePath,
+    repoRoot,
+    hostname,
+    onAddComment,
+    active = true,
+    effectiveTheme,
+    panelScopeKey,
+    revealChangePath,
+    revealChangeSeq = 0,
+    onRevealChangeHandled,
+    injectDiffFile,
+    injectDiffFileSeq = 0,
+    revealCommitHash,
+    revealCommitSeq = 0,
+    onRevealCommitHandled,
+    workspaceDiff,
+    workspaceRefreshing = false,
+    onRefreshWorkspace,
+    rightPanel = false
+  }: {
+    /** Git cwd for changes, file diffs, and commits (session worktree when set). */
+    workspacePath: string
+    /** Main repo root for worktree list/add/merge/remove (`.atelier/worktrees`). */
+    repoRoot: string
+    hostname?: string | null
+    onAddComment: (note: string) => void
+    /** When false, panel stays mounted but skips lazy sub-tab loads tied to visibility. */
+    active?: boolean
+    effectiveTheme: 'light' | 'dark'
+    /** Stable id for Monaco model URIs (session id). */
+    panelScopeKey: string
+    /** Repo-relative path to select on Changes (from chat uncommitted-changes cap). */
+    revealChangePath?: string
+    revealChangeSeq?: number
+    onRevealChangeHandled?: () => void
+    /** Cap file preloaded from its own git repo (nested repo when session cwd is `~`). */
+    injectDiffFile?: DiffFileChange
+    injectDiffFileSeq?: number
+    /** Full commit hash to open on Commits (from chat changes cap). */
+    revealCommitHash?: string
+    revealCommitSeq?: number
+    onRevealCommitHandled?: () => void
+    /** Preloaded / pushed diff summary from main workspace service. */
+    workspaceDiff?: DiffSummary | null
+    /** Main-process workspace diff refresh in flight for this session. */
+    workspaceRefreshing?: boolean
+    /** Request immediate git refresh in main (Diff › Changes). */
+    onRefreshWorkspace?: () => void
+    /** Right-side tool panes hide the tree and stack all changed files. */
+    rightPanel?: boolean
+  },
+  ref: ForwardedRef<DiffPanelHandle>
+): JSX.Element {
   const [sub, setSub] = useState<DiffSubTab>('changes')
   const [summary, setSummary] = useState<DiffSummary | null>(null)
   const [commits, setCommits] = useState<CommitInfo[] | null>(null)
@@ -496,6 +504,7 @@ export default function DiffPanel({
   const [changesViewMode, setChangesViewMode] = useState<DiffFileViewMode>('hunks')
   const [commitViewMode, setCommitViewMode] = useState<DiffFileViewMode>('hunks')
   const [changesTreeExpanded, setChangesTreeExpanded] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
   const loadedHunksRef = useRef<Set<string>>(new Set())
   const summaryRef = useRef<DiffSummary | null>(null)
   const commitLoadedHunksRef = useRef<Set<string>>(new Set())
@@ -927,6 +936,12 @@ export default function DiffPanel({
     setCommentingLine((prev) => (prev === lineKey ? null : lineKey))
   }
 
+  useImperativeHandle(ref, () => ({
+    focus() {
+      containerRef.current?.querySelector<HTMLElement>('.diff-area')?.focus()
+    }
+  }))
+
   if (!summary) {
     return (
       <div className="empty-main" style={{ height: '100%' }}>
@@ -946,7 +961,7 @@ export default function DiffPanel({
   }
 
   return (
-    <div data-testid={active ? 'diff-panel-active' : undefined} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div ref={containerRef} data-panel="diff" data-testid={active ? 'diff-panel-active' : undefined} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <div className="diff-sub-tabs">
         {sub === 'changes' && rightPanel ? (
           <button
@@ -1156,6 +1171,7 @@ export default function DiffPanel({
       )}
     </div>
   )
-}
+})
 
+export default DiffPanel
 export { openExternalLink }

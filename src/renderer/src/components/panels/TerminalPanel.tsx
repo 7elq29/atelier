@@ -43,6 +43,7 @@ function readTheme(): ITheme {
  */
 export interface TerminalPanelHandle {
   injectCommand: (command: string) => void
+  focus: () => void
 }
 
 const TerminalPanel = forwardRef(function TerminalPanel(
@@ -161,6 +162,9 @@ const TerminalPanel = forwardRef(function TerminalPanel(
       if (!term) return
       term.paste(command)
       term.focus()
+    },
+    focus() {
+      termRef.current?.focus()
     }
   }))
 
