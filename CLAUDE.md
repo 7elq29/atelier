@@ -105,9 +105,8 @@ the task's own isolated worktree:
   - If a failure looks unrelated to your change, confirm it's pre-existing
     flake by rerunning that single spec file in isolation 2+ times before
     dismissing it. Currently known-flaky (timing-dependent, not caused by
-    normal feature work): `chat-surface-core.spec.ts`'s "todo rail renders
-    and updates live from TodoWrite" and `session-organization.spec.ts`'s
-    "groups: create, drag two sessions...". Don't add to this list without
+    normal feature work): `session-organization.spec.ts`'s "groups: create,
+    drag two sessions...". Don't add to this list without
     the same isolated-rerun confirmation; don't use it as an excuse to skip
     investigating a new failure.
   - Separately, `audit-scroll-experience.spec.ts`'s daily-notes trackers

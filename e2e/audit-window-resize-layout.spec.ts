@@ -224,7 +224,7 @@ test.describe('audit: window-resize layout integrity across sizes and states', (
         await openNewSessionModal(page)
     await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
-    // Must actually populate the tracker rail (real TodoWrite call), not
+    // Must actually populate the tracker rail (real TaskCreate/TaskUpdate calls), not
     // just "Reply with exactly: READY." — TrackerRail.tsx now renders
     // nothing at all when there's nothing to track (see
     // fix-empty-tracker-rail-reserves-width), so a rail-less session would
@@ -232,8 +232,8 @@ test.describe('audit: window-resize layout integrity across sizes and states', (
     // exercising the "(b) active chat session with TrackerRail visible"
     // state this setup exists for.
     await page.getByTestId('initial-prompt').fill(
-      'Use the TodoWrite tool now to create a todo list with exactly two items: "Step one" (in_progress) and ' +
-        '"Step two" (pending). Do not do anything else. After calling TodoWrite once, reply with exactly: DONE.'
+      'Use TaskCreate to create exactly two tasks with subjects "Step one" and "Step two", then use TaskUpdate ' +
+        'with the returned task ID to mark "Step one" in_progress. Do not use any other tools. Then reply with exactly: DONE.'
     )
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -372,7 +372,7 @@ test.describe('audit: window-resize layout integrity across sizes and states', (
 /**
  * Pass-2 per-card assertions + the real-SDK AskUserQuestion check get their
  * OWN fresh electron app/describe block, using an isolated session with real
- * TodoWrite-populated todos (see beforeAll) so `.tracker-head`/`.tracker-body`
+ * TaskCreate/TaskUpdate-populated todos (see beforeAll) so `.tracker-head`/`.tracker-body`
  * /`.todo-item` actually render — the shared app above only ever creates a
  * "Reply with exactly: READY." session with zero todos, which is fine for
  * overlap/clipping checks but not for the todo-card padding/font-size
@@ -397,18 +397,18 @@ test.describe('audit: pass-2 per-card assertions (isolated app)', () => {
     await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
-      'Use the TodoWrite tool now to create a todo list with exactly two items: "Step one" (in_progress) and ' +
-        '"Step two" (pending). Do not do anything else. After calling TodoWrite once, reply with exactly: DONE.'
+      'Use TaskCreate to create exactly two tasks with subjects "Step one" and "Step two", then use TaskUpdate ' +
+        'with the returned task ID to mark "Step one" in_progress. Do not use any other tools. Then reply with exactly: DONE.'
     )
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
     const row = page.locator('[data-testid="session-row"]').first()
     await expect(row).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('tracker-rail')).toBeVisible({ timeout: 15_000 })
-    // Wait for the real TodoWrite-populated tracker card to actually render
+    // Wait for the real task-tool-populated tracker card to actually render
     // (not just for the row to appear) — the earlier version of this fixture
     // used a plain "Reply with exactly: READY." prompt, which never calls
-    // TodoWrite, so `.tracker-rail` rendered its EMPTY-state div (no
+    // task tools, so `.tracker-rail` rendered its EMPTY-state div (no
     // `.tracker-head`/`.tracker-body`/`.todo-item` children at all per
     // TrackerRail.tsx). That made a later locator.evaluate() on
     // `.tracker-rail .tracker-head` wait forever for an element that would
@@ -528,7 +528,7 @@ test.describe('audit: pass-2 per-card assertions (isolated app)', () => {
     await page.waitForTimeout(150)
 
     // (1) Rail-visible state: the beforeAll session already has 2 real
-    // TodoWrite-populated todos, so `.tracker-rail` renders non-empty.
+    // task-tool-populated todos, so `.tracker-rail` renders non-empty.
     const row = page.locator('[data-testid="session-row"]').first()
     await row.click()
     await expect(page.getByTestId('tracker-rail')).toBeVisible()
@@ -586,10 +586,10 @@ test.describe('audit: pass-2 per-card assertions (isolated app)', () => {
       `composer-wrap width must NOT change based on Tracker Rail presence: with-rail=${composerWidthWithRail}, without-rail=${composerWidthNoRail}`
     ).toBeCloseTo(composerWidthWithRail, 0)
 
-    // Switch back to the rail-visible (TodoWrite) session — it's the one
+    // Switch back to the rail-visible task-tracker session — it's the one
     // NOT currently active, since the just-created empty session auto-
     // activates on creation — so later tests in this file (which assume
-    // the first session row is the TodoWrite one) aren't affected by this
+    // the first session row is the task-tracker one) aren't affected by this
     // test having created a second session.
     await page.locator('[data-testid="session-row"]:not(.active)').first().click()
     await expect(page.getByTestId('tracker-rail')).toBeVisible()

@@ -270,7 +270,7 @@ test('chat prose, user input, and margins use a calm responsive rhythm', async (
     expect(mainLog).toContain('harness event: result (turn complete)')
     const layoutWidths = await page.evaluate(() => {
       const body = document.querySelector<HTMLElement>('.chat-body-row')
-      const composer = document.querySelector<HTMLElement>('.composer-cache')
+      const composer = document.querySelector<HTMLElement>('.composer-cache-entry.active')
       const transcript = document.querySelector<HTMLElement>('.transcript')
       const messages = document.querySelectorAll<HTMLElement>(
         '.msg-assistant[data-testid="transcript-message"]'
@@ -301,8 +301,13 @@ test('chat prose, user input, and margins use a calm responsive rhythm', async (
       }
     })
     expect(layoutWidths).not.toBeNull()
-    expect(layoutWidths!.body / layoutWidths!.bodyParent).toBeCloseTo(0.6, 2)
-    expect(layoutWidths!.composer / layoutWidths!.composerParent).toBeCloseTo(0.6, 2)
+    const responsiveColumnWidth = (parentWidth: number): number =>
+      Math.max(parentWidth * 0.6, Math.min(720, parentWidth))
+    expect(layoutWidths!.body).toBeCloseTo(responsiveColumnWidth(layoutWidths!.bodyParent), 0)
+    expect(layoutWidths!.composer).toBeCloseTo(
+      responsiveColumnWidth(layoutWidths!.composerParent),
+      0
+    )
     expect(Math.abs(layoutWidths!.bodyLeftGap - layoutWidths!.bodyRightGap)).toBeLessThanOrEqual(1)
     expect(
       Math.abs(layoutWidths!.composerLeftGap - layoutWidths!.composerRightGap)
@@ -318,6 +323,23 @@ test('chat prose, user input, and margins use a calm responsive rhythm', async (
     )
     await setWindowSize(app, 900, 700)
     await page.waitForTimeout(150)
+    const narrowWidths = await page.evaluate(() => {
+      const body = document.querySelector<HTMLElement>('.chat-body-row')
+      const composer = document.querySelector<HTMLElement>('.composer-cache-entry.active')
+      if (!body || !composer || !body.parentElement || !composer.parentElement) return null
+      return {
+        body: body.getBoundingClientRect().width,
+        bodyParent: body.parentElement.getBoundingClientRect().width,
+        composer: composer.getBoundingClientRect().width,
+        composerParent: composer.parentElement.getBoundingClientRect().width
+      }
+    })
+    expect(narrowWidths).not.toBeNull()
+    expect(narrowWidths!.body).toBeCloseTo(responsiveColumnWidth(narrowWidths!.bodyParent), 0)
+    expect(narrowWidths!.composer).toBeCloseTo(
+      responsiveColumnWidth(narrowWidths!.composerParent),
+      0
+    )
     const narrowPadding = await page.locator('.transcript').evaluate((el) =>
       Number.parseFloat(getComputedStyle(el).paddingLeft)
     )
