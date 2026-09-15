@@ -499,75 +499,92 @@ export default function App(): JSX.Element {
           }
           return
         }
-        if (e.code === 'KeyO') {
-          const session = activeSessionRef.current
-          if (session?.mode !== 'claude-code' || activeAppNoteIdRef.current || anyModalOpenRef.current) return
-          const split = activeWorkspaceSplitRef.current
-          const tab = activeTabRef.current
-          const ORDER: SessionTab[] = ['chat', 'diff', 'files', 'terminal', 'ports']
-          const visible = ORDER.filter((t) => resolveTabVisibility(t, tab, split) !== 'hidden')
-          if (visible.length <= 1) return
-          e.preventDefault()
-          const currentPanel = (document.activeElement as HTMLElement | null)
-            ?.closest<HTMLElement>('[data-panel]')
-            ?.dataset.panel as SessionTab | undefined
-          const currentIdx = currentPanel ? visible.indexOf(currentPanel) : -1
-          const nextPanel = visible[(currentIdx + 1) % visible.length]
-          switch (nextPanel) {
-            case 'chat':
-              composerRefs.current.get(session.id)?.focus()
-              break
-            case 'files':
-              filesPanelRefs.current.get(session.id)?.focus()
-              break
-            case 'diff':
-              diffPanelRefs.current.get(session.id)?.focus()
-              break
-            case 'terminal': {
-              const ptyId = `${session.id}:tab-terminal`
-              tabTerminalRefs.current.get(ptyId)?.focus()
-              break
+      }
+      // Ctrl+X chords: O / 1 / 0 / K (bare second key, Emacs style)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && fileQuickOpenChordAtRef.current != null) {
+        const elapsed = Date.now() - fileQuickOpenChordAtRef.current
+        if (elapsed <= 1500) {
+          if (e.code === 'KeyO') {
+            fileQuickOpenChordAtRef.current = null
+            const session = activeSessionRef.current
+            if (session?.mode === 'claude-code' && !activeAppNoteIdRef.current && !anyModalOpenRef.current) {
+              const split = activeWorkspaceSplitRef.current
+              const tab = activeTabRef.current
+              const ORDER: SessionTab[] = ['chat', 'diff', 'files', 'terminal', 'ports']
+              const visible = ORDER.filter((t) => resolveTabVisibility(t, tab, split) !== 'hidden')
+              if (visible.length > 1) {
+                e.preventDefault()
+                const currentPanel = (document.activeElement as HTMLElement | null)
+                  ?.closest<HTMLElement>('[data-panel]')
+                  ?.dataset.panel as SessionTab | undefined
+                const currentIdx = currentPanel ? visible.indexOf(currentPanel) : -1
+                const nextPanel = visible[(currentIdx + 1) % visible.length]
+                switch (nextPanel) {
+                  case 'chat':
+                    composerRefs.current.get(session.id)?.focus()
+                    break
+                  case 'files':
+                    filesPanelRefs.current.get(session.id)?.focus()
+                    break
+                  case 'diff':
+                    diffPanelRefs.current.get(session.id)?.focus()
+                    break
+                  case 'terminal': {
+                    const ptyId = `${session.id}:tab-terminal`
+                    tabTerminalRefs.current.get(ptyId)?.focus()
+                    break
+                  }
+                }
+              }
             }
+            return
           }
-          return
-        }
-        if (e.code === 'Digit1') {
-          // Maximize the secondary (right) panel when focused on it
-          const session = activeSessionRef.current
-          if (session?.mode !== 'claude-code' || anyModalOpenRef.current) return
-          const split = activeWorkspaceSplitRef.current
-          if (!split || split.fullscreenTab) return
-          const focusedPanel = (document.activeElement as HTMLElement | null)
-            ?.closest<HTMLElement>('[data-panel]')
-            ?.dataset.panel as SessionTab | undefined
-          if (focusedPanel !== split.secondaryTab) return
-          e.preventDefault()
-          handleWorkspaceToolToggleMaximizeRef.current(split.secondaryTab)
-          return
-        }
-        if (e.code === 'Digit0') {
-          // Restore split from maximized secondary panel
-          const session = activeSessionRef.current
-          if (session?.mode !== 'claude-code' || anyModalOpenRef.current) return
-          const split = activeWorkspaceSplitRef.current
-          if (!split || split.fullscreenTab !== split.secondaryTab) return
-          e.preventDefault()
-          handleWorkspaceToolToggleMaximizeRef.current(split.secondaryTab)
-          return
-        }
-        if (e.code === 'KeyK') {
-          // Exit split view when focused on secondary (right) panel
-          const session = activeSessionRef.current
-          if (session?.mode !== 'claude-code' || anyModalOpenRef.current) return
-          const split = activeWorkspaceSplitRef.current
-          if (!split || split.fullscreenTab) return
-          const focusedPanel = (document.activeElement as HTMLElement | null)
-            ?.closest<HTMLElement>('[data-panel]')
-            ?.dataset.panel as SessionTab | undefined
-          if (focusedPanel !== split.secondaryTab) return
-          e.preventDefault()
-          handleWorkspaceSplitPaneCloseRef.current(split.secondaryTab)
-          return
+          if (e.code === 'Digit1') {
+            fileQuickOpenChordAtRef.current = null
+            const session = activeSessionRef.current
+            if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
+              const split = activeWorkspaceSplitRef.current
+              if (split && !split.fullscreenTab) {
+                const focusedPanel = (document.activeElement as HTMLElement | null)
+                  ?.closest<HTMLElement>('[data-panel]')
+                  ?.dataset.panel as SessionTab | undefined
+                if (focusedPanel === split.secondaryTab) {
+                  e.preventDefault()
+                  handleWorkspaceToolToggleMaximizeRef.current(split.secondaryTab)
+                }
+              }
+            }
+            return
+          }
+          if (e.code === 'Digit0') {
+            fileQuickOpenChordAtRef.current = null
+            const session = activeSessionRef.current
+            if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
+              const split = activeWorkspaceSplitRef.current
+              if (split && split.fullscreenTab === split.secondaryTab) {
+                e.preventDefault()
+                handleWorkspaceToolToggleMaximizeRef.current(split.secondaryTab)
+              }
+            }
+            return
+          }
+          if (e.code === 'KeyK') {
+            fileQuickOpenChordAtRef.current = null
+            const session = activeSessionRef.current
+            if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
+              const split = activeWorkspaceSplitRef.current
+              if (split && !split.fullscreenTab) {
+                const focusedPanel = (document.activeElement as HTMLElement | null)
+                  ?.closest<HTMLElement>('[data-panel]')
+                  ?.dataset.panel as SessionTab | undefined
+                if (focusedPanel === split.secondaryTab) {
+                  e.preventDefault()
+                  handleWorkspaceSplitPaneCloseRef.current(split.secondaryTab)
+                }
+              }
+            }
+            return
+          }
         }
       }
       if (e.metaKey && !e.altKey && !e.ctrlKey && e.code === 'KeyK') {
