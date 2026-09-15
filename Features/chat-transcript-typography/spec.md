@@ -11,14 +11,14 @@ its child `.msg-assistant`.
 
 Expected: the complete chat body, including the transcript/tracker region and
 composer, occupies 60% of the available main surface and remains centered on
-wide panels, matching the supplied Cursor screenshot. It has a 720px
-preferred minimum: when 60% would be narrower than 720px, the equal outer
-margins shrink first; on panels below 720px, it uses all available width
+wide panels, matching the supplied Cursor screenshot. It has a 1080px
+preferred minimum: when 60% would be narrower than 1080px, the equal outer
+margins shrink first; on panels below 1080px, it uses all available width
 without overflowing. `.msg-wrap` uses the existing
 responsive 84% measure with no fixed pixel cap, and `.msg-assistant` fills that
 wrapper (`width: 100%; max-width: none`). Thus both the reading width and the
 composer grow and shrink with the containing panel rather than stopping at
-720px. The mock did not previously cover a shared transcript/composer width;
+1080px. The mock did not previously cover a shared transcript/composer width;
 add the 60% treatment to `.chat-body-row` and `.composer-wrap`.
 
 ## Regression: composer cursor offset
@@ -106,7 +106,7 @@ Reuse the existing `.msg-assistant` / `.md-body` selectors in
 
 | Surface | Treatment |
 | --- | --- |
-| Chat body and composer | centered, `width: max(60%, min(720px, 100%))`; margins shrink before content |
+| Chat body and composer | centered, `width: max(60%, min(1080px, 100%))`; margins shrink before content |
 | Assistant body | 15.5px, `line-height: 1.7`, responsive `84%` measure with no fixed pixel cap |
 | Paragraphs | `margin: 0 0 16px` |
 | Headings | weight 600, `margin: 24px 0 10px` |
@@ -132,8 +132,8 @@ or mode toggle. Tool cards and all non-input composer chrome are unchanged.
 - [x] On wide surfaces, `.chat-body-row` and
       `.composer-cache-entry.active` each occupy 60% of their containing
       surface and have equal left/right outer space.
-- [x] When 60% would be below 720px, both surfaces remain
-      `min(720px, 100%)` wide and reduce their equal outer margins instead.
+- [x] When 60% would be below 1080px, both surfaces remain
+      `min(1080px, 100%)` wide and reduce their equal outer margins instead.
 - [ ] The assistant wrapper computes to 84% of the transcript content width
       with no 720px ceiling, and `.msg-assistant` fills that wrapper instead
       of receiving a second width cap.

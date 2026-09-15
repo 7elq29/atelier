@@ -1311,7 +1311,7 @@ input[type='range'] {
    at the transcript/rail boundary. min-height:0 stays removed so the row
    can grow to its natural (overflowing) content height rather than being
    clipped by the flex parent. */
-.chat-body-row { flex: 1; display: flex; overflow-y: auto; width: max(60%, min(720px, 100%)); margin-inline: auto; }
+.chat-body-row { flex: 1; display: flex; overflow-y: auto; width: max(60%, min(1080px, 100%)); margin-inline: auto; }
 .chat-main-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
 .transcript {
@@ -3870,7 +3870,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 }
 .composer-cache-entry.active {
   display: block;
-  width: max(60%, min(720px, 100%));
+  width: max(60%, min(1080px, 100%));
   margin-inline: auto;
 }
 /* In a workspace split, the keep-alive composer visually belongs to Chat:
