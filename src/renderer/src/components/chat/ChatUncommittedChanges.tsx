@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SessionChangesCapItem } from '../../../../shared/session-changes-cap'
 import type { SessionBookmark } from '../../../../shared/session-bookmarks'
 import { isClaudePlanPath } from '../../../../shared/claude-plan-path'
@@ -6,14 +6,6 @@ import { isClaudePlanPath } from '../../../../shared/claude-plan-path'
 function basenamePath(p: string): string {
   const i = p.lastIndexOf('/')
   return i >= 0 ? p.slice(i + 1) : p
-}
-
-function ChevronDown(): JSX.Element {
-  return (
-    <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden>
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  )
 }
 
 function ChatChangesFileRow({
@@ -123,42 +115,6 @@ function BookmarkRow({
   )
 }
 
-function ChatChangesSection({
-  testId,
-  title,
-  collapsed,
-  onToggle,
-  children
-}: {
-  testId: string
-  title: string
-  collapsed: boolean
-  onToggle: () => void
-  children: ReactNode
-}): JSX.Element {
-  return (
-    <section
-      className={`chat-changes-section${collapsed ? ' collapsed' : ''}`}
-      data-testid={testId}
-    >
-      <div className="chat-changes-head">
-        <button
-          type="button"
-          className="chat-changes-toggle"
-          aria-expanded={!collapsed}
-          onClick={onToggle}
-        >
-          <span className="chat-changes-chev">
-            <ChevronDown />
-          </span>
-          <span className="chat-changes-title">{title}</span>
-        </button>
-      </div>
-      {!collapsed && <div className="chat-changes-body">{children}</div>}
-    </section>
-  )
-}
-
 export default function ChatUncommittedChanges({
   items,
   bookmarks,
@@ -172,13 +128,10 @@ export default function ChatUncommittedChanges({
   onOpenFile: (path: string, opensInFilesTab: boolean) => void
   onOpenBookmark: (bookmark: SessionBookmark) => void
 }): JSX.Element | null {
-  // Held here, not per section, so a list that empties and refills reopens as the user left it.
-  const [bookmarksCollapsed, setBookmarksCollapsed] = useState(true)
-  const [filesCollapsed, setFilesCollapsed] = useState(true)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [openList, setOpenList] = useState<'bookmarks' | 'changes' | null>(null)
 
   const rows = items ?? []
-  if (rows.length === 0 && bookmarks.length === 0) return null
-
   const changedBookmarks = new Set(
     bookmarks
       .filter((bookmark) => bookmark.kind === 'file')
@@ -194,45 +147,109 @@ export default function ChatUncommittedChanges({
       !rows.some((row) => bookmarkMatchesPath(bookmark.target, workspaceRoot, row.path))
   )
 
+  useEffect(() => {
+    if (!openList) return
+    const closeOnOutsideClick = (event: MouseEvent): void => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpenList(null)
+    }
+    const closeOnEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpenList(null)
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [openList])
+
+  useEffect(() => {
+    if (openList === 'bookmarks' && standaloneBookmarks.length === 0) setOpenList(null)
+    if (openList === 'changes' && rows.length === 0) setOpenList(null)
+  }, [openList, rows.length, standaloneBookmarks.length])
+
+  if (rows.length === 0 && standaloneBookmarks.length === 0) return null
+
+  const activeRows = openList === 'bookmarks' ? standaloneBookmarks.length : rows.length
+  const activeTitle =
+    openList === 'bookmarks'
+      ? `${activeRows} bookmark${activeRows === 1 ? '' : 's'}`
+      : `${activeRows} change${activeRows === 1 ? '' : 's'}`
+
   return (
-    <div className="chat-changes-card" data-testid="chat-uncommitted-changes">
+    <div className="composer-context-actions" data-testid="composer-context-actions" ref={rootRef}>
       {standaloneBookmarks.length > 0 && (
-        <ChatChangesSection
-          key="bookmarks"
-          testId="chat-changes-bookmarks"
+        <button
+          type="button"
+          className={`composer-context-action${openList === 'bookmarks' ? ' active' : ''}`}
+          data-testid="composer-bookmarks-button"
           title={`${standaloneBookmarks.length} bookmark${standaloneBookmarks.length === 1 ? '' : 's'}`}
-          collapsed={bookmarksCollapsed}
-          onToggle={() => setBookmarksCollapsed((c) => !c)}
+          aria-label={`${standaloneBookmarks.length} bookmark${standaloneBookmarks.length === 1 ? '' : 's'}`}
+          aria-expanded={openList === 'bookmarks'}
+          onClick={() => setOpenList((current) => (current === 'bookmarks' ? null : 'bookmarks'))}
         >
-          {standaloneBookmarks.map((bookmark) => (
-            <BookmarkRow
-              key={`bookmark:${bookmark.kind}:${bookmark.target}`}
-              bookmark={bookmark}
-              onOpen={onOpenBookmark}
-            />
-          ))}
-        </ChatChangesSection>
+          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden>
+            <path d="M6 3h12v18l-6-4-6 4V3z" />
+          </svg>
+          <span className="composer-context-count" data-testid="composer-context-count">
+            {standaloneBookmarks.length}
+          </span>
+        </button>
       )}
       {rows.length > 0 && (
-        <ChatChangesSection
-          key="files"
-          testId="chat-changes-files"
+        <button
+          type="button"
+          className={`composer-context-action${openList === 'changes' ? ' active' : ''}`}
+          data-testid="composer-changes-button"
           title={`${rows.length} change${rows.length === 1 ? '' : 's'}`}
-          collapsed={filesCollapsed}
-          onToggle={() => setFilesCollapsed((c) => !c)}
+          aria-label={`${rows.length} change${rows.length === 1 ? '' : 's'}`}
+          aria-expanded={openList === 'changes'}
+          onClick={() => setOpenList((current) => (current === 'changes' ? null : 'changes'))}
         >
-          {rows.map((row) => (
-            <ChatChangesFileRow
-              key={`file:${row.path}`}
-              path={row.path}
-              additions={row.additions}
-              deletions={row.deletions}
-              opensInFilesTab={row.opensInFilesTab}
-              bookmarked={changedBookmarks.has(row.path)}
-              onOpen={onOpenFile}
-            />
-          ))}
-        </ChatChangesSection>
+          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden>
+            <path d="M4 7h16M4 12h16M4 17h10" />
+            <circle cx="18" cy="17" r="2" />
+          </svg>
+          <span className="composer-context-count" data-testid="composer-context-count">
+            {rows.length}
+          </span>
+        </button>
+      )}
+      {openList && (
+        <div
+          className="chat-changes-popover"
+          data-testid="chat-uncommitted-changes"
+          data-list-kind={openList}
+        >
+          <div className="chat-changes-popover-title">{activeTitle}</div>
+          <div data-testid={openList === 'bookmarks' ? 'chat-changes-bookmarks' : 'chat-changes-files'}>
+            {openList === 'bookmarks'
+              ? standaloneBookmarks.map((bookmark) => (
+                  <BookmarkRow
+                    key={`bookmark:${bookmark.kind}:${bookmark.target}`}
+                    bookmark={bookmark}
+                    onOpen={(selected) => {
+                      setOpenList(null)
+                      onOpenBookmark(selected)
+                    }}
+                  />
+                ))
+              : rows.map((row) => (
+                  <ChatChangesFileRow
+                    key={`file:${row.path}`}
+                    path={row.path}
+                    additions={row.additions}
+                    deletions={row.deletions}
+                    opensInFilesTab={row.opensInFilesTab}
+                    bookmarked={changedBookmarks.has(row.path)}
+                    onOpen={(path, opensInFilesTab) => {
+                      setOpenList(null)
+                      onOpenFile(path, opensInFilesTab)
+                    }}
+                  />
+                ))}
+          </div>
+        </div>
       )}
     </div>
   )

@@ -1087,15 +1087,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   return (
     <div className="composer-wrap">
       <div className="composer-stack">
-        {gitWorkspacePath && onOpenChangedFile && onOpenBookmark && (
-          <ChatUncommittedChanges
-            items={sessionChangesCap?.items}
-            bookmarks={sessionBookmarks}
-            workspaceRoot={gitWorkspacePath}
-            onOpenFile={onOpenChangedFile}
-            onOpenBookmark={onOpenBookmark}
-          />
-        )}
       <div
         className={`composer-box${isDragOver ? ' drag-over' : ''}${harnessDisconnected ? ' harness-disconnected' : ''}`}
         data-testid={harnessDisconnected ? 'composer-harness-disconnected' : undefined}
@@ -1126,19 +1117,26 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
                   </span>
                 </>
               )}
+              <span className="context-bar-spacer" aria-hidden="true" />
               {worktreePath && (
-                <>
-                  <span className="context-bar-spacer" aria-hidden="true" />
-                  <span
-                    className="context-bar-item context-bar-item--icon-only"
-                    data-testid="composer-worktree-indicator"
-                    title={worktreeTitle}
-                    role="img"
-                    aria-label="Worktree"
-                  >
-                    {CONTEXT_WORKTREE_ICON}
-                  </span>
-                </>
+                <span
+                  className="context-bar-item context-bar-item--icon-only"
+                  data-testid="composer-worktree-indicator"
+                  title={worktreeTitle}
+                  role="img"
+                  aria-label="Worktree"
+                >
+                  {CONTEXT_WORKTREE_ICON}
+                </span>
+              )}
+              {gitWorkspacePath && onOpenChangedFile && onOpenBookmark && (
+                <ChatUncommittedChanges
+                  items={sessionChangesCap?.items}
+                  bookmarks={sessionBookmarks}
+                  workspaceRoot={gitWorkspacePath}
+                  onOpenFile={onOpenChangedFile}
+                  onOpenBookmark={onOpenBookmark}
+                />
               )}
             </div>
             <div className="context-bar-divider" />

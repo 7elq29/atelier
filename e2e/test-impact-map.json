@@ -425,6 +425,35 @@
       ]
     },
     {
+      "id": "composer-context-bookmarks-changes",
+      "paths": ["src/renderer/src/components/chat/ChatUncommittedChanges.tsx"],
+      "targets": [
+        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
+        { "file": "e2e/chat-surface-core.spec.ts", "grep": "assistant file paths open Files directly" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|chat:" }
+      ]
+    },
+    {
+      "id": "composer-context-bookmarks-changes-host",
+      "paths": ["src/renderer/src/components/chat/Composer.tsx"],
+      "changedLines": "ChatUncommittedChanges|composer-context|chat-changes|context-bar-spacer",
+      "targets": [
+        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
+        { "file": "e2e/chat-surface-core.spec.ts", "grep": "assistant file paths open Files directly" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|chat:" }
+      ]
+    },
+    {
+      "id": "composer-context-bookmarks-changes-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "composer-context|chat-changes",
+      "targets": [
+        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
+        { "file": "e2e/chat-surface-core.spec.ts", "grep": "assistant file paths open Files directly" },
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|chat:" }
+      ]
+    },
+    {
       "id": "transcript",
       "paths": ["src/renderer/src/components/chat/MarkdownMessage.tsx"],
       "targets": [

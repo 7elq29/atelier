@@ -695,55 +695,39 @@
   .context-bar-spacer { flex: 1; min-width: 8px; }
   .context-bar-divider { height: 1px; background: var(--border-subtle); margin: 0 14px; }
 
-  /* Composer stack — changes cap attached above composer (full-width input unchanged) */
+  /* Composer stack — context actions live inside the input instead of a cap. */
   .composer-wrap .composer-stack {
     display: flex;
     flex-direction: column;
     align-items: stretch;
     width: 100%;
   }
-  .composer-stack:has(.chat-changes-card:not(.hidden)) .composer-box {
-    border-top-left-radius: var(--r-xl);
-    border-top-right-radius: var(--r-xl);
+  .composer-context-actions { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+  .composer-context-action {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 22px; padding: 0; border: none; border-radius: 5px;
+    background: transparent; color: var(--text-tertiary); cursor: pointer;
   }
-
-  /* Chat — uncommitted changes (Cursor-style cap on composer).
-     Two independently expandable lists: Bookmarks above Changes. */
-  .chat-changes-card {
-    align-self: center;
-    width: 95%;
-    margin-bottom: 0;
+  .composer-context-action:hover,
+  .composer-context-action.active { background: var(--bg-hover); color: var(--text-secondary); }
+  .composer-context-count {
+    position: absolute; top: -3px; right: -3px; min-width: 13px; height: 13px;
+    padding: 0 3px; box-sizing: border-box; border-radius: 7px;
+    background: var(--bg-panel-raised); border: 1px solid var(--border-default);
+    color: var(--text-secondary); font-family: var(--font-mono); font-size: 8px;
+    line-height: 11px; text-align: center;
+  }
+  .chat-changes-popover {
+    position: absolute; right: 10px; bottom: 100%; margin-bottom: 6px; width: min(320px, calc(100% - 20px));
+    max-height: 240px; overflow-y: auto; z-index: 7; padding: 4px;
     background: var(--bg-panel-raised);
-    border: 1px solid var(--elevation-border);
-    border-bottom: none;
-    border-radius: var(--r-xl) var(--r-xl) 0 0;
-    overflow: hidden;
-    box-shadow: none;
+    border: 1px solid var(--border-default); border-radius: var(--r-md);
+    box-shadow: var(--shadow-popover);
   }
-  .chat-changes-section + .chat-changes-section {
-    border-top: 1px solid var(--border-subtle);
+  .chat-changes-popover-title {
+    padding: 5px 7px 6px; color: var(--text-tertiary);
+    font-size: 11px; font-weight: 600;
   }
-  .chat-changes-head {
-    display: flex; align-items: center; gap: 4px;
-    padding: 0 6px 0 2px; height: 26px; min-height: 26px;
-  }
-  .chat-changes-toggle {
-    display: inline-flex; align-items: center; gap: 4px;
-    border: none; background: transparent; color: var(--text-secondary);
-    font-size: 12px; font-weight: 500; cursor: pointer; padding: 2px 4px;
-    font-family: var(--font-ui); line-height: 1; width: 100%;
-  }
-  .chat-changes-toggle .chat-changes-chev {
-    display: inline-flex;
-    align-items: center;
-    color: var(--text-tertiary);
-    line-height: 0;
-    transition: transform .12s ease;
-    flex-shrink: 0;
-  }
-  .chat-changes-section.collapsed .chat-changes-toggle .chat-changes-chev { transform: rotate(-90deg); }
-  .chat-changes-body { padding: 2px 4px 4px; display: flex; flex-direction: column; }
-  .chat-changes-section.collapsed .chat-changes-body { display: none; }
   .chat-changes-file {
     display: flex; align-items: center; gap: 6px;
     padding: 4px 6px; border-radius: 4px;
@@ -1846,15 +1830,9 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
 
             <div class="composer-wrap" style="padding-top:0;">
               <div class="composer-stack">
-              <div class="chat-changes-card" id="chatChanges-s1" data-testid="chat-uncommitted-changes">
-                <section class="chat-changes-section" id="chatChangesBookmarks-s1" data-testid="chat-changes-bookmarks">
-                  <div class="chat-changes-head">
-                    <button type="button" class="chat-changes-toggle" onclick="toggleChatChangesSection('chatChangesBookmarks-s1')" aria-expanded="true">
-                      <span class="chat-changes-chev" aria-hidden="true"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></span>
-                      <span class="chat-changes-title">2 bookmarks</span>
-                    </button>
-                  </div>
-                  <div class="chat-changes-body">
+              <div class="composer-box" id="composer-s1">
+                <div class="chat-changes-popover hidden" id="chatChangesBookmarks-s1" data-testid="chat-uncommitted-changes">
+                  <div class="chat-changes-popover-title">2 bookmarks</div>
                     <div class="chat-changes-file chat-bookmark-row" data-testid="chat-bookmark-row" data-bookmark-kind="link" draggable="true" title="https://docs.claude.com/en/docs/auth" onclick="openChatBookmark('link','https://docs.claude.com/en/docs/auth')" ondragstart="onChatCapBookmarkDragStart(event)">
                       <span class="fname">Claude Auth docs</span>
                       <span class="chat-changes-bookmark-tag">Bookmark</span>
@@ -1863,16 +1841,9 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                       <span class="fname">api.md</span>
                       <span class="chat-changes-bookmark-tag">Bookmark</span>
                     </div>
-                  </div>
-                </section>
-                <section class="chat-changes-section" id="chatChangesFiles-s1" data-testid="chat-changes-files">
-                  <div class="chat-changes-head">
-                    <button type="button" class="chat-changes-toggle" onclick="toggleChatChangesSection('chatChangesFiles-s1')" aria-expanded="true">
-                      <span class="chat-changes-chev" aria-hidden="true"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></span>
-                      <span class="chat-changes-title">4 changes</span>
-                    </button>
-                  </div>
-                  <div class="chat-changes-body">
+                </div>
+                <div class="chat-changes-popover hidden" id="chatChangesFiles-s1" data-testid="chat-uncommitted-changes">
+                  <div class="chat-changes-popover-title">4 changes</div>
                     <div class="chat-changes-file" onclick="openChangedFileInDiff('s1','session-bootstrap.ts')">
                       <span class="fname">session-bootstrap.ts</span>
                       <span class="chat-changes-stats"><span class="chat-changes-add">+1</span><span class="chat-changes-del">−1</span></span>
@@ -1891,10 +1862,7 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                       <span class="chat-changes-plan-tag">Plan</span>
                       <span class="chat-changes-stats"><span class="chat-changes-add">+42</span></span>
                     </div>
-                  </div>
-                </section>
-              </div>
-              <div class="composer-box" id="composer-s1">
+                </div>
                 <div class="context-bar" data-testid="composer-context-bar">
                   <span class="context-bar-item">
                     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
@@ -1915,6 +1883,16 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                   >
                     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 4C10 4 4 10 4 18v2h2c8 0 14-6 14-16z"/><path d="M9 19c3-5 6-8 11-11"/></svg>
                   </span>
+                  <div class="composer-context-actions">
+                    <button class="composer-context-action" data-testid="composer-bookmarks-button" title="2 bookmarks" aria-expanded="false" onclick="toggleComposerContextPopover('s1','bookmarks',this)">
+                      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4V3z"/></svg>
+                      <span class="composer-context-count">2</span>
+                    </button>
+                    <button class="composer-context-action" data-testid="composer-changes-button" title="4 changes" aria-expanded="false" onclick="toggleComposerContextPopover('s1','files',this)">
+                      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="18" cy="17" r="2"/></svg>
+                      <span class="composer-context-count">4</span>
+                    </button>
+                  </div>
                 </div>
                 <div class="context-bar-divider"></div>
                 <div class="attach-row hidden" id="attachRow-s1"></div>
@@ -3262,6 +3240,26 @@ function toggleChatChangesSection(sectionId) {
   section.classList.toggle('collapsed');
   const btn = section.querySelector('.chat-changes-toggle');
   if (btn) btn.setAttribute('aria-expanded', section.classList.contains('collapsed') ? 'false' : 'true');
+}
+
+function toggleComposerContextPopover(sessionId, kind, button) {
+  const ids = {
+    bookmarks: `chatChangesBookmarks-${sessionId}`,
+    files: `chatChangesFiles-${sessionId}`,
+  };
+  const target = document.getElementById(ids[kind]);
+  if (!target) return;
+  const willOpen = target.classList.contains('hidden');
+  Object.values(ids).forEach(id => document.getElementById(id)?.classList.add('hidden'));
+  document.querySelectorAll(`#composer-${sessionId} .composer-context-action`).forEach(btn => {
+    btn.classList.remove('active');
+    btn.setAttribute('aria-expanded', 'false');
+  });
+  if (willOpen) {
+    target.classList.remove('hidden');
+    button.classList.add('active');
+    button.setAttribute('aria-expanded', 'true');
+  }
 }
 
 function openChatBookmark(kind, target) {
