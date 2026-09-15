@@ -17,25 +17,45 @@ const TAB_LABELS: Record<string, string> = {
 export function WorkspaceSplitPaneClose({
   tab,
   visibility,
-  onClose
+  onClose,
+  onToggleMaximize,
+  maximized = false
 }: {
   tab: SessionTab
   visibility: WorkspaceTabVisibility
   onClose: (tab: SessionTab) => void
+  onToggleMaximize?: (tab: SessionTab) => void
+  maximized?: boolean
 }): JSX.Element | null {
-  if (visibility !== 'split-primary' && visibility !== 'split-secondary') return null
+  const splitVisible = visibility === 'split-primary' || visibility === 'split-secondary'
+  if ((!splitVisible && !maximized) || tab === 'chat') return null
   const label = TAB_LABELS[tab] ?? tab
   return (
-    <button
-      type="button"
-      className="workspace-split-pane-close"
-      data-testid="workspace-split-pane-close"
-      data-tab={tab}
-      title={`Close ${label} pane`}
-      aria-label={`Close ${label} pane`}
-      onClick={() => onClose(tab)}
-    >
-      ✕
-    </button>
+    <div className="workspace-pane-head" data-testid="workspace-tool-pane-actions">
+      {onToggleMaximize ? (
+        <button
+          type="button"
+          className="workspace-pane-enlarge"
+          data-testid="workspace-split-pane-enlarge"
+          data-tab={tab}
+          title={maximized ? 'Restore split view' : `Enlarge ${label} pane`}
+          aria-label={maximized ? 'Restore split view' : `Enlarge ${label} pane`}
+          onClick={() => onToggleMaximize(tab)}
+        >
+          {maximized ? '◲' : '⛶'}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className="workspace-pane-close workspace-split-pane-close"
+        data-testid="workspace-split-pane-close"
+        data-tab={tab}
+        title={`Close ${label} pane`}
+        aria-label={`Close ${label} pane`}
+        onClick={() => onClose(tab)}
+      >
+        ✕
+      </button>
+    </div>
   )
 }

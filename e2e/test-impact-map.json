@@ -357,6 +357,44 @@
       ]
     },
     {
+      "id": "secondary-tool-rail",
+      "paths": [
+        "src/renderer/src/components/panels/WorkspaceToolRail.tsx",
+        "src/renderer/src/components/session/SessionWorkspacePanels.tsx",
+        "src/renderer/src/workspace-split/WorkspaceSplitPaneClose.tsx",
+        "src/renderer/src/workspace-split/workspace-split-types.ts"
+      ],
+      "targets": [
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|tool rail:|tool switch|workspace split:|diff panel:|files panel:"
+        }
+      ]
+    },
+    {
+      "id": "secondary-tool-rail-app",
+      "paths": ["src/renderer/src/App.tsx"],
+      "changedLines": "WorkspaceTool|workspaceTool|workspaceSplit|WorkspaceSplit|workspace-shell|activeWorkspaceTool|selectTab|restoredTab|TabBar",
+      "targets": [
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|tool rail:|tool switch|workspace split:|diff panel:|files panel:"
+        },
+        { "file": "e2e/session-tab-memory.spec.ts" }
+      ]
+    },
+    {
+      "id": "secondary-tool-rail-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "workspace-shell|workspace-tool|workspace-pane-head|workspace-split-pane-close|diff-files-toggle|diff-vertical-list|diff-stacked-file|files-path|files-directory|files-body-inner--directory",
+      "targets": [
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|tool rail:|tool switch|workspace split:|diff panel:|files panel:"
+        }
+      ]
+    },
+    {
       "id": "ports-panel",
       "paths": [
         "src/renderer/src/components/panels/PortsPanel.tsx",

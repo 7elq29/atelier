@@ -146,7 +146,7 @@ test.describe('bug: failed files walk must surface an error, not an empty tree',
 
     await page.getByTestId('tab-files').click()
     const files = page.getByTestId('files-panel-active')
-    await expect(files.getByTestId('files-tree')).toContainText('README.md', { timeout: 30_000 })
+    await expect(files.getByTestId('files-dir-listing')).toContainText('README.md', { timeout: 30_000 })
 
     // The workspace root disappears out from under the session (devpod asleep,
     // directory deleted) and the panel is asked to re-read it.
@@ -165,7 +165,7 @@ test.describe('bug: failed files walk must surface an error, not an empty tree',
     mkdirSync(repoDir, { recursive: true })
     writeFileSync(join(repoDir, 'RECOVERED.md'), '# back\n')
     await files.getByTestId('files-tree-retry').click()
-    await expect(files.getByTestId('files-tree')).toContainText('RECOVERED.md', { timeout: 30_000 })
+    await expect(files.getByTestId('files-dir-listing')).toContainText('RECOVERED.md', { timeout: 30_000 })
     await expect(files.getByTestId('files-tree-error')).toHaveCount(0)
     await expect(files.getByTestId('files-tree-refresh')).toBeVisible()
     await page.screenshot({ path: join(artifactsDir, '07-files-walk-recovered.png') })

@@ -741,7 +741,7 @@ test.describe('03-chat-surface-core', () => {
     await fileLink.click()
 
     await expect(page.getByTestId('files-panel-active')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('files-location-input')).toHaveValue(join(homedir(), '.mcp.json'))
+    await expect(page.getByTestId('files-path-bar')).toContainText('.mcp.json')
   })
 
   test('assistant file paths open Files directly, but bookmarked files open the review panel', async ({}, testInfo) => {
