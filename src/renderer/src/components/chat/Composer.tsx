@@ -5,7 +5,6 @@ import type { DiffSummary } from '../../../../shared/panel-types'
 import { buildComposerSendText, type ReviewComposerComment } from '../../../../shared/review-pane-types'
 import type { SessionChangesCap } from '../../../../shared/session-changes-cap'
 import type { SessionBookmark } from '../../../../shared/session-bookmarks'
-import { truncateContextPath } from '../../utils/truncateContextPath'
 import { sessionWorktreeBranch } from '../../../../shared/worktree-path'
 import type { ImageAttachment, ModelInfo, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 import { modelLabelForSelection, resolveModelPickerOptions } from './model-picker-options'
@@ -72,29 +71,8 @@ async function resolvePasteText(clipboardData: DataTransfer): Promise<string> {
   return sync
 }
 
-function formatThinkingTokens(n: number): string {
-  if (n >= 1000) return `~${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
-  return `~${n}`
-}
-
-function composerTurnStatusText(sdkChrome?: SessionSdkChromeEvent | null): string {
-  if (sdkChrome?.apiRetryText) return sdkChrome.apiRetryText
-  if (sdkChrome?.thinkingActive) {
-    const tokens = sdkChrome.thinkingEstimatedTokens
-    if (tokens != null && tokens > 0) {
-      return `Extended reasoning… · ${formatThinkingTokens(tokens)} tokens`
-    }
-    return 'Extended reasoning…'
-  }
-  return 'Waiting for model…'
-}
-
 /** Cap on how many `@file` matches are rendered at once — the underlying file walk is already capped (files.ts's MAX_ENTRIES), this just keeps the popover itself short and scannable. */
 const MAX_MENTION_MATCHES = 20
-
-const CONTEXT_FOLDER_ICON = (
-  <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
-)
 
 const CONTEXT_BRANCH_ICON = (
   <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 7.2V16.8M6 9.5a6 6 0 0 0 6 6h4"/></svg>
@@ -109,11 +87,28 @@ const CONTEXT_WORKTREE_ICON = (
  * verbatim from mocks/index.html's `composer-mode-row` markup — same glyphs,
  * same copy, same cycle order as `MODE_CYCLE` in `main/sessions/manager.ts`.
  */
-const MODE_ICON: Record<PermissionModeValue, string> = {
-  default: '●',
-  plan: '⏸',
-  acceptEdits: '⏵⏵',
-  auto: '⚡'
+const MODE_ICON: Record<PermissionModeValue, JSX.Element> = {
+  default: (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <circle cx="6" cy="6" r="3.5" fill="currentColor" />
+    </svg>
+  ),
+  plan: (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+      <rect x="2.5" y="2" width="2.25" height="8" rx="0.75" />
+      <rect x="7.25" y="2" width="2.25" height="8" rx="0.75" />
+    </svg>
+  ),
+  acceptEdits: (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m2 3 3 3-3 3M6 3l3 3-3 3" />
+    </svg>
+  ),
+  auto: (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7 1.5 2.75 6.25H6L5 10.5l4.25-5H6z" />
+    </svg>
+  )
 }
 const MODE_LABEL: Record<PermissionModeValue, string> = {
   default: 'Default',
@@ -537,7 +532,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   tokenUsage,
   promptSuggestion,
   rateLimit,
-  sdkChrome,
   onAddLocalMessage,
   onValidateModel,
   harnessDisconnected = false,
@@ -775,7 +769,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const nextMultiline = inlineScrollHeight > singleLineHeight + 1
 
     ta.style.paddingRight = nextMultiline ? '18px' : '226px'
-    ta.style.height = 'auto'
     const layoutScrollHeight = ta.scrollHeight
     const capped = layoutScrollHeight > MAX_TEXTAREA_HEIGHT
     const next = Math.min(Math.max(layoutScrollHeight, minContentHeight), MAX_TEXTAREA_HEIGHT)
@@ -1072,15 +1065,17 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     if (handleEmacsTextareaKeyDown(e, value, setValue)) return
   }
 
-  const workspacePath = worktreePath ?? projectPath ?? null
-  const claudePath = harnessCwd ?? workspacePath
-  const displayClaudePath = truncateContextPath(claudePath)
   const displayBranch =
     branch ?? (worktreePath && sessionId ? sessionWorktreeBranch(sessionId) : null)
   const worktreeTitle =
     worktreePath && displayBranch
       ? `Worktree: ${worktreePath}\nBranch: ${displayBranch}`
       : worktreePath ?? undefined
+  const hasSendableContent = Boolean(
+    buildComposerSendText(value, reviewComments).trim() ||
+    attachedImage ||
+    pendingAppNotes.length > 0
+  )
 
   const renderPrimaryActions = (placement: 'inline' | 'footer'): JSX.Element => (
     <div
@@ -1095,9 +1090,9 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         onOpenChange={setModelPickerOpen}
         liveModels={liveModels}
       />
-      {busy ? (
+      {busy && !hasSendableContent ? (
         <button
-          className="stop-btn"
+          className="stop-btn composer-turn-action-active"
           data-testid="stop-button"
           type="button"
           title="Stop"
@@ -1108,38 +1103,24 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" />
           </svg>
         </button>
-      ) : null}
-      <button
-        className="send-btn"
-        data-testid="send-button"
-        type="button"
-        disabled={
-          harnessDisconnected ||
-          rateLimit?.sendBlocked ||
-          (!buildComposerSendText(value, reviewComments).trim() && !attachedImage && pendingAppNotes.length === 0)
-        }
-        title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
-        aria-label={busy ? 'Queue' : 'Send'}
-        onClick={() => void handleSend()}
-      >
-        <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <line x1="12" y1="19" x2="12" y2="5" />
-          <polyline points="6 11 12 5 18 11" />
-        </svg>
-      </button>
+      ) : (
+        <button
+          className={`send-btn${busy ? ' composer-turn-action-active' : ''}`}
+          data-testid="send-button"
+          type="button"
+          disabled={harnessDisconnected || rateLimit?.sendBlocked || !hasSendableContent}
+          title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
+          aria-label={busy ? 'Queue' : 'Send'}
+          onClick={() => void handleSend()}
+        >
+          <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="12" y1="19" x2="12" y2="5" />
+            <polyline points="6 11 12 5 18 11" />
+          </svg>
+        </button>
+      )}
     </div>
   )
-
-  const renderTurnStatus = (inContextBar: boolean): JSX.Element | null =>
-    busy && !harnessDisconnected ? (
-      <span
-        className={`working-pill${inContextBar ? ' context-bar-status' : ''}`}
-        data-testid="composer-turn-status"
-      >
-        <span className="spinner" data-testid="composer-working-spinner" aria-hidden="true" />
-        <span data-testid="composer-turn-status-text">{composerTurnStatusText(sdkChrome)}</span>
-      </span>
-    ) : null
 
   return (
     <div className="composer-wrap">
@@ -1147,60 +1128,52 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       <div
         className={`composer-box${inputMultiline ? ' composer-box--multiline' : ''}${isDragOver ? ' drag-over' : ''}${harnessDisconnected ? ' harness-disconnected' : ''}`}
         data-testid={harnessDisconnected ? 'composer-harness-disconnected' : undefined}
+        data-working={busy && !harnessDisconnected ? 'true' : 'false'}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {workspacePath && (
-          <>
-            <div className="context-bar" data-testid="composer-context-bar">
-              {displayClaudePath && (
-                <span
-                  className="context-bar-item"
-                  data-testid="composer-context-claude-path"
-                  title={claudePath ?? undefined}
-                >
-                  {CONTEXT_FOLDER_ICON}
-                  <span className="context-bar-label">Path</span>
-                  <span className="context-bar-value">{displayClaudePath}</span>
-                </span>
-              )}
-              {displayBranch && (
-                <>
-                  {displayClaudePath && <span className="context-bar-sep">›</span>}
-                  <span className="context-bar-item" data-testid="composer-context-branch" title={displayBranch}>
-                    {CONTEXT_BRANCH_ICON}
-                    <span className="context-bar-value">{displayBranch}</span>
-                  </span>
-                </>
-              )}
-              {renderTurnStatus(true)}
-              <span className="context-bar-spacer" aria-hidden="true" />
-              {worktreePath && (
-                <span
-                  className="context-bar-item context-bar-item--icon-only"
-                  data-testid="composer-worktree-indicator"
-                  title={worktreeTitle}
-                  role="img"
-                  aria-label="Worktree"
-                >
-                  {CONTEXT_WORKTREE_ICON}
-                </span>
-              )}
-              {gitWorkspacePath && onOpenChangedFile && onOpenBookmark && onRemoveBookmark && (
-                <ChatUncommittedChanges
-                  items={sessionChangesCap?.items}
-                  bookmarks={sessionBookmarks}
-                  workspaceRoot={gitWorkspacePath}
-                  onOpenFile={onOpenChangedFile}
-                  onOpenBookmark={onOpenBookmark}
-                  onRemoveBookmark={onRemoveBookmark}
-                />
-              )}
-            </div>
-            <div className="context-bar-divider" />
-          </>
-        )}
+        <div className="context-bar" data-testid="composer-context-bar">
+          <span
+            className={`mode-pill mode-${mode} context-bar-mode`}
+            data-testid="composer-mode-pill"
+            data-mode={mode}
+            title="Click or press Shift+Tab to cycle mode"
+            onClick={onCycleMode}
+          >
+            <span className="mode-icon">{MODE_ICON[mode]}</span>
+            <span>{MODE_LABEL[mode]}</span>
+          </span>
+          <span className="context-bar-spacer" aria-hidden="true" />
+          {displayBranch && (
+            <span className="context-bar-item" data-testid="composer-context-branch" title={displayBranch}>
+              {CONTEXT_BRANCH_ICON}
+              <span className="context-bar-value">{displayBranch}</span>
+            </span>
+          )}
+          {worktreePath && (
+            <span
+              className="context-bar-item context-bar-item--icon-only"
+              data-testid="composer-worktree-indicator"
+              title={worktreeTitle}
+              role="img"
+              aria-label="Worktree"
+            >
+              {CONTEXT_WORKTREE_ICON}
+            </span>
+          )}
+          {gitWorkspacePath && onOpenChangedFile && onOpenBookmark && onRemoveBookmark && (
+            <ChatUncommittedChanges
+              items={sessionChangesCap?.items}
+              bookmarks={sessionBookmarks}
+              workspaceRoot={gitWorkspacePath}
+              onOpenFile={onOpenChangedFile}
+              onOpenBookmark={onOpenBookmark}
+              onRemoveBookmark={onRemoveBookmark}
+            />
+          )}
+        </div>
+        <div className="context-bar-divider" />
         {popover?.kind === 'mention' && mentionMatches.length > 0 && (
           <div className="mention-popup" data-testid="mention-popover">
             {mentionMatches.map((path, idx) => {
@@ -1358,16 +1331,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           </div>
         )}
         <div className="composer-footer">
-          <span
-            className={`mode-pill mode-${mode}`}
-            data-testid="composer-mode-pill"
-            data-mode={mode}
-            title="Click or press Shift+Tab to cycle mode"
-            onClick={onCycleMode}
-          >
-            <span className="mode-icon">{MODE_ICON[mode]}</span>
-            <span>{MODE_LABEL[mode]}</span>
-          </span>
           {value.trim() === '' && promptSuggestion && !harnessDisconnected && (
             <span className="composer-suggestion-hint" data-testid="composer-suggestion-hint">
               Tab to fill
@@ -1410,7 +1373,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             )
           })()}
           <div className="spacer" />
-          {!workspacePath && renderTurnStatus(false)}
           {inputMultiline && renderPrimaryActions('footer')}
         </div>
       </div>

@@ -64,8 +64,9 @@ async function createComposerSession(page: Page, projectDir: string): Promise<st
   const id = (await row.getAttribute('data-session-id')) as string
   expect(id).toBeTruthy()
 
-  await expect(activeComposer(page).getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 90_000 })
-  await expect(activeComposer(page).getByTestId('send-button')).toBeVisible()
+  const composer = activeComposer(page)
+  await expect(composer.locator('.composer-box')).toHaveAttribute('data-working', 'false', { timeout: 90_000 })
+  await expect(composer.getByTestId('send-button')).toBeVisible()
   return id
 }
 
@@ -95,11 +96,17 @@ test.describe('04-composer-core', () => {
     testInfo.setTimeout(90_000)
     sessionId = await createComposerSession(page, projectDir)
     await expect(page.getByTestId('topbar-workspace')).toBeVisible()
-    await expect(activeComposer(page).getByTestId('composer-context-claude-path')).toBeVisible()
-    await expect(activeComposer(page).getByTestId('composer-context-claude-path')).not.toContainText('/~/')
+    const composer = activeComposer(page)
+    const contextBar = composer.getByTestId('composer-context-bar')
+    await expect(composer.getByTestId('composer-context-claude-path')).toHaveCount(0)
+    await expect(contextBar.getByTestId('composer-mode-pill')).toBeVisible()
+    await expect(composer.locator('.composer-footer').getByTestId('composer-mode-pill')).toHaveCount(0)
     await expect
-      .poll(() => activeComposer(page).getByTestId('composer-context-branch').textContent(), { timeout: 30_000 })
+      .poll(() => composer.getByTestId('composer-context-branch').textContent(), { timeout: 30_000 })
       .toContain('composer-e2e-branch')
+    await expect(
+      contextBar.locator('.context-bar-spacer + [data-testid="composer-context-branch"]')
+    ).toBeVisible()
     await page.screenshot({ path: join(artifactsDir, '04-composer-idle.png') })
   })
 
@@ -113,7 +120,7 @@ test.describe('04-composer-core', () => {
     const sendBg = await sendButton.evaluate((el) => getComputedStyle(el).backgroundColor)
     expect(sendBg).not.toBe('rgba(0, 0, 0, 0)')
     const sendRadius = await sendButton.evaluate((el) => getComputedStyle(el).borderRadius)
-    expect(sendRadius).toBe('8px')
+    expect(sendRadius).toBe('50%')
 
     const footer = activeComposer(page).locator('.composer-footer')
     await expect(footer).toBeVisible()
@@ -144,7 +151,7 @@ test.describe('04-composer-core', () => {
     const textarea = composer.getByTestId('composer-input')
     const actions = composer.getByTestId('composer-primary-actions')
 
-    await textarea.fill('Short follow-up')
+    await textarea.fill('Short')
     await expect(actions).toHaveAttribute('data-placement', 'inline')
     await expect(actions.getByTestId('model-picker-button')).toBeVisible()
     const sendButton = actions.getByTestId('send-button')
@@ -178,27 +185,31 @@ test.describe('04-composer-core', () => {
 
     await textarea.fill('Reply with exactly: CONTEXT.')
     await textarea.press('Enter')
-    await expect(actions).toHaveAttribute('data-placement', 'inline')
     const stopButton = actions.getByTestId('stop-button')
     await expect(stopButton).toBeVisible({ timeout: 5_000 })
+    await expect(actions.getByTestId('send-button')).toHaveCount(0)
     await expect(stopButton).toHaveCSS('width', '28px')
     await expect(stopButton).toHaveCSS('height', '28px')
     await expect(stopButton).toHaveCSS('border-radius', '50%')
-    const contextBar = composer.getByTestId('composer-context-bar')
-    const statusAfterBranch = contextBar.locator(
-      '[data-testid="composer-context-branch"] + [data-testid="composer-turn-status"]'
+    await expect(stopButton).toHaveClass(/composer-turn-action-active/)
+    const workingBorderAnimation = await stopButton.evaluate(
+      (element) => getComputedStyle(element, '::before').animationName
     )
-    await expect(statusAfterBranch).toBeVisible()
-    await expect(statusAfterBranch).toContainText(/Waiting for model|Retrying API|Working|Extended reasoning/)
-    const branchBox = await contextBar.getByTestId('composer-context-branch').boundingBox()
-    const statusBox = await statusAfterBranch.boundingBox()
-    expect(branchBox).not.toBeNull()
-    expect(statusBox).not.toBeNull()
-    if (branchBox && statusBox) {
-      expect(Math.abs(statusBox.y - branchBox.y)).toBeLessThanOrEqual(1)
-    }
-    await expect(composer.locator('.composer-footer').getByTestId('composer-turn-status')).toHaveCount(0)
-    await expect(composer.getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 60_000 })
+    expect(workingBorderAnimation).toBe('composer-turn-action-spin')
+    await expect(composer.getByTestId('composer-turn-status')).toHaveCount(0)
+    await page.screenshot({ path: join(artifactsDir, '04-composer-unified-stop-working.png') })
+
+    await textarea.fill('Follow up')
+    const busySendButton = actions.getByTestId('send-button')
+    await expect(busySendButton).toBeVisible()
+    await expect(stopButton).toHaveCount(0)
+    await expect(busySendButton).toHaveClass(/composer-turn-action-active/)
+    await page.screenshot({ path: join(artifactsDir, '04-composer-unified-send-working.png') })
+
+    await textarea.fill('')
+    await expect(actions.getByTestId('stop-button')).toBeVisible()
+    await expect(actions.getByTestId('send-button')).toHaveCount(0)
+    await expect(composer.locator('.composer-box')).toHaveAttribute('data-working', 'false', { timeout: 60_000 })
 
     const contextRing = composer.getByTestId('token-usage')
     await expect(contextRing).toBeVisible({ timeout: 30_000 })
@@ -386,7 +397,7 @@ test.describe('04-composer-core', () => {
 
     const stopButton = page.locator('.composer-cache-entry.active').getByTestId('stop-button')
     await expect(stopButton).toBeVisible({ timeout: 15_000 })
-    await expect(page.locator('.composer-cache-entry.active').getByTestId('send-button')).toBeVisible()
+    await expect(page.locator('.composer-cache-entry.active').getByTestId('send-button')).toHaveCount(0)
     await page.screenshot({ path: join(artifactsDir, '04-composer-stop-visible.png') })
 
     // Let it finish naturally this time (separate test below covers a real click-to-interrupt).
@@ -407,10 +418,10 @@ test.describe('04-composer-core', () => {
     // Wait until we're genuinely mid-turn (Stop visible = busy).
     await expect(activeComposer(page).getByTestId('stop-button')).toBeVisible({ timeout: 15_000 })
 
-    // Send a second message WHILE busy — the Send button is hidden per the
-    // mock's own working-state toggle, so this goes through Enter, exactly
-    // like a real user typing a follow-up mid-stream.
+    // Typing while busy swaps the shared action slot from Stop to Send/Queue.
     await textarea.fill('While that command is still running, separately reply with exactly: SECONDDONE.')
+    await expect(activeComposer(page).getByTestId('send-button')).toBeVisible()
+    await expect(activeComposer(page).getByTestId('stop-button')).toHaveCount(0)
     await textarea.press('Enter')
 
     // It must render immediately (live, not held back as a "queued" card —
@@ -496,7 +507,7 @@ test.describe('04-composer-core', () => {
     // UI must flip back immediately — don't wait for harness teardown.
     await expect(activeComposer(page).getByTestId('send-button')).toBeVisible({ timeout: 2_000 })
     await expect(activeComposer(page).getByTestId('stop-button')).toHaveCount(0, { timeout: 2_000 })
-    await expect(activeComposer(page).getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 2_000 })
+    await expect(activeComposer(page).locator('.composer-box')).toHaveAttribute('data-working', 'false', { timeout: 2_000 })
     expect(Date.now() - stopClickedAt).toBeLessThan(2_500)
 
     const errorBanner = page.locator('.msg-system', { hasText: 'Error:' })
@@ -531,7 +542,7 @@ test.describe('04-composer-core', () => {
     await page.getByTestId('initial-prompt').fill('Reply with exactly: OTHER.')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
-    await expect(active.getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 90_000 })
+    await expect(active.locator('.composer-box')).toHaveAttribute('data-working', 'false', { timeout: 90_000 })
 
     await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
     await expect(page.locator('.composer-cache-entry.active').getByTestId('composer-input')).toHaveValue(draftA)
@@ -607,7 +618,7 @@ test.describe('04-composer-core', () => {
   test('submitted user message stays visible when composer grows', async ({}, testInfo) => {
     testInfo.setTimeout(90_000)
     if (!sessionId) sessionId = await createComposerSession(page, projectDir)
-    await expect(activeComposer(page).getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 90_000 })
+    await expect(activeComposer(page).locator('.composer-box')).toHaveAttribute('data-working', 'false', { timeout: 90_000 })
 
     const message =
       'Submitted message visibility check — this bubble must stay fully in view after the composer shows turn status.'
@@ -618,7 +629,7 @@ test.describe('04-composer-core', () => {
     await expect
       .poll(async () => userMsg.textContent(), { timeout: 15_000 })
       .toContain('Submitted message visibility check')
-    await expect(activeComposer(page).getByTestId('composer-turn-status')).toBeVisible({ timeout: 15_000 })
+    await expect(activeComposer(page).locator('.composer-box')).toHaveAttribute('data-working', 'true', { timeout: 15_000 })
 
     const visible = await userMsg.evaluate((el) => {
       const scroll = el.closest('.chat-body-row')

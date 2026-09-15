@@ -73,21 +73,36 @@ test.describe('11-composer-mode-indicator', () => {
   test('Shift+Tab (composer focused) cycles default -> plan -> acceptEdits -> auto -> default', async () => {
     const pill = page.getByTestId('composer-mode-pill')
     const input = page.getByTestId('composer-input')
+    const readModeStyle = (): Promise<{ color: string; background: string; borderWidth: string }> =>
+      pill.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return {
+          color: style.color,
+          background: style.backgroundColor,
+          borderWidth: style.borderWidth
+        }
+      })
+    const neutralStyle = await readModeStyle()
+    expect(neutralStyle.background).toBe('rgba(0, 0, 0, 0)')
+    expect(neutralStyle.borderWidth).toBe('0px')
     await input.click()
 
     await input.press('Shift+Tab')
     await expect(pill).toHaveAttribute('data-mode', 'plan')
     await expect(pill).toContainText('Plan mode')
+    expect(await readModeStyle()).toEqual(neutralStyle)
     await page.screenshot({ path: join(artifactsDir, '11-mode-plan.png') })
 
     await input.press('Shift+Tab')
     await expect(pill).toHaveAttribute('data-mode', 'acceptEdits')
     await expect(pill).toContainText('Accept edits')
+    expect(await readModeStyle()).toEqual(neutralStyle)
     await page.screenshot({ path: join(artifactsDir, '11-mode-acceptedits.png') })
 
     await input.press('Shift+Tab')
     await expect(pill).toHaveAttribute('data-mode', 'auto')
     await expect(pill).toContainText('Auto')
+    expect(await readModeStyle()).toEqual(neutralStyle)
     await page.screenshot({ path: join(artifactsDir, '11-mode-auto.png') })
 
     // Loops back to default after the 4th press.
