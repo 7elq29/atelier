@@ -1357,11 +1357,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           </div>
         )}
         <div className="composer-footer">
-          {value.trim() === '' && promptSuggestion && !harnessDisconnected && (
-            <span className="composer-suggestion-hint" data-testid="composer-suggestion-hint">
-              Tab to fill
-            </span>
-          )}
           {rateLimit?.warnLabel && (
             <span className="composer-status-chip warn" data-testid="composer-rate-limit-chip">
               {rateLimit.warnLabel}

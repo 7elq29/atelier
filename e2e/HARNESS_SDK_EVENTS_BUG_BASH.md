@@ -18,7 +18,7 @@ Also run category **Chat Transcript & Composer** when changing harness UI:
 | Partial stream | `partial stream: assistant reply grows` | Assistant text length non-decreasing mid-turn |
 | `tool_progress` | `tool_progress: tool-elapsed` | Optional `tool-elapsed` (annotated if skipped) |
 | `thinking_tokens` / thinking block | `thinking_tokens: optional thinking-block` | Optional `thinking-block-card` |
-| `prompt_suggestion` | `prompt_suggestion: Tab hint` | Optional `composer-suggestion-hint` |
+| `prompt_suggestion` | `prompt_suggestion: ghost placeholder only` | Suggestion placeholder; never a footer Tab hint |
 | `local_command_output` | `local_command_output: /cost` | `local-cmd-output` visible |
 | `permission_denied` / deny path | `permission_denied UI: deny Bash` | Tool `denied` or `error`; `.tool-denied` when denied |
 | `model_refusal_*` | `model_refusal: optional transcript-notice` | Optional `.transcript-notice`, no `.session-banner` |

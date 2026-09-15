@@ -808,11 +808,6 @@ textarea:focus {
   border: 1px solid var(--border-subtle); background: transparent;
   color: var(--text-tertiary); font-weight: 500;
 }
-.composer-suggestion-hint {
-  font-size: 10px; color: var(--text-disabled); margin-left: auto; flex-shrink: 0;
-  letter-spacing: 0.02em;
-}
-
 .sdk-debug-log {
   font-family: var(--font-mono); font-size: 12px; line-height: 1.5; color: var(--text-tertiary);
   background: var(--bg-code); border-radius: var(--r-md); padding: 12px; max-height: 120px; overflow: auto;

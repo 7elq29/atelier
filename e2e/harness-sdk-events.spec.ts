@@ -229,19 +229,20 @@ test.describe('08-harness-sdk-events', () => {
     await waitForTurnIdle(page, 120_000)
   })
 
-  test('prompt_suggestion: Tab hint only when SDK pushes a suggestion (optional)', async ({}, testInfo) => {
+  test('prompt_suggestion: ghost placeholder only, never a footer Tab hint', async ({}, testInfo) => {
     testInfo.setTimeout(60_000)
     await waitForTurnIdle(page, 30_000)
     const composer = activeComposer(page)
-    const hint = composer.getByTestId('composer-suggestion-hint')
-    const hasHint = await hint.isVisible().catch(() => false)
-    if (hasHint) {
-      await expect(hint).toContainText('Tab to fill')
+    await expect(composer.getByTestId('composer-suggestion-hint')).toHaveCount(0)
+    await expect(composer.locator('.composer-footer')).not.toContainText('Tab to fill')
+    const placeholder = await composer.getByTestId('composer-input').getAttribute('placeholder')
+    const hasSuggestion = placeholder !== null && placeholder !== 'Message Atelier…'
+    if (hasSuggestion) {
       await page.screenshot({ path: join(artifactsDir, '08-harness-sdk-prompt-suggestion.png') })
     }
     test.info().annotations.push({
       type: 'sdk-optional',
-      description: hasHint ? 'prompt_suggestion active' : 'no prompt_suggestion this run',
+      description: hasSuggestion ? 'prompt_suggestion active' : 'no prompt_suggestion this run',
     })
   })
 
