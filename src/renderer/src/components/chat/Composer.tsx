@@ -1144,6 +1144,32 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             <span className="mode-icon">{MODE_ICON[mode]}</span>
             <span>{MODE_LABEL[mode]}</span>
           </span>
+          {tokenUsage && tokenUsage.contextWindow > 0 && (() => {
+            const pct = Math.min(100, Math.round((tokenUsage.inputTokens / tokenUsage.contextWindow) * 100))
+            const usageTitle = `${tokenUsage.inputTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} context tokens (${pct}%)`
+            return (
+              <span
+                className={`context-usage-ring${pct >= 70 ? ' context-usage-high' : ''}`}
+                data-testid="token-usage"
+                data-context-percent={pct}
+                title={usageTitle}
+                role="img"
+                aria-label={usageTitle}
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <circle className="context-usage-track" cx="10" cy="10" r="7" />
+                  <circle
+                    className="context-usage-progress"
+                    cx="10"
+                    cy="10"
+                    r="7"
+                    pathLength="100"
+                    strokeDasharray={`${pct} 100`}
+                  />
+                </svg>
+              </span>
+            )
+          })()}
           <span className="context-bar-spacer" aria-hidden="true" />
           {displayBranch && (
             <span className="context-bar-item" data-testid="composer-context-branch" title={displayBranch}>
@@ -1346,32 +1372,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
               Send blocked
             </span>
           )}
-          {tokenUsage && tokenUsage.contextWindow > 0 && (() => {
-            const pct = Math.min(100, Math.round((tokenUsage.inputTokens / tokenUsage.contextWindow) * 100))
-            const usageTitle = `${tokenUsage.inputTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} context tokens (${pct}%)`
-            return (
-              <span
-                className={`context-usage-ring${pct >= 70 ? ' context-usage-high' : ''}`}
-                data-testid="token-usage"
-                data-context-percent={pct}
-                title={usageTitle}
-                role="img"
-                aria-label={usageTitle}
-              >
-                <svg viewBox="0 0 20 20" aria-hidden="true">
-                  <circle className="context-usage-track" cx="10" cy="10" r="7" />
-                  <circle
-                    className="context-usage-progress"
-                    cx="10"
-                    cy="10"
-                    r="7"
-                    pathLength="100"
-                    strokeDasharray={`${pct} 100`}
-                  />
-                </svg>
-              </span>
-            )
-          })()}
           <div className="spacer" />
           {inputMultiline && renderPrimaryActions('footer')}
         </div>

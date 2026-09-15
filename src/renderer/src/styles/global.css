@@ -2678,8 +2678,9 @@ input[type='range'] {
 .mode-pill .mode-icon svg { display: block; }
 .mode-pill:hover { color: var(--text-secondary); }
 
-/* Context-window usage stays compact in the footer. Exact values remain in
-   the title/accessible label; the ring turns amber at ≥70% usage. */
+/* Context-window usage sits next to the mode control in the status bar.
+   Exact values remain in the title/accessible label; the ring turns amber at
+   ≥70% usage. */
 .context-usage-ring {
   width: 18px;
   height: 18px;
