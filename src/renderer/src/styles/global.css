@@ -164,7 +164,7 @@
   flex-shrink: 0;
 }
 .sidebar-action-icon.primary {
-  color: var(--accent);
+  color: var(--text-tertiary);
 }
 .sidebar-action-icon:hover {
   color: var(--text-secondary);

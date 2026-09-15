@@ -54,7 +54,7 @@
     {
       "id": "sidebar-refinement-shared-css",
       "paths": ["src/renderer/src/styles/global.css"],
-      "changedLines": "sidebar-pane-label|session-name|terminal-session-icon|app-note-row--daily|font-smoothing|font-family",
+      "changedLines": "sidebar-pane-label|sidebar-action-icon|session-name|terminal-session-icon|app-note-row--daily|font-smoothing|font-family",
       "targets": [{ "file": "e2e/sidebar-refinement.spec.ts" }]
     },
     {

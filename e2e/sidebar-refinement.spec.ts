@@ -78,6 +78,41 @@ test.describe('sidebar refinement', () => {
     expect(sectionStyle.weight).toBe('600')
     expect(Number.parseFloat(sectionStyle.letterSpacing)).toBeGreaterThan(0)
 
+    const actionColors = await page
+      .locator(
+        [
+          '[data-testid="new-session-button"]',
+          '[data-testid="new-app-note-button"]',
+          '[data-testid="new-bookmark-button"]'
+        ].join(', ')
+      )
+      .evaluateAll((elements) => {
+        const rootStyle = getComputedStyle(document.documentElement)
+        return {
+          accent: rootStyle.getPropertyValue('--accent').trim(),
+          expected: rootStyle.getPropertyValue('--text-tertiary').trim(),
+          actual: elements.map((element) => getComputedStyle(element).color)
+        }
+      })
+    const expectedGrey = await page.evaluate((color) => {
+      const probe = document.createElement('span')
+      probe.style.color = color
+      document.body.appendChild(probe)
+      const resolved = getComputedStyle(probe).color
+      probe.remove()
+      return resolved
+    }, actionColors.expected)
+    const accent = await page.evaluate((color) => {
+      const probe = document.createElement('span')
+      probe.style.color = color
+      document.body.appendChild(probe)
+      const resolved = getComputedStyle(probe).color
+      probe.remove()
+      return resolved
+    }, actionColors.accent)
+    expect(actionColors.actual).toEqual([expectedGrey, expectedGrey, expectedGrey])
+    expect(actionColors.actual).not.toContain(accent)
+
     // Drive the real one-click local terminal flow. A terminal's glyph is its
     // stable identity; agent-only waiting/working status chrome must not leak in.
     await page.getByTestId('open-local-terminal-button').click()

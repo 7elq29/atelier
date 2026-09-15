@@ -10,6 +10,9 @@
    terminal identity icon.
 4. Sidebar labels remain legible at the configured interface scale while
    reading more like Cursor's compact repository/chat list.
+5. The user sees neutral grey `+` actions beside Sessions, Notes, and
+   Bookmarks, so those utility controls do not compete with selected or
+   working states that use the green accent.
 
 ## Expected UI
 
@@ -31,6 +34,9 @@ Terminals markup around `.sidebar-list-pane--terminals` and
   - section labels: `10.5px`, weight `600`, `0.08em` tracking;
   - note destination names do not add a heavier `600` override.
 - Do not change global interface, agent-message, or terminal font-size settings.
+- Render `.sidebar-action-icon.primary` with existing `--text-tertiary`
+  grey, matching the default sidebar action color. Preserve the existing
+  `--text-secondary` hover color and transparent background.
 
 The mock is updated to these exact treatments before production code.
 
@@ -55,6 +61,8 @@ The mock is updated to these exact treatments before production code.
   `.session-status`; agent rows retain `.session-status`.
 - Sidebar typography resolves to the sidebar-only sizes/weights above.
 - The Weekly plan create button still appears when the file is missing.
+- Sessions, Notes, and Bookmarks `+` icons resolve to `--text-tertiary`, not
+  `--accent`, and retain their existing hover behavior.
 - `npm run build` passes.
 - `npm run test:e2e:affected -- --base main` passes, subject only to documented
   pre-existing failures.
