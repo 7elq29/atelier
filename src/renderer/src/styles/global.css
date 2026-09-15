@@ -1960,24 +1960,23 @@ input[type='range'] {
 .aq-body { padding: 0 14px 13px; display: flex; flex-direction: column; gap: 8px; }
 .aq-question { font-size: 13.5px; line-height: 1.45; color: var(--text-primary); }
 .aq-options { display: flex; flex-direction: column; gap: 6px; }
-.aq-option { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border: none; border-radius: 10px; background: var(--bg-tint); cursor: pointer; font-size: 13.5px; line-height: 1.4; }
+.aq-option { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 12px; border: 1px solid transparent; border-radius: 10px; background: var(--bg-tint); color: var(--text-primary); cursor: pointer; font-family: var(--font-ui); font-size: 13.5px; line-height: 1.4; text-align: left; appearance: none; }
 .aq-option:hover { background: var(--bg-hover); }
 .aq-option .num { width: 15px; height: 15px; border-radius: 50%; background: transparent; border: 1.5px solid var(--text-tertiary); font-size: 0; flex-shrink: 0; margin-top: 2px; }
 .aq-option .desc { color: var(--text-tertiary); font-size: 12.5px; line-height: 1.4; margin-top: 2px; }
 .aq-card.answered .aq-option { pointer-events: none; opacity: .45; }
-.aq-card.answered .aq-option.selected { opacity: 1; background: var(--accent-dim); }
-.aq-card.answered .aq-option.selected .num { background: var(--accent); border-color: var(--accent); }
-/* Pending pick (not yet submitted) — same accent treatment as the answered
-   state so a click gives clear feedback before the explicit Submit. */
-.aq-card:not(.answered) .aq-option.selected { background: var(--accent-dim); }
-.aq-card:not(.answered) .aq-option.selected .num { background: var(--accent); border-color: var(--accent); }
-.aq-option.aq-other { border: 1.5px dashed var(--border-strong); background: transparent; color: var(--text-secondary); }
+.aq-card .aq-option.selected { opacity: 1; border-color: var(--border-strong); background: var(--bg-tint); }
+.aq-card .aq-option.aq-other.selected { border-style: solid; background: transparent; }
+.aq-option.aq-other { border: 1px dashed var(--border-strong); background: transparent; color: var(--text-secondary); }
 .aq-other-box { display: none; gap: 6px; }
-.aq-other-box.show { display: flex; }
-.aq-other-box textarea { flex: 1; background: var(--bg-input); border: 1px solid var(--accent); border-radius: var(--r-md); color: var(--text-primary); font-family: var(--font-ui); font-size: 13.5px; padding: 6px 8px; resize: none; outline: none; min-height: 32px; }
+.aq-other-box.show { display: flex; margin-top: 8px; }
+.aq-other-box textarea { flex: 1; background: var(--bg-input); border: 1px solid var(--border-default); border-radius: var(--r-md); color: var(--text-primary); font-family: var(--font-ui); font-size: 13.5px; padding: 6px 8px; resize: none; outline: none; min-height: 32px; }
+.aq-other-box textarea:focus { border-color: var(--border-strong); }
 .aq-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.aq-submit,
+.aq-submit:hover,
+.aq-submit:disabled:hover { background: var(--bg-active); border-color: var(--border-default); color: var(--text-primary); }
 .aq-submit:disabled { opacity: .45; cursor: not-allowed; }
-.aq-submit:disabled:hover { background: var(--accent); border-color: var(--accent); }
 .aq-cancel { color: var(--text-secondary); }
 .aq-cancel:hover { color: var(--text-primary); }
 .aq-footer-hint { font-size: 12px; color: var(--text-tertiary); padding-top: 0; line-height: 1.4; }
