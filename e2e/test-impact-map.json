@@ -652,6 +652,16 @@
       "targets": [{ "file": "e2e/chat-transcript-window.spec.ts" }]
     },
     {
+      "id": "chat-bookmark-remove",
+      "paths": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/components/chat/Composer.tsx",
+        "src/renderer/src/components/chat/ChatUncommittedChanges.tsx"
+      ],
+      "changedLines": "onRemoveBookmark|bookmarkMenu|Remove bookmark|ChatBookmarkContextMenu",
+      "targets": [{ "file": "e2e/bug-bookmark-file-right-panel.spec.ts" }]
+    },
+    {
       "id": "review-pane",
       "paths": [
         "src/renderer/src/components/chat/ResponseReviewPanel.tsx",

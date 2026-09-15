@@ -317,6 +317,8 @@ interface ComposerProps {
   onOpenChangedFile?: (path: string, opensInFilesTab: boolean) => void
   /** Opens a standalone bookmarked link externally or file in Files. */
   onOpenBookmark?: (bookmark: SessionBookmark) => void
+  /** Removes a standalone bookmark from the in-chat Bookmarks list. */
+  onRemoveBookmark?: (bookmark: SessionBookmark) => void
   /** `/fork` slash command's real action: forks the active session (same as the sidebar's fork action). */
   onFork: () => void
   /** `/clear` slash command: wipe transcript + start a fresh CLI conversation. */
@@ -542,6 +544,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   mentionFilePaths,
   onOpenChangedFile,
   onOpenBookmark,
+  onRemoveBookmark,
   onFork,
   onClearConversation,
   modelSelection,
@@ -1087,13 +1090,14 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   return (
     <div className="composer-wrap">
       <div className="composer-stack">
-        {gitWorkspacePath && onOpenChangedFile && onOpenBookmark && (
+        {gitWorkspacePath && onOpenChangedFile && onOpenBookmark && onRemoveBookmark && (
           <ChatUncommittedChanges
             items={sessionChangesCap?.items}
             bookmarks={sessionBookmarks}
             workspaceRoot={gitWorkspacePath}
             onOpenFile={onOpenChangedFile}
             onOpenBookmark={onOpenBookmark}
+            onRemoveBookmark={onRemoveBookmark}
           />
         )}
       <div

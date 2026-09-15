@@ -2135,6 +2135,9 @@ export default function App(): JSX.Element {
                       mentionFilePaths={mentionPaths}
                       onOpenChangedFile={openChangedFileFromCap}
                       onOpenBookmark={openSessionBookmark}
+                      onRemoveBookmark={(bookmark) =>
+                        void sessionBookmarks.remove(sessionId, bookmark.kind, bookmark.target)
+                      }
                       onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}
                       onClearConversation={() => {
                         setQueuedMessagesBySession((prev) => {

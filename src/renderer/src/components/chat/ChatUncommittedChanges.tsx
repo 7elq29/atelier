@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type MouseEvent, type ReactNode } from 'react'
 import type { SessionChangesCapItem } from '../../../../shared/session-changes-cap'
 import type { SessionBookmark } from '../../../../shared/session-bookmarks'
 import { isClaudePlanPath } from '../../../../shared/claude-plan-path'
+import ChatBookmarkContextMenu, { type ChatBookmarkMenuState } from './ChatBookmarkContextMenu'
 
 function basenamePath(p: string): string {
   const i = p.lastIndexOf('/')
@@ -85,10 +86,12 @@ function bookmarkMatchesPath(bookmarkTarget: string, workspaceRoot: string, path
 
 function BookmarkRow({
   bookmark,
-  onOpen
+  onOpen,
+  onContextMenu
 }: {
   bookmark: SessionBookmark
   onOpen: (bookmark: SessionBookmark) => void
+  onContextMenu: (event: MouseEvent, bookmark: SessionBookmark) => void
 }): JSX.Element {
   let label = bookmark.label
   if (!label && bookmark.kind === 'link') {
@@ -110,6 +113,7 @@ function BookmarkRow({
       data-target={bookmark.target}
       title={bookmark.target}
       onClick={() => onOpen(bookmark)}
+      onContextMenu={(event) => onContextMenu(event, bookmark)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
@@ -164,17 +168,20 @@ export default function ChatUncommittedChanges({
   bookmarks,
   workspaceRoot,
   onOpenFile,
-  onOpenBookmark
+  onOpenBookmark,
+  onRemoveBookmark
 }: {
   items: SessionChangesCapItem[] | null | undefined
   bookmarks: readonly SessionBookmark[]
   workspaceRoot: string
   onOpenFile: (path: string, opensInFilesTab: boolean) => void
   onOpenBookmark: (bookmark: SessionBookmark) => void
+  onRemoveBookmark: (bookmark: SessionBookmark) => void
 }): JSX.Element | null {
   // Held here, not per section, so a list that empties and refills reopens as the user left it.
   const [bookmarksCollapsed, setBookmarksCollapsed] = useState(true)
   const [filesCollapsed, setFilesCollapsed] = useState(true)
+  const [bookmarkMenu, setBookmarkMenu] = useState<ChatBookmarkMenuState | null>(null)
 
   const rows = items ?? []
   if (rows.length === 0 && bookmarks.length === 0) return null
@@ -209,6 +216,15 @@ export default function ChatUncommittedChanges({
               key={`bookmark:${bookmark.kind}:${bookmark.target}`}
               bookmark={bookmark}
               onOpen={onOpenBookmark}
+              onContextMenu={(event, selectedBookmark) => {
+                event.preventDefault()
+                event.stopPropagation()
+                setBookmarkMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  bookmark: selectedBookmark
+                })
+              }}
             />
           ))}
         </ChatChangesSection>
@@ -234,6 +250,19 @@ export default function ChatUncommittedChanges({
           ))}
         </ChatChangesSection>
       )}
+      {bookmarkMenu ? (
+        <ChatBookmarkContextMenu
+          state={bookmarkMenu}
+          bookmarked
+          onToggle={(bookmark) => {
+            const selected = bookmarks.find(
+              (item) => item.kind === bookmark.kind && item.target === bookmark.target
+            )
+            if (selected) onRemoveBookmark(selected)
+          }}
+          onClose={() => setBookmarkMenu(null)}
+        />
+      ) : null}
     </div>
   )
 }

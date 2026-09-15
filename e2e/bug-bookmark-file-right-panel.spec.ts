@@ -95,6 +95,19 @@ test('standalone file bookmark opens in the right review panel, not Files', asyn
     ).not.toHaveClass(/\bhidden\b/)
     await expect(page.getByTestId('files-panel-active')).toHaveCount(0)
 
+    await bookmark.click({ button: 'right' })
+    const bookmarkMenu = page.getByTestId('chat-bookmark-context-menu')
+    await expect(bookmarkMenu).toBeVisible()
+    await expect(bookmarkMenu.getByTestId('chat-bookmark-toggle')).toHaveText('Remove bookmark')
+    await page.screenshot({
+      path: join(artifactsDir, 'chat-bookmark-row-remove-menu.png')
+    })
+    await bookmarkMenu.getByTestId('chat-bookmark-toggle').click()
+    await expect(page.getByTestId('chat-bookmark-row')).toHaveCount(0)
+    await expect
+      .poll(() => page.evaluate((id) => window.atelier.listSessionBookmarks(id), session.id))
+      .toEqual([])
+
     const logPath = join(userDataDir, 'logs', 'main.log')
     await expect.poll(() => existsSync(logPath)).toBe(true)
     const log = readFileSync(logPath, 'utf8')
