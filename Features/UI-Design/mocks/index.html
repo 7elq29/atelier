@@ -551,7 +551,7 @@
   .composer-primary-actions--inline { position: absolute; top: 37px; right: 14px; z-index: 5; }
   .composer-box:not(.composer-box--multiline) textarea { padding-right: 226px; }
   .composer-model-label { display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .stop-btn, .send-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; background: var(--bg-hover); color: var(--text-secondary); border: 1px solid var(--border-default); border-radius: 8px; padding: 0; cursor: pointer; }
+  .stop-btn, .send-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0; background: var(--bg-hover); color: var(--text-secondary); border: 1px solid var(--border-default); border-radius: 50%; padding: 0; cursor: pointer; }
   .send-btn:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
   .send-btn:disabled { opacity: .4; cursor: not-allowed; }
   /* Mode indicator — lives inline in .composer-footer (left of the spacer, before
@@ -698,6 +698,7 @@
   }
   .context-bar-item--icon-only:hover { background: var(--bg-hover); color: var(--text-secondary); }
   .context-bar-sep { color: var(--border-strong); font-size: 10px; flex-shrink: 0; }
+  .context-bar-status { min-width: 0; max-width: 180px; font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .context-bar-spacer { flex: 1; min-width: 8px; }
   .context-bar-divider { height: 1px; background: var(--border-subtle); margin: 0 14px; }
 
@@ -1879,6 +1880,7 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 7.2V16.8M6 9.5a6 6 0 0 0 6 6h4"/></svg>
                     fix-token-refresh
                   </span>
+                  <span id="working-pill-s1" class="working-pill context-bar-status hidden"><span class="spinner"></span>Working…</span>
                   <span class="context-bar-spacer" aria-hidden="true"></span>
                   <span
                     class="context-bar-item context-bar-item--icon-only"
@@ -1905,7 +1907,7 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                 <textarea id="input-s1" placeholder="Message Gardenia… (@ file, / commands)" rows="1" oninput="onComposerInput('s1')" onkeydown="onComposerKeydown(event,'s1')"></textarea>
                 <div class="composer-primary-actions composer-primary-actions--inline" id="primary-actions-s1">
                   <button class="footer-btn" id="model-btn-s1" onclick="togglePicker('s1')"><svg class="icon" width="14" height="14"><use href="#icon-sparkle"/></svg><span class="composer-model-label">Opus 4.8 · High ▾</span></button>
-                  <button class="send-btn" id="send-btn-s1" onclick="sendMessage('s1')" title="Send (Enter)"><svg class="icon" width="16" height="16"><use href="#icon-send"/></svg></button>
+                  <button class="send-btn" id="send-btn-s1" onclick="sendMessage('s1')" title="Send (Enter)"><svg class="icon" width="14" height="14"><use href="#icon-send"/></svg></button>
                   <button class="stop-btn hidden" id="stop-btn-s1" onclick="stopWorking('s1')" title="Stop">■</button>
                 </div>
                 <div class="composer-footer" id="composer-footer-s1">
@@ -1917,7 +1919,6 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                     <svg viewBox="0 0 20 20" aria-hidden="true"><circle class="context-usage-track" cx="10" cy="10" r="7"/><circle class="context-usage-progress" cx="10" cy="10" r="7" pathLength="100" stroke-dasharray="9 100"/></svg>
                   </span>
                   <div class="spacer"></div>
-                  <span id="working-pill-s1" class="working-pill hidden"><span class="spinner"></span>Working…</span>
                 </div>
               </div>
               </div>

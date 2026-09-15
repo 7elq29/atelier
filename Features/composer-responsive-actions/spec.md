@@ -12,6 +12,9 @@
 4. Context-window usage is represented by a circular progress ring in the
    footer. Hover text and its accessible label retain exact used/maximum token
    counts and percentage; usage at or above 70% uses the warning color.
+5. While a turn is active, its status (for example, “Waiting for model…”) is
+   shown in the top context/status bar immediately after the branch, rather
+   than in the footer.
 
 ## UI
 
@@ -24,11 +27,14 @@ existing Atelier mock does not cover it. Update
 - `.composer-box--multiline` for the footer placement state.
 - `.context-usage-ring`, `.context-usage-track`, and
   `.context-usage-progress` for the 18px circular context indicator.
+- `.context-bar-status` for the compact spinner and turn-status text directly
+  after `.composer-context-branch`.
 
 Reuse the existing `.footer-btn`, `.send-btn`, `.stop-btn`, `.composer-footer`,
 `--bg-hover`, `--border-default`, `--text-tertiary`, and `--warning` tokens.
 The input reserves enough right padding for inline controls and the rendered
-Markdown mirror uses the same padding.
+Markdown mirror uses the same padding. Send and Stop are 28px circles with
+14px icons.
 
 ## Done criteria
 
@@ -38,6 +44,9 @@ Markdown mirror uses the same padding.
   their existing actions in either placement.
 - The context indicator renders as a circular SVG ring with exact usage in its
   title/accessible label.
+- Busy status is inside `.context-bar`, directly after the branch and before
+  `.context-bar-spacer`; it disappears when the turn becomes idle.
+- Send and Stop have 28px square bounds and a 50% border radius.
 - Screenshots cover one-line and multi-line states and are visually compared
   with the updated mock and supplied Cursor reference.
 - `npm run build` and `npm run test:e2e:affected -- --base main` pass, subject

@@ -11,7 +11,7 @@ import type { ImageAttachment, ModelInfo, ModelSelection, ModelValidationResult,
 import { modelLabelForSelection, resolveModelPickerOptions } from './model-picker-options'
 import type { SessionRateLimitEvent, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
-import ComposerMarkdownInput from './ComposerMarkdownInput'
+import ComposerMarkdownInput, { type ComposerMarkdownInputHandle } from './ComposerMarkdownInput'
 import {
   APP_NOTE_DRAG_MIME,
   appNoteAttachRelativePath,
@@ -545,6 +545,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   valueRef.current = value
   const largePastesRef = useRef<LargePasteEntry[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const markdownInputRef = useRef<ComposerMarkdownInputHandle>(null)
   const [popover, setPopover] = useState<PopoverState>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [branch, setBranch] = useState<string | null>(null)
@@ -559,7 +560,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
 
   const [cursorPhase, setCursorPhase] = useState<'typing' | 'idle' | 'unfocused'>('unfocused')
-  const [cursorPos, setCursorPos] = useState<{ top: number; left: number } | null>(null)
+  const [cursorPos, setCursorPos] = useState<{ top: number; left: number; height?: number } | null>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cursorRafRef = useRef<number | null>(null)
 
@@ -567,7 +568,21 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     if (!active) return
     const ta = textareaRef.current
     if (!ta) return
-    const coords = getCaretCoordinates(ta, ta.selectionStart ?? 0)
+    const position = ta.selectionStart ?? 0
+    const renderedCoords = markdownInputRef.current?.getCursorCoordinates(position)
+    if (renderedCoords) {
+      const composerBox = ta.closest<HTMLElement>('.composer-box')
+      if (composerBox) {
+        const composerRect = composerBox.getBoundingClientRect()
+        setCursorPos({
+          top: renderedCoords.top - composerRect.top,
+          left: renderedCoords.left - composerRect.left,
+          height: renderedCoords.height
+        })
+        return
+      }
+    }
+    const coords = getCaretCoordinates(ta, position)
     setCursorPos({ top: coords.top + ta.offsetTop, left: coords.left + ta.offsetLeft })
   }, [active])
 
@@ -1079,7 +1094,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           aria-label="Stop"
           onClick={onInterrupt}
         >
-          <svg className="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+          <svg className="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
             <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" />
           </svg>
         </button>
@@ -1097,13 +1112,24 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         aria-label={busy ? 'Queue' : 'Send'}
         onClick={() => void handleSend()}
       >
-        <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <line x1="12" y1="19" x2="12" y2="5" />
           <polyline points="6 11 12 5 18 11" />
         </svg>
       </button>
     </div>
   )
+
+  const renderTurnStatus = (inContextBar: boolean): JSX.Element | null =>
+    busy && !harnessDisconnected ? (
+      <span
+        className={`working-pill${inContextBar ? ' context-bar-status' : ''}`}
+        data-testid="composer-turn-status"
+      >
+        <span className="spinner" data-testid="composer-working-spinner" aria-hidden="true" />
+        <span data-testid="composer-turn-status-text">{composerTurnStatusText(sdkChrome)}</span>
+      </span>
+    ) : null
 
   return (
     <div className="composer-wrap">
@@ -1138,6 +1164,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
                   </span>
                 </>
               )}
+              {renderTurnStatus(true)}
               <span className="context-bar-spacer" aria-hidden="true" />
               {worktreePath && (
                 <span
@@ -1256,6 +1283,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         <div className="composer-input-stack">
           {value.length > 0 && (
             <ComposerMarkdownInput
+              ref={markdownInputRef}
               value={value}
               selectionStart={textareaRef.current?.selectionStart ?? value.length}
               selectionEnd={textareaRef.current?.selectionEnd ?? value.length}
@@ -1295,7 +1323,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           <span
             aria-hidden="true"
             className={`composer-cursor cursor-${cursorPhase}`}
-            style={{ top: cursorPos.top, left: cursorPos.left }}
+            style={{ top: cursorPos.top, left: cursorPos.left, height: cursorPos.height }}
           />
         )}
         {queuedMessages.length > 0 && (
@@ -1371,12 +1399,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             )
           })()}
           <div className="spacer" />
-          {busy && !harnessDisconnected && (
-            <span className="working-pill" data-testid="composer-turn-status">
-              <span className="spinner" data-testid="composer-working-spinner" aria-hidden="true" />
-              <span data-testid="composer-turn-status-text">{composerTurnStatusText(sdkChrome)}</span>
-            </span>
-          )}
+          {!workspacePath && renderTurnStatus(false)}
           {inputMultiline && renderPrimaryActions('footer')}
         </div>
       </div>

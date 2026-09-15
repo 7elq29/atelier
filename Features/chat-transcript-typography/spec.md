@@ -25,6 +25,25 @@ No tool-detail or composer chrome changes.
    behavior remain available, and sending transmits the unchanged source.
 8. The transcript has more side breathing room at normal widths, scaling
    down smoothly when a side panel narrows the chat.
+9. The block cursor remains aligned with the Atomic live-preview text after
+   decorated content such as a bare external URL. Typing inserts at the exact
+   position indicated by the cursor.
+
+## Composer cursor bug
+
+The textarea is still the input source, but Atomic CodeMirror is the visible
+text layer. The old block cursor is measured in a hidden plain-text mirror,
+which cannot account for Atomic decorations such as the external-link icon.
+After a decorated URL, the visible text moves right while the cursor stays at
+the undecorated source coordinate.
+
+The mock does not cover this caret/decorations case. Keep the existing block
+cursor treatment, but source its coordinates from CodeMirror's
+`EditorView.coordsAtPos()` whenever the Atomic layer is mounted. Use the
+textarea mirror only for empty input before Atomic mounts. Use CodeMirror's
+complete caret rectangle (`left`, `top`, and `bottom`) to find the rendered
+line center, then center a block whose height is the Atomic content's actual
+font size inside that rectangle.
 
 ## UI
 
@@ -63,3 +82,11 @@ or mode toggle. Tool cards and all non-input composer chrome are unchanged.
 - [ ] Screenshot `e2e-artifacts/ui-composer-inline-markdown.png` personally
       viewed: the textarea remains editable while inactive Markdown lines
       render with the same Notes-style inline treatment.
+- [ ] A real Electron regression types a bare URL followed by `and i`, proves
+      the textarea source caret and Atomic document selection agree, and
+      asserts the visible block cursor is at CodeMirror's rendered coordinate,
+      matches Atomic's rendered font size, and is centered in its line box.
+- [ ] Screenshot
+      `e2e-artifacts/bug-composer-cursor-after-decorated-link.png` shows the
+      cursor immediately after `i`, and the app log proves the real session
+      used for the reproduction initialized successfully.
