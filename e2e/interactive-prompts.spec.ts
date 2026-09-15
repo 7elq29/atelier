@@ -1,4 +1,4 @@
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { test, expect, _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { commentOnReviewSelection, commentOnTranscriptSelection, e2eConfigPath as configPath, openReviewCommentPopover, seedE2eConfig, seedSkipOnboarding, selectReviewPaneText, selectTranscriptCommentText } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -57,6 +57,20 @@ async function fillProjectPath(page: Page, path: string): Promise<void> {
 
 async function selectClaudeCodeMode(page: Page): Promise<void> {
   await page.getByTestId('mode-claude-code').click()
+}
+
+async function activateViaKeyboardHint(page: Page, target: Locator): Promise<void> {
+  await target.scrollIntoViewIfNeeded()
+  await page.keyboard.down('Meta')
+  try {
+    await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 5_000 })
+    await expect(target).toHaveAttribute('data-keyboard-hint-label', /^[a-z]+$/)
+    const label = await target.getAttribute('data-keyboard-hint-label')
+    expect(label).toBeTruthy()
+    for (const key of label!) await page.keyboard.press(key)
+  } finally {
+    await page.keyboard.up('Meta')
+  }
 }
 
 /** Appends every message row for `sessionId` to the proof-artifact log, tagged with `label` — same pattern as chat-surface-core.spec.ts's logTranscriptState. */
@@ -141,18 +155,41 @@ test.describe('05-interactive-prompts', () => {
     await expect(card.getByTestId('aq-submit')).toBeDisabled()
     await otherBox.getByTestId('aq-other-input').fill('Cherry')
     await expect(card.getByTestId('aq-submit')).toBeEnabled()
+    await expect(otherBox).toHaveCSS('margin-top', '8px')
+    const focusedInputBorder = await otherBox
+      .getByTestId('aq-other-input')
+      .evaluate((el) => getComputedStyle(el).borderColor)
+    const selectedOtherBorder = await card
+      .getByTestId('aq-option-other')
+      .evaluate((el) => getComputedStyle(el).borderColor)
+    expect(focusedInputBorder).toBe(selectedOtherBorder)
     await page.screenshot({ path: join(artifactsDir, '05-askuserquestion-other-freetext.png') })
 
-    // Switching back to a listed option closes the box again.
-    await appleOption.click()
+    // The existing hold-⌘ hint overlay invokes the option with the same
+    // select-only semantics as a click; explicit Submit remains required.
+    await activateViaKeyboardHint(page, appleOption)
     await expect(otherBox).not.toHaveClass(/show/)
 
     // bug #52: a single click only selects — the card stays pending until an
     // explicit Submit click.
     await expect(card).toHaveAttribute('data-status', 'pending')
     await expect(appleOption).toHaveClass(/selected/)
+    const appleBackground = await appleOption.evaluate((el) => getComputedStyle(el).backgroundColor)
+    const bananaBackground = await options.filter({ hasText: 'Banana' }).evaluate((el) => getComputedStyle(el).backgroundColor)
+    expect(appleBackground).toBe(bananaBackground)
+    await expect(appleOption.locator('.num')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     const submitButton = card.getByTestId('aq-submit')
     await expect(submitButton).toBeEnabled()
+    const accentColor = await page.evaluate(() => {
+      const probe = document.createElement('div')
+      probe.style.color = 'var(--accent)'
+      document.body.appendChild(probe)
+      const color = getComputedStyle(probe).color
+      probe.remove()
+      return color
+    })
+    await expect(card.locator('.aq-head')).toHaveCSS('color', accentColor)
+    await expect(submitButton).not.toHaveCSS('background-color', accentColor)
     await submitButton.click()
 
     // Card flips to resolved; summary merges into the tool-activity row (AskUserQuestion tool + card).
@@ -270,7 +307,7 @@ test.describe('05-interactive-prompts', () => {
     await expect(permCard1.getByTestId('perm-cmd')).toContainText('npm test')
     await page.screenshot({ path: join(artifactsDir, '05-permission.png') })
 
-    await permCard1.getByTestId('perm-deny').click()
+    await activateViaKeyboardHint(page, permCard1.getByTestId('perm-deny'))
     const denySummary = page.locator('[data-testid="tool-sequence-summary"]').filter({ hasText: /permission denied/i }).last()
     await expect(denySummary).toBeVisible({ timeout: 10_000 })
     await expect(denySummary.locator('.tool-sequence-summary-text')).toContainText('npm test')
@@ -307,7 +344,7 @@ test.describe('05-interactive-prompts', () => {
     await expect(permCard2).toBeVisible({ timeout: 30_000 })
     await expect(permCard2.getByTestId('perm-always-allow')).toBeVisible()
     await permCard2.getByTestId('perm-always-allow').check()
-    await permCard2.getByTestId('perm-allow').click()
+    await activateViaKeyboardHint(page, permCard2.getByTestId('perm-allow'))
     const allowSummary = page.locator('[data-testid="tool-sequence-summary"]').filter({ hasText: /permission allowed/i }).last()
     await expect(allowSummary).toBeVisible({ timeout: 10_000 })
     await expect(allowSummary.locator('.tool-sequence-summary-text')).toContainText('npm test')
@@ -400,7 +437,7 @@ test.describe('05-interactive-prompts', () => {
     await expect(reviewPane).toHaveCount(0)
 
     // Reject: summary merges into the tool-activity row; expand to read the note.
-    await planCard1.getByTestId('plan-reject').click()
+    await activateViaKeyboardHint(page, planCard1.getByTestId('plan-reject'))
     const rejectSummary = page.locator('[data-testid="tool-sequence-summary"]').filter({ hasText: /proposed plan — rejected/i }).last()
     await expect(rejectSummary).toBeVisible({ timeout: 10_000 })
     await expect(planCard1.getByTestId('plan-card-fold')).toHaveCount(0)
@@ -437,7 +474,7 @@ test.describe('05-interactive-prompts', () => {
     await expect(reviewPane2).toHaveAttribute('data-has-plan-diff', 'true')
     await expect(reviewPane2.getByTestId('response-review-content')).toBeVisible()
     await page.getByTestId('response-review-close').click()
-    await planCard2.getByTestId('plan-accept').click()
+    await activateViaKeyboardHint(page, planCard2.getByTestId('plan-accept'))
     const acceptSummary = page.locator('[data-testid="tool-sequence-summary"]').filter({ hasText: /proposed plan — accepted/i }).last()
     await expect(acceptSummary).toBeVisible({ timeout: 10_000 })
     await expect(planCard2.getByTestId('plan-card-fold')).toHaveCount(0)

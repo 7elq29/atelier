@@ -417,21 +417,23 @@
   .aq-body { padding: 0 14px 13px; display: flex; flex-direction: column; gap: 8px; }
   .aq-question { font-size: 13.5px; line-height: 1.45; color: var(--text-primary); }
   .aq-options { display: flex; flex-direction: column; gap: 6px; }
-  .aq-option { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border: none; border-radius: 10px; background: var(--bg-tint); cursor: pointer; font-size: 13.5px; line-height: 1.4; }
+  .aq-option { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 12px; border: 1px solid transparent; border-radius: 10px; background: var(--bg-tint); color: var(--text-primary); cursor: pointer; font-family: var(--font-ui); font-size: 13.5px; line-height: 1.4; text-align: left; appearance: none; }
   .aq-option:hover { background: var(--bg-hover); }
   .aq-option .num { width: 15px; height: 15px; border-radius: 50%; background: transparent; border: 1.5px solid var(--text-tertiary); font-size: 0; flex-shrink: 0; margin-top: 2px; }
   .aq-option .desc { color: var(--text-tertiary); font-size: 12.5px; line-height: 1.4; margin-top: 2px; }
   .aq-card.answered .aq-option { pointer-events: none; opacity: .45; }
-  .aq-card.answered .aq-option.selected { opacity: 1; background: var(--accent-dim); }
-  .aq-card.answered .aq-option.selected .num { background: var(--accent); border-color: var(--accent); }
-  .aq-option.aq-other { border: 1.5px dashed var(--border-strong); background: transparent; color: var(--text-secondary); }
+  .aq-card .aq-option.selected { opacity: 1; border-color: var(--border-strong); background: var(--bg-tint); }
+  .aq-card .aq-option.aq-other.selected { border-style: solid; background: transparent; }
+  .aq-option.aq-other { border: 1px dashed var(--border-strong); background: transparent; color: var(--text-secondary); }
   .aq-other-box { display: none; gap: 6px; }
-  .aq-other-box.show { display: flex; }
-  .aq-other-box textarea { flex: 1; background: var(--bg-input); border: 1px solid var(--accent); border-radius: var(--r-md); color: var(--text-primary); font-family: var(--font-ui); font-size: 13.5px; padding: 6px 8px; resize: none; outline: none; min-height: 32px; }
+  .aq-other-box.show { display: flex; margin-top: 8px; }
+  .aq-other-box textarea { flex: 1; background: var(--bg-input); border: 1px solid var(--border-default); border-radius: var(--r-md); color: var(--text-primary); font-family: var(--font-ui); font-size: 13.5px; padding: 6px 8px; resize: none; outline: none; min-height: 32px; }
+  .aq-other-box textarea:focus { border-color: var(--border-strong); }
   .aq-footer-hint { font-size: 12px; color: var(--text-tertiary); padding-top: 0; line-height: 1.4; }
   .aq-footer-hint a { cursor: pointer; }
   .aq-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
   .aq-submit:disabled { opacity: .45; cursor: not-allowed; }
+  .aq-submit, .aq-submit:hover, .aq-submit:disabled:hover { background: var(--bg-active); border-color: var(--border-default); color: var(--text-primary); }
   .aq-question-block + .aq-question-block { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
   .aq-question-block.is-done .aq-question { color: var(--text-secondary); }
   .aq-card.aq-mode-stacked .aq-question-block.is-done .aq-options { display: none; }
@@ -1666,9 +1668,9 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                     <div class="aq-question-block" id="aq-multi-q0">
                       <div class="aq-question">Which failover phases should this skill cover first?</div>
                       <div class="aq-options" id="aq-multi-q0-options">
-                        <div class="aq-option" onclick="aqMultiPick(0, this)"><div class="num">1</div><div>Sampling only (Phase 1)</div></div>
-                        <div class="aq-option" onclick="aqMultiPick(0, this)"><div class="num">2</div><div>Sampling + throughput (Phases 1–2)</div></div>
-                        <div class="aq-option" onclick="aqMultiPick(0, this)"><div class="num">3</div><div>Full stack when unblocked</div></div>
+                        <button type="button" class="aq-option" onclick="aqMultiPick(0, this)"><div class="num">1</div><div>Sampling only (Phase 1)</div></button>
+                        <button type="button" class="aq-option" onclick="aqMultiPick(0, this)"><div class="num">2</div><div>Sampling + throughput (Phases 1–2)</div></button>
+                        <button type="button" class="aq-option" onclick="aqMultiPick(0, this)"><div class="num">3</div><div>Full stack when unblocked</div></button>
                       </div>
                       <div class="aq-picked-summary" id="aq-multi-q0-summary"></div>
                     </div>
@@ -1678,9 +1680,9 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                     <div class="aq-question-block" id="aq-multi-q1">
                       <div class="aq-question">Where should generated OMG plans and revert scripts live?</div>
                       <div class="aq-options" id="aq-multi-q1-options">
-                        <div class="aq-option" onclick="aqMultiPick(1, this)"><div class="num">1</div><div>Worktree only (ephemeral)</div></div>
-                        <div class="aq-option" onclick="aqMultiPick(1, this)"><div class="num">2</div><div>Repo path under <code>skills/</code></div></div>
-                        <div class="aq-option aq-other" onclick="aqMultiShowOther(1, this)"><div class="num">3</div><div>Other — type your own path</div></div>
+                        <button type="button" class="aq-option" onclick="aqMultiPick(1, this)"><div class="num">1</div><div>Worktree only (ephemeral)</div></button>
+                        <button type="button" class="aq-option" onclick="aqMultiPick(1, this)"><div class="num">2</div><div>Repo path under <code>skills/</code></div></button>
+                        <button type="button" class="aq-option aq-other" onclick="aqMultiShowOther(1, this)"><div class="num">3</div><div>Other — type your own path</div></button>
                       </div>
                       <div class="aq-other-box" id="aq-multi-q1-other-box">
                         <textarea id="aq-multi-q1-other-input" rows="2" placeholder="e.g. ~/failover-runs/{date}/"></textarea>
@@ -1694,9 +1696,9 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                     <div class="aq-question-block" id="aq-multi-q2">
                       <div class="aq-question">How should the revert script behave on restore?</div>
                       <div class="aq-options" id="aq-multi-q2-options">
-                        <div class="aq-option" onclick="aqMultiPick(2, this)"><div class="num">2</div><div>Unblock throughput after quota restore</div></div>
-                        <div class="aq-option" onclick="aqMultiPick(2, this)"><div class="num">1</div><div>Sampling rollback only</div></div>
-                        <div class="aq-option" onclick="aqMultiPick(2, this)"><div class="num">3</div><div>Require manual confirmation per phase</div></div>
+                        <button type="button" class="aq-option" onclick="aqMultiPick(2, this)"><div class="num">2</div><div>Unblock throughput after quota restore</div></button>
+                        <button type="button" class="aq-option" onclick="aqMultiPick(2, this)"><div class="num">1</div><div>Sampling rollback only</div></button>
+                        <button type="button" class="aq-option" onclick="aqMultiPick(2, this)"><div class="num">3</div><div>Require manual confirmation per phase</div></button>
                       </div>
                       <div class="aq-picked-summary" id="aq-multi-q2-summary"></div>
                     </div>
@@ -1726,9 +1728,9 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                 <div class="aq-body">
                   <div class="aq-question">Should the fix also cover the local (non-remote) auth bootstrap path?</div>
                   <div class="aq-options" id="aq1-options">
-                    <div class="aq-option" onclick="answerQuestion('aq1', this)"><div class="num">1</div><div>Yes, apply to both local and remote</div></div>
-                    <div class="aq-option" onclick="answerQuestion('aq1', this)"><div class="num">2</div><div>Remote only for now</div></div>
-                    <div class="aq-option aq-other" onclick="showAqOther('aq1', this)"><div class="num">3</div><div>Other — type your own answer</div></div>
+                    <button type="button" class="aq-option" onclick="answerQuestion('aq1', this)"><div class="num">1</div><div>Yes, apply to both local and remote</div></button>
+                    <button type="button" class="aq-option" onclick="answerQuestion('aq1', this)"><div class="num">2</div><div>Remote only for now</div></button>
+                    <button type="button" class="aq-option aq-other" onclick="showAqOther('aq1', this)"><div class="num">3</div><div>Other — type your own answer</div></button>
                   </div>
                   <div class="aq-other-box" id="aq1-other-box">
                     <textarea id="aq1-other-input" rows="2" placeholder="Type your answer…"></textarea>

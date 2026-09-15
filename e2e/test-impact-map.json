@@ -641,6 +641,12 @@
       ]
     },
     {
+      "id": "interactive-card-ui",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "aq-option|aq-other-box|aq-submit|Interactive prompts",
+      "targets": [{ "file": "e2e/interactive-prompts.spec.ts" }]
+    },
+    {
       "id": "tracker-rail-row-view",
       "paths": ["src/renderer/src/components/chat/TrackerRail.tsx"],
       "changedLines": "BackgroundTaskRowView|variant",

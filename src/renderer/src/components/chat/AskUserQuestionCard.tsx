@@ -123,7 +123,8 @@ export default function AskUserQuestionCard({
         <div className="aq-question">{q.question}</div>
         <div className="aq-options" data-testid="aq-options">
           {q.options.map((opt, optIndex) => (
-            <div
+            <button
+              type="button"
               key={opt.label}
               className={`aq-option${selected === opt.label || pendingPick === opt.label ? ' selected' : ''}`}
               data-testid="aq-option"
@@ -134,17 +135,18 @@ export default function AskUserQuestionCard({
                 {opt.label}
                 <div className="desc">{opt.description}</div>
               </div>
-            </div>
+            </button>
           ))}
           {!resolved ? (
-            <div
+            <button
+              type="button"
               className={`aq-option aq-other${otherSelected ? ' selected' : ''}`}
               data-testid="aq-option-other"
               onClick={() => pickOther(qIndex)}
             >
               <div className="num">{q.options.length + 1}</div>
               <div>Other — type your own answer</div>
-            </div>
+            </button>
           ) : null}
         </div>
         {!resolved ? (
