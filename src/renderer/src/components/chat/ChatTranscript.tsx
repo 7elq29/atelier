@@ -11,7 +11,6 @@ import PermissionRequestCard from './PermissionRequestCard'
 import PlanProposedCard from './PlanProposedCard'
 import { promptFoldSummary } from './resolved-prompt-fold'
 import MarkdownMessage from './MarkdownMessage'
-import Linkify from '../panels/Linkify'
 import MessageActions from './MessageActions'
 import TranscriptInlineComments from './TranscriptInlineComments'
 import ConversationStatusCard from './ConversationStatusCard'
@@ -115,8 +114,8 @@ interface TopRow {
  * Plain assistant text (12-markdown-message-rendering — the final `else`
  * branch below, reached only when `parseStructuredContent` returns falsy)
  * renders through `MarkdownMessage` when no transcript search is active.
- * Plain user text uses `Linkify` for http(s) URLs (opens externally via
- * `shell.openExternal`). When a search query IS active, this intentionally
+ * Plain user text uses the same safe `MarkdownMessage` renderer as assistant
+ * text. When a search query IS active, this intentionally
  * keeps showing the plain `highlightMatches(...)` text instead of Markdown/
  * Linkify — merging search highlighting into rendered nodes is out of scope,
  * an accepted limitation, not a bug. Scope is otherwise unchanged: structured
@@ -547,7 +546,7 @@ export default function ChatTranscript({
                 (query ? (
                   highlightMatches(parsed.text, query, matchCounter, activeMatchIndex)
                 ) : (
-                  <Linkify text={parsed.text} />
+                  <MarkdownMessage content={parsed.text} />
                 ))}
             </div>
           </div>
@@ -557,7 +556,19 @@ export default function ChatTranscript({
           <div className="msg-wrap msg-wrap-user" key={message.id}>
             <MessageActions text={message.content} />
             <div className="msg-user" data-testid="transcript-message" data-role="user" data-message-id={message.id}>
-              {query ? highlightMatches(message.content, query, matchCounter, activeMatchIndex) : <Linkify text={message.content} />}
+              {query ? (
+                highlightMatches(message.content, query, matchCounter, activeMatchIndex)
+              ) : (
+                <MarkdownMessage
+                  content={message.content}
+                  workspaceRoot={workspaceRoot}
+                  projectRoot={projectRoot}
+                  filePathCandidates={filePathCandidates}
+                  onOpenFileInFiles={onOpenFileInFiles}
+                  bookmarks={bookmarks}
+                  onToggleBookmark={onToggleBookmark}
+                />
+              )}
             </div>
           </div>
         )

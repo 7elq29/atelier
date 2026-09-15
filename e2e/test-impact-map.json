@@ -412,7 +412,10 @@
     },
     {
       "id": "composer",
-      "paths": ["src/renderer/src/components/chat/Composer.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/Composer.tsx",
+        "src/renderer/src/components/chat/ComposerMarkdownInput.tsx"
+      ],
       "targets": [
         { "file": "e2e/composer-core.spec.ts" },
         { "file": "e2e/composer-mentions-and-commands.spec.ts" },
@@ -703,6 +706,23 @@
       "paths": ["src/renderer/src/components/chat/ReviewFileMonacoEditor.tsx"],
       "changedLines": "wordWrap|wrappingIndent",
       "targets": [{ "file": "e2e/ui-review-pane-chrome.spec.ts" }]
+    },
+    {
+      "id": "chat-prose-shared-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "transcript|msg-user|msg-assistant|md-body|msg-wrap ",
+      "targets": [
+        { "file": "e2e/ui-chat-transcript-typography.spec.ts" }
+      ]
+    },
+    {
+      "id": "composer-markdown-shared-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "composer-box|composer-input-stack|composer-markdown-input",
+      "targets": [
+        { "file": "e2e/ui-chat-transcript-typography.spec.ts" },
+        { "file": "e2e/composer-core.spec.ts" }
+      ]
     },
     {
       "id": "review-pane-shared-css",
