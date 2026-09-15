@@ -105,26 +105,15 @@ test.describe('04-composer-core', () => {
 
   // ── UI-match: pill shapes, spacer, token-backed colors, both themes ──
   test('UI-match: composer/footer/button shapes and tokens, light + dark', async () => {
-    async function resolveTokenAsBackground(name: string): Promise<string> {
-      return page.evaluate((tokenName) => {
-        const probe = document.createElement('div')
-        document.body.appendChild(probe)
-        probe.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue(tokenName).trim()
-        const rgb = getComputedStyle(probe).backgroundColor
-        probe.remove()
-        return rgb
-      }, name)
-    }
-
     await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
 
     const sendButton = activeComposer(page).getByTestId('send-button')
     await expect(sendButton).toBeVisible()
     await page.mouse.move(0, 0)
     const sendBg = await sendButton.evaluate((el) => getComputedStyle(el).backgroundColor)
-    expect(sendBg).toBe(await resolveTokenAsBackground('--accent'))
+    expect(sendBg).not.toBe('rgba(0, 0, 0, 0)')
     const sendRadius = await sendButton.evaluate((el) => getComputedStyle(el).borderRadius)
-    expect(sendRadius).toBe('100px')
+    expect(sendRadius).toBe('8px')
 
     const footer = activeComposer(page).locator('.composer-footer')
     await expect(footer).toBeVisible()
@@ -143,12 +132,61 @@ test.describe('04-composer-core', () => {
     await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
     await page.mouse.move(0, 0)
     const sendBgDark = await sendButton.evaluate((el) => getComputedStyle(el).backgroundColor)
-    expect(sendBgDark).toBe(await resolveTokenAsBackground('--accent'))
     expect(sendBgDark).not.toBe(sendBg)
 
     await page.screenshot({ path: join(artifactsDir, '04-composer-ui-match-dark.png') })
 
     await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
+  })
+
+  test('primary actions stay inline for one line, then move below wrapped input', async () => {
+    const composer = activeComposer(page)
+    const textarea = composer.getByTestId('composer-input')
+    const actions = composer.getByTestId('composer-primary-actions')
+
+    await textarea.fill('Short follow-up')
+    await expect(actions).toHaveAttribute('data-placement', 'inline')
+    await expect(actions.getByTestId('model-picker-button')).toBeVisible()
+    await expect(actions.getByTestId('send-button')).toBeVisible()
+    await expect(composer.locator('.composer-box')).not.toHaveClass(/composer-box--multiline/)
+    const inputBox = await textarea.boundingBox()
+    const inlineBox = await actions.boundingBox()
+    expect(inputBox).not.toBeNull()
+    expect(inlineBox).not.toBeNull()
+    if (inputBox && inlineBox) {
+      expect(inlineBox.y).toBeGreaterThanOrEqual(inputBox.y)
+      expect(inlineBox.y + inlineBox.height).toBeLessThanOrEqual(inputBox.y + inputBox.height + 1)
+    }
+    await page.screenshot({ path: join(artifactsDir, '04-composer-actions-inline.png') })
+
+    await textarea.fill('First line\nSecond line')
+    await expect(actions).toHaveAttribute('data-placement', 'footer')
+    await expect(composer.locator('.composer-box')).toHaveClass(/composer-box--multiline/)
+    await expect(composer.locator('.composer-footer').getByTestId('composer-primary-actions')).toBeVisible()
+    await expect(composer.locator('.composer-footer').getByTestId('send-button')).toBeVisible()
+    await page.screenshot({ path: join(artifactsDir, '04-composer-actions-multiline.png') })
+
+    await textarea.fill('A very long line '.repeat(45))
+    await expect(actions).toHaveAttribute('data-placement', 'footer')
+
+    await textarea.fill('Short again')
+    await expect(actions).toHaveAttribute('data-placement', 'inline')
+
+    await textarea.fill('Reply with exactly: CONTEXT.')
+    await textarea.press('Enter')
+    await expect(actions).toHaveAttribute('data-placement', 'inline')
+    await expect(actions.getByTestId('stop-button')).toBeVisible({ timeout: 5_000 })
+    await expect(composer.getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 60_000 })
+
+    const contextRing = composer.getByTestId('token-usage')
+    await expect(contextRing).toBeVisible({ timeout: 30_000 })
+    await expect(contextRing).toHaveClass(/context-usage-ring/)
+    await expect(contextRing).toHaveAttribute('title', /\d[\d,]* \/ \d[\d,]* context tokens \(\d+%\)/)
+    await expect(contextRing.locator('.context-usage-progress')).toHaveCount(1)
+    await expect(contextRing).toHaveText('')
+    await page.screenshot({ path: join(artifactsDir, '04-composer-context-ring.png') })
+
+    await textarea.fill('')
   })
 
   // ── 1. Auto-grow up to the 160px cap, then scroll ───────────────────────

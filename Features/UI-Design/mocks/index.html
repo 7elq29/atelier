@@ -284,10 +284,12 @@
   .tab-strip button.active { background: var(--bg-active); color: var(--text-primary); }
   .topbar-spacer { flex: 1; }
   .topbar-chip { font-size: 14px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; }
-  /* Token usage: moved from topbar chip to composer footer row. Monospace block-character
-     bar sits after the mode pill and before the flex spacer. High (≥70%) shows in amber. */
-  .token-usage { font-family: var(--font-mono); font-size: 11px; color: var(--text-disabled); white-space: nowrap; letter-spacing: -0.01em; }
-  .token-usage-high { color: var(--warning); }
+  /* Context-window usage: a compact ring in the composer footer. */
+  .context-usage-ring { width: 18px; height: 18px; color: var(--text-tertiary); flex-shrink: 0; }
+  .context-usage-ring.context-usage-high { color: var(--warning); }
+  .context-usage-ring svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+  .context-usage-track { fill: none; stroke: var(--border-default); stroke-width: 2.5; }
+  .context-usage-progress { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; }
 
   .tab-content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
@@ -548,8 +550,11 @@
   .footer-btn { display: flex; align-items: center; gap: 6px; font-size: 14.5px; color: var(--text-tertiary); background: transparent; border: none; cursor: pointer; padding: 5px 8px; border-radius: 6px; }
   .footer-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
   .working-pill { font-size: 12.5px; color: var(--text-tertiary); display: flex; align-items: center; gap: 5px; }
-  .stop-btn { display: flex; align-items: center; gap: 7px; background: var(--danger-dim); color: var(--danger); border: 1px solid var(--danger); border-radius: 100px; padding: 8px 18px; font-size: 14px; font-weight: 500; cursor: pointer; }
-  .send-btn { display: flex; align-items: center; gap: 6px; background: var(--accent); color: var(--accent-text-on); border: 1px solid var(--accent); border-radius: 100px; padding: 8px 20px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .composer-primary-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-left: auto; }
+  .composer-primary-actions--inline { position: absolute; top: 37px; right: 14px; z-index: 5; }
+  .composer-box:not(.composer-box--multiline) textarea { padding-right: 226px; }
+  .composer-model-label { display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stop-btn, .send-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; background: var(--bg-hover); color: var(--text-secondary); border: 1px solid var(--border-default); border-radius: 8px; padding: 0; cursor: pointer; }
   .send-btn:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
   .send-btn:disabled { opacity: .4; cursor: not-allowed; }
   /* Mode indicator — lives inline in .composer-footer (left of the spacer, before
@@ -1903,17 +1908,21 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                 <div class="context-bar-divider"></div>
                 <div class="attach-row hidden" id="attachRow-s1"></div>
                 <textarea id="input-s1" placeholder="Message Gardenia… (@ file, / commands)" rows="1" oninput="onComposerInput('s1')" onkeydown="onComposerKeydown(event,'s1')"></textarea>
-                <div class="composer-footer">
+                <div class="composer-primary-actions composer-primary-actions--inline" id="primary-actions-s1">
+                  <button class="footer-btn" id="model-btn-s1" onclick="togglePicker('s1')"><svg class="icon" width="14" height="14"><use href="#icon-sparkle"/></svg><span class="composer-model-label">Opus 4.8 · High ▾</span></button>
+                  <button class="send-btn" id="send-btn-s1" onclick="sendMessage('s1')" title="Send (Enter)"><svg class="icon" width="16" height="16"><use href="#icon-send"/></svg></button>
+                  <button class="stop-btn hidden" id="stop-btn-s1" onclick="stopWorking('s1')" title="Stop">■</button>
+                </div>
+                <div class="composer-footer" id="composer-footer-s1">
                   <button class="footer-btn" onclick="attachDemoImage('s1')"><svg class="icon" width="14" height="14"><use href="#icon-paperclip"/></svg> Attach</button>
                   <span class="mode-pill mode-default" id="mode-pill-s1" data-testid="composer-mode-pill" data-mode="default" onclick="cycleMode('s1')" title="Click or press Shift+Tab to cycle mode">
                     <span class="mode-icon" id="mode-icon-s1">●</span><span id="mode-label-s1">Default</span>
                   </span>
-                  <span class="token-usage" title="18,400 / 200,000 context tokens used">18k [██░░░░░░░░░░░░░░░░░░ 9%/200k]</span>
+                  <span class="context-usage-ring" title="18,400 / 200,000 context tokens (9%)" aria-label="Context window 9% used">
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><circle class="context-usage-track" cx="10" cy="10" r="7"/><circle class="context-usage-progress" cx="10" cy="10" r="7" pathLength="100" stroke-dasharray="9 100"/></svg>
+                  </span>
                   <div class="spacer"></div>
                   <span id="working-pill-s1" class="working-pill hidden"><span class="spinner"></span>Working…</span>
-                  <button class="footer-btn" id="model-btn-s1" onclick="togglePicker('s1')"><svg class="icon" width="14" height="14"><use href="#icon-sparkle"/></svg> Opus 4.8 · High ▾</button>
-                  <button class="send-btn" id="send-btn-s1" onclick="sendMessage('s1')" title="Send (Enter)"><svg class="icon" width="16" height="16"><use href="#icon-send"/></svg> Send</button>
-                  <button class="stop-btn hidden" id="stop-btn-s1" onclick="stopWorking('s1')">⏹ Stop</button>
                 </div>
               </div>
               </div>
@@ -4036,9 +4045,28 @@ function closePopups(sid) {
 }
 function onComposerInput(sid) {
   const ta = document.getElementById('input-' + sid);
+  const box = document.getElementById('composer-' + sid);
+  const actions = document.getElementById('primary-actions-' + sid);
+  const footer = document.getElementById('composer-footer-' + sid);
+  if (box && actions && footer) {
+    ta.style.paddingRight = '226px';
+    ta.style.height = 'auto';
+    const styles = getComputedStyle(ta);
+    const oneLineHeight = Math.max(
+      parseFloat(styles.minHeight) || 0,
+      (parseFloat(styles.lineHeight) || 22) +
+        (parseFloat(styles.paddingTop) || 0) +
+        (parseFloat(styles.paddingBottom) || 0)
+    );
+    const multiline = ta.scrollHeight > oneLineHeight + 1;
+    ta.style.paddingRight = '';
+    box.classList.toggle('composer-box--multiline', multiline);
+    actions.classList.toggle('composer-primary-actions--inline', !multiline);
+    if (multiline) footer.appendChild(actions);
+    else ta.insertAdjacentElement('afterend', actions);
+  }
   ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
   closePopups(sid);
-  const box = document.getElementById('composer-' + sid);
   const val = ta.value;
   const lastWord = val.split(/\s/).pop();
   if (lastWord.startsWith('@') && lastWord.length >= 1) {

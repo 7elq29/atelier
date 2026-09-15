@@ -2422,6 +2422,10 @@ input[type='range'] {
 .composer-input-stack {
   position: relative;
 }
+.composer-box:not(.composer-box--multiline) .composer-input-stack textarea,
+.composer-box:not(.composer-box--multiline) .composer-markdown-input .cm-content {
+  padding-right: 226px;
+}
 .composer-input-stack textarea {
   position: relative;
   z-index: 2;
@@ -2528,6 +2532,31 @@ input[type='range'] {
 .composer-footer .spacer { flex: 1; }
 .footer-btn { display: flex; align-items: center; gap: 6px; font-size: 14.5px; color: var(--text-tertiary); background: transparent; border: none; cursor: pointer; padding: 5px 8px; border-radius: 6px; }
 .footer-btn:hover { background: var(--bg-hover); color: var(--text-secondary); }
+.composer-primary-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+}
+.composer-primary-actions--inline {
+  position: absolute;
+  top: 9px;
+  right: 14px;
+  z-index: 5;
+}
+.composer-primary-actions .footer-btn {
+  min-width: 0;
+  max-width: 184px;
+  height: 34px;
+}
+.composer-model-label {
+  display: block;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .working-pill { font-size: 12.5px; color: var(--text-tertiary); display: flex; align-items: center; gap: 5px; }
 .stop-btn,
 .send-btn {
@@ -2629,13 +2658,32 @@ input[type='range'] {
 .mode-pill.mode-acceptEdits { background: var(--accent-dim); border-color: transparent; color: var(--accent); }
 .mode-pill.mode-auto { background: rgba(217,179,116,0.16); border-color: transparent; color: var(--warning); }
 
-/* Token context-window usage indicator (token-usage-indicator) — monospace
-   block-character bar in the composer footer, after the mode pill and before
-   the flex spacer. Format: "285k [██████████████░░░░░░ 71%/400k]".
-   Only visible after the session's first completed turn. High usage (≥70%)
-   shifts the color to warning amber so context pressure is visible at a glance. */
-.token-usage { font-family: var(--font-mono); font-size: 11px; color: var(--text-disabled); white-space: nowrap; letter-spacing: -0.01em; }
-.token-usage-high { color: var(--warning); }
+/* Context-window usage stays compact in the footer. Exact values remain in
+   the title/accessible label; the ring turns amber at ≥70% usage. */
+.context-usage-ring {
+  width: 18px;
+  height: 18px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.context-usage-ring.context-usage-high { color: var(--warning); }
+.context-usage-ring svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.context-usage-track {
+  fill: none;
+  stroke: var(--border-default);
+  stroke-width: 2.5;
+}
+.context-usage-progress {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
 
 /* Model/effort picker (10f-enrichment-model-effort-picker) — quoted verbatim
    from mocks/index.html's `.picker-pop`/`.picker-item` rules. */

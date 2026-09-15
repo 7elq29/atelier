@@ -63,7 +63,7 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     await electronApp.close().catch(() => undefined)
   })
 
-  test('picker control matches the mock: "Model · Effort ▾" footer button + dropdown', async ({}, testInfo) => {
+  test('picker control matches the mock: responsive "Model · Effort ▾" button + dropdown', async ({}, testInfo) => {
     testInfo.setTimeout(90_000)
         await openNewSessionModal(page)
     await page.getByTestId('project-path').fill(projectDir)

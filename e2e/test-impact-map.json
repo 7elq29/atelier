@@ -749,6 +749,15 @@
       ]
     },
     {
+      "id": "composer-responsive-actions-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "composer-primary-actions|composer-model-label|context-usage",
+      "targets": [
+        { "file": "e2e/composer-core.spec.ts" },
+        { "file": "e2e/model-effort-picker.spec.ts" }
+      ]
+    },
+    {
       "id": "review-pane-shared-css",
       "paths": ["src/renderer/src/styles/global.css"],
       "changedLines": "response-review",
