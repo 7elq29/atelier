@@ -49,11 +49,70 @@ test.describe('sidebar refinement', () => {
     const weekly = page.getByTestId('weekly-plan-row')
 
     await expect(page.getByTestId('app-mark')).toHaveCount(0)
+    await expect(page.locator('.user-avatar')).toHaveCount(0)
     const sidebar = await page.getByTestId('sidebar').boundingBox()
+    const topRowBox = await page.getByTestId('sidebar-top-row').boundingBox()
+    const utilityRow = page.getByTestId('sidebar-utility-row')
+    const utilityBox = await utilityRow.boundingBox()
     const newGroup = await page.getByTestId('new-group-button').boundingBox()
     expect(sidebar).not.toBeNull()
+    expect(topRowBox).not.toBeNull()
+    expect(utilityBox).not.toBeNull()
     expect(newGroup).not.toBeNull()
-    expect(newGroup!.y - sidebar!.y).toBe(8)
+    expect(topRowBox!.y - sidebar!.y).toBe(8)
+    expect(newGroup!.x).toBeLessThan(utilityBox!.x)
+    expect(Math.abs(
+      newGroup!.y + newGroup!.height / 2 - (utilityBox!.y + utilityBox!.height / 2)
+    )).toBeLessThanOrEqual(1)
+
+    const utilityButtons = utilityRow.locator('.sidebar-utility-button')
+    await expect(utilityButtons).toHaveCount(3)
+    const buttonBoxes = await utilityButtons.evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const buttonRect = button.getBoundingClientRect()
+        const iconRect = button.querySelector('svg')?.getBoundingClientRect()
+        return {
+          x: buttonRect.x,
+          width: buttonRect.width,
+          height: buttonRect.height,
+          iconWidth: iconRect?.width,
+          iconHeight: iconRect?.height
+        }
+      })
+    )
+    expect(buttonBoxes.map(({ width, height }) => [width, height])).toEqual([
+      [24, 24],
+      [24, 24],
+      [24, 24]
+    ])
+    expect(buttonBoxes.map(({ iconWidth, iconHeight }) => [iconWidth, iconHeight])).toEqual([
+      [14, 14],
+      [14, 14],
+      [14, 14]
+    ])
+    expect(buttonBoxes[1].x - (buttonBoxes[0].x + buttonBoxes[0].width)).toBe(2)
+    expect(buttonBoxes[2].x - (buttonBoxes[1].x + buttonBoxes[1].width)).toBe(2)
+
+    await page.getByTestId('sidebar-collapse-toggle').click()
+    await expect(page.getByTestId('sidebar')).toHaveClass(/collapsed/)
+    await page.getByTestId('sidebar-collapse-toggle').click()
+    await expect(page.getByTestId('sidebar')).not.toHaveClass(/collapsed/)
+
+    const dailyNotesButton = page.getByTestId('toggle-daily-notes-panel')
+    const dailyNotesWasOpen = (await dailyNotesButton.getAttribute('aria-pressed')) === 'true'
+    await dailyNotesButton.click()
+    await expect(dailyNotesButton).toHaveAttribute('aria-pressed', dailyNotesWasOpen ? 'false' : 'true')
+    await dailyNotesButton.click()
+    await expect(dailyNotesButton).toHaveAttribute('aria-pressed', dailyNotesWasOpen ? 'true' : 'false')
+
+    await page.getByTestId('open-settings-button').click()
+    await expect(page.getByTestId('settings-panel')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('settings-panel')).toHaveCount(0)
+
+    await page.getByTestId('sidebar').screenshot({
+      path: join(artifactsDir, 'sidebar-top-utility-icons.png')
+    })
 
     await expect(daily).toContainText('Daily note')
     await expect(daily).not.toContainText('Obsidian vault')

@@ -119,13 +119,21 @@ test('main-process log file contains "app ready" and IPC entries', async () => {
   copyFileSync(logPath, join(artifactsDir, '00-main.log'))
 })
 
-  test('sidebar starts with New Group instead of a decorative app mark', async () => {
+  test('sidebar starts with compact utilities instead of a decorative app mark', async () => {
     await expect(page.getByTestId('app-mark')).toHaveCount(0)
     const sidebar = await page.getByTestId('sidebar').boundingBox()
+    const topRow = await page.getByTestId('sidebar-top-row').boundingBox()
+    const utilities = await page.getByTestId('sidebar-utility-row').boundingBox()
     const newGroup = await page.getByTestId('new-group-button').boundingBox()
     expect(sidebar).not.toBeNull()
+    expect(topRow).not.toBeNull()
+    expect(utilities).not.toBeNull()
     expect(newGroup).not.toBeNull()
-    expect(newGroup!.y - sidebar!.y).toBe(8)
+    expect(topRow!.y - sidebar!.y).toBe(8)
+    expect(newGroup!.x + newGroup!.width).toBeLessThanOrEqual(utilities!.x)
+    expect(Math.abs(
+      newGroup!.y + newGroup!.height / 2 - (utilities!.y + utilities!.height / 2)
+    )).toBeLessThanOrEqual(1)
   })
 
   test('shell renders shared.css design tokens, not Electron/browser defaults', async () => {

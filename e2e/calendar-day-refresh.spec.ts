@@ -68,7 +68,8 @@ test.afterAll(async () => {
 
 test('open daily surfaces follow a calendar-day change', async () => {
   const sidebar = page.getByTestId('daily-notes-panel')
-  await expect(sidebar).toContainText(`Daily Notes — ${SUNDAY}`)
+  await expect(sidebar.locator('.dtitle')).toHaveText(SUNDAY)
+  await expect(sidebar.locator('.dtitle')).not.toContainText('Daily Notes')
   await expect(sidebar.getByTestId('timeline-task')).toContainText('Sunday timeline marker')
   await expect(page.getByTestId('weekly-plan-row').locator('.session-meta')).toHaveCount(0)
 
@@ -77,13 +78,17 @@ test('open daily surfaces follow a calendar-day change', async () => {
 
   await page.evaluate((date) => window.atelier.debugSetCalendarDate(date), MONDAY)
 
-  await expect(sidebar).toContainText(`Daily Notes — ${MONDAY}`)
+  await expect(sidebar.locator('.dtitle')).toHaveText(MONDAY)
+  await expect(sidebar.locator('.dtitle')).not.toContainText('Daily Notes')
   await expect(sidebar.getByTestId('timeline-task')).toContainText('Monday timeline marker')
   await expect(page.getByTestId('daily-note-date-label')).toContainText('Mon, Sep 14')
   await expect(page.getByTestId('weekly-plan-row').locator('.session-meta')).toHaveCount(0)
   await expect(sidebar.getByTestId('current-time-line')).toBeVisible()
 
   mkdirSync(artifactsDir, { recursive: true })
+  await sidebar.locator('.dn-head').screenshot({
+    path: join(artifactsDir, 'daily-notes-panel-date-title.png')
+  })
   await page.screenshot({
     path: join(artifactsDir, 'calendar-day-refresh-after-rollover.png'),
     fullPage: true

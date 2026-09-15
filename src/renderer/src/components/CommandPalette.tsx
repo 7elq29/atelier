@@ -94,6 +94,7 @@ export default function CommandPalette({ isOpen, onClose, items, searchContent }
       if (filtered[selectedIndex]) runItem(filtered[selectedIndex])
     } else if (e.key === 'Escape') {
       e.preventDefault()
+      e.stopPropagation()
       onClose()
     }
   }
