@@ -72,16 +72,6 @@ async function resolvePasteText(clipboardData: DataTransfer): Promise<string> {
   return sync
 }
 
-/**
- * Formats a token count as a short human-readable string.
- * 285000 → "285k", 1200000 → "1.2M", 999 → "999".
- */
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
-  if (n >= 1_000) return `${Math.round(n / 1_000)}k`
-  return String(n)
-}
-
 function formatThinkingTokens(n: number): string {
   if (n >= 1000) return `~${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
   return `~${n}`
@@ -97,16 +87,6 @@ function composerTurnStatusText(sdkChrome?: SessionSdkChromeEvent | null): strin
     return 'Extended reasoning…'
   }
   return 'Waiting for model…'
-}
-
-/**
- * Renders a 20-char block-character progress bar.
- * pct=71 → "██████████████░░░░░░" (14 filled + 6 empty).
- */
-function tokenBar(pct: number): string {
-  const TOTAL = 20
-  const filled = Math.round((Math.min(100, pct) / 100) * TOTAL)
-  return '█'.repeat(filled) + '░'.repeat(TOTAL - filled)
 }
 
 /** Cap on how many `@file` matches are rendered at once — the underlying file walk is already capped (files.ts's MAX_ENTRIES), this just keeps the popover itself short and scannable. */
@@ -229,7 +209,7 @@ function ModelPicker({
         <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z" />
         </svg>
-        {labelFor(selection, modelOptions)} ▾
+        <span className="composer-model-label">{labelFor(selection, modelOptions)} ▾</span>
       </button>
       {open && (
         <div className="picker-pop" data-testid="model-picker-popover">
@@ -572,6 +552,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null)
   const [pendingAppNotes, setPendingAppNotes] = useState<PendingAppNoteAttach[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
+  const [inputMultiline, setInputMultiline] = useState(false)
   // `/model`'s target — lifted out of ModelPicker itself (bug #56) so typing
   // the full command and pressing Enter/Tab, or clicking its slash-item, can
   // open the SAME real popover the footer button opens.
@@ -759,12 +740,26 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const lineHeight = parseFloat(cs.lineHeight) || 22
     const verticalPad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
     const minContentHeight = lineHeight + verticalPad
-    const capped = ta.scrollHeight > MAX_TEXTAREA_HEIGHT
-    const next = Math.min(Math.max(ta.scrollHeight, minContentHeight), MAX_TEXTAREA_HEIGHT)
+    const singleLineHeight = Math.max(minContentHeight, parseFloat(cs.minHeight) || 0)
+
+    // Always decide wrapping against the narrower inline-control layout.
+    // Otherwise moving the controls below can widen the textarea enough to
+    // unwrap it, causing the actions to oscillate between both positions.
+    ta.style.paddingRight = '226px'
+    const inlineScrollHeight = ta.scrollHeight
+    const nextMultiline = inlineScrollHeight > singleLineHeight + 1
+
+    ta.style.paddingRight = nextMultiline ? '18px' : '226px'
+    ta.style.height = 'auto'
+    const layoutScrollHeight = ta.scrollHeight
+    const capped = layoutScrollHeight > MAX_TEXTAREA_HEIGHT
+    const next = Math.min(Math.max(layoutScrollHeight, minContentHeight), MAX_TEXTAREA_HEIGHT)
     ta.style.height = `${next}px`
     ta.style.overflowY = capped ? 'auto' : 'hidden'
+    ta.style.removeProperty('padding-right')
+    setInputMultiline(nextMultiline)
     if (!value.trim()) ta.scrollTop = 0
-  }, [active, value])
+  }, [active, inputMultiline, value])
 
   const mentionMatches = useMemo(() => {
     if (popover?.kind !== 'mention') return []
@@ -1062,11 +1057,59 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       ? `Worktree: ${worktreePath}\nBranch: ${displayBranch}`
       : worktreePath ?? undefined
 
+  const renderPrimaryActions = (placement: 'inline' | 'footer'): JSX.Element => (
+    <div
+      className={`composer-primary-actions${placement === 'inline' ? ' composer-primary-actions--inline' : ''}`}
+      data-testid="composer-primary-actions"
+      data-placement={placement}
+    >
+      <ModelPicker
+        selection={modelSelection}
+        onChange={onModelSelectionChange}
+        open={modelPickerOpen}
+        onOpenChange={setModelPickerOpen}
+        liveModels={liveModels}
+      />
+      {busy ? (
+        <button
+          className="stop-btn"
+          data-testid="stop-button"
+          type="button"
+          title="Stop"
+          aria-label="Stop"
+          onClick={onInterrupt}
+        >
+          <svg className="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" />
+          </svg>
+        </button>
+      ) : null}
+      <button
+        className="send-btn"
+        data-testid="send-button"
+        type="button"
+        disabled={
+          harnessDisconnected ||
+          rateLimit?.sendBlocked ||
+          (!buildComposerSendText(value, reviewComments).trim() && !attachedImage && pendingAppNotes.length === 0)
+        }
+        title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
+        aria-label={busy ? 'Queue' : 'Send'}
+        onClick={() => void handleSend()}
+      >
+        <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <line x1="12" y1="19" x2="12" y2="5" />
+          <polyline points="6 11 12 5 18 11" />
+        </svg>
+      </button>
+    </div>
+  )
+
   return (
     <div className="composer-wrap">
       <div className="composer-stack">
       <div
-        className={`composer-box${isDragOver ? ' drag-over' : ''}${harnessDisconnected ? ' harness-disconnected' : ''}`}
+        className={`composer-box${inputMultiline ? ' composer-box--multiline' : ''}${isDragOver ? ' drag-over' : ''}${harnessDisconnected ? ' harness-disconnected' : ''}`}
         data-testid={harnessDisconnected ? 'composer-harness-disconnected' : undefined}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -1246,6 +1289,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             onBlur={onTextareaBlur}
             onPaste={handlePaste}
           />
+          {!inputMultiline && renderPrimaryActions('inline')}
         </div>
         {cursorPos && (cursorPhase !== 'unfocused' || value.length > 0) && (
           <span
@@ -1302,13 +1346,27 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           )}
           {tokenUsage && tokenUsage.contextWindow > 0 && (() => {
             const pct = Math.min(100, Math.round((tokenUsage.inputTokens / tokenUsage.contextWindow) * 100))
+            const usageTitle = `${tokenUsage.inputTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} context tokens (${pct}%)`
             return (
               <span
-                className={`token-usage${pct >= 70 ? ' token-usage-high' : ''}`}
+                className={`context-usage-ring${pct >= 70 ? ' context-usage-high' : ''}`}
                 data-testid="token-usage"
-                title={`${tokenUsage.inputTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} context tokens`}
+                data-context-percent={pct}
+                title={usageTitle}
+                role="img"
+                aria-label={usageTitle}
               >
-                {formatTokens(tokenUsage.inputTokens)} [{tokenBar(pct)} {pct}%/{formatTokens(tokenUsage.contextWindow)}]
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <circle className="context-usage-track" cx="10" cy="10" r="7" />
+                  <circle
+                    className="context-usage-progress"
+                    cx="10"
+                    cy="10"
+                    r="7"
+                    pathLength="100"
+                    strokeDasharray={`${pct} 100`}
+                  />
+                </svg>
               </span>
             )
           })()}
@@ -1319,45 +1377,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
               <span data-testid="composer-turn-status-text">{composerTurnStatusText(sdkChrome)}</span>
             </span>
           )}
-          <ModelPicker
-            selection={modelSelection}
-            onChange={onModelSelectionChange}
-            open={modelPickerOpen}
-            onOpenChange={setModelPickerOpen}
-            liveModels={liveModels}
-          />
-          {busy ? (
-            <button
-              className="stop-btn"
-              data-testid="stop-button"
-              type="button"
-              title="Stop"
-              aria-label="Stop"
-              onClick={onInterrupt}
-            >
-              <svg className="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" />
-              </svg>
-            </button>
-          ) : null}
-          <button
-            className="send-btn"
-            data-testid="send-button"
-            type="button"
-            disabled={
-              harnessDisconnected ||
-              rateLimit?.sendBlocked ||
-              (!buildComposerSendText(value, reviewComments).trim() && !attachedImage && pendingAppNotes.length === 0)
-            }
-            title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
-            aria-label={busy ? 'Queue' : 'Send'}
-            onClick={() => void handleSend()}
-          >
-            <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <line x1="12" y1="19" x2="12" y2="5" />
-              <polyline points="6 11 12 5 18 11" />
-            </svg>
-          </button>
+          {inputMultiline && renderPrimaryActions('footer')}
         </div>
       </div>
       </div>
