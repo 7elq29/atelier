@@ -384,7 +384,7 @@
   font-size: var(--font-interface-size);
   font-weight: 600;
   display: block;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -397,6 +397,13 @@
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
+}
+.topbar-cost {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 .topbar-workspace {
   flex-shrink: 1;

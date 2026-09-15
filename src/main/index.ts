@@ -77,6 +77,13 @@ function createWindow(): BrowserWindow {
     win.show()
   })
 
+  const sendFullScreenChanged = (fullScreen: boolean): void => {
+    logger.info('window fullscreen changed', { fullScreen })
+    win.webContents.send('window:fullScreenChanged', { fullScreen })
+  }
+  win.on('enter-full-screen', () => sendFullScreenChanged(true))
+  win.on('leave-full-screen', () => sendFullScreenChanged(false))
+
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame) return
     logger.error('renderer failed to load', { errorCode, errorDescription, validatedURL })
@@ -116,6 +123,7 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
   })
 
   ipcMain.handle('app:getHomedir', () => homedir())
+  ipcMain.handle('app:isFullScreen', () => mainWindow?.isFullScreen() ?? false)
 
   ipcMain.on('renderer:log', (_event, payload: { level: string; msg: string; extra?: Record<string, unknown> }) => {
     const { level, msg, extra } = payload

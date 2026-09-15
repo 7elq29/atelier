@@ -36,6 +36,54 @@ test('integrated title bar on macOS (hiddenInset chrome)', async () => {
   await expect(page.getByTestId('window-title-bar')).toContainText('Atelier')
 })
 
+test('native fullscreen removes the integrated title bar', async () => {
+  const platform = await page.evaluate(() => window.atelier.platform)
+  test.skip(platform !== 'darwin', 'custom title bar is macOS-only')
+
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0]?.setFullScreen(true)
+  })
+  try {
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0]?.isFullScreen()
+        )
+      )
+      .toBe(true)
+    mkdirSync(artifactsDir, { recursive: true })
+    await expect(page.getByTestId('window-title-bar')).toHaveCount(0)
+    await expect
+      .poll(() => page.locator('.app-body').evaluate((element) => element.getBoundingClientRect().top))
+      .toBe(0)
+    await page.screenshot({ path: join(artifactsDir, 'fullscreen-titlebar-removed.png') })
+  } finally {
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setFullScreen(false)
+    })
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0]?.isFullScreen()
+        )
+      )
+      .toBe(false)
+  }
+
+  await expect(page.getByTestId('window-title-bar')).toBeVisible()
+  await expect
+    .poll(() => page.locator('.app-body').evaluate((element) => element.getBoundingClientRect().top))
+    .toBe(40)
+
+  const logPath = await page.evaluate(() => window.atelier.getLogFilePath())
+  await expect
+    .poll(() => readFileSync(logPath, 'utf8'), { timeout: 10_000 })
+    .toContain('"msg":"window fullscreen changed","fullScreen":true')
+  await expect
+    .poll(() => readFileSync(logPath, 'utf8'), { timeout: 10_000 })
+    .toContain('"msg":"window fullscreen changed","fullScreen":false')
+})
+
 test('#root has rendered children', async () => {
   const childCount = await page.locator('#root').evaluate((el) => el.children.length)
   expect(childCount).toBeGreaterThan(0)

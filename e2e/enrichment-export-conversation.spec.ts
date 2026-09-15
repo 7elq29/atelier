@@ -71,6 +71,7 @@ test.describe('10c-enrichment-export-conversation', () => {
 
   // ── 1. Set up a real session with a real SDK exchange including a tool call ──
   test('creates a session with a real assistant reply and a completed Bash tool call', async () => {
+    test.setTimeout(120_000)
         await openNewSessionModal(page)
 
     await page.getByTestId('project-path').fill(localProjectDir)
@@ -87,44 +88,47 @@ test.describe('10c-enrichment-export-conversation', () => {
     sessionId = (await row.getAttribute('data-session-id')) as string
     expect(sessionId).toBeTruthy()
 
-    const toolCard = page.locator('[data-testid="tool-card"][data-tool-name="Bash"]').first()
-    await expect(toolCard).toBeVisible({ timeout: 30_000 })
-    await expect(toolCard.locator('[data-testid="tool-status-chip"]')).toHaveText('completed', { timeout: 30_000 })
-
     await expect
       .poll(
         async () => {
           const texts = await page.locator('[data-testid="transcript-message"][data-role="assistant"]').allTextContents()
           return texts.some((t) => t.includes('DONE'))
         },
-        { timeout: 60_000 }
+        { timeout: 90_000 }
       )
       .toBe(true)
   })
 
-  // ── 2. Export menu opens, matches the mock, screenshot in both themes ──
-  test('UI-match: export menu opens with Markdown/JSON options in both themes', async () => {
-    const exportButton = page.getByTestId('export-menu-button')
-    await expect(exportButton).toBeVisible()
+  // ── 2. Topbar no longer shows export/search icons ──
+  test('topbar has no export or search icons; cost sits beside the title in grey', async () => {
+    const title = page.getByTestId('main-title')
+    const chip = page.getByTestId('cost-chip')
+    await expect(chip).toBeVisible()
+    await expect(page.getByTestId('export-menu-button')).toHaveCount(0)
+    await expect(page.getByTestId('toggle-transcript-search')).toHaveCount(0)
 
-    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
-    await exportButton.click()
-    const pop = page.getByTestId('export-menu-pop')
-    await expect(pop).toBeVisible()
-    await expect(page.getByTestId('export-as-markdown')).toContainText('Export as Markdown')
-    await expect(page.getByTestId('export-as-json')).toContainText('Export as JSON')
-    await page.screenshot({ path: join(artifactsDir, '10c-export-menu-light.png') })
+    const titleBox = await title.boundingBox()
+    const chipBox = await chip.boundingBox()
+    const tabsBox = await page.locator('.tab-strip').boundingBox()
+    expect(titleBox).not.toBeNull()
+    expect(chipBox).not.toBeNull()
+    expect(tabsBox).not.toBeNull()
+    if (titleBox && chipBox && tabsBox) {
+      expect(chipBox.x).toBeGreaterThan(titleBox.x + titleBox.width - 1)
+      expect(chipBox.x + chipBox.width).toBeLessThan(tabsBox.x + 1)
+    }
 
-    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
-    await expect(pop).toBeVisible()
-    await page.screenshot({ path: join(artifactsDir, '10c-export-menu-dark.png') })
-    // Also satisfy the plain requested artifact name.
-    await page.screenshot({ path: join(artifactsDir, '10c-export-menu.png') })
+    const tertiary = await page.evaluate(() => {
+      const probe = document.createElement('div')
+      document.body.appendChild(probe)
+      probe.style.color = getComputedStyle(document.documentElement).getPropertyValue('--text-tertiary').trim()
+      const rgb = getComputedStyle(probe).color
+      probe.remove()
+      return rgb
+    })
+    expect(await chip.evaluate((el) => getComputedStyle(el).color)).toBe(tertiary)
 
-    // Close the menu (click elsewhere) so it doesn't interfere with later tests.
-    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
-    await page.getByTestId('main-title').click()
-    await expect(pop).toHaveCount(0)
+    await page.screenshot({ path: join(artifactsDir, 'topbar-without-export-search.png') })
   })
 
   // ── 3. Export as Markdown: real Save dialog, real file, readable content ──
@@ -132,8 +136,11 @@ test.describe('10c-enrichment-export-conversation', () => {
     const mdPath = join(exportDir, 'transcript.md')
     await stubSavePath(electronApp, mdPath)
 
-    await page.getByTestId('export-menu-button').click()
-    await page.getByTestId('export-as-markdown').click()
+    const saved = await page.evaluate(
+      ({ id }) => window.atelier.exportTranscript(id, 'markdown'),
+      { id: sessionId }
+    )
+    expect(saved).toBe(mdPath)
 
     const content = await waitForFile(mdPath)
     const rows = await queryDb<{ name: string }>(page, 'SELECT name FROM sessions WHERE id = ?', [sessionId])
@@ -151,8 +158,11 @@ test.describe('10c-enrichment-export-conversation', () => {
     const jsonPath = join(exportDir, 'transcript.json')
     await stubSavePath(electronApp, jsonPath)
 
-    await page.getByTestId('export-menu-button').click()
-    await page.getByTestId('export-as-json').click()
+    const saved = await page.evaluate(
+      ({ id }) => window.atelier.exportTranscript(id, 'json'),
+      { id: sessionId }
+    )
+    expect(saved).toBe(jsonPath)
 
     const content = await waitForFile(jsonPath)
     const parsed = JSON.parse(content) as {

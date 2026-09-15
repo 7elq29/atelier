@@ -618,6 +618,34 @@
       "targets": [{ "file": "e2e/app-shell.spec.ts" }]
     },
     {
+      "id": "topbar-export-search-icons",
+      "paths": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/components/chat/TranscriptSearchBar.tsx"
+      ],
+      "changedLines": "ExportMenu|handleExport|toggle-transcript-search|toggleTranscriptSearch|KeyS",
+      "targets": [
+        { "file": "e2e/enrichment-export-conversation.spec.ts" },
+        { "file": "e2e/enrichment-full-text-search.spec.ts" }
+      ]
+    },
+    {
+      "id": "topbar-session-cost-placement",
+      "paths": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/styles/global.css"
+      ],
+      "changedLines": "topbar-cost|cost-chip|flex: 0 1 auto",
+      "targets": [{ "file": "e2e/enrichment-export-conversation.spec.ts" }]
+    },
+    {
+      "id": "fullscreen-titlebar",
+      "paths": ["src/renderer/src/components/TitleBar.tsx"],
+      "targets": [
+        { "file": "e2e/app-shell.spec.ts", "grep": "native fullscreen removes" }
+      ]
+    },
+    {
       "id": "config-settings",
       "paths": ["src/main/config.ts"],
       "targets": [
