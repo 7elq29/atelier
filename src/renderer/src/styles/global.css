@@ -1388,7 +1388,14 @@ input[type='range'] {
   border-radius: 0;
   font-size: 0.9em;
 }
-:is(.msg-assistant, .msg-user) .md-body :where(a), .plan-body .md-body :where(a) { color: var(--accent); cursor: pointer; }
+:is(.msg-assistant, .msg-user) .md-body :where(a), .plan-body .md-body :where(a) {
+  color: var(--info);
+  cursor: pointer;
+  font-weight: 400;
+  text-decoration: none;
+}
+:is(.msg-assistant, .msg-user) .md-body :where(a):hover,
+.plan-body .md-body :where(a):hover { text-decoration: underline; }
 :is(.msg-assistant, .msg-user) .md-body a[draggable='true']:active { cursor: grabbing; }
 :is(.msg-assistant, .msg-user) .md-body :where(blockquote), .plan-body .md-body :where(blockquote) {
   margin: 0 0 8px;

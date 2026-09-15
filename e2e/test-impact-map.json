@@ -493,6 +493,14 @@
       ]
     },
     {
+      "id": "chat-file-path-links",
+      "paths": ["src/renderer/src/components/chat/file-path-links.ts"],
+      "targets": [
+        { "file": "e2e/chat-surface-core.spec.ts", "grep": "create session:|file paths open|home-relative file paths" },
+        { "file": "e2e/ui-chat-transcript-typography.spec.ts" }
+      ]
+    },
+    {
       "id": "chat-transcript-background-tasks",
       "paths": [
         "src/renderer/src/components/chat/ChatTranscript.tsx",

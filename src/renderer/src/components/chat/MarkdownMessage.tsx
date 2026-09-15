@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type {
   CreateSessionBookmarkInput,
@@ -13,7 +13,7 @@ import {
   hrefToAtelierFilePath,
   linkifyFilePathsInMarkdown,
   looksLikeFilePath,
-  resolveSessionFilePath
+  resolveKnownSessionFilePath
 } from './file-path-links'
 import ChatBookmarkContextMenu, {
   type ChatBookmarkMenuState
@@ -75,12 +75,23 @@ export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Com
 
   return {
     a: ({ href, children, ...props }) => {
-      const filePath = href ? hrefToAtelierFilePath(href) : null
+      const encodedFilePath = href ? hrefToAtelierFilePath(href) : null
+      const filePath =
+        encodedFilePath ??
+        (href && looksLikeFilePath(href)
+          ? resolveKnownSessionFilePath(
+              href,
+              workspaceRoot,
+              projectRoot,
+              filePathCandidates
+            )
+          : null)
       if (filePath && onOpenFileInFiles) {
+        const fileHref = `${ATELIER_FILE_SCHEME}${encodeURIComponent(filePath)}`
         return (
           <a
             {...props}
-            href={href}
+            href={fileHref}
             data-testid="msg-file-link"
             onContextMenu={(e) => {
               if (!onBookmarkRequest) return
@@ -102,6 +113,7 @@ export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Com
           </a>
         )
       }
+      if (!href || !/^https?:\/\//i.test(href)) return <>{children}</>
       return (
         <a
           {...props}
@@ -147,7 +159,12 @@ export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Com
         )
       }
       const text = String(children).replace(/\n$/, '')
-      const resolved = resolveSessionFilePath(text, workspaceRoot, projectRoot, filePathCandidates)
+      const resolved = resolveKnownSessionFilePath(
+        text,
+        workspaceRoot,
+        projectRoot,
+        filePathCandidates
+      )
       if (!resolved || !looksLikeFilePath(text)) {
         return (
           <code className={className} {...props}>
@@ -238,7 +255,13 @@ export default function MarkdownMessage({
   return (
     <>
       <div className="md-body">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={components}
+          urlTransform={(url) =>
+            url.startsWith(ATELIER_FILE_SCHEME) ? url : defaultUrlTransform(url)
+          }
+        >
           {processed}
         </ReactMarkdown>
       </div>

@@ -114,7 +114,9 @@ test('chat prose, user input, and margins use a calm responsive rhythm', async (
         '**bold text**\n\n' +
         '`inline code`\n\n' +
         '```\ncode block line\n```\n\n' +
-        '- item one\n- item two'
+        '- item one\n- item two\n\n' +
+        'Routes /v/, /v-staging/…, and /v-staging/logging-mcp-conformance-staging/ stay plain. ' +
+        'Open README.md and https://example.com.'
     )
     await expect(composerMarkdown.locator('.cm-atomic-strong')).toContainText('bold text')
     await expect(composerMarkdown.locator('.cm-atomic-list-marker').first()).toBeVisible()
@@ -130,6 +132,26 @@ test('chat prose, user input, and margins use a calm responsive rhythm', async (
     await expect(assistantMsg.locator('strong')).toHaveText('bold text', { timeout: 30_000 })
     await expect(assistantMsg.locator('code:not(pre code)')).toHaveText('inline code')
     await expect(assistantMsg.locator('ul li')).toHaveCount(2)
+    await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 60_000 })
+    const mainLogAfterLinkResponse = readFileSync(join(userDataDir, 'logs', 'main.log'), 'utf8')
+    expect(mainLogAfterLinkResponse).toContain('session:sendMessage invoked')
+    expect(mainLogAfterLinkResponse).toContain('harness event: result (turn complete)')
+
+    const anchors = assistantMsg.locator('a')
+    const linkedTexts = await anchors.allTextContents()
+    expect(linkedTexts.filter((text) => text.startsWith('/v'))).toEqual([])
+    const fileLink = assistantMsg.getByTestId('msg-file-link').filter({ hasText: 'README.md' })
+    const webLink = assistantMsg.getByTestId('external-link').filter({ hasText: 'https://example.com' })
+    await expect(fileLink).toHaveCount(1)
+    await expect(webLink).toHaveCount(1)
+    for (const link of [fileLink, webLink]) {
+      await expect(link).toHaveCSS('color', 'rgb(127, 168, 193)')
+      await expect(link).toHaveCSS('font-weight', '400')
+      await expect(link).toHaveCSS('text-decoration-line', 'none')
+      await link.hover()
+      await expect(link).toHaveCSS('text-decoration-line', 'underline')
+    }
+    await page.screenshot({ path: join(artifactsDir, 'chat-file-and-web-links-after.png') })
 
     const prose = await assistantMsg.evaluate((el) => {
       const cs = getComputedStyle(el)

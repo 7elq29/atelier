@@ -90,6 +90,7 @@ function filePathCandidatesForSession(ws: SessionWorkspacePayload | undefined): 
   return collectFilePathCandidates({
     capPaths: ws.sessionChangesCap.items.filter((i) => i.kind === 'file').map((i) => i.path),
     filesList: ws.filesList ?? undefined,
+    filesTree: ws.filesTree ?? undefined,
     diffPaths: ws.diff.files.map((f) => f.path)
   })
 }
