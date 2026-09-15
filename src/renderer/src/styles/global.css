@@ -2286,59 +2286,63 @@ input[type='range'] {
   align-items: stretch;
   width: 100%;
 }
-.composer-stack:has(.chat-changes-card:not(.hidden)) .composer-box {
-  border-top-left-radius: var(--r-xl);
-  border-top-right-radius: var(--r-xl);
-}
-/* Chat — uncommitted changes cap above composer (Features/UI-Design mock).
-   Two independently expandable lists: Bookmarks above Changes. */
-.chat-changes-card {
-  align-self: center;
-  width: 95%;
-  margin-bottom: 0;
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--elevation-border);
-  border-bottom: none;
-  border-radius: var(--r-xl) var(--r-xl) 0 0;
-  overflow: hidden;
-}
-.chat-changes-section + .chat-changes-section {
-  border-top: 1px solid var(--border-subtle);
-}
-.chat-changes-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 6px 0 2px;
-  height: 26px;
-  min-height: 26px;
-}
-.chat-changes-toggle {
+/* Bookmarks and pending files stay out of the layout until requested. Their
+   compact actions share the context row with the worktree indicator. */
+.composer-context-actions { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.composer-context-action {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
   border: none;
+  border-radius: 5px;
   background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 2px 4px;
-  font-family: var(--font-ui);
-  line-height: 1;
-  width: 100%;
-}
-.chat-changes-toggle .chat-changes-chev {
-  display: inline-flex;
-  align-items: center;
   color: var(--text-tertiary);
-  line-height: 0;
-  transition: transform .12s ease;
-  flex-shrink: 0;
+  cursor: pointer;
 }
-.chat-changes-section.collapsed .chat-changes-toggle .chat-changes-chev { transform: rotate(-90deg); }
-.chat-changes-body { padding: 2px 4px 4px; display: flex; flex-direction: column; }
-.chat-changes-section.collapsed .chat-changes-body { display: none; }
+.composer-context-action:hover,
+.composer-context-action.active { background: var(--bg-hover); color: var(--text-secondary); }
+.composer-context-count {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 11px;
+  text-align: center;
+}
+.chat-changes-popover {
+  position: absolute;
+  right: 10px;
+  bottom: 100%;
+  margin-bottom: 6px;
+  width: min(320px, calc(100% - 20px));
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 7;
+  padding: 4px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-popover);
+}
+.chat-changes-popover-title {
+  padding: 5px 7px 6px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+}
 .chat-changes-file {
   display: flex;
   align-items: center;

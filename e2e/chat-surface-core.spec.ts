@@ -26,15 +26,18 @@ async function openNewSessionModal(page: Page): Promise<void> {
   await expect(page.getByTestId('new-session-modal')).toBeVisible()
 }
 
-/** The changes cap holds two lists, each with its own collapsed state. */
 async function expandCapSection(page: Page, testId: string): Promise<void> {
-  const toggle = page.getByTestId(testId).locator('.chat-changes-toggle')
-  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
+  const button = page.getByTestId(
+    testId === 'chat-changes-bookmarks' ? 'composer-bookmarks-button' : 'composer-changes-button'
+  )
+  if ((await button.getAttribute('aria-expanded')) === 'false') await button.click()
 }
 
 async function collapseCapSection(page: Page, testId: string): Promise<void> {
-  const toggle = page.getByTestId(testId).locator('.chat-changes-toggle')
-  if ((await toggle.getAttribute('aria-expanded')) === 'true') await toggle.click()
+  const button = page.getByTestId(
+    testId === 'chat-changes-bookmarks' ? 'composer-bookmarks-button' : 'composer-changes-button'
+  )
+  if ((await button.getAttribute('aria-expanded')) === 'true') await button.click()
 }
 
 /**
@@ -650,9 +653,12 @@ test.describe('03-chat-surface-core', () => {
     await page.screenshot({ path: join(artifactsDir, 'chat-response-bookmarks-context-menu.png') })
     await bookmarkMenu.getByTestId('chat-bookmark-toggle').click()
 
+    const bookmarksButton = page.getByTestId('composer-bookmarks-button')
+    await expect(bookmarksButton).toBeVisible()
+    await expect(bookmarksButton.getByTestId('composer-context-count')).toHaveText('1')
+    await bookmarksButton.click()
     const cap = page.getByTestId('chat-uncommitted-changes')
     await expect(cap).toBeVisible()
-    await expandCapSection(page, 'chat-changes-bookmarks')
     const bookmarkRow = cap.locator(
       '[data-testid="chat-bookmark-row"][data-bookmark-kind="link"]'
     )
@@ -675,6 +681,7 @@ test.describe('03-chat-surface-core', () => {
 
     await link.click({ button: 'right' })
     await page.getByTestId('chat-bookmark-toggle').click()
+    await expandCapSection(page, 'chat-changes-bookmarks')
     await expect(cap.getByTestId('chat-bookmark-row')).toHaveCount(1)
 
     await logTranscriptState(page, sessionId, 'turn5-markdown-link')
@@ -756,9 +763,17 @@ test.describe('03-chat-surface-core', () => {
     await expect(page.getByTestId('chat-bookmark-toggle')).toHaveText('Bookmark')
     await page.getByTestId('chat-bookmark-toggle').click()
 
-    const cap = page.getByTestId('chat-uncommitted-changes')
-    await expect(cap).toBeVisible({ timeout: 15_000 })
+    const bookmarksButton = page.getByTestId('composer-bookmarks-button')
+    const changesButton = page.getByTestId('composer-changes-button')
+    await expect(bookmarksButton).toBeVisible({ timeout: 15_000 })
+    await expect(changesButton).toBeVisible({ timeout: 15_000 })
+    await expect(bookmarksButton.getByTestId('composer-context-count')).toHaveText('1')
+    await expect(changesButton.getByTestId('composer-context-count')).toHaveText('1')
+    await expect(page.getByTestId('chat-uncommitted-changes')).toHaveCount(0)
+
     await expandCapSection(page, 'chat-changes-files')
+    const cap = page.getByTestId('chat-uncommitted-changes')
+    await expect(cap).toHaveAttribute('data-list-kind', 'changes')
     const changedRow = cap
       .getByTestId('chat-changes-file')
       .filter({ hasText: 'a.txt' })
@@ -767,39 +782,27 @@ test.describe('03-chat-surface-core', () => {
     await expect(changedRow.getByTestId('chat-changes-bookmark-tag')).toHaveText('Bookmark')
     await expect(cap.locator('[data-testid="chat-bookmark-row"][data-bookmark-kind="file"]')).toHaveCount(0)
 
-    // Two lists, each counting only its own rows: the bookmarked+changed a.txt stays a change.
-    const bookmarksSection = page.getByTestId('chat-changes-bookmarks')
-    const filesSection = page.getByTestId('chat-changes-files')
-    await expect(filesSection.locator('.chat-changes-title')).toHaveText('1 change')
-    await expect(bookmarksSection.locator('.chat-changes-title')).toHaveText('1 bookmark')
-    await expect(cap.locator('.chat-changes-section').first()).toHaveAttribute(
-      'data-testid',
-      'chat-changes-bookmarks'
-    )
-
-    // Each list expands on its own.
+    // Switching icons replaces the open list instead of stacking two bars.
     await expandCapSection(page, 'chat-changes-bookmarks')
-    await expect(bookmarksSection.getByTestId('chat-bookmark-row')).toHaveCount(1)
-    await expect(filesSection.getByTestId('chat-changes-file')).toHaveCount(1)
+    await expect(cap).toHaveAttribute('data-list-kind', 'bookmarks')
+    await expect(cap.locator('.chat-changes-popover-title')).toHaveText('1 bookmark')
+    await expect(cap.getByTestId('chat-bookmark-row')).toHaveCount(1)
+    await expect(cap.getByTestId('chat-changes-file')).toHaveCount(0)
     await page.screenshot({ path: join(artifactsDir, 'chat-response-bookmarks-mixed-cap.png') })
 
-    await collapseCapSection(page, 'chat-changes-files')
-    await expect(filesSection.locator('.chat-changes-body')).toHaveCount(0)
-    await expect(bookmarksSection.locator('.chat-changes-toggle')).toHaveAttribute(
-      'aria-expanded',
-      'true'
-    )
-    await expect(bookmarksSection.getByTestId('chat-bookmark-row')).toHaveCount(1)
-    await page.screenshot({
-      path: join(artifactsDir, 'chat-cap-two-lists-changes-collapsed.png')
-    })
-
-    await collapseCapSection(page, 'chat-changes-bookmarks')
+    // Escape and an outside click both dismiss the lightweight popover.
+    await page.keyboard.press('Escape')
+    await expect(cap).toHaveCount(0)
     await expandCapSection(page, 'chat-changes-files')
-    await expect(bookmarksSection.locator('.chat-changes-body')).toHaveCount(0)
-    await expect(filesSection.getByTestId('chat-changes-file')).toHaveCount(1)
+    await page.getByTestId('composer-input').click()
+    await expect(cap).toHaveCount(0)
+    await expandCapSection(page, 'chat-changes-files')
+    await expect(cap).toHaveAttribute('data-list-kind', 'changes')
+    await expect(cap.locator('.chat-changes-popover-title')).toHaveText('1 change')
+    const changedRowAfterReopen = cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })
+    await page.screenshot({ path: join(artifactsDir, 'chat-cap-context-icons.png') })
 
-    await changedRow.click()
+    await changedRowAfterReopen.click()
     await expect(page.getByTestId('response-review-pane')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('response-review-pane')).toHaveAttribute('data-review-kind', 'file')
     await page.getByTestId('response-review-close').click()
@@ -937,15 +940,16 @@ test.describe('03-chat-surface-core', () => {
     await originalRow.click()
 
     const cap = page.getByTestId('chat-uncommitted-changes')
-    await expect(cap).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('composer-bookmarks-button')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('composer-changes-button')).toBeVisible({ timeout: 30_000 })
     await expandCapSection(page, 'chat-changes-bookmarks')
-    await expandCapSection(page, 'chat-changes-files')
     await expect(
       cap.locator('[data-testid="chat-bookmark-row"][data-bookmark-kind="link"]')
     ).toHaveCount(1)
     await expect(
       cap.locator('[data-testid="chat-bookmark-row"][data-bookmark-kind="file"]')
     ).toHaveCount(1)
+    await expandCapSection(page, 'chat-changes-files')
     await expect(
       cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })
     ).toHaveAttribute('data-bookmarked', 'true')

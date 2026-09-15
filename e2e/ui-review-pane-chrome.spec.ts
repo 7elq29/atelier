@@ -80,11 +80,10 @@ test('file review pane: editor is full-bleed and the title bar matches panel hea
       { sessionId: session.id, target: join(repoDir, 'instructions.txt') }
     )
 
-    const bookmarks = page.getByTestId('chat-changes-bookmarks')
-    await expect(bookmarks).toBeVisible({ timeout: 15_000 })
-    const toggle = bookmarks.locator('.chat-changes-toggle')
-    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click()
-    await bookmarks
+    const bookmarksButton = page.getByTestId('composer-bookmarks-button')
+    await expect(bookmarksButton).toBeVisible({ timeout: 15_000 })
+    await bookmarksButton.click()
+    await page.getByTestId('chat-changes-bookmarks')
       .locator('[data-testid="chat-bookmark-row"][data-bookmark-kind="file"]')
       .click()
 

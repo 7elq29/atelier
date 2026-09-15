@@ -57,18 +57,17 @@ async function editFileOnce(
 }
 
 async function expandCap(page: Page): Promise<void> {
-  const toggle = page.getByTestId('chat-changes-files').locator('.chat-changes-toggle')
-  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
-    await toggle.click()
+  const button = page.getByTestId('composer-changes-button')
+  if ((await button.getAttribute('aria-expanded')) === 'false') {
+    await button.click()
   }
 }
 
 async function collapseCap(page: Page): Promise<void> {
-  const section = page.getByTestId('chat-changes-files')
-  if ((await section.count()) === 0) return
-  const toggle = section.locator('.chat-changes-toggle')
-  if ((await toggle.getAttribute('aria-expanded')) === 'true') {
-    await toggle.click()
+  const button = page.getByTestId('composer-changes-button')
+  if ((await button.count()) === 0) return
+  if ((await button.getAttribute('aria-expanded')) === 'true') {
+    await button.click()
   }
 }
 
@@ -295,8 +294,8 @@ test.describe('07-secondary-panels', () => {
       }, { timeout: 15_000 })
       .toBe(true)
     const cap = page.getByTestId('chat-uncommitted-changes')
-    await expect(cap).toBeVisible()
     await expandCap(page)
+    await expect(cap).toBeVisible()
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'e2e-plan.md' })).toBeVisible()
     log('untracked plan file in session changes cap OK')
   })
@@ -321,8 +320,8 @@ test.describe('07-secondary-panels', () => {
       .toBe(true)
     expect(existsSync(planAbs)).toBe(false)
     const cap = page.getByTestId('chat-uncommitted-changes')
-    await expect(cap).toBeVisible()
     await expandCap(page)
+    await expect(cap).toBeVisible()
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'plan-logging-failover-runbook-log-1167.md' })).toBeVisible()
     log('inline plan registered in session changes cap without mirroring OK')
   })
@@ -352,8 +351,8 @@ test.describe('07-secondary-panels', () => {
     )
     await page.evaluate((id) => window.atelier.refreshSessionWorkspace(id, true), sessionId)
     const cap = page.getByTestId('chat-uncommitted-changes')
-    await expect(cap).toBeVisible({ timeout: 15_000 })
     await expandCap(page)
+    await expect(cap).toBeVisible({ timeout: 15_000 })
     const planRow = cap.locator('[data-testid="chat-changes-file"][data-path="' + planRel + '"]')
     await expect(planRow).toHaveAttribute('data-is-plan', 'true')
     await expect(planRow.getByTestId('chat-changes-plan-tag')).toHaveText('Plan')
@@ -421,8 +420,8 @@ test.describe('07-secondary-panels', () => {
       }, { timeout: 15_000 })
       .toBe(2)
     const cap = page.getByTestId('chat-uncommitted-changes')
-    await expect(cap).toBeVisible({ timeout: 15_000 })
     await expandCap(page)
+    await expect(cap).toBeVisible({ timeout: 15_000 })
     const planRow = cap.getByTestId('chat-changes-file').filter({ hasText: 'plan-e2e-editions.md' })
     await expect(planRow.getByTestId('chat-changes-plan-tag')).toHaveText('Plan')
     await expect(planRow.locator('.chat-changes-add')).toHaveText('+2')
@@ -444,9 +443,11 @@ test.describe('07-secondary-panels', () => {
     const editTarget = join(repoDir, 'a.txt')
     await editFileOnce(page, sessionId, editTarget, 'a\n', 'hello from e2e\n')
 
-    await expect(cap).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByTestId('chat-changes-files')).toHaveClass(/collapsed/)
-    await cap.getByRole('button', { name: /\d+ change/i }).click()
+    const changesButton = page.getByTestId('composer-changes-button')
+    await expect(changesButton).toBeVisible({ timeout: 30_000 })
+    await expect(changesButton).toHaveAttribute('aria-expanded', 'false')
+    await expandCap(page)
+    await expect(cap).toBeVisible()
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toBeVisible()
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)
     const aRow = cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })
@@ -575,8 +576,8 @@ test.describe('07-secondary-panels', () => {
       .toBe(true)
 
     const cap = page.getByTestId('chat-uncommitted-changes')
-    await expect(cap).toBeVisible()
     await expandCap(page)
+    await expect(cap).toBeVisible()
     const row = cap.getByTestId('chat-changes-file').filter({ hasText: 'atelier-e2e-outside-cap' })
     await expect(row).toBeVisible()
     await row.click()
@@ -597,8 +598,8 @@ test.describe('07-secondary-panels', () => {
     const cap = page.getByTestId('chat-uncommitted-changes')
     const editTarget = join(repoDir, 'a.txt')
     await editFileOnce(page, sessionId, editTarget, 'hello from e2e\n', 'hello twice\n')
-    await expect(cap).toBeVisible({ timeout: 30_000 })
     await expandCap(page)
+    await expect(cap).toBeVisible({ timeout: 30_000 })
     // Earlier tests leave their own rows (plan mirror, outside-workspace file) in this cap, so the
     // claim here is about a.txt specifically: a second edit updates its row instead of adding one.
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)
@@ -610,6 +611,7 @@ test.describe('07-secondary-panels', () => {
     const cap = page.getByTestId('chat-uncommitted-changes')
     const editTarget = join(repoDir, 'a.txt')
     await editFileOnce(page, sessionId, editTarget, 'hello twice\n', 'a\n')
+    await expandCap(page)
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(0, {
       timeout: 30_000
     })
@@ -621,8 +623,8 @@ test.describe('07-secondary-panels', () => {
     const cap = page.getByTestId('chat-uncommitted-changes')
     const editTarget = join(repoDir, 'a.txt')
     await editFileOnce(page, sessionId, editTarget, 'a\n', 'pending git checkout\n')
-    await expect(cap).toBeVisible({ timeout: 30_000 })
     await expandCap(page)
+    await expect(cap).toBeVisible({ timeout: 30_000 })
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)
 
     await page.getByTestId('composer-input').fill(
@@ -631,6 +633,7 @@ test.describe('07-secondary-panels', () => {
     )
     await page.getByTestId('send-button').click()
     await waitForTurnIdle(page, 90_000)
+    await expandCap(page)
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(0, {
       timeout: 30_000
     })
@@ -642,8 +645,8 @@ test.describe('07-secondary-panels', () => {
     const cap = page.getByTestId('chat-uncommitted-changes')
     const editTarget = join(repoDir, 'a.txt')
     await editFileOnce(page, sessionId, editTarget, 'a\n', 'persist after relaunch\n')
-    await expect(cap).toBeVisible({ timeout: 30_000 })
     await expandCap(page)
+    await expect(cap).toBeVisible({ timeout: 30_000 })
     await expect(cap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })).toHaveCount(1)
 
     await electronApp.close()
@@ -653,8 +656,8 @@ test.describe('07-secondary-panels', () => {
     await waitForTurnIdle(page, 60_000)
     // `cap` belongs to the page that was just closed — the restored cap lives on the new one.
     const relaunchedCap = page.getByTestId('chat-uncommitted-changes')
-    await expect(relaunchedCap).toBeVisible({ timeout: 60_000 })
     await expandCap(page)
+    await expect(relaunchedCap).toBeVisible({ timeout: 60_000 })
     await expect(
       relaunchedCap.getByTestId('chat-changes-file').filter({ hasText: 'a.txt' })
     ).toHaveCount(1)
