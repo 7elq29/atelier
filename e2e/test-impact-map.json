@@ -168,6 +168,12 @@
       ]
     },
     {
+      "id": "unscheduled-task-full-width",
+      "paths": ["src/renderer/src/components/daily-notes/daily-notes.css"],
+      "changedLines": "dn-task-chip|dn-task-tag-add|dn-task-chip-remove",
+      "targets": [{ "file": "e2e/bug-unscheduled-task-full-width.spec.ts" }]
+    },
+    {
       "id": "daily-task-move",
       "paths": [
         "src/renderer/src/components/daily-notes/TaskMoveContextMenu.tsx",
@@ -192,6 +198,15 @@
       "paths": ["src/renderer/src/components/daily-notes/DailyNotesSidebar.tsx"],
       "changedLines": "dtitle|Daily Notes —",
       "targets": [{ "file": "e2e/calendar-day-refresh.spec.ts" }]
+    },
+    {
+      "id": "daily-notes-section-folding",
+      "paths": [
+        "src/renderer/src/components/daily-notes/DailyNotesSidebar.tsx",
+        "src/renderer/src/components/daily-notes/daily-notes.css"
+      ],
+      "changedLines": "unscheduledExpanded|trackersExpanded|section-toggle|dn-section-collapsed|dn-chevron",
+      "targets": [{ "file": "e2e/daily-notes-section-folding.spec.ts" }]
     },
     {
       "id": "daily-sidebar",
@@ -696,6 +711,12 @@
         { "file": "e2e/weekly-plan-wizard.spec.ts" },
         { "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts" }
       ]
+    },
+    {
+      "id": "logger-epipe",
+      "paths": ["src/main/logger.ts"],
+      "changedLines": "stdoutMirrorAvailable|isBrokenStdoutPipe|process\\.stdout",
+      "targets": [{ "file": "e2e/bug-logger-epipe.spec.ts" }]
     },
     {
       "id": "shell-boot",
