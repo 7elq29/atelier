@@ -2,6 +2,29 @@
 
 No tool-detail or composer chrome changes.
 
+## Regression: assistant text wraps too early
+
+The supplied screenshot shows assistant prose using only about 70% of its
+intended reading column. `.msg-wrap` already owns the responsive
+`min(84%, 720px)` measure; applying that cap again to its child
+`.msg-assistant` compounds the width to 84% × 84%.
+
+Expected: `.msg-wrap` remains the single width owner and `.msg-assistant`
+fills it (`width: 100%; max-width: none`). At a wide window, the assistant
+message and its wrapper must have the same computed width. This case is not
+shown separately in the mock; it follows the mock's existing 84%/720px
+assistant measure without applying it twice.
+
+## Regression: composer cursor offset
+
+The Notes-style Markdown layer wraps the textarea in `.composer-input-stack`,
+which changes the textarea's `offsetParent`. The custom block cursor must be
+positioned from the textarea and `.composer-box` bounding rectangles, not by
+adding `textarea.offsetTop/offsetLeft`. With a context bar present, the cursor
+must remain inside the visible textarea bounds at the active selection.
+Its height must match the 15.5px input font (`1em`), centered within the 1.7
+line box; using the full line-height makes the cursor visibly oversized.
+
 ## User flow
 
 1. The user opens a chat session and reads an assistant reply that has
@@ -56,6 +79,16 @@ or mode toggle. Tool cards and all non-input composer chrome are unchanged.
       type scale and neutral user-input surface, verifies inline Markdown
       in the composer and sent user bubble, and verifies that
       transcript padding decreases with the chat pane width.
+- [ ] At a 1400px window, the assistant message fills its `.msg-wrap`
+      container instead of receiving a second 84% width cap.
+- [ ] Screenshots `bug-chat-assistant-double-width-cap.png` and
+      `chat-assistant-width-after.png` personally compared to confirm the
+      corrected reading measure.
+- [ ] With the composer context bar visible, `.composer-cursor` remains
+      within the textarea bounds instead of appearing above the input.
+- [ ] The cursor's computed height equals the composer's computed font size.
+- [ ] Screenshot `composer-cursor-position-after.png` personally viewed
+      against the supplied broken-state screenshot.
 - [ ] Screenshot `e2e-artifacts/ui-chat-transcript-typography.png` viewed
       against the mock and supplied Cursor reference: paragraphs read with
       a clear gap, inline code is quieter than a chip, and user input is

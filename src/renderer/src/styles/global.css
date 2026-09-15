@@ -1423,6 +1423,7 @@ input[type='range'] {
    message) so the user bubble keeps its existing right-aligned layout once
    wrapped. */
 .msg-wrap { position: relative; max-width: min(84%, 720px); }
+.msg-wrap > .msg-assistant { width: 100%; max-width: none; }
 .msg-wrap-user { align-self: flex-end; max-width: 72%; }
 .msg-wrap-user .msg-user { max-width: 100%; }
 .msg-actions { position: absolute; top: -11px; right: 4px; display: none; gap: 3px; background: var(--bg-panel-raised); border: 1px solid var(--border-default); border-radius: 7px; padding: 2px; box-shadow: var(--shadow-panel); }
@@ -2501,7 +2502,7 @@ input[type='range'] {
 .composer-cursor {
   position: absolute;
   width: 0.5em;
-  height: calc(1em * var(--composer-line-height));
+  height: 1em;
   pointer-events: none;
   z-index: 5;
   border-radius: 1px;
