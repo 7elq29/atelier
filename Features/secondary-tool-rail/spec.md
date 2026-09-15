@@ -67,6 +67,8 @@ windows.
 - [ ] E2E confirms Chat's composer remains inside Chat while a tool is open.
 - [ ] E2E confirms Diff starts with no file tree, renders all changed files,
       and its Files toggle reveals the tree.
+- [ ] E2E confirms clicking a file in the Diff tree scrolls the stacked list to
+      that file.
 - [ ] E2E confirms Files starts at the session workspace path with no left tree.
 - [ ] E2E confirms a directory row and a clickable location segment navigate.
 - [ ] E2E confirms typing a path and pressing Enter navigates.

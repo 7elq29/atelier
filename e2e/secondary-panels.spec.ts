@@ -1138,6 +1138,46 @@ test.describe('07-secondary-panels', () => {
     log('diff panel: directory tree + path compression + collapse OK')
   })
 
+  test('diff panel: clicking a tree file scrolls the stacked list to that file', async () => {
+    await page.getByTestId('tab-diff').click()
+    const diff = page.getByTestId('diff-panel-active')
+    await diff.getByTestId('diff-sub-changes').click()
+    await diff.getByTestId('diff-files-toggle').click()
+    await expect(diff.locator('.file-tree')).toBeVisible()
+
+    const target = 'repo-wide-change.js'
+    const row = diff.locator(`[data-testid="diff-file-row"][data-path="${target}"]`)
+    await expect(row).toBeVisible()
+    await row.click()
+    await expect(row).toHaveClass(/active/)
+
+    // The stacked list is one long scroller: selecting a file has to bring that
+    // file's own section to the top of the viewport, not just mark the row. The
+    // last file can only reach the top if enough content follows it, so a
+    // scroller parked at its own end counts as arrived too.
+    await expect
+      .poll(
+        () =>
+          page.evaluate((path) => {
+            const area = document.querySelector<HTMLElement>(
+              '[data-testid="diff-panel-active"] .diff-area'
+            )
+            const section = area?.querySelector<HTMLElement>(`[data-diff-file-path="${path}"]`)
+            if (!area || !section) return false
+            const offset =
+              section.getBoundingClientRect().top - area.getBoundingClientRect().top
+            const atEnd = area.scrollTop >= area.scrollHeight - area.clientHeight - 2
+            return (offset <= 8 || atEnd) && area.scrollTop > 0
+          }, target),
+        { timeout: 15_000 }
+      )
+      .toBe(true)
+
+    await page.screenshot({ path: join(artifactsDir, 'secondary-tool-rail-diff-jump.png') })
+    await page.getByTestId('tab-chat').click()
+    log('diff panel: tree click jumps to the stacked file OK')
+  })
+
   // ── 3. Files panel: real tree, syntax highlighting, image + html preview
   test('files panel: tilde project path lists home directory entries', async () => {
     const markerName = `.atelier-e2e-tilde-files-${process.pid}`

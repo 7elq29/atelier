@@ -293,6 +293,43 @@ function DiffReviewBody({
     })
   }, [])
 
+  // In the stacked list every changed file is already on screen, so picking one
+  // in the tree means "take me to it" rather than "swap the pane's contents".
+  const diffAreaRef = useRef<HTMLDivElement>(null)
+  const scrollTargetRef = useRef<{ path: string; until: number } | null>(null)
+
+  /** Puts the file's section at the top of the list; true once it's there. */
+  const alignToFile = useCallback((path: string): boolean => {
+    const area = diffAreaRef.current
+    const section = area?.querySelector<HTMLElement>(`[data-diff-file-path="${CSS.escape(path)}"]`)
+    if (!area || !section) return false
+    const offset = (): number =>
+      section.getBoundingClientRect().top - area.getBoundingClientRect().top
+    area.scrollTop += offset()
+    return Math.abs(offset()) <= 1
+  }, [])
+
+  const handleSelectFile = useCallback(
+    (path: string) => {
+      onSelectFile(path)
+      if (!stacked) return
+      scrollTargetRef.current = { path, until: Date.now() + 2000 }
+      requestAnimationFrame(() => {
+        if (alignToFile(path)) scrollTargetRef.current = null
+      })
+    },
+    [onSelectFile, stacked, alignToFile]
+  )
+
+  // The picked file's hunks land after the click and grow the list, so keep
+  // re-aligning until the file actually sits at the top rather than a screen
+  // short of it.
+  useEffect(() => {
+    const target = scrollTargetRef.current
+    if (!stacked || !target) return
+    if (alignToFile(target.path) || Date.now() > target.until) scrollTargetRef.current = null
+  }, [files, fileDiffLoading, stacked, alignToFile])
+
   return (
     <div className={`review-body${stacked ? ' diff-vertical-list' : ''}${treeExpanded ? ' file-tree-expanded' : ''}`}>
       <div className="file-tree">
@@ -306,11 +343,14 @@ function DiffReviewBody({
           depth={0}
           selectedFile={selectedFile}
           collapsedDirs={collapsedDirs}
-          onSelectFile={onSelectFile}
+          onSelectFile={handleSelectFile}
           onToggleDir={toggleDir}
         />
       </div>
-      <div className={`diff-area${viewMode === 'full' ? ' diff-area--full-file' : ''}`}>
+      <div
+        ref={diffAreaRef}
+        className={`diff-area${viewMode === 'full' ? ' diff-area--full-file' : ''}`}
+      >
         {stacked && viewMode === 'hunks' ? (
           files.map((file) => (
             <section className="diff-stacked-file" data-diff-file-path={file.path} key={file.path}>
