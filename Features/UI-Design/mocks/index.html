@@ -334,9 +334,10 @@
   .msg-assistant .md-body :where(li + li), .plan-body .md-body :where(li + li) { margin-top: 8px; }
   .msg-assistant .md-body :where(code), .plan-body .md-body :where(code) { font-family: var(--font-mono); background: color-mix(in srgb, var(--bg-tint) 55%, transparent); border-radius: 3px; padding: 0 3px; font-size: 0.9em; }
   .msg-assistant .md-body :where(hr), .plan-body .md-body :where(hr) { border: none; border-top: 1px solid var(--border-subtle); margin: 8px 0; }
-  .msg-assistant .md-body a.md-link {
-    color: var(--info, #7fa8c1); text-decoration: underline; text-underline-offset: 2px;
+  :is(.msg-assistant, .msg-user) .md-body a, .plan-body .md-body a {
+    color: var(--info, #7fa8c1); font-weight: 400; text-decoration: none; text-underline-offset: 2px;
   }
+  :is(.msg-assistant, .msg-user) .md-body a:hover, .plan-body .md-body a:hover { text-decoration: underline; }
   .compaction-banner { align-self: center; font-size: 12.5px; color: var(--text-tertiary); background: var(--bg-panel-raised); border: 1px solid var(--border-subtle); border-radius: 100px; padding: 4px 12px; }
 
   /* Tool call ("code card"): a tinted strip with a colored left accent rule, no border box and

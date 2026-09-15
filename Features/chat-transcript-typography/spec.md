@@ -25,6 +25,29 @@ must remain inside the visible textarea bounds at the active selection.
 Its height must match the 15.5px input font (`1em`), centered within the 1.7
 line box; using the full line-height makes the cursor visibly oversized.
 
+## Regression: route text is mistaken for file links
+
+The supplied screenshot shows URL-route fragments such as `/v/`,
+`/v-staging/…`, and `/v-staging/logging-mcp-conformance-staging/` rendered as
+green links even though they are neither web URLs nor files known to the
+session workspace.
+
+Expected user flow:
+
+1. The user reads an assistant response containing route fragments, a known
+   workspace file, and an `http(s)` URL.
+2. Route fragments remain ordinary body text and do nothing when clicked.
+3. A file mention becomes a link only when the session file inventory can
+   resolve it to an openable full path.
+4. Explicit Markdown and bare `http(s)` web links remain links.
+5. File and web links use the existing blue `--info` token at normal font
+   weight and gain an underline only on hover. They do not use green accent
+   color or bold text.
+
+The mock's global `a` rule currently uses green `--accent`; update it and the
+chat `.md-body a` rule to blue `--info`, preserving the existing hover
+underline. No new link component or visual treatment is introduced.
+
 ## User flow
 
 1. The user opens a chat session and reads an assistant reply that has
@@ -66,6 +89,7 @@ Reuse the existing `.msg-assistant` / `.md-body` selectors in
 | User input | right-aligned, 15.5px/1.7, assistant Markdown rhythm, `color-mix(in srgb, var(--bg-panel) 25%, var(--bg-app))`, border `color-mix(in srgb, var(--text-disabled) 70%, var(--bg-panel))`, 10px radius |
 | Composer Markdown | Notes' `AtomicCodeMirrorEditor`, themed into the existing composer and capped at the existing 160px auto-grow height |
 | Transcript margins | `clamp(20px, 6%, 64px)` horizontal padding |
+| File and web links | `--info`, inherited font weight, no resting underline; underline on hover |
 
 The mock does not cover Markdown composition. The chosen treatment reuses the
 Notes inline editor inside the existing composer box, without adding a panel
@@ -96,3 +120,12 @@ or mode toggle. Tool cards and all non-input composer chrome are unchanged.
 - [ ] Screenshot `e2e-artifacts/ui-composer-inline-markdown.png` personally
       viewed: the textarea remains editable while inactive Markdown lines
       render with the same Notes-style inline treatment.
+- [ ] A real assistant response containing `/v/`, `/v-staging/…`, and
+      `/v-staging/logging-mcp-conformance-staging/` renders those fragments
+      as plain text while linking known `README.md` and
+      `https://example.com`.
+- [ ] File and web links compute to `--info`, normal font weight, no resting
+      underline, and underline on hover.
+- [ ] The supplied screenshot and the initial failing E2E screenshot capture
+      the broken state; corrected `chat-file-and-web-links-after.png` is
+      personally compared against them.

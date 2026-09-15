@@ -72,9 +72,17 @@ export function sessionFileLinkWorkspaceRoot(session: {
   return session.worktreePath ?? session.projectPath
 }
 
+type CandidateTreeNode = {
+  path: string
+  relativePath: string
+  type: 'file' | 'dir'
+  children?: readonly CandidateTreeNode[]
+}
+
 export function collectFilePathCandidates(sources: {
   capPaths?: readonly string[]
   filesList?: readonly { path: string; relativePath: string }[]
+  filesTree?: readonly CandidateTreeNode[]
   diffPaths?: readonly string[]
 }): string[] {
   const out: string[] = []
@@ -90,6 +98,16 @@ export function collectFilePathCandidates(sources: {
     add(e.path)
     add(e.relativePath)
   }
+  const addTreeFiles = (nodes: readonly CandidateTreeNode[]): void => {
+    for (const node of nodes) {
+      if (node.type === 'file') {
+        add(node.path)
+        add(node.relativePath)
+      }
+      if (node.children?.length) addTreeFiles(node.children)
+    }
+  }
+  addTreeFiles(sources.filesTree ?? [])
   for (const p of sources.diffPaths ?? []) add(p)
   return out
 }
@@ -137,6 +155,42 @@ export function resolveSessionFilePath(
     if (match) return joinToWorkspaceRoot(match, workspaceRoot)
   }
   return joinToWorkspaceRoot(trimmed, workspaceRoot)
+}
+
+function normalizeComparablePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\.\//, '')
+}
+
+/**
+ * Resolve a file mention only when the session's real file inventory proves
+ * the target exists. Deriving every slash-prefixed string from the workspace
+ * root turns URL routes such as `/v-staging/dashboard/` into fake file links.
+ */
+export function resolveKnownSessionFilePath(
+  raw: string,
+  workspaceRoot: string,
+  projectRoot: string,
+  candidates?: readonly string[]
+): string | null {
+  const resolved = resolveSessionFilePath(raw, workspaceRoot, projectRoot, candidates)
+  if (!resolved) return null
+  const trimmed = raw.trim()
+  // A home/absolute path with a recognized file extension already carries
+  // enough information for Files to open it, including paths outside the
+  // workspace inventory. Extensionless absolute strings remain untrusted:
+  // they are commonly application routes (`/v-staging/dashboard/`).
+  if ((trimmed.startsWith('~') || trimmed.startsWith('/')) && SOURCE_EXT.test(trimmed)) {
+    return resolved
+  }
+  if (!candidates?.length) return null
+  const target = normalizeComparablePath(resolved)
+  const existsInInventory = candidates.some((candidate) => {
+    const candidatePath = isAbsoluteFilePath(candidate)
+      ? candidate
+      : joinToWorkspaceRoot(candidate, workspaceRoot)
+    return normalizeComparablePath(candidatePath) === target
+  })
+  return existsInInventory ? resolved : null
 }
 
 function isInsideMarkdownLink(whole: string, offset: number, matchEnd: number): boolean {
@@ -192,7 +246,7 @@ function tryLinkPath(
   if (whole.slice(offset + matchLen).startsWith('](')) return path
   if (!path.includes('/') && isFilenameBasenameOfLongerPath(whole, offset)) return path
   if (!looksLikeFilePath(path)) return path
-  const resolved = resolveSessionFilePath(path, workspaceRoot, projectRoot, candidates)
+  const resolved = resolveKnownSessionFilePath(path, workspaceRoot, projectRoot, candidates)
   if (!resolved) return path
   return `[${path}](${ATELIER_FILE_SCHEME}${encodeURIComponent(resolved)})`
 }

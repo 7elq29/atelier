@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const projectRoot = join(__dirname, '..')
@@ -734,7 +734,7 @@ test.describe('03-chat-surface-core', () => {
     await fileLink.click()
 
     await expect(page.getByTestId('files-panel-active')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('files-location-input')).toHaveValue('~/.mcp.json')
+    await expect(page.getByTestId('files-location-input')).toHaveValue(join(homedir(), '.mcp.json'))
   })
 
   test('assistant file paths open Files directly, but bookmarked files open the review panel', async ({}, testInfo) => {
@@ -749,15 +749,19 @@ test.describe('03-chat-surface-core', () => {
     await page.getByTestId('send-button').click()
     await expect(page.getByTestId('stop-button')).toBeVisible({ timeout: 5_000 })
     const assistantMsg = page.locator('.msg-assistant[data-testid="transcript-message"]').last()
+    const fileLink = page
+      .locator('.msg-assistant[data-testid="transcript-message"]')
+      .getByTestId('msg-file-link')
+      .filter({ hasText: targetFile })
+      .last()
     await waitForCondition(
       page,
-      async () => assistantMsg.locator('[data-testid="msg-file-link"]').count().then((count) => count > 0),
+      async () => fileLink.count().then((count) => count > 0),
       60_000
     )
     await waitForTurnIdle(page, 60_000)
     await expect(assistantMsg).toBeVisible({ timeout: 30_000 })
 
-    const fileLink = assistantMsg.locator('[data-testid="msg-file-link"]').first()
     await expect(fileLink).toHaveText(targetFile, { timeout: 30_000 })
     await fileLink.click({ button: 'right' })
     await expect(page.getByTestId('chat-bookmark-toggle')).toHaveText('Bookmark')
