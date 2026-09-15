@@ -677,6 +677,29 @@ test.describe('07-secondary-panels', () => {
     await expect(strip.getByTestId('tab-files')).toHaveCount(0)
     await expect(strip.getByTestId('tab-terminal')).toHaveCount(0)
     await expect(rail).toBeVisible()
+    const floatGeometry = await page.evaluate(() => {
+      const shell = document.querySelector('.workspace-shell')
+      const main = document.querySelector('[data-main-content]')
+      const icons = document.querySelector('[data-testid="workspace-tool-rail"]')
+      if (!shell || !main || !icons) return null
+      const shellRect = shell.getBoundingClientRect()
+      const mainRect = main.getBoundingClientRect()
+      const railRect = icons.getBoundingClientRect()
+      return {
+        position: getComputedStyle(icons).position,
+        shellWidth: shellRect.width,
+        mainWidth: mainRect.width,
+        railLeft: railRect.left,
+        railRight: railRect.right,
+        mainRight: mainRect.right
+      }
+    })
+    expect(floatGeometry).not.toBeNull()
+    expect(floatGeometry!.position).toBe('absolute')
+    expect(Math.abs(floatGeometry!.shellWidth - floatGeometry!.mainWidth)).toBeLessThanOrEqual(1)
+    expect(floatGeometry!.railRight).toBeLessThanOrEqual(floatGeometry!.mainRight + 1)
+    expect(floatGeometry!.railLeft).toBeGreaterThan(floatGeometry!.mainRight - 56)
+    await page.screenshot({ path: join(artifactsDir, 'workspace-tool-rail-floating.png') })
     await expect(page.getByTestId('tab-diff')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     await expect(page.locator('.tab-content[data-tab="chat"]')).not.toHaveClass(/hidden/)
     await expect(page.locator('.tab-content[data-tab="diff"]')).toHaveClass(/hidden/)

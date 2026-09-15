@@ -2933,11 +2933,17 @@ body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cur
   min-width: 0;
   min-height: 0;
   display: flex;
+  /* Anchor `.workspace-tool-rail` so the icons can float without a column. */
+  position: relative;
 }
 .workspace-shell > [data-main-content] { flex: 1; min-width: 0; }
 .workspace-tool-rail {
-  width: 44px;
-  flex: 0 0 44px;
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  z-index: 5;
+  transform: translateY(-50%);
+  width: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2946,9 +2952,11 @@ body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cur
   padding: 0;
   border: 0;
   background: transparent;
+  pointer-events: none;
 }
 .workspace-tool-button {
   position: relative;
+  pointer-events: auto;
   width: 36px;
   height: 36px;
   display: grid;
