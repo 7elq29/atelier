@@ -587,7 +587,14 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const ta = textareaRef.current
     if (!ta) return
     const coords = getCaretCoordinates(ta, ta.selectionStart ?? 0)
-    setCursorPos({ top: coords.top + ta.offsetTop, left: coords.left + ta.offsetLeft })
+    const composer = ta.closest<HTMLElement>('.composer-box')
+    if (!composer) return
+    const textareaRect = ta.getBoundingClientRect()
+    const composerRect = composer.getBoundingClientRect()
+    setCursorPos({
+      top: coords.top + textareaRect.top - composerRect.top - composer.clientTop,
+      left: coords.left + textareaRect.left - composerRect.left - composer.clientLeft
+    })
   }, [active])
 
   const scheduleCursorUpdate = useCallback(() => {

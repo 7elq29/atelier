@@ -5,7 +5,7 @@
  */
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { seedSkipOnboarding } from './e2e-config'
@@ -75,7 +75,38 @@ test('chat prose, user input, and margins use a calm responsive rhythm', async (
     await expect(composerMarkdown.locator('.cm-atomic-strong')).toContainText('Update dashboard')
     await expect(composerMarkdown.locator('.cm-atomic-list-marker').first()).toBeVisible()
     await composerInput.press('Control+Home')
+    await page.waitForTimeout(100)
     await page.screenshot({ path: join(artifactsDir, 'ui-composer-inline-markdown.png') })
+    await composerInput.fill('')
+    await composerInput.click()
+    await page.waitForTimeout(100)
+    await page.screenshot({ path: join(artifactsDir, 'composer-cursor-position-after.png') })
+    const composerCursorBounds = await page.evaluate(() => {
+      const input = document.querySelector<HTMLElement>('[data-testid="composer-input"]')
+      const cursor = document.querySelector<HTMLElement>('.composer-cursor')
+      if (!input || !cursor) return null
+      const inputRect = input.getBoundingClientRect()
+      const cursorRect = cursor.getBoundingClientRect()
+      return {
+        inputTop: inputRect.top,
+        inputBottom: inputRect.bottom,
+        inputFontSize: Number.parseFloat(getComputedStyle(input).fontSize),
+        paddingTop: Number.parseFloat(getComputedStyle(input).paddingTop),
+        cursorTop: cursorRect.top,
+        cursorBottom: cursorRect.bottom,
+        cursorHeight: cursorRect.height
+      }
+    })
+    expect(composerCursorBounds).not.toBeNull()
+    expect(composerCursorBounds!.cursorTop).toBeGreaterThanOrEqual(composerCursorBounds!.inputTop)
+    expect(composerCursorBounds!.cursorBottom).toBeLessThanOrEqual(composerCursorBounds!.inputBottom)
+    expect(composerCursorBounds!.cursorHeight).toBeCloseTo(composerCursorBounds!.inputFontSize, 0)
+    expect(
+      Math.abs(
+        composerCursorBounds!.cursorTop -
+          (composerCursorBounds!.inputTop + composerCursorBounds!.paddingTop)
+      )
+    ).toBeLessThanOrEqual(6)
 
     await composerInput.fill(
       'Reply with exactly this Markdown and nothing else — no other words before or after it, ' +
@@ -154,6 +185,15 @@ test('chat prose, user input, and margins use a calm responsive rhythm', async (
 
     await setWindowSize(app, 1400, 900)
     await page.waitForTimeout(150)
+    await page.screenshot({ path: join(artifactsDir, 'chat-assistant-width-after.png') })
+    const mainLog = readFileSync(join(userDataDir, 'logs', 'main.log'), 'utf8')
+    expect(mainLog).toContain('session:sendMessage invoked')
+    expect(mainLog).toContain('harness event: result (turn complete)')
+    const assistantWidths = await assistantMsg.evaluate((el) => ({
+      message: el.getBoundingClientRect().width,
+      wrapper: el.parentElement?.getBoundingClientRect().width ?? 0
+    }))
+    expect(assistantWidths.message).toBeCloseTo(assistantWidths.wrapper, 0)
     const widePadding = await page.locator('.transcript').evaluate((el) =>
       Number.parseFloat(getComputedStyle(el).paddingLeft)
     )
