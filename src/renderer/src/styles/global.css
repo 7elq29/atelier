@@ -79,7 +79,9 @@
   background: var(--bg-sidebar);
   display: flex;
   flex-direction: column;
+  font-family: var(--font-ui);
   font-size: var(--font-interface-size);
+  -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
 .sidebar.collapsed {
@@ -202,9 +204,9 @@
   flex-direction: column;
 }
 .sidebar-pane-label {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-disabled);
 }
@@ -324,11 +326,19 @@
   min-width: 0;
 }
 .session-name {
-  font-size: 14.5px;
+  font-size: 13.5px;
+  font-weight: 450;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.terminal-session-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+  color: var(--text-tertiary);
 }
 .history-empty-hint {
   font-size: 12.5px;
@@ -3413,13 +3423,6 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 }
 
 /* Sidebar — fixed Daily note row (Obsidian vault slice) */
-.app-note-row--daily .session-name {
-  font-weight: 600;
-}
-.app-note-row--daily.active .row-tag {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-subtle));
-  color: var(--accent);
-}
 
 .topbar--daily-note .topbar-title-group {
   gap: 14px;

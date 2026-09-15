@@ -89,6 +89,12 @@
     height: 1px; flex-shrink: 0; background: var(--border-default); margin: 6px 6px 4px;
   }
   .sidebar-list-pane { flex: 0 0 auto; display: flex; flex-direction: column; }
+  /* Compact system-font treatment matched to Cursor's repository/chat list. */
+  .sidebar .session-name { font-size: 13.5px; font-weight: 450; letter-spacing: -0.01em; }
+  .sidebar .sidebar-pane-label { font-size: 10.5px; letter-spacing: 0.08em; }
+  .terminal-session-icon {
+    width: 14px; height: 14px; display: block; color: var(--text-tertiary);
+  }
   .sidebar-list-pane--notes .app-note-row .session-indicator { width: 18px; display: flex; align-items: center; justify-content: center; }
   .sidebar-list-pane--bookmarks .sidebar-bookmark-row .session-indicator {
     width: 18px; display: flex; align-items: center; justify-content: center; color: var(--text-tertiary);
@@ -122,8 +128,6 @@
   }
 
   /* Daily note (Obsidian vault slice — ## Notes → EOF) */
-  .app-note-row--daily .session-name { font-weight: 600; }
-  .app-note-row--daily.active .row-tag { border-color: color-mix(in srgb, var(--accent) 40%, var(--border-subtle)); color: var(--accent); }
   #panel-daily-note .daily-note-scope-bar {
     flex-shrink: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     padding: 8px 24px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-panel);
@@ -1430,9 +1434,12 @@
           </div>
           <div class="session-list session-list--natural" id="terminalList">
           <div class="session-row" data-session="s3" data-mode="terminal" data-status="disconnected" draggable="true" onclick="selectSession('s3')">
-            <span class="session-indicator" title="Color: custom · Status: disconnected">
-              <span class="color-core" id="cdot-s3" style="background:var(--sc-rose)"></span>
-              <span class="status-badge status-disconnected"></span>
+            <span class="session-indicator" title="Terminal">
+              <svg class="terminal-session-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                <path d="m7 9 3 3-3 3"></path>
+                <path d="M13 15h4"></path>
+              </svg>
             </span>
             <div class="session-main hide-on-collapse">
               <div class="session-name" id="sname-s3">Terminal-only shell</div>
@@ -1464,7 +1471,6 @@
               <span class="session-indicator" aria-hidden="true"><svg class="icon" width="14" height="14"><use href="#icon-book"/></svg></span>
               <div class="session-main">
                 <div class="session-name">Daily note</div>
-                <div class="session-meta"><span class="row-tag">Obsidian vault</span></div>
               </div>
             </div>
             <div
@@ -1476,7 +1482,6 @@
               <span class="session-indicator" aria-hidden="true"><svg class="icon" width="14" height="14"><use href="#icon-calendar"/></svg></span>
               <div class="session-main">
                 <div class="session-name">Weekly plan</div>
-                <div class="session-meta"><span class="row-tag" id="weeklyPlanWeekTag">Aug 10 – 16, 2026</span></div>
               </div>
               <button type="button" class="row-menu-btn hide-on-collapse weekly-plan-create-btn" data-testid="weekly-plan-create-button" title="Create weekly plan" onclick="event.stopPropagation(); selectWeeklyPlanWizard();">+</button>
             </div>

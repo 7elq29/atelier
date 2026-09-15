@@ -52,6 +52,24 @@
       ]
     },
     {
+      "id": "sidebar-refinement-shared-css",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "sidebar-pane-label|session-name|terminal-session-icon|app-note-row--daily|font-smoothing|font-family",
+      "targets": [{ "file": "e2e/sidebar-refinement.spec.ts" }]
+    },
+    {
+      "id": "sidebar-refinement-app",
+      "paths": ["src/renderer/src/App.tsx"],
+      "changedLines": "weeklyPlanWeekLabel",
+      "targets": [{ "file": "e2e/sidebar-refinement.spec.ts" }]
+    },
+    {
+      "id": "sidebar-refinement-component",
+      "paths": ["src/renderer/src/components/Sidebar.tsx"],
+      "changedLines": "TerminalSessionIcon|terminal-session-icon|weeklyPlanWeekLabel|Obsidian vault|session-meta|row-tag",
+      "targets": [{ "file": "e2e/sidebar-refinement.spec.ts" }]
+    },
+    {
       "id": "terminal-shared-css",
       "paths": ["src/renderer/src/styles/global.css"],
       "changedLines": "term-body|term-shell|term-panel|terminal-cache|xterm",
