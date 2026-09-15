@@ -302,7 +302,7 @@ test('chat prose, user input, and margins use a calm responsive rhythm', async (
     })
     expect(layoutWidths).not.toBeNull()
     const responsiveColumnWidth = (parentWidth: number): number =>
-      Math.max(parentWidth * 0.6, Math.min(720, parentWidth))
+      Math.max(parentWidth * 0.6, Math.min(1080, parentWidth))
     expect(layoutWidths!.body).toBeCloseTo(responsiveColumnWidth(layoutWidths!.bodyParent), 0)
     expect(layoutWidths!.composer).toBeCloseTo(
       responsiveColumnWidth(layoutWidths!.composerParent),

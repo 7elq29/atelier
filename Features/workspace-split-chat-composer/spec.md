@@ -26,11 +26,11 @@ chat body. Reproduce that ownership visually while retaining the real app's
 `.composer-cache` keep-alive behavior.
 
 - In a single Chat view, `.composer-cache-entry.active` remains centered at
-  60% on wide surfaces, with a 720px preferred minimum.
+  60% on wide surfaces, with a 1080px preferred minimum.
 - In a split, `.composer-cache` takes the same primary/secondary pane geometry
   as `.tab-content[data-tab='chat']`.
 - The active composer remains centered within that Chat pane and uses the
-  pane's full width when the pane is narrower than 720px.
+  pane's full width when the pane is narrower than 1080px.
 - The Chat pane reserves the composer's live rendered height so transcript
   content does not sit behind it.
 - No colors, type, controls, split-divider, pane-close, or sibling-panel

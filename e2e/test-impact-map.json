@@ -878,6 +878,12 @@
       "targets": [{ "file": "e2e/ui-review-pane-chrome.spec.ts" }]
     },
     {
+      "id": "chat-column-min-width",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "chat-body-row|composer-cache-entry.active|1080px|720px",
+      "targets": [{ "file": "e2e/ui-chat-transcript-typography.spec.ts" }]
+    },
+    {
       "id": "chat-prose-shared-css",
       "paths": ["src/renderer/src/styles/global.css"],
       "changedLines": "transcript|msg-user|msg-assistant|md-body|msg-wrap ",
