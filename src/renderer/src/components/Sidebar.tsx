@@ -1201,9 +1201,6 @@ export default function Sidebar({
 
   return (
     <div className={'sidebar' + (collapsed ? ' collapsed' : '')} data-testid="sidebar">
-      <div className="sidebar-top">
-        <div className="app-mark" data-testid="app-mark" aria-hidden />
-      </div>
       <div className="new-group-row hide-on-collapse">
         {newGroupOpen ? (
           <input
