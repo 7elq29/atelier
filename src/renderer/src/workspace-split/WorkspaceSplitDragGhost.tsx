@@ -1,4 +1,4 @@
-import type { SessionTab } from '../components/panels/TabBar'
+import type { SessionTab } from '../../../shared/session-types'
 import { WORKSPACE_TAB_LABELS } from './workspace-split-types'
 
 /** Label that follows the cursor while a tab is dragged, per the mock. */

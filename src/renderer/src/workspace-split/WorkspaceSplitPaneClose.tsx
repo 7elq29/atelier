@@ -1,4 +1,4 @@
-import type { SessionTab } from '../components/panels/TabBar'
+import type { SessionTab } from '../../../shared/session-types'
 import type { WorkspaceTabVisibility } from './workspace-split-types'
 
 const TAB_LABELS: Record<string, string> = {

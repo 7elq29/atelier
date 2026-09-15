@@ -2,10 +2,11 @@
 
 ## User flow
 
-1. A Claude Code session opens on Chat with Diff, Files, Terminal, and (for a
-   remote session) Ports shown as plain vertical icons on the right edge of the
-   session workspace, immediately left of the Daily Notes panel. The icons
-   float over that right edge and do not reserve a dedicated column.
+1. A Claude Code session opens directly on Chat with no Chat tab in the
+   topbar. Diff, Files, Terminal, and (for a remote session) Ports are shown as
+   plain vertical icons on the right edge of the session workspace,
+   immediately left of the Daily Notes panel. The icons float over that right
+   edge and do not reserve a dedicated column.
 2. The icons have no enclosing rail background, border, label, or selected
    background. They are vertically grouped slightly above center; hover and
    active state change only the icon color. Active icons and count badges use
@@ -32,6 +33,12 @@
    the typed directory or file and Escape cancels.
 9. Clicking a directory row opens it in the main Files content area. Clicking
    any directory segment in the location bar opens that ancestor.
+10. Clicking a changed-file row in Chat opens the existing dedicated file
+    review renderer as the right half of the workspace. It does not navigate
+    to the Diff or Files tool.
+11. Clicking a file bookmark in Chat opens that same dedicated file renderer
+    as the right half of the workspace. URL bookmarks continue to open
+    externally.
 
 ## UI
 
@@ -40,6 +47,9 @@ The approved design is in `Features/UI-Design/mocks/index.html`:
 - Reuse `.workspace-tool-rail` only as a transparent, borderless positioning
   container and `.workspace-tool-button` as a 36px hit target around a 22px
   icon. Do not add rail chrome or a "Tools" label.
+- Do not render a Chat pill in the session topbar. The empty `.tab-strip`
+  readiness anchor may remain for session lifecycle consumers, but it has no
+  visible content.
 - Reuse `.workspace-pane-head` as an absolutely positioned control group only;
   omit `.workspace-pane-title` and all header background/border treatment.
 - Reuse `.workspace-pane-enlarge` and `.workspace-pane-close` for the overlay
@@ -60,6 +70,7 @@ windows.
 ## Done
 
 - [ ] E2E confirms the horizontal tab strip no longer contains secondary tools.
+- [ ] E2E confirms the Chat tab/pill is absent.
 - [ ] E2E confirms each available icon opens its corresponding right pane and
       selecting another icon replaces it.
 - [ ] E2E confirms the active tool icon and count badge resolve to neutral gray
@@ -68,9 +79,14 @@ windows.
 - [ ] E2E confirms Chat's composer remains inside Chat while a tool is open.
 - [ ] E2E confirms Diff starts with no file tree, renders all changed files,
       and its Files toggle reveals the tree.
+- [ ] E2E confirms clicking a file in the Diff tree scrolls the stacked list to
+      that file.
 - [ ] E2E confirms Files starts at the session workspace path with no left tree.
 - [ ] E2E confirms a directory row and a clickable location segment navigate.
 - [ ] E2E confirms typing a path and pressing Enter navigates.
+- [ ] E2E confirms Chat changed files and file bookmarks use the dedicated
+      file-review renderer on the right without activating Diff or Files.
+- [ ] E2E confirms URL bookmarks retain external navigation.
 - [ ] Screenshots cover the icon-only rail, right Diff, right Files, and
       enlarged Files states and are visually compared with the approved mock.
 - [ ] `npm run build` passes.

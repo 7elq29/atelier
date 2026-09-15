@@ -1445,7 +1445,12 @@ input[type='range'] {
 .response-review-pane { flex-shrink: 0; border-left: 1px solid var(--border-subtle); display: flex; flex-direction: column; min-height: 0; background: var(--bg-code); min-width: 0; }
 .response-review-split-handle { width: 5px; flex-shrink: 0; cursor: col-resize; background: transparent; align-self: stretch; }
 .response-review-split-handle:hover { background: var(--accent); }
-.chat-body-row.response-review-open { overflow: hidden; min-height: 0; }
+.chat-body-row.response-review-open {
+  overflow: hidden;
+  min-height: 0;
+  width: 100%;
+  margin-inline: 0;
+}
 .chat-body-row.response-review-open .tracker-rail { display: none; }
 .chat-body-row.response-review-open .chat-main-col { min-width: 0; flex: 1 1 0; overflow-y: auto; min-height: 0; }
 .chat-body-row.response-review-open .response-review-split-handle,
@@ -2903,6 +2908,7 @@ input[type='range'] {
 
 /* ===== Secondary panels (07-secondary-panels): tab bar + Diff/Files/Terminal/Ports ===== */
 .tab-strip { display: flex; gap: 2px; margin-left: 10px; }
+.tab-strip.tab-strip--empty { width: 1px; height: 1px; margin-left: 0; overflow: hidden; }
 .tab-strip button { background: transparent; border: none; color: var(--text-secondary); font-size: var(--text-sm); padding: 6px 10px; border-radius: var(--r-sm); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .tab-strip button.active { background: var(--bg-active); color: var(--text-primary); }
 .tab-badge {
@@ -3894,6 +3900,9 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
    dock the cache to Chat's pane geometry and reserve its measured height in
    the chat tab so transcript content cannot scroll underneath it. */
 .session-workspace-tabs--split .tab-content[data-tab='chat'] .chat-tab-wrap {
+  padding-bottom: var(--active-composer-height, 0px);
+}
+.session-workspace-tabs--review .tab-content[data-tab='chat'] .chat-tab-wrap {
   padding-bottom: var(--active-composer-height, 0px);
 }
 .composer-cache--split {

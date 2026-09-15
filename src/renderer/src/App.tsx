@@ -11,7 +11,6 @@ import { DeleteSessionLinkedTaskDialog, TaskSessionReplaceDialog } from './compo
 import TranscriptSearchBar from './components/chat/TranscriptSearchBar'
 import Composer, { type ComposerHandle } from './components/chat/Composer'
 import SdkToastStack from './components/chat/SdkToastStack'
-import TabBar, { type SessionTab } from './components/panels/TabBar'
 import WorkspaceToolRail, { type WorkspaceToolTab } from './components/panels/WorkspaceToolRail'
 import {
   createSplit,
@@ -67,6 +66,7 @@ import type {
   ImageAttachment,
   ModelSelection,
   SessionRecord,
+  SessionTab,
   SessionStatus
 } from '../../shared/session-types'
 import { restorableSessionTab } from '../../shared/session-types'
@@ -839,6 +839,7 @@ export default function App(): JSX.Element {
       const sessionId = activeSessionId
       if (!sessionId) return
       if (tab === 'chat') {
+        setReviewTarget(null)
         setWorkspaceSplitBySession((prev) => {
           const { [sessionId]: _removed, ...rest } = prev
           return rest
@@ -849,6 +850,7 @@ export default function App(): JSX.Element {
       const splitRatio = workspaceSplitBySession[sessionId]?.splitRatio ?? 0.5
       const nextSplit = createSplit('chat', tab, splitRatio, 'row')
       if (!nextSplit) return
+      setReviewTarget(null)
       setWorkspaceSplitBySession((prev) => ({ ...prev, [sessionId]: nextSplit }))
       rememberActiveTab(sessionId, tab)
     },
@@ -1067,7 +1069,7 @@ export default function App(): JSX.Element {
       )
       const result = await window.atelier.filesRead(absolutePath, session.hostname ?? null)
 
-      rememberActiveTab(session.id, 'chat')
+      selectTab('chat')
       setReviewTarget({
         sourceId: -1,
         kind: 'file',
@@ -1077,7 +1079,7 @@ export default function App(): JSX.Element {
             : result.content,
         capFilePath: absolutePath
       })
-      window.atelier.log('info', 'bookmark:file opened in review panel', {
+      window.atelier.log('info', 'bookmark:file opened in dedicated review pane', {
         sessionId: session.id,
         path: absolutePath,
         fileKind: result.kind
@@ -1086,7 +1088,7 @@ export default function App(): JSX.Element {
     [
       activeSessionId,
       allSessions,
-      rememberActiveTab,
+      selectTab,
       sessions.statuses,
       sessionWorkspace.workspaceBySession
     ]
@@ -1339,13 +1341,11 @@ export default function App(): JSX.Element {
       }
       if (opensInFilesTab) {
         const result = await window.atelier.capOutsideFileDiff(activeSessionId, workspacePath, path)
-        // No diff means no baseline to compare against, not "nothing to show" — a click that opens
-        // nothing at all reads as a broken row.
         if (!result) {
           openFileInFiles(path)
           return
         }
-        rememberActiveTab(activeSessionId, 'chat')
+        selectTab('chat')
         setReviewTarget({
           sourceId: -1,
           kind: 'file',
@@ -1370,7 +1370,7 @@ export default function App(): JSX.Element {
         openFileInFiles(path)
         return
       }
-      rememberActiveTab(activeSessionId, 'chat')
+      selectTab('chat')
       setReviewTarget({
         sourceId: -1,
         kind: 'file',
@@ -1384,6 +1384,7 @@ export default function App(): JSX.Element {
       allSessions,
       openFileInFiles,
       rememberActiveTab,
+      selectTab,
       sessions.statuses,
       sessionWorkspace.workspaceBySession
     ]
@@ -1561,6 +1562,8 @@ export default function App(): JSX.Element {
     (chatPaneVisibility === 'split-primary' || chatPaneVisibility === 'split-secondary') &&
     activeWorkspaceSplit
       ? ` composer-cache--split composer-cache--split-${activeWorkspaceSplit.direction} composer-cache--${chatPaneVisibility}`
+      : reviewTarget
+        ? ' composer-cache--split composer-cache--split-row composer-cache--split-primary'
       : ''
 
   useLayoutEffect(() => {
@@ -1821,9 +1824,11 @@ export default function App(): JSX.Element {
             </div>
             {activeSession && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanSurface && activeSession.mode === 'claude-code' && !activeSessionDisconnected && (
               <>
-                <TabBar
-                  activeTab={activeWorkspaceSplit ? 'diff' : activeTab}
-                  onSelect={selectTab}
+                <div
+                  className="tab-strip tab-strip--empty"
+                  data-testid="tab-strip"
+                  data-hint-exclude-root=""
+                  aria-hidden="true"
                 />
                 <div className="topbar-spacer" />
                 <TranscriptSearchBar
@@ -2020,7 +2025,9 @@ export default function App(): JSX.Element {
                   className={`session-workspace-tabs${
                     splitLayoutVisible && activeWorkspaceSplit
                       ? ` session-workspace-tabs--split session-workspace-tabs--split-${activeWorkspaceSplit.direction}`
-                      : ''
+                      : reviewTarget
+                        ? ' session-workspace-tabs--review'
+                        : ''
                   }`}
                   style={
                     splitLayoutVisible && activeWorkspaceSplit
