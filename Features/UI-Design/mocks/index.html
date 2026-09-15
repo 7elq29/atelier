@@ -296,7 +296,7 @@
   /* ===== Chat tab ===== */
   .chat-tab-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
   /* Todos/Subagents: a real flex column alongside the transcript (not an overlay) so it never covers message text; collapsible to a slim icon rail when space is tight. */
-  .chat-body-row { flex: 1; display: flex; min-height: 0; }
+  .chat-body-row { flex: 1; display: flex; min-height: 0; width: 60%; margin-inline: auto; }
   .chat-main-col { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .tracker-rail { width: 290px; flex-shrink: 0; padding: 16px 16px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; transition: width .12s ease, padding .12s ease; }
   .tracker-rail.collapsed { width: 40px; padding: 12px 6px; align-items: center; }
@@ -328,7 +328,7 @@
   .turn-divider { display: flex; align-items: center; gap: 10px; margin: 4px 0; color: var(--text-disabled); font-size: 13.5px; }
   .turn-divider::before, .turn-divider::after { content: ""; flex: 1; height: 1px; background: var(--border-subtle); }
   .msg-user { align-self: flex-end; max-width: 72%; background: color-mix(in srgb, var(--bg-panel) 25%, var(--bg-app)); border: 1px solid color-mix(in srgb, var(--text-disabled) 70%, var(--bg-panel)); border-radius: var(--r-md); padding: 11px 16px; font-size: 15.5px; line-height: 1.7; }
-  .msg-assistant { max-width: min(84%, 720px); font-size: 15.5px; line-height: 1.7; }
+  .msg-assistant { max-width: 84%; font-size: 15.5px; line-height: 1.7; }
   .msg-assistant .md-body, .plan-body .md-body { white-space: normal; }
   .msg-assistant .md-body :where(p), .plan-body .md-body :where(p) { margin: 0 0 16px; }
   .msg-assistant .md-body :where(p:empty), .plan-body .md-body :where(p:empty) { display: none; }
@@ -537,7 +537,7 @@
 
   /* Composer — same theme-conditional elevation as the AskUserQuestion card, no separating
      line above it (the variant lets whitespace do that job instead of a border-top) */
-  .composer-wrap { padding: 12px 28px 20px; }
+  .composer-wrap { padding: 12px 28px 20px; width: 60%; margin-inline: auto; }
   .composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; }
   .composer-box:focus-within { border-color: var(--elevation-border); box-shadow: var(--elevation-shadow); }
   .composer-box { border: 1px solid var(--elevation-border); border-radius: var(--r-xl); background: var(--bg-panel); box-shadow: var(--elevation-shadow); position: relative; overflow: visible; font-size: var(--composer-input-font-size, 15px); }
@@ -1199,7 +1199,7 @@
   mark.search-hit { background: var(--warning); color: #241d0e; border-radius: 2px; padding: 0 1px; }
 
   /* ===== Message action toolbar ===== */
-  .msg-wrap { position: relative; max-width: min(84%, 720px); }
+  .msg-wrap { position: relative; max-width: 84%; }
   .msg-wrap > .msg-assistant { width: 100%; max-width: none; }
   .msg-actions { position: absolute; top: -11px; right: 4px; display: none; gap: 3px; background: var(--bg-panel-raised); border: 1px solid var(--border-default); border-radius: 7px; padding: 2px; box-shadow: var(--shadow-panel); }
   .msg-wrap:hover .msg-actions { display: flex; }
