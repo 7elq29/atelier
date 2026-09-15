@@ -4,7 +4,8 @@
 
 1. A Claude Code session opens on Chat with Diff, Files, Terminal, and (for a
    remote session) Ports shown as plain vertical icons on the right edge of the
-   session workspace, immediately left of the Daily Notes panel.
+   session workspace, immediately left of the Daily Notes panel. The icons
+   float over that right edge and do not reserve a dedicated column.
 2. The icons have no enclosing rail background, border, label, or selected
    background. They are vertically grouped slightly above center; hover and
    active state change only the icon color. Active icons and count badges use
