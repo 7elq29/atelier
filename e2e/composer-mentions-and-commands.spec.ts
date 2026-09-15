@@ -73,7 +73,7 @@ test.describe('10e-enrichment-file-mentions-and-commands', () => {
     sessionId = (await row.getAttribute('data-session-id')) as string
     expect(sessionId).toBeTruthy()
 
-    await expect(activeComposer(page).getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 90_000 })
+    await expect(activeComposer(page).locator('.composer-box')).toHaveAttribute('data-working', 'false', { timeout: 90_000 })
     await expect(activeComposer(page).getByTestId('send-button')).toBeVisible()
     await expect
       .poll(async () => {

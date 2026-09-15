@@ -12,9 +12,18 @@
 4. Context-window usage is represented by a circular progress ring in the
    footer. Hover text and its accessible label retain exact used/maximum token
    counts and percentage; usage at or above 70% uses the warning color.
-5. While a turn is active, its status (for example, “Waiting for model…”) is
-   shown in the top context/status bar immediately after the branch, rather
-   than in the footer.
+5. The top status bar no longer shows the working path. It shows the current
+   mode on the left and the git branch on the right.
+6. Mode is always a neutral icon-and-text control: Default, Plan mode, Accept
+   edits, or Auto. Clicking it and pressing Shift+Tab keep their existing
+   cycling behavior.
+7. The textual turn status and waiting spinner are not shown in the status bar.
+8. Send and Stop share one round action slot. While idle, it is Send. While a
+   turn is active, the slot shows Stop when the composer has no sendable
+   content, and changes to Send/Queue as soon as the user enters text or adds
+   another sendable attachment/comment.
+9. During an active turn, the currently visible Send/Stop action has a subtle
+   continuously moving border around its circular edge.
 
 ## UI
 
@@ -27,8 +36,11 @@ existing Atelier mock does not cover it. Update
 - `.composer-box--multiline` for the footer placement state.
 - `.context-usage-ring`, `.context-usage-track`, and
   `.context-usage-progress` for the 18px circular context indicator.
-- `.context-bar-status` for the compact spinner and turn-status text directly
-  after `.composer-context-branch`.
+- `.context-bar-mode` for the neutral icon-and-text mode control on the left.
+- `.context-bar-spacer` before `.composer-context-branch` to right-align the
+  branch and existing worktree/context actions.
+- `.composer-turn-action-active::before` for the moving circular border around
+  the single active-turn Send/Stop control.
 
 Reuse the existing `.footer-btn`, `.send-btn`, `.stop-btn`, `.composer-footer`,
 `--bg-hover`, `--border-default`, `--text-tertiary`, and `--warning` tokens.
@@ -44,8 +56,19 @@ Markdown mirror uses the same padding. Send and Stop are 28px circles with
   their existing actions in either placement.
 - The context indicator renders as a circular SVG ring with exact usage in its
   title/accessible label.
-- Busy status is inside `.context-bar`, directly after the branch and before
-  `.context-bar-spacer`; it disappears when the turn becomes idle.
+- The working path and `Path` label are absent from `.context-bar`.
+- Mode is inside `.context-bar`, absent from `.composer-footer`, and has no
+  mode-specific foreground, background, or border color.
+- No turn-status text or waiting spinner appears in `.context-bar`.
+- Branch appears after `.context-bar-spacer`, aligned to the right beside the
+  existing worktree and context actions.
+- Exactly one Send/Stop button is rendered at a time. During an active turn,
+  empty composer content shows Stop and sendable content shows Send/Queue.
+- The visible active-turn action has a rotating border, respects reduced-motion
+  preferences, and retains its existing click behavior.
+- Screenshots `04-composer-unified-stop-working.png` and
+  `04-composer-unified-send-working.png` cover both states of the shared action
+  slot.
 - Send and Stop have 28px square bounds and a 50% border radius.
 - Screenshots cover one-line and multi-line states and are visually compared
   with the updated mock and supplied Cursor reference.

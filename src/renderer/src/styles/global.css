@@ -2505,18 +2505,7 @@ input[type='range'] {
 .context-bar-item--icon-only { flex-shrink: 0; min-width: auto; overflow: visible; padding: 2px 4px; border-radius: 4px; cursor: default; }
 .context-bar-item--icon-only:hover { background: var(--bg-hover); color: var(--text-secondary); }
 .context-bar-sep { color: var(--border-strong); font-size: 10px; flex-shrink: 0; }
-.context-bar-status {
-  min-width: 0;
-  max-width: 180px;
-  font-size: 11px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.context-bar-status [data-testid='composer-turn-status-text'] {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+.context-bar-mode { flex-shrink: 0; }
 .context-bar-spacer { flex: 1; min-width: 8px; }
 .context-bar-divider { height: 1px; background: var(--border-subtle); margin: 0 14px; }
 
@@ -2586,6 +2575,7 @@ input[type='range'] {
 .working-pill { font-size: 12.5px; color: var(--text-tertiary); display: flex; align-items: center; gap: 5px; }
 .stop-btn,
 .send-btn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2599,6 +2589,24 @@ input[type='range'] {
   border-radius: 50%;
   cursor: pointer;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.composer-turn-action-active::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  padding: 1.5px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 62%, currentColor 82%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  pointer-events: none;
+  animation: composer-turn-action-spin 1.1s linear infinite;
+}
+@keyframes composer-turn-action-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-turn-action-active::before { animation: none; }
 }
 .stop-btn:hover {
   background: var(--bg-active);
@@ -2663,26 +2671,12 @@ input[type='range'] {
 }
 .composer-box.drag-over { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 
-/* Mode indicator (11-composer-mode-indicator) — lives inline in
-   `.composer-footer` (left of the spacer, before Model/Send), not its own
-   row — moved there per follow-up feedback so it doesn't crowd the
-   composer's bottom rounded border. Always visible (not just when
-   non-default) so the current mode never requires opening a menu to check.
-   Shift+Tab (or a click on the pill) cycles default -> plan -> acceptEdits
-   -> auto -> default, matching Claude Code's own CLI cycle order. The
-   always-visible "Shift+Tab to switch mode" hint text was dropped when this
-   moved into the compact footer row — discoverability now comes from the
-   pill's own `title` tooltip, same as the model-picker button has no
-   always-visible hint either. Color-coded by how permissive the mode is:
-   default is quiet/neutral, plan is informational blue, acceptEdits is the
-   app's own trusted-accent green, auto is the most permissive so it gets the
-   "hottest" color (warning amber). */
-.mode-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 500; padding: 3px 9px; border-radius: 100px; border: 1px solid var(--border-subtle); white-space: nowrap; cursor: pointer; }
-.mode-pill .mode-icon { font-size: 12px; line-height: 1; }
-.mode-pill.mode-default { background: transparent; border-color: var(--border-subtle); color: var(--text-tertiary); }
-.mode-pill.mode-plan { background: var(--info-dim, rgba(127,168,193,0.15)); border-color: transparent; color: var(--info, #7fa8c1); }
-.mode-pill.mode-acceptEdits { background: var(--accent-dim); border-color: transparent; color: var(--accent); }
-.mode-pill.mode-auto { background: rgba(217,179,116,0.16); border-color: transparent; color: var(--warning); }
+/* Mode indicator (11-composer-mode-indicator) — neutral icon + text on the
+   left of the top status bar. Shift+Tab or click keeps the existing cycle. */
+.mode-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 0; border: 0; background: transparent; color: var(--text-tertiary); white-space: nowrap; cursor: pointer; }
+.mode-pill .mode-icon { display: inline-flex; align-items: center; line-height: 1; }
+.mode-pill .mode-icon svg { display: block; }
+.mode-pill:hover { color: var(--text-secondary); }
 
 /* Context-window usage stays compact in the footer. Exact values remain in
    the title/accessible label; the ring turns amber at ≥70% usage. */

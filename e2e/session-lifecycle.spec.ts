@@ -778,11 +778,12 @@ test.describe('02-session-lifecycle', () => {
     // assistant placeholder row appears the instant the first text_delta
     // arrives (see applyEvent's 'text_delta' case), which is the earliest
     // reliable, UI-observable proxy for "actively streaming" available here.
-    await expect(page.getByTestId('composer-turn-status')).toBeVisible({ timeout: 15_000 })
+    const activeComposerBox = page.locator('.composer-cache-entry.active .composer-box')
+    await expect(activeComposerBox).toHaveAttribute('data-working', 'true', { timeout: 15_000 })
     await expect
       .poll(
         async () => {
-          const busy = await page.getByTestId('composer-turn-status').isVisible()
+          const busy = (await activeComposerBox.getAttribute('data-working')) === 'true'
           const assistants = await page.locator('[data-testid="transcript-message"][data-role="assistant"]').count()
           return busy && assistants > 0
         },
@@ -844,7 +845,7 @@ test.describe('02-session-lifecycle', () => {
     expect(texts.some((t) => t === TURN_INTERRUPTED_NOTICE)).toBe(true)
 
     // Closing idle and resuming again must not duplicate the notice.
-    await expect(page.getByTestId('composer-turn-status')).toHaveCount(0, { timeout: 15_000 })
+    await expect(activeComposerBox).toHaveAttribute('data-working', 'false', { timeout: 15_000 })
     await activeRow.getByTestId('session-menu-button').click()
     await page.getByTestId('menu-close').click()
     await expect(historyRow).toBeVisible({ timeout: 10_000 })

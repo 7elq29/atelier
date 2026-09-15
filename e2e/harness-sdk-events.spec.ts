@@ -45,8 +45,8 @@ async function waitForTurnIdle(page: Page, timeoutMs = 120_000): Promise<void> {
   while (Date.now() < deadline) {
     await approveAllPendingPermissions(page)
     const sendVisible = await composer.getByTestId('send-button').isVisible()
-    const hintCount = await composer.getByTestId('composer-turn-status').count()
-    if (sendVisible && hintCount === 0) return
+    const working = (await composer.locator('.composer-box').getAttribute('data-working')) === 'true'
+    if (sendVisible && !working) return
     await page.waitForTimeout(400)
   }
   throw new Error('waitForTurnIdle timed out')
@@ -139,7 +139,7 @@ test.describe('08-harness-sdk-events', () => {
     await page.screenshot({ path: join(artifactsDir, '08-harness-sdk-idle.png') })
   })
 
-  test('sdk_status requesting → composer turn hint; clears on result (not transcript REQUEST card)', async ({}, testInfo) => {
+  test('sdk_status requesting → unified working action; clears on result (not transcript REQUEST card)', async ({}, testInfo) => {
     testInfo.setTimeout(180_000)
     const composer = activeComposer(page)
     await sendComposerMessage(
@@ -148,8 +148,9 @@ test.describe('08-harness-sdk-events', () => {
     )
 
     await expect(composer.getByTestId('stop-button')).toBeVisible({ timeout: 20_000 })
-    await expect(composer.getByTestId('composer-turn-status')).toBeVisible({ timeout: 20_000 })
-    await expect(composer.getByTestId('composer-turn-status')).toContainText(/Waiting for model|Retrying API/)
+    await expect(composer.getByTestId('send-button')).toHaveCount(0)
+    await expect(composer.getByTestId('composer-turn-status')).toHaveCount(0)
+    await expect(composer.locator('.composer-box')).toHaveAttribute('data-working', 'true')
     await expect(page.locator('[data-testid="conversation-status-card"][data-status-kind="requesting"]')).toHaveCount(0)
 
     const toolCard = page.locator('[data-testid="tool-card"][data-tool-name="Bash"]').first()
@@ -158,7 +159,7 @@ test.describe('08-harness-sdk-events', () => {
     await page.screenshot({ path: join(artifactsDir, '08-harness-sdk-mid-turn.png') })
 
     await waitForTurnIdle(page, 120_000)
-    await expect(composer.getByTestId('composer-turn-status')).toHaveCount(0)
+    await expect(composer.locator('.composer-box')).toHaveAttribute('data-working', 'false')
     await expect(page.locator('[data-testid="conversation-status-card"][data-status-kind="requesting"]')).toHaveCount(0)
     await page.screenshot({ path: join(artifactsDir, '08-harness-sdk-turn-complete.png') })
   })
