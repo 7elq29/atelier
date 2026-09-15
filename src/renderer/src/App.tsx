@@ -531,6 +531,44 @@ export default function App(): JSX.Element {
           }
           return
         }
+        if (e.code === 'Digit1') {
+          // Maximize the secondary (right) panel when focused on it
+          const session = activeSessionRef.current
+          if (session?.mode !== 'claude-code' || anyModalOpenRef.current) return
+          const split = activeWorkspaceSplitRef.current
+          if (!split || split.fullscreenTab) return
+          const focusedPanel = (document.activeElement as HTMLElement | null)
+            ?.closest<HTMLElement>('[data-panel]')
+            ?.dataset.panel as SessionTab | undefined
+          if (focusedPanel !== split.secondaryTab) return
+          e.preventDefault()
+          handleWorkspaceToolToggleMaximizeRef.current(split.secondaryTab)
+          return
+        }
+        if (e.code === 'Digit0') {
+          // Restore split from maximized secondary panel
+          const session = activeSessionRef.current
+          if (session?.mode !== 'claude-code' || anyModalOpenRef.current) return
+          const split = activeWorkspaceSplitRef.current
+          if (!split || split.fullscreenTab !== split.secondaryTab) return
+          e.preventDefault()
+          handleWorkspaceToolToggleMaximizeRef.current(split.secondaryTab)
+          return
+        }
+        if (e.code === 'KeyK') {
+          // Exit split view when focused on secondary (right) panel
+          const session = activeSessionRef.current
+          if (session?.mode !== 'claude-code' || anyModalOpenRef.current) return
+          const split = activeWorkspaceSplitRef.current
+          if (!split || split.fullscreenTab) return
+          const focusedPanel = (document.activeElement as HTMLElement | null)
+            ?.closest<HTMLElement>('[data-panel]')
+            ?.dataset.panel as SessionTab | undefined
+          if (focusedPanel !== split.secondaryTab) return
+          e.preventDefault()
+          handleWorkspaceSplitPaneCloseRef.current(split.secondaryTab)
+          return
+        }
       }
       if (e.metaKey && !e.altKey && !e.ctrlKey && e.code === 'KeyK') {
         e.preventDefault()
@@ -1661,6 +1699,10 @@ export default function App(): JSX.Element {
   activeTabRef.current = activeTab
   const activeWorkspaceSplitRef = useRef(activeWorkspaceSplit)
   activeWorkspaceSplitRef.current = activeWorkspaceSplit
+  const handleWorkspaceSplitPaneCloseRef = useRef(handleWorkspaceSplitPaneClose)
+  handleWorkspaceSplitPaneCloseRef.current = handleWorkspaceSplitPaneClose
+  const handleWorkspaceToolToggleMaximizeRef = useRef(handleWorkspaceToolToggleMaximize)
+  handleWorkspaceToolToggleMaximizeRef.current = handleWorkspaceToolToggleMaximize
   const busyBySessionRef = useRef<Record<string, boolean>>({})
   busyBySessionRef.current = sessions.busyBySession
   const anyModalOpenRef = useRef(false)
