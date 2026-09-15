@@ -3,8 +3,8 @@ import type { AtelierConfig } from '../../../../shared/config'
 import type { SessionRecord } from '../../../../shared/session-types'
 import type { SessionWorkspacePayload } from '../../../../shared/session-workspace-types'
 import { resolveSessionProfileFileTree } from '../../../../shared/session-profile-resolve'
-import DiffPanel from '../panels/DiffPanel'
-import FilesPanel from '../panels/FilesPanel'
+import DiffPanel, { type DiffPanelHandle } from '../panels/DiffPanel'
+import FilesPanel, { type FilesPanelHandle } from '../panels/FilesPanel'
 import type { SessionTab } from '../panels/TabBar'
 import {
   isSplitLayoutVisible,
@@ -43,7 +43,9 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   onAddComment,
   onOpenFileQuickOpen,
   onRefreshWorkspace,
-  refreshingBySession
+  refreshingBySession,
+  setDiffPanelRef,
+  setFilesPanelRef
 }: {
   sessionIds: string[]
   allSessions: SessionRecord[]
@@ -75,6 +77,8 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   onOpenFileQuickOpen: () => void
   onRefreshWorkspace: (sessionId: string) => void
   refreshingBySession: Record<string, boolean>
+  setDiffPanelRef: (sessionId: string, handle: DiffPanelHandle | null) => void
+  setFilesPanelRef: (sessionId: string, handle: FilesPanelHandle | null) => void
 }): JSX.Element {
   return (
     <>
@@ -120,6 +124,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
                 maximized={split?.fullscreenTab === 'diff'}
               />
               <DiffPanel
+                ref={(h) => setDiffPanelRef(sessionId, h)}
                 workspacePath={workspacePath}
                 repoRoot={session.projectPath}
                 hostname={session.hostname}
@@ -155,6 +160,7 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
                 maximized={split?.fullscreenTab === 'files'}
               />
               <FilesPanel
+                ref={(h) => setFilesPanelRef(sessionId, h)}
                 projectPath={workspacePath}
                 sessionId={sessionId}
                 hostname={session.hostname}

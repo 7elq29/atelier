@@ -35,6 +35,9 @@ import WeeklyPlanWizardPanel from './components/panels/WeeklyPlanWizardPanel'
 import WeeklyPlanViewPanel from './components/panels/WeeklyPlanViewPanel'
 import PortsPanel from './components/panels/PortsPanel'
 import TerminalWithToolbox from './components/panels/TerminalWithToolbox'
+import type { TerminalPanelHandle } from './components/panels/TerminalPanel'
+import type { DiffPanelHandle } from './components/panels/DiffPanel'
+import type { FilesPanelHandle } from './components/panels/FilesPanel'
 import TitleBar from './components/TitleBar'
 import SessionDisconnectedPanel from './components/SessionDisconnectedPanel'
 import { SessionWorkspacePanels } from './components/session/SessionWorkspacePanels'
@@ -236,6 +239,9 @@ export default function App(): JSX.Element {
   const [weeklyPlanExistsHint, setWeeklyPlanExistsHint] = useState<string | null>(null)
   const [weeklyPlanViewDoc, setWeeklyPlanViewDoc] = useState<WeeklyPlanViewResult | null>(null)
   const composerRefs = useRef<Map<string, ComposerHandle>>(new Map())
+  const filesPanelRefs = useRef<Map<string, FilesPanelHandle>>(new Map())
+  const diffPanelRefs = useRef<Map<string, DiffPanelHandle>>(new Map())
+  const tabTerminalRefs = useRef<Map<string, TerminalPanelHandle>>(new Map())
   const composerCacheRef = useRef<HTMLDivElement>(null)
   const [activeComposerHeight, setActiveComposerHeight] = useState(0)
   /** Launch-local caret positions; deliberately never persisted to disk. */
@@ -490,6 +496,38 @@ export default function App(): JSX.Element {
           if (session?.mode === 'claude-code' && !activeAppNoteIdRef.current) {
             e.preventDefault()
             toggleTranscriptSearchRef.current()
+          }
+          return
+        }
+        if (e.code === 'KeyO') {
+          const session = activeSessionRef.current
+          if (session?.mode !== 'claude-code' || activeAppNoteIdRef.current || anyModalOpenRef.current) return
+          const split = activeWorkspaceSplitRef.current
+          const tab = activeTabRef.current
+          const ORDER: SessionTab[] = ['chat', 'diff', 'files', 'terminal', 'ports']
+          const visible = ORDER.filter((t) => resolveTabVisibility(t, tab, split) !== 'hidden')
+          if (visible.length <= 1) return
+          e.preventDefault()
+          const currentPanel = (document.activeElement as HTMLElement | null)
+            ?.closest<HTMLElement>('[data-panel]')
+            ?.dataset.panel as SessionTab | undefined
+          const currentIdx = currentPanel ? visible.indexOf(currentPanel) : -1
+          const nextPanel = visible[(currentIdx + 1) % visible.length]
+          switch (nextPanel) {
+            case 'chat':
+              composerRefs.current.get(session.id)?.focus()
+              break
+            case 'files':
+              filesPanelRefs.current.get(session.id)?.focus()
+              break
+            case 'diff':
+              diffPanelRefs.current.get(session.id)?.focus()
+              break
+            case 'terminal': {
+              const ptyId = `${session.id}:tab-terminal`
+              tabTerminalRefs.current.get(ptyId)?.focus()
+              break
+            }
           }
           return
         }
@@ -1616,6 +1654,10 @@ export default function App(): JSX.Element {
   // the listener on every render.
   const activeSessionIdRef = useRef<string | null>(null)
   activeSessionIdRef.current = activeSessionId
+  const activeTabRef = useRef<SessionTab>('chat')
+  activeTabRef.current = activeTab
+  const activeWorkspaceSplitRef = useRef(activeWorkspaceSplit)
+  activeWorkspaceSplitRef.current = activeWorkspaceSplit
   const busyBySessionRef = useRef<Record<string, boolean>>({})
   busyBySessionRef.current = sessions.busyBySession
   const anyModalOpenRef = useRef(false)
@@ -1642,6 +1684,15 @@ export default function App(): JSX.Element {
   chatSessionInterruptEnabledRef.current = chatSessionInterruptEnabled
   const transcriptSearchOpenRef = useRef(false)
   transcriptSearchOpenRef.current = transcriptSearchOpen
+
+  const setDiffPanelRef = useCallback((id: string, h: DiffPanelHandle | null) => {
+    if (h) diffPanelRefs.current.set(id, h)
+    else diffPanelRefs.current.delete(id)
+  }, [])
+  const setFilesPanelRef = useCallback((id: string, h: FilesPanelHandle | null) => {
+    if (h) filesPanelRefs.current.set(id, h)
+    else filesPanelRefs.current.delete(id)
+  }, [])
 
   useEffect(() => {
     function handleChatEscape(e: KeyboardEvent): void {
@@ -1919,6 +1970,10 @@ export default function App(): JSX.Element {
                         maximized={activeWorkspaceSplit?.fullscreenTab === 'terminal'}
                       />
                       <TerminalWithToolbox
+                        ref={(h) => {
+                          if (h) tabTerminalRefs.current.set(ptyId, h)
+                          else tabTerminalRefs.current.delete(ptyId)
+                        }}
                         ptyId={ptyId}
                         cwd={info.cwd}
                         hostname={info.hostname}
@@ -1967,6 +2022,8 @@ export default function App(): JSX.Element {
                 onOpenFileQuickOpen={openFileQuickOpen}
                 onRefreshWorkspace={handleRefreshWorkspace}
                 refreshingBySession={sessionWorkspace.refreshingBySession}
+                setDiffPanelRef={setDiffPanelRef}
+                setFilesPanelRef={setFilesPanelRef}
               />
             </div>
 
@@ -2191,6 +2248,7 @@ export default function App(): JSX.Element {
                     key={sessionId}
                     className={`composer-cache-entry${composerActive ? ' active' : ''}`}
                     data-session-id={sessionId}
+                    data-panel="chat"
                   >
                     <Composer
                       ref={(handle) => {

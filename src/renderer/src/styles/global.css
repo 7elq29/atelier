@@ -3604,6 +3604,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   font-family: var(--font-mono); text-align: left; cursor: pointer;
 }
 .files-dir-listing-item:hover { background: var(--bg-hover); }
+.files-dir-listing-item.active { background: var(--bg-hover); outline: 1px solid var(--accent-dim); }
 .files-dir-listing-item.dir { color: var(--text-secondary); }
 .files-directory-row .entry-name { flex: 1; min-width: 0; }
 .files-directory-row .entry-meta { color: var(--text-tertiary); font-size: 12px; }

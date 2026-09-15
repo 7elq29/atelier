@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { type ForwardedRef, forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback, useMemo } from 'react'
 import * as monaco from 'monaco-editor'
 import type { FileReadResult, FileTreeNode, DiffFileChange, DiffFileContentPair } from '../../../../shared/panel-types'
 import DiffFullFileEditor from './DiffFullFileEditor'
@@ -296,54 +296,61 @@ function FileTree({
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
+export interface FilesPanelHandle {
+  focus(): void
+}
+
 /**
  * Files/Explorer panel (07-secondary-panels §3): real `fs`-backed tree of the
  * session's workspace (worktreePath ?? projectPath), with a Monaco code editor
  * replacing the old regex-highlighter <pre> viewer. Supports read + Ctrl/Cmd+S
  * save for both local and remote (devpod) sessions.
  */
-export default function FilesPanel({
-  projectPath,
-  sessionId,
-  hostname,
-  effectiveTheme,
-  active = true,
-  revealFilePath,
-  revealFileSeq = 0,
-  onRevealFileHandled,
-  revealFileDiffPath,
-  revealFileDiffSeq = 0,
-  onRevealFileDiffHandled,
-  onAddComment,
-  onOpenFileQuickOpen,
-  initialFilesTree,
-  profileBar = null,
-  fileTreeRoots = null
-}: {
-  projectPath: string
-  sessionId?: string
-  hostname: string | null
-  /** Matches `data-theme` on `<html>` — drives Monaco editor colors. */
-  effectiveTheme: 'light' | 'dark'
-  /** When false, panel stays mounted (session buffered); Monaco layout refreshes on re-show. */
-  active?: boolean
-  /** Absolute path to select in the editor when `revealFileSeq` bumps (plan card → Files). */
-  revealFilePath?: string
-  revealFileSeq?: number
-  onRevealFileHandled?: () => void
-  /** Absolute cap path outside workspace — opens inline diff in Files (not Diff tab). */
-  revealFileDiffPath?: string
-  revealFileDiffSeq?: number
-  onRevealFileDiffHandled?: () => void
-  /** Push an inline file-line comment into the session composer (same as Diff panel). */
-  onAddComment?: (note: string) => void
-  /** Ctrl+X Ctrl+F from the Monaco editor — opens the file quick open palette. */
-  onOpenFileQuickOpen?: () => void
-  /** Preloaded one-level tree from session workspace (main process). */
-  initialFilesTree?: FileTreeNode[] | null
-  profileBar?: ProfileBarInfo | null
-  fileTreeRoots?: FileTreeRoot[] | null
-}): JSX.Element {
+const FilesPanel = forwardRef(function FilesPanel(
+  {
+    projectPath,
+    sessionId,
+    hostname,
+    effectiveTheme,
+    active = true,
+    revealFilePath,
+    revealFileSeq = 0,
+    onRevealFileHandled,
+    revealFileDiffPath,
+    revealFileDiffSeq = 0,
+    onRevealFileDiffHandled,
+    onAddComment,
+    onOpenFileQuickOpen,
+    initialFilesTree,
+    profileBar = null,
+    fileTreeRoots = null
+  }: {
+    projectPath: string
+    sessionId?: string
+    hostname: string | null
+    /** Matches `data-theme` on `<html>` — drives Monaco editor colors. */
+    effectiveTheme: 'light' | 'dark'
+    /** When false, panel stays mounted (session buffered); Monaco layout refreshes on re-show. */
+    active?: boolean
+    /** Absolute path to select in the editor when `revealFileSeq` bumps (plan card → Files). */
+    revealFilePath?: string
+    revealFileSeq?: number
+    onRevealFileHandled?: () => void
+    /** Absolute cap path outside workspace — opens inline diff in Files (not Diff tab). */
+    revealFileDiffPath?: string
+    revealFileDiffSeq?: number
+    onRevealFileDiffHandled?: () => void
+    /** Push an inline file-line comment into the session composer (same as Diff panel). */
+    onAddComment?: (note: string) => void
+    /** Ctrl+X Ctrl+F from the Monaco editor — opens the file quick open palette. */
+    onOpenFileQuickOpen?: () => void
+    /** Preloaded one-level tree from session workspace (main process). */
+    initialFilesTree?: FileTreeNode[] | null
+    profileBar?: ProfileBarInfo | null
+    fileTreeRoots?: FileTreeRoot[] | null
+  },
+  ref: ForwardedRef<FilesPanelHandle>
+): JSX.Element {
   /** Harness cwd / worktree — where files are actually read and written. */
   const browseRoot = projectPath
   const [localHomeDir, setLocalHomeDir] = useState<string | null>(null)
@@ -408,6 +415,9 @@ export default function FilesPanel({
 
   openTabsRef.current = openTabs
   activeTabIdRef.current = activeTabId
+
+  const [listingSelectedIndex, setListingSelectedIndex] = useState(-1)
+  const dirListingRef = useRef<HTMLDivElement | null>(null)
 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const modelRef = useRef<monaco.editor.ITextModel | null>(null)
@@ -1139,6 +1149,21 @@ export default function FilesPanel({
     await openInCurrentTab(node.path)
   }
 
+  // ── Panel focus handle (Ctrl+O cycling) ────────────────────────────────────
+
+  useEffect(() => { setListingSelectedIndex(-1) }, [browseDirPath])
+
+  useImperativeHandle(ref, () => ({
+    focus() {
+      if (browseDirPath && browseDirChildren && browseDirChildren.length > 0) {
+        setListingSelectedIndex(0)
+        dirListingRef.current?.focus()
+      } else {
+        editorRef.current?.focus()
+      }
+    }
+  }), [browseDirPath, browseDirChildren])
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const profileMode = Boolean(fileTreeRoots?.length)
@@ -1170,7 +1195,7 @@ export default function FilesPanel({
   }
 
   return (
-    <div data-testid={active ? 'files-panel-active' : undefined} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div data-panel="files" data-testid={active ? 'files-panel-active' : undefined} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {filesTreeLoading ? (
         <div className="empty-main" style={{ height: '100%' }}>
           <div className="empty-icon">📁</div>
@@ -1409,9 +1434,31 @@ export default function FilesPanel({
             {/* Non-text overlays: cover Monaco with an absolute panel when needed */}
             {!capDiff && browseDirPath && (
               <div
+                ref={dirListingRef}
                 className="files-dir-listing files-directory-view"
                 data-testid="files-dir-listing"
-                style={{ position: 'absolute', inset: 0, overflow: 'auto', zIndex: 5, background: 'var(--bg-code)' }}
+                tabIndex={-1}
+                style={{ position: 'absolute', inset: 0, overflow: 'auto', zIndex: 5, background: 'var(--bg-code)', outline: 'none' }}
+                onKeyDown={(e) => {
+                  if (!browseDirChildren) return
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    setListingSelectedIndex((i) => Math.min(i + 1, browseDirChildren.length - 1))
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    setListingSelectedIndex((i) => Math.max(i - 1, 0))
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault()
+                    const n = browseDirChildren[listingSelectedIndex]
+                    if (n) {
+                      if (n.type === 'dir') void openDirectoryInView(n.path)
+                      else void handleSelect(n)
+                    }
+                  } else if (e.key === 'Backspace') {
+                    e.preventDefault()
+                    void openDirectoryInView(dirnamePath(browseDirPath))
+                  }
+                }}
               >
                 <div className="files-dir-listing-header">{basenamePath(browseDirPath)}</div>
                 {browseDirLoading ? (
@@ -1421,11 +1468,11 @@ export default function FilesPanel({
                 ) : browseDirChildren.length === 0 ? (
                   <div className="files-dir-listing-empty">Empty directory</div>
                 ) : (
-                  browseDirChildren.map((n) => (
+                  browseDirChildren.map((n, idx) => (
                     <button
                       key={n.path}
                       type="button"
-                      className={`files-dir-listing-item files-directory-row${n.type === 'dir' ? ' directory dir' : ' file'}`}
+                      className={`files-dir-listing-item files-directory-row${n.type === 'dir' ? ' directory dir' : ' file'}${idx === listingSelectedIndex ? ' active' : ''}`}
                       data-testid={n.type === 'dir' ? 'files-dir-listing-dir' : 'files-dir-listing-file'}
                       onClick={() => {
                         if (n.type === 'dir') void openDirectoryInView(n.path)
@@ -1555,4 +1602,6 @@ export default function FilesPanel({
       )}
     </div>
   )
-}
+})
+
+export default FilesPanel
