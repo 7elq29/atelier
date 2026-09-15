@@ -104,6 +104,11 @@ test.describe('10b-enrichment-full-text-search', () => {
       ['giraffe']
     )
     expect(rows.some((r) => r.session_id === sessionAId && r.text.includes('giraffe'))).toBe(true)
+
+    await expect(page.getByTestId('cost-chip')).toBeVisible()
+    await expect(page.getByTestId('export-menu-button')).toHaveCount(0)
+    await expect(page.getByTestId('toggle-transcript-search')).toHaveCount(0)
+    await page.screenshot({ path: join(artifactsDir, 'topbar-without-export-search.png') })
   })
 
   // ── In-conversation "Find in conversation" ──────────────────────────────
@@ -117,13 +122,12 @@ test.describe('10b-enrichment-full-text-search', () => {
       page.locator('[data-testid="transcript-message"][data-role="assistant"]').filter({ hasText: SESSION_A_SNIPPET })
     ).toBeVisible({ timeout: 15_000 })
 
-    const toggleBtn = page.getByTestId('toggle-transcript-search')
-    await expect(toggleBtn).toBeVisible()
+    await expect(page.getByTestId('toggle-transcript-search')).toHaveCount(0)
 
     const bar = page.getByTestId('transcript-search-bar')
     await expect(bar).not.toHaveClass(/show/)
 
-    await page.getByTestId('composer-input').click()
+    await page.locator('.composer-cache-entry.active').getByTestId('composer-input').click()
     await page.keyboard.down('Control')
     await page.keyboard.press('KeyS')
     await page.keyboard.up('Control')
@@ -133,7 +137,9 @@ test.describe('10b-enrichment-full-text-search', () => {
     await page.keyboard.up('Control')
     await expect(bar).not.toHaveClass(/show/)
 
-    await toggleBtn.click()
+    await page.keyboard.down('Control')
+    await page.keyboard.press('KeyS')
+    await page.keyboard.up('Control')
     await expect(bar).toHaveClass(/show/)
 
     const input = page.getByTestId('transcript-search-input')
@@ -203,7 +209,9 @@ test.describe('10b-enrichment-full-text-search', () => {
       await page.getByTestId('command-palette-item').first().click()
     }
 
-    await page.getByTestId('toggle-transcript-search').click()
+    await page.keyboard.down('Control')
+    await page.keyboard.press('KeyS')
+    await page.keyboard.up('Control')
     const input = page.getByTestId('transcript-search-input')
     await input.fill('purple')
     await expect(page.locator('mark.search-hit').first()).toBeVisible()

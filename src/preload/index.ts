@@ -95,6 +95,14 @@ const api = {
   /** Path of the main-process structured log file, for debugging/e2e use. */
   getLogFilePath: (): Promise<string> => ipcRenderer.invoke('app:getLogFilePath'),
   getHomedir: (): Promise<string> => ipcRenderer.invoke('app:getHomedir'),
+  isWindowFullScreen: (): Promise<boolean> => ipcRenderer.invoke('app:isFullScreen'),
+  onWindowFullScreenChanged: (
+    callback: (payload: { fullScreen: boolean }) => void
+  ): (() => void) => {
+    const listener = (_event: unknown, payload: { fullScreen: boolean }): void => callback(payload)
+    ipcRenderer.on('window:fullScreenChanged', listener)
+    return () => ipcRenderer.removeListener('window:fullScreenChanged', listener)
+  },
   /** Forward a structured log line from the renderer to the main-process logger. */
   log: (level: LogLevel, msg: string, extra?: Record<string, unknown>): void => {
     ipcRenderer.send('renderer:log', { level, msg, extra })

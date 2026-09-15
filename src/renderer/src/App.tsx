@@ -11,7 +11,6 @@ import { DeleteSessionLinkedTaskDialog, TaskSessionReplaceDialog } from './compo
 import TranscriptSearchBar from './components/chat/TranscriptSearchBar'
 import Composer, { type ComposerHandle } from './components/chat/Composer'
 import SdkToastStack from './components/chat/SdkToastStack'
-import ExportMenu from './components/chat/ExportMenu'
 import TabBar, { type SessionTab } from './components/panels/TabBar'
 import {
   applyStripTabSelect,
@@ -312,6 +311,7 @@ export default function App(): JSX.Element {
 
   // ── In-conversation "Find in conversation" (10b-enrichment-full-text-search) ──
   const [transcriptSearchOpen, setTranscriptSearchOpen] = useState(false)
+  const toggleTranscriptSearchRef = useRef<() => void>(() => undefined)
   const [transcriptSearchQuery, setTranscriptSearchQuery] = useState('')
   const [activeMatchIndex, setActiveMatchIndex] = useState(0)
   const [matchCount, setMatchCount] = useState(0)
@@ -483,6 +483,14 @@ export default function App(): JSX.Element {
               e.preventDefault()
               setFileQuickOpenOpen(true)
             }
+          }
+          return
+        }
+        if (e.code === 'KeyS') {
+          const session = activeSessionRef.current
+          if (session?.mode === 'claude-code' && !activeAppNoteIdRef.current) {
+            e.preventDefault()
+            toggleTranscriptSearchRef.current()
           }
           return
         }
@@ -1102,6 +1110,7 @@ export default function App(): JSX.Element {
       return next
     })
   }
+  toggleTranscriptSearchRef.current = toggleTranscriptSearch
 
   function handleTranscriptSearchQueryChange(query: string): void {
     setTranscriptSearchQuery(query)
@@ -1255,11 +1264,6 @@ export default function App(): JSX.Element {
       break
     }
   }, [sessions.busyBySession, allSessions, modelSelectionBySession, sessions, config])
-
-  async function handleExport(format: 'markdown' | 'json'): Promise<void> {
-    if (!activeSessionId) return
-    await sessions.exportTranscript(activeSessionId, format)
-  }
 
   const openChangedFileFromCap = useCallback(
     async (path: string, opensInFilesTab: boolean) => {
@@ -1734,6 +1738,16 @@ export default function App(): JSX.Element {
                   'Atelier'
                 )}
               </span>
+              {activeSession &&
+              !activeAppNote &&
+              !activeDailyNoteDate &&
+              !activeWeeklyPlanSurface &&
+              activeSession.mode === 'claude-code' &&
+              !activeSessionDisconnected ? (
+                <span className="topbar-cost" data-testid="cost-chip">
+                  ${activeSession.totalCostUsd.toFixed(2)}
+                </span>
+              ) : null}
               {activeDailyNoteDate ? (
                 <div
                   ref={setDailyNoteHeaderHost}
@@ -1763,17 +1777,12 @@ export default function App(): JSX.Element {
                   didDragTab={workspaceTabDrag.didDrag}
                 />
                 <div className="topbar-spacer" />
-                <span className="topbar-chip" data-testid="cost-chip">
-                  ${activeSession.totalCostUsd.toFixed(2)}
-                </span>
-                <ExportMenu onExport={(format) => void handleExport(format)} />
                 <TranscriptSearchBar
                   open={transcriptSearchOpen}
                   query={transcriptSearchQuery}
                   matchCount={matchCount}
                   onQueryChange={handleTranscriptSearchQueryChange}
                   onNavigate={navigateTranscriptMatches}
-                  onToggle={toggleTranscriptSearch}
                   onClose={toggleTranscriptSearch}
                 />
               </>
@@ -2135,6 +2144,9 @@ export default function App(): JSX.Element {
                       mentionFilePaths={mentionPaths}
                       onOpenChangedFile={openChangedFileFromCap}
                       onOpenBookmark={openSessionBookmark}
+                      onRemoveBookmark={(bookmark) =>
+                        void sessionBookmarks.remove(sessionId, bookmark.kind, bookmark.target)
+                      }
                       onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}
                       onClearConversation={() => {
                         setQueuedMessagesBySession((prev) => {
