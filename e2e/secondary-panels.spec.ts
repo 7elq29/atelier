@@ -827,6 +827,34 @@ test.describe('07-secondary-panels', () => {
     await expect(page.locator('.tab-content[data-tab="diff"]')).toHaveClass(/workspace-split-pane/)
     await expect(page.getByTestId('tab-diff')).toHaveCount(0)
     await expect(page.getByTestId('tab-chat')).toHaveClass(/active/)
+    await page.screenshot({ path: join(artifactsDir, 'workspace-split-chat-composer-row.png') })
+    const splitMainLog = readFileSync(join(userDataDir, 'logs', 'main.log'), 'utf8')
+    expect(splitMainLog).toContain('session:openReady')
+    expect(splitMainLog).toContain('files:list:done')
+    const rowComposerGeometry = await page.evaluate(() => {
+      const chat = document.querySelector<HTMLElement>('.tab-content[data-tab="chat"]')
+      const composer = document.querySelector<HTMLElement>('.composer-cache-entry.active')
+      const chatBody = document.querySelector<HTMLElement>('.chat-body-row')
+      if (!chat || !composer || !chatBody) return null
+      const chatRect = chat.getBoundingClientRect()
+      const composerRect = composer.getBoundingClientRect()
+      const bodyRect = chatBody.getBoundingClientRect()
+      return {
+        containedHorizontally:
+          composerRect.left >= chatRect.left - 1 && composerRect.right <= chatRect.right + 1,
+        chatBodyUsesAvailableNarrowWidth: Math.abs(bodyRect.width - chatRect.width) <= 1,
+        usesAvailableNarrowWidth: Math.abs(composerRect.width - chatRect.width) <= 1,
+        bottomAligned: Math.abs(composerRect.bottom - chatRect.bottom) <= 1,
+        contentClearsComposer: bodyRect.bottom <= composerRect.top + 1
+      }
+    })
+    expect(rowComposerGeometry).toEqual({
+      containedHorizontally: true,
+      chatBodyUsesAvailableNarrowWidth: true,
+      usesAvailableNarrowWidth: true,
+      bottomAligned: true,
+      contentClearsComposer: true
+    })
 
     await page.getByTestId('tab-files').click()
     await expect(page.locator('.tab-content[data-tab="files"]')).not.toHaveClass(/hidden/)
@@ -868,10 +896,55 @@ test.describe('07-secondary-panels', () => {
       }
     })
     expect(stacked).toEqual({ sameWidth: true, chatAboveDiff: true })
+    const stackedComposerGeometry = await page.evaluate(() => {
+      const chat = document.querySelector<HTMLElement>('.tab-content[data-tab="chat"]')
+      const diff = document.querySelector<HTMLElement>('.tab-content[data-tab="diff"]')
+      const composer = document.querySelector<HTMLElement>('.composer-cache-entry.active')
+      if (!chat || !diff || !composer) return null
+      const chatRect = chat.getBoundingClientRect()
+      const diffRect = diff.getBoundingClientRect()
+      const composerRect = composer.getBoundingClientRect()
+      return {
+        containedHorizontally:
+          composerRect.left >= chatRect.left - 1 && composerRect.right <= chatRect.right + 1,
+        bottomAligned: Math.abs(composerRect.bottom - chatRect.bottom) <= 1,
+        clearsSibling: composerRect.bottom <= diffRect.top + 1
+      }
+    })
+    expect(stackedComposerGeometry).toEqual({
+      containedHorizontally: true,
+      bottomAligned: true,
+      clearsSibling: true
+    })
     await page.screenshot({ path: join(artifactsDir, '07-workspace-split-vertical.png') })
 
     await page.locator('[data-testid="workspace-split-pane-close"][data-tab="diff"]').click()
     await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
+
+    // Chat can also be the secondary pane when the sibling is dropped before
+    // it; the composer must follow Chat rather than assuming the primary side.
+    await dragTabToEdge('diff', 'left')
+    await expect(page.locator('.tab-content[data-tab="chat"]')).toHaveClass(
+      /workspace-split-pane--secondary/
+    )
+    const secondaryComposerGeometry = await page.evaluate(() => {
+      const chat = document.querySelector<HTMLElement>('.tab-content[data-tab="chat"]')
+      const composer = document.querySelector<HTMLElement>('.composer-cache-entry.active')
+      if (!chat || !composer) return null
+      const chatRect = chat.getBoundingClientRect()
+      const composerRect = composer.getBoundingClientRect()
+      return {
+        containedHorizontally:
+          composerRect.left >= chatRect.left - 1 && composerRect.right <= chatRect.right + 1,
+        bottomAligned: Math.abs(composerRect.bottom - chatRect.bottom) <= 1
+      }
+    })
+    expect(secondaryComposerGeometry).toEqual({
+      containedHorizontally: true,
+      bottomAligned: true
+    })
+    await page.screenshot({ path: join(artifactsDir, 'workspace-split-chat-composer-secondary.png') })
+    await page.locator('[data-testid="workspace-split-pane-close"][data-tab="diff"]').click()
   })
 
   test('workspace split: Terminal splits beside Chat instead of covering the whole area', async () => {
@@ -900,6 +973,22 @@ test.describe('07-secondary-panels', () => {
       }
     })
     expect(geometry).toEqual({ terminalIsHalf: true, chatLeftOfTerminal: true })
+    const composerGeometry = await page.evaluate(() => {
+      const chat = document.querySelector<HTMLElement>('.tab-content[data-tab="chat"]')
+      const composer = document.querySelector<HTMLElement>('.composer-cache-entry.active')
+      if (!chat || !composer) return null
+      const chatRect = chat.getBoundingClientRect()
+      const composerRect = composer.getBoundingClientRect()
+      return {
+        containedHorizontally:
+          composerRect.left >= chatRect.left - 1 && composerRect.right <= chatRect.right + 1,
+        bottomAligned: Math.abs(composerRect.bottom - chatRect.bottom) <= 1
+      }
+    })
+    expect(composerGeometry).toEqual({
+      containedHorizontally: true,
+      bottomAligned: true
+    })
     await page.screenshot({ path: join(artifactsDir, '07-workspace-split-terminal.png') })
 
     await page.locator('[data-testid="workspace-split-pane-close"][data-tab="terminal"]').click()

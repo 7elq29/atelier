@@ -239,6 +239,8 @@ export default function App(): JSX.Element {
   const [weeklyPlanExistsHint, setWeeklyPlanExistsHint] = useState<string | null>(null)
   const [weeklyPlanViewDoc, setWeeklyPlanViewDoc] = useState<WeeklyPlanViewResult | null>(null)
   const composerRefs = useRef<Map<string, ComposerHandle>>(new Map())
+  const composerCacheRef = useRef<HTMLDivElement>(null)
+  const [activeComposerHeight, setActiveComposerHeight] = useState(0)
   /** Launch-local caret positions; deliberately never persisted to disk. */
   const noteCursorPositionsRef = useRef(new Map<string, number>())
   /** Picker overrides until the next session-list refresh picks up persisted model columns. */
@@ -1524,6 +1526,29 @@ export default function App(): JSX.Element {
     !activeSessionDisconnected &&
     isChatTabVisible(activeTab, activeWorkspaceSplit)
   )
+  const chatPaneVisibility = resolveTabVisibility('chat', activeTab, activeWorkspaceSplit)
+  const composerSplitClass =
+    splitLayoutVisible &&
+    (chatPaneVisibility === 'split-primary' || chatPaneVisibility === 'split-secondary') &&
+    activeWorkspaceSplit
+      ? ` composer-cache--split composer-cache--split-${activeWorkspaceSplit.direction} composer-cache--${chatPaneVisibility}`
+      : ''
+
+  useLayoutEffect(() => {
+    const cache = composerCacheRef.current
+    const activeComposer = cache?.querySelector<HTMLElement>('.composer-cache-entry.active')
+    if (!composerDockVisible || !activeComposer) {
+      setActiveComposerHeight(0)
+      return
+    }
+    const updateHeight = (): void => {
+      setActiveComposerHeight(Math.ceil(activeComposer.getBoundingClientRect().height))
+    }
+    updateHeight()
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(activeComposer)
+    return () => observer.disconnect()
+  }, [activeSessionId, composerDockVisible, composerSplitClass])
 
   const showOnboarding = loaded && !config.onboardingCompleted
 
@@ -1792,7 +1817,15 @@ export default function App(): JSX.Element {
           {/* Content area below topbar — position:relative anchors terminal + composer keep-alive layers */}
           <div
             data-main-content
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
+              position: 'relative',
+              '--active-composer-height': `${activeComposerHeight}px`,
+              '--workspace-split-ratio': activeWorkspaceSplit?.splitRatio ?? 0.5
+            } as React.CSSProperties}
           >
             {/* Anchors the inset:0 keep-alive layers to the surface above the composer
                 dock, so a buffered panel can't paint over the composer in a split. */}
@@ -2110,7 +2143,11 @@ export default function App(): JSX.Element {
           )}
             </div>
           {aliveChatComposers.size > 0 ? (
-            <div className="composer-cache" data-testid="composer-cache">
+            <div
+              className={`composer-cache${composerSplitClass}`}
+              data-testid="composer-cache"
+              ref={composerCacheRef}
+            >
               {[...aliveChatComposers].map((sessionId) => {
                 const session = allSessions.find((s) => s.id === sessionId)
                 if (!session || session.mode !== 'claude-code') return null

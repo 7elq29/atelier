@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { e2eConfigPath as configPath, seedE2eConfig, seedSkipOnboarding } from './e2e-config'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -251,28 +251,35 @@ test.describe('03-chat-surface-core', () => {
     await logTranscriptState(page, sessionId, 'turn1')
   })
 
-  // ── 2. Todo rail: live checklist from an explicit TodoWrite ─────────────
-  test('todo rail renders and updates live from TodoWrite', async () => {
+  // ── 2. Todo rail: live checklist from explicit task tools ───────────────
+  test('todo rail renders and updates live from TaskCreate and TaskUpdate', async () => {
     await page.getByTestId('composer-input').fill(
-      'Use the TodoWrite tool now to create a todo list with exactly two items: "Step one" and "Step two". ' +
-        'First call TodoWrite with "Step one" as in_progress and "Step two" as pending. ' +
-        'Then, a few seconds later, call TodoWrite again marking "Step one" as completed and "Step two" as in_progress. ' +
-        'Do not use any other tools. Then reply with a one-sentence summary.'
+      'Use the task management tools now to create exactly two tasks with subjects "Step one" and "Step two". ' +
+        'Call TaskCreate once for each task, then call TaskUpdate using the returned task IDs so "Step one" is in_progress and "Step two" remains pending. ' +
+        'Then call TaskUpdate again marking "Step one" as completed and "Step two" as in_progress. ' +
+        'Do not use any tools other than TaskCreate and TaskUpdate. Then reply with a one-sentence summary.'
     )
     await page.getByTestId('send-button').click()
 
     const todoCard = page.getByTestId('todo-tracker-card')
-    await expect(todoCard).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByTestId('todo-item')).toHaveCount(2, { timeout: 30_000 })
+    try {
+      await expect(todoCard).toBeVisible({ timeout: 30_000 })
+    } catch (error) {
+      await page.screenshot({ path: join(artifactsDir, 'bug-todo-tracker-missing.png') })
+      await logTranscriptState(page, sessionId, 'turn2-todos-missing')
+      const mainLog = readFileSync(join(userDataDir, 'logs', 'main.log'), 'utf8')
+      expect(mainLog).toContain('session:openReady')
+      throw error
+    }
+    const todoCount = todoCard.locator('.tracker-head .count')
+    await expect(todoCount).toHaveText(/\d+\/2/, { timeout: 30_000 })
 
-    // Live update: eventually one item flips to done (checked via the box
-    // fill / strikethrough class, matching .todo-item.done in the mock).
-    await expect
-      .poll(
-        async () => page.locator('.todo-item.done').count(),
-        { timeout: 30_000 }
-      )
-      .toBeGreaterThan(0)
+    // The final update hides completed rows behind the existing disclosure.
+    // Assert the live 1/2 summary first, then reveal the completed row before
+    // checking its done styling.
+    await expect(todoCount).toHaveText('1/2', { timeout: 30_000 })
+    await todoCard.getByRole('button', { name: '1 completed' }).click()
+    await expect(todoCard.locator('.todo-item.done')).toHaveCount(1)
 
     await page.screenshot({ path: join(artifactsDir, '03-todo-rail.png') })
     await logTranscriptState(page, sessionId, 'turn2-todos')

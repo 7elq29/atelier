@@ -14,7 +14,7 @@ import { join } from 'node:path'
  * `Features/UI-Design/mocks/design-variants/variant-1-soft-paper.html` line
  * ~89, sizes the equivalent rail at `.rail { width: 244px; }` — 46px
  * narrower. This spec populates the TrackerRail with real todos (via a real
- * SDK TodoWrite call, same pattern as chat-surface-core.spec.ts) and a real
+ * SDK TaskCreate/TaskUpdate flow, same pattern as chat-surface-core.spec.ts) and a real
  * subagent (via a real Task-tool call), then asserts the rendered rail's
  * computed width is close to the mock's 244px. It fails today (290px).
  */
@@ -63,8 +63,8 @@ test.describe('bug-repro: tracker rail is 290px wide, mock specifies 244px', () 
     await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
-      'Use the TodoWrite tool now to create a todo list with exactly two items: "Step one" (in_progress) and ' +
-        '"Step two" (pending). Then use the Task tool to spawn exactly one general-purpose subagent with the ' +
+      'Use TaskCreate to create exactly two tasks with subjects "Step one" and "Step two", then use TaskUpdate ' +
+        'with the returned task ID to mark "Step one" in_progress. Then use the Task tool to spawn exactly one general-purpose subagent with the ' +
         'instruction "Reply with exactly: SUBDONE" and wait for it to report back. Then reply with one sentence.'
     )
     await page.getByTestId('start-session-button').click()

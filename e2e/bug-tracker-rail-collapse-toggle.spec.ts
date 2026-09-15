@@ -65,8 +65,8 @@ test.describe('bug-fix: tracker rail collapsed state is reachable via a real tog
     await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
-      'Use the TodoWrite tool now to create a todo list with exactly two items: "Step one" (in_progress) and ' +
-        '"Step two" (pending). Do not do anything else. After calling TodoWrite once, reply with exactly: DONE.'
+      'Use TaskCreate to create exactly two tasks with subjects "Step one" and "Step two", then use TaskUpdate ' +
+        'with the returned task ID to mark "Step one" in_progress. Do not use any other tools. Then reply with exactly: DONE.'
     )
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)

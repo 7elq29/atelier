@@ -342,16 +342,16 @@ test.describe('audit: real scroll-experience verification (not just overflow met
   test('tracker rail: stays pinned/visible via position:sticky while the transcript scrolls past it, and has no scrollbar of its own', async ({}, testInfo) => {
     testInfo.setTimeout(120_000)
     // A dedicated fresh session (not a continuation of the earlier
-    // transcript test's session) so this test's TodoWrite call isn't
+    // transcript test's session) so this test's task-tool calls aren't
     // affected by whatever conversation state/model that other session
     // accumulated — same session-creation pattern as chat-surface-core's
-    // own passing "todo rail renders and updates live from TodoWrite" test.
+    // own passing task-tracker test.
         await openNewSessionModal(page)
     await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
-      'Use the TodoWrite tool now to create a todo list with exactly eight items: "Todo 1" through "Todo 8", ' +
-        'with "Todo 1" as in_progress and the rest pending. Do not use any other tools. Then reply with a one-sentence summary.'
+      'Use TaskCreate to create exactly eight tasks with subjects "Todo 1" through "Todo 8", then use TaskUpdate ' +
+        'with the returned task ID to mark "Todo 1" in_progress. Do not use any other tools. Then reply with a one-sentence summary.'
     )
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
