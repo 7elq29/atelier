@@ -701,6 +701,14 @@
       ]
     },
     {
+      "id": "command-palette-workspace-tools",
+      "paths": ["src/renderer/src/App.tsx"],
+      "changedLines": "paletteItems|open-workspace-|Open Diff|Open Files|Open Terminal|Open Ports",
+      "targets": [
+        { "file": "e2e/command-palette-workspace-tools.spec.ts" }
+      ]
+    },
+    {
       "id": "settings",
       "paths": [
         "src/renderer/src/components/SettingsPanel.tsx",

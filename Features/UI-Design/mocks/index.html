@@ -5307,6 +5307,10 @@ function setTheme(mode, btn) {
 const cpData = {
   actions: [{t:'Toggle theme', s:'⌘J', run:() => document.querySelector('html').setAttribute('data-theme', document.querySelector('html').getAttribute('data-theme')==='dark'?'light':'dark')},
             {t:'New session', s:'⌘N', run:() => openModal('modal-new-session')},
+            {t:'Open Diff', s:'Workspace', run:() => selectTab('s1','diff')},
+            {t:'Open Files', s:'Workspace', run:() => selectTab('s1','files')},
+            {t:'Open Terminal', s:'Workspace', run:() => selectTab('s1','terminal')},
+            {t:'Open Ports', s:'Workspace', run:() => selectTab('s2','ports')},
             {t:'Open daily note', s:'Notes', run:() => selectDailyNote()},
             {t:'New scratch note', s:'Notes +', run:() => createAppNote()},
             {t:'Open settings', s:'⌘,', run:() => openModal('modal-settings')},

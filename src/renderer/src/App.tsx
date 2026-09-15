@@ -1185,6 +1185,40 @@ export default function App(): JSX.Element {
         category: 'Action',
         run: () => setNewSessionOpen(true)
       },
+      ...(activeWorkspacePath &&
+      activeSession?.mode === 'claude-code' &&
+      !claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)
+        ? [
+            {
+              id: 'open-workspace-diff',
+              label: 'Open Diff',
+              category: 'Workspace',
+              run: () => selectTab('diff')
+            },
+            {
+              id: 'open-workspace-files',
+              label: 'Open Files',
+              category: 'Workspace',
+              run: () => selectTab('files')
+            },
+            {
+              id: 'open-workspace-terminal',
+              label: 'Open Terminal',
+              category: 'Workspace',
+              run: () => selectTab('terminal')
+            },
+            ...(activeSession.hostname
+              ? [
+                  {
+                    id: 'open-workspace-ports',
+                    label: 'Open Ports',
+                    category: 'Workspace',
+                    run: () => selectTab('ports')
+                  }
+                ]
+              : [])
+          ]
+        : []),
       ...allSessions.map((session) => ({
         id: `session-${session.id}`,
         label: session.name,
@@ -1192,7 +1226,17 @@ export default function App(): JSX.Element {
         run: () => void selectSession(session)
       }))
     ],
-    [config.theme, config.sidebarCollapsed, allSessions, toggleDailyNotesPanel]
+    [
+      config.theme,
+      config.sidebarCollapsed,
+      activeWorkspacePath,
+      activeSession,
+      activeSessionId,
+      sessions.statuses,
+      selectTab,
+      allSessions,
+      toggleDailyNotesPanel
+    ]
   )
 
   function handleOnboardingFinish(identity: { name: string; email: string }): void {
