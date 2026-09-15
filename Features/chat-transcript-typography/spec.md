@@ -4,16 +4,19 @@ No tool-detail or composer chrome changes.
 
 ## Regression: assistant text wraps too early
 
-The supplied screenshot shows assistant prose using only about 70% of its
-intended reading column. `.msg-wrap` already owns the responsive
-`min(84%, 720px)` measure; applying that cap again to its child
-`.msg-assistant` compounds the width to 84% × 84%.
+The fullscreen screenshots show that a fixed 720px reading measure wastes
+most of a wide chat surface and forces replies to wrap too early. The earlier
+double-width bug also applied the message percentage to both `.msg-wrap` and
+its child `.msg-assistant`.
 
-Expected: `.msg-wrap` remains the single width owner and `.msg-assistant`
-fills it (`width: 100%; max-width: none`). At a wide window, the assistant
-message and its wrapper must have the same computed width. This case is not
-shown separately in the mock; it follows the mock's existing 84%/720px
-assistant measure without applying it twice.
+Expected: the complete chat body, including the transcript/tracker region and
+composer, occupies 60% of the available main surface and remains centered,
+matching the supplied Cursor screenshot. `.msg-wrap` uses the existing
+responsive 84% measure with no fixed pixel cap, and `.msg-assistant` fills that
+wrapper (`width: 100%; max-width: none`). Thus both the reading width and the
+composer grow and shrink with the containing panel rather than stopping at
+720px. The mock did not previously cover a shared transcript/composer width;
+add the 60% treatment to `.chat-body-row` and `.composer-wrap`.
 
 ## Regression: composer cursor offset
 
@@ -81,7 +84,8 @@ Reuse the existing `.msg-assistant` / `.md-body` selectors in
 
 | Surface | Treatment |
 | --- | --- |
-| Assistant body | 15.5px, `line-height: 1.7`, measure `min(84%, 720px)` |
+| Chat body and composer | centered, `width: 60%` of the available main surface |
+| Assistant body | 15.5px, `line-height: 1.7`, responsive `84%` measure with no fixed pixel cap |
 | Paragraphs | `margin: 0 0 16px` |
 | Headings | weight 600, `margin: 24px 0 10px` |
 | Lists | `margin: 0 0 12px`; `li + li { margin-top: 8px }` |
@@ -103,11 +107,15 @@ or mode toggle. Tool cards and all non-input composer chrome are unchanged.
       type scale and neutral user-input surface, verifies inline Markdown
       in the composer and sent user bubble, and verifies that
       transcript padding decreases with the chat pane width.
-- [ ] At a 1400px window, the assistant message fills its `.msg-wrap`
-      container instead of receiving a second 84% width cap.
+- [ ] At a 1400px window and in native fullscreen, `.chat-body-row` and
+      `.composer-cache` each occupy 60% of their containing main surface and
+      have equal left/right outer space.
+- [ ] The assistant wrapper computes to 84% of the transcript content width
+      with no 720px ceiling, and `.msg-assistant` fills that wrapper instead
+      of receiving a second width cap.
 - [ ] Screenshots `bug-chat-assistant-double-width-cap.png` and
-      `chat-assistant-width-after.png` personally compared to confirm the
-      corrected reading measure.
+      `chat-fullscreen-responsive-width-after.png` personally compared to
+      confirm the corrected responsive measure and aligned composer.
 - [ ] With the composer context bar visible, `.composer-cursor` remains
       within the textarea bounds instead of appearing above the input.
 - [ ] The cursor's computed height equals the composer's computed font size.

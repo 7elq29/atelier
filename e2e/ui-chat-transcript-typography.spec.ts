@@ -211,10 +211,50 @@ test('chat prose, user input, and margins use a calm responsive rhythm', async (
     const mainLog = readFileSync(join(userDataDir, 'logs', 'main.log'), 'utf8')
     expect(mainLog).toContain('session:sendMessage invoked')
     expect(mainLog).toContain('harness event: result (turn complete)')
-    const assistantWidths = await assistantMsg.evaluate((el) => ({
-      message: el.getBoundingClientRect().width,
-      wrapper: el.parentElement?.getBoundingClientRect().width ?? 0
-    }))
+    const layoutWidths = await page.evaluate(() => {
+      const body = document.querySelector<HTMLElement>('.chat-body-row')
+      const composer = document.querySelector<HTMLElement>('.composer-cache')
+      const transcript = document.querySelector<HTMLElement>('.transcript')
+      const messages = document.querySelectorAll<HTMLElement>(
+        '.msg-assistant[data-testid="transcript-message"]'
+      )
+      const message = messages.item(messages.length - 1)
+      const wrapper = message?.parentElement
+      if (!body || !composer || !transcript || !message || !wrapper) return null
+      const transcriptStyle = getComputedStyle(transcript)
+      const bodyRect = body.getBoundingClientRect()
+      const bodyParentRect = body.parentElement?.getBoundingClientRect()
+      const composerRect = composer.getBoundingClientRect()
+      const composerParentRect = composer.parentElement?.getBoundingClientRect()
+      return {
+        body: bodyRect.width,
+        bodyParent: bodyParentRect?.width ?? 0,
+        bodyLeftGap: bodyParentRect ? bodyRect.left - bodyParentRect.left : 0,
+        bodyRightGap: bodyParentRect ? bodyParentRect.right - bodyRect.right : 0,
+        composer: composerRect.width,
+        composerParent: composerParentRect?.width ?? 0,
+        composerLeftGap: composerParentRect ? composerRect.left - composerParentRect.left : 0,
+        composerRightGap: composerParentRect ? composerParentRect.right - composerRect.right : 0,
+        transcriptContent:
+          transcript.clientWidth -
+          Number.parseFloat(transcriptStyle.paddingLeft) -
+          Number.parseFloat(transcriptStyle.paddingRight),
+        wrapper: wrapper.getBoundingClientRect().width,
+        message: message.getBoundingClientRect().width
+      }
+    })
+    expect(layoutWidths).not.toBeNull()
+    expect(layoutWidths!.body / layoutWidths!.bodyParent).toBeCloseTo(0.6, 2)
+    expect(layoutWidths!.composer / layoutWidths!.composerParent).toBeCloseTo(0.6, 2)
+    expect(Math.abs(layoutWidths!.bodyLeftGap - layoutWidths!.bodyRightGap)).toBeLessThanOrEqual(1)
+    expect(
+      Math.abs(layoutWidths!.composerLeftGap - layoutWidths!.composerRightGap)
+    ).toBeLessThanOrEqual(1)
+    expect(layoutWidths!.wrapper / layoutWidths!.transcriptContent).toBeCloseTo(0.84, 2)
+    const assistantWidths = {
+      message: layoutWidths!.message,
+      wrapper: layoutWidths!.wrapper
+    }
     expect(assistantWidths.message).toBeCloseTo(assistantWidths.wrapper, 0)
     const widePadding = await page.locator('.transcript').evaluate((el) =>
       Number.parseFloat(getComputedStyle(el).paddingLeft)
