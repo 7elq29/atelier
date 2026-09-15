@@ -603,6 +603,15 @@
       ]
     },
     {
+      "id": "tracker-rail-surface",
+      "paths": ["src/renderer/src/components/session/SessionChatSurface.tsx"],
+      "changedLines": "TrackerRail",
+      "targets": [
+        { "file": "e2e/bug-tracker-rail-width.spec.ts" },
+        { "file": "e2e/bug-tracker-rail-collapse-toggle.spec.ts" }
+      ]
+    },
+    {
       "id": "background-tasks-ui",
       "paths": [
         "src/shared/background-tasks-ui.ts",

@@ -299,10 +299,10 @@
 
   /* ===== Chat tab ===== */
   .chat-tab-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
-  /* Todos/Subagents: a real flex column alongside the transcript (not an overlay) so it never covers message text; collapsible to a slim icon rail when space is tight. */
+  /* Todos/Subagents: float over the chat tab; the transcript uses the full column. */
   .chat-body-row { flex: 1; display: flex; min-height: 0; width: max(60%, min(1080px, 100%)); margin-inline: auto; }
   .chat-main-col { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-  .tracker-rail { width: 290px; flex-shrink: 0; padding: 16px 16px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; transition: width .12s ease, padding .12s ease; }
+  .tracker-rail { position: absolute; top: 16px; right: 8px; z-index: 3; width: 244px; padding: 16px 16px 16px; display: flex; flex-direction: column; gap: 14px; transition: width .12s ease, padding .12s ease; }
   .tracker-rail.collapsed { width: 40px; padding: 12px 6px; align-items: center; }
   .tracker-rail.collapsed .tracker-card { display: none; }
   .tracker-rail-toggle { width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; color: var(--text-tertiary); background: transparent; border: 1px solid var(--border-default); border-radius: var(--r-md); padding: 5px; cursor: pointer; flex-shrink: 0; }
@@ -1212,7 +1212,7 @@
   .response-review-split-handle { width: 5px; flex-shrink: 0; cursor: col-resize; background: transparent; align-self: stretch; }
   .response-review-split-handle.hidden { display: none; }
   .response-review-split-handle:hover { background: var(--accent); }
-  .chat-body-row.response-review-open .tracker-rail { display: none; }
+  .chat-tab-wrap:has(.response-review-open) .tracker-rail { display: none; }
   .chat-body-row.response-review-open .chat-main-col { min-width: 0; flex: 1 1 0; }
   .response-review-head { display: flex; align-items: center; gap: 8px; min-height: 34px; box-sizing: border-box; padding: 0 6px 0 12px; border-bottom: 1px solid var(--border-subtle); font-size: 13px; font-weight: 600; color: var(--text-secondary); flex-shrink: 0; }
   .response-review-title { white-space: nowrap; flex-shrink: 0; margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -1799,6 +1799,19 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
             </div>
 
               </div>
+              <div class="response-review-split-handle hidden" id="responseReviewHandle-s1" onmousedown="startResponseReviewResize(event, 's1')"></div>
+              <aside class="response-review-pane hidden" id="responseReview-s1" data-session="s1">
+                <div class="response-review-head">
+                  <span class="response-review-title" id="responseReviewTitle-s1">Response review</span>
+                  <button class="btn btn-icon btn-sm" title="Close review pane" onclick="closeResponseReview('s1')"><svg class="icon" width="14" height="14"><use href="#icon-close"/></svg></button>
+                </div>
+                <div class="response-review-body" id="responseReviewBody-s1">
+                  <div class="response-review-rendered-lines" id="responseReviewLines-s1"></div>
+                  <div class="response-review-selection-chip hidden" id="responseReviewSelection-s1"></div>
+                  <div id="responseReviewInline-s1"></div>
+                </div>
+              </aside>
+            </div>
               <div class="tracker-rail" id="trackerRail-s1">
                 <button class="tracker-rail-toggle" onclick="toggleTrackerRail('s1')" title="Collapse Todos/Subagents"><span>◂</span><span class="rail-label">Collapse</span></button>
                 <div class="tracker-card">
@@ -1821,19 +1834,6 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                   <div class="rail-mini-badge" title="Subagents: 1 running"><svg class="icon" width="14" height="14"><use href="#icon-fan"/></svg><b>1</b></div>
                 </div>
               </div>
-              <div class="response-review-split-handle hidden" id="responseReviewHandle-s1" onmousedown="startResponseReviewResize(event, 's1')"></div>
-              <aside class="response-review-pane hidden" id="responseReview-s1" data-session="s1">
-                <div class="response-review-head">
-                  <span class="response-review-title" id="responseReviewTitle-s1">Response review</span>
-                  <button class="btn btn-icon btn-sm" title="Close review pane" onclick="closeResponseReview('s1')"><svg class="icon" width="14" height="14"><use href="#icon-close"/></svg></button>
-                </div>
-                <div class="response-review-body" id="responseReviewBody-s1">
-                  <div class="response-review-rendered-lines" id="responseReviewLines-s1"></div>
-                  <div class="response-review-selection-chip hidden" id="responseReviewSelection-s1"></div>
-                  <div id="responseReviewInline-s1"></div>
-                </div>
-              </aside>
-            </div>
 
             <div class="composer-wrap" style="padding-top:0;">
               <div class="composer-stack">

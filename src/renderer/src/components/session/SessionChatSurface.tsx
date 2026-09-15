@@ -91,52 +91,56 @@ export function SessionChatSurface({
   }, [pendingJumpMessageId, messages.length, onJumpHandled])
 
   return (
-    <div className={`chat-body-row${reviewTarget ? ' response-review-open' : ''}`}>
-      <div className="chat-main-col">
-        <ChatTranscript
-          messages={messages}
-          transcriptTruncated={truncation?.transcriptTruncated}
-          hiddenTurnCount={truncation?.hiddenTurnCount ?? 0}
-          onRespond={(requestId, decision) => onRespondToPrompt(requestId, decision)}
-          searchQuery={transcriptSearchOpen ? transcriptSearchQuery : ''}
-          activeMatchIndex={activeMatchIndex}
-          onMatchCount={onMatchCount}
-          onOpenPlanFile={onOpenFileInFiles}
-          workspaceRoot={workspaceRoot}
-          projectRoot={projectRoot}
-          filePathCandidates={filePathCandidates}
-          onOpenFileInFiles={onOpenFileInFiles}
-          bookmarks={bookmarks}
-          onToggleBookmark={onToggleBookmark}
-          sdkChrome={sdkChrome}
-          onReviewMessage={onReviewMessage}
-          onReviewPlan={onReviewPlan}
-          reviewTarget={reviewTarget}
-          onAddComment={onAddComment}
-          onUpdateComment={onUpdateComment}
-          onDeleteComment={onDeleteComment}
-          reviewComments={reviewComments}
-          busy={busy}
-          // This surface only renders once the session is past the connecting
-          // gate, so an empty transcript here means "connected, nothing said yet".
-          emptyState={<SessionReadyHint workspaceLabel={sessionWorkspaceLabel(session)} />}
-        />
+    <>
+      <div className={`chat-body-row${reviewTarget ? ' response-review-open' : ''}`}>
+        <div className="chat-main-col">
+          <ChatTranscript
+            messages={messages}
+            transcriptTruncated={truncation?.transcriptTruncated}
+            hiddenTurnCount={truncation?.hiddenTurnCount ?? 0}
+            onRespond={(requestId, decision) => onRespondToPrompt(requestId, decision)}
+            searchQuery={transcriptSearchOpen ? transcriptSearchQuery : ''}
+            activeMatchIndex={activeMatchIndex}
+            onMatchCount={onMatchCount}
+            onOpenPlanFile={onOpenFileInFiles}
+            workspaceRoot={workspaceRoot}
+            projectRoot={projectRoot}
+            filePathCandidates={filePathCandidates}
+            onOpenFileInFiles={onOpenFileInFiles}
+            bookmarks={bookmarks}
+            onToggleBookmark={onToggleBookmark}
+            sdkChrome={sdkChrome}
+            onReviewMessage={onReviewMessage}
+            onReviewPlan={onReviewPlan}
+            reviewTarget={reviewTarget}
+            onAddComment={onAddComment}
+            onUpdateComment={onUpdateComment}
+            onDeleteComment={onDeleteComment}
+            reviewComments={reviewComments}
+            busy={busy}
+            // This surface only renders once the session is past the connecting
+            // gate, so an empty transcript here means "connected, nothing said yet".
+            emptyState={<SessionReadyHint workspaceLabel={sessionWorkspaceLabel(session)} />}
+          />
+        </div>
+        {reviewTarget ? (
+          <ResponseReviewPanel
+            target={reviewTarget}
+            onClose={onCloseReview}
+            onAddComment={onAddComment}
+            onUpdateComment={onUpdateComment}
+            onDeleteComment={onDeleteComment}
+            reviewComments={reviewComments}
+            workspaceRoot={workspaceRoot}
+            projectRoot={projectRoot}
+            onOpenFileInFiles={onOpenFileInFiles}
+            effectiveTheme={effectiveTheme}
+          />
+        ) : null}
       </div>
-      <TrackerRail messages={messages} backgroundTasks={backgroundTasks} />
-      {reviewTarget ? (
-        <ResponseReviewPanel
-          target={reviewTarget}
-          onClose={onCloseReview}
-          onAddComment={onAddComment}
-          onUpdateComment={onUpdateComment}
-          onDeleteComment={onDeleteComment}
-          reviewComments={reviewComments}
-          workspaceRoot={workspaceRoot}
-          projectRoot={projectRoot}
-          onOpenFileInFiles={onOpenFileInFiles}
-          effectiveTheme={effectiveTheme}
-        />
+      {!reviewTarget ? (
+        <TrackerRail messages={messages} backgroundTasks={backgroundTasks} />
       ) : null}
-    </div>
+    </>
   )
 }

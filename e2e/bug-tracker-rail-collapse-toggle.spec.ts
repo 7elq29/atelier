@@ -59,7 +59,7 @@ test.describe('bug-fix: tracker rail collapsed state is reachable via a real tog
     await electronApp.close().catch(() => undefined)
   })
 
-  test('clicking the tracker-rail-toggle button collapses the rail with no overlap, and expands it again', async ({}, testInfo) => {
+  test('clicking the tracker-rail-toggle button collapses the floating rail, and expands it again', async ({}, testInfo) => {
     testInfo.setTimeout(150_000)
         await openNewSessionModal(page)
     await page.getByTestId('project-path').fill(projectDir)
@@ -86,6 +86,32 @@ test.describe('bug-fix: tracker rail collapsed state is reachable via a real tog
     const expandedWidth = await rail.evaluate((el) => el.getBoundingClientRect().width)
     expect(expandedWidth).toBeGreaterThan(200)
 
+    const floatGeometry = await page.evaluate(() => {
+      const row = document.querySelector('.chat-body-row')
+      const col = document.querySelector('.chat-main-col')
+      const icons = document.querySelector('[data-testid="tracker-rail"]')
+      if (!row || !col || !icons) return null
+      const rowRect = row.getBoundingClientRect()
+      const colRect = col.getBoundingClientRect()
+      const wrap = document.querySelector('.chat-tab-wrap')
+      const wrapRect = wrap?.getBoundingClientRect()
+      return {
+        position: getComputedStyle(icons).position,
+        rowWidth: rowRect.width,
+        colWidth: colRect.width,
+        railLeft: icons.getBoundingClientRect().left,
+        railRight: icons.getBoundingClientRect().right,
+        wrapRight: wrapRect?.right ?? 0,
+        wrapMid: wrapRect ? wrapRect.left + wrapRect.width / 2 : 0
+      }
+    })
+    expect(floatGeometry).not.toBeNull()
+    expect(floatGeometry!.position).toBe('absolute')
+    expect(Math.abs(floatGeometry!.rowWidth - floatGeometry!.colWidth)).toBeLessThanOrEqual(1)
+    expect(floatGeometry!.railLeft).toBeGreaterThan(floatGeometry!.wrapMid)
+    expect(Math.abs(floatGeometry!.wrapRight - floatGeometry!.railRight)).toBeLessThanOrEqual(16)
+    await page.screenshot({ path: join(artifactsDir, 'tracker-rail-floating.png') })
+
     // Real click on the real affordance — no forced class.
     await toggle.click()
     await expect(rail).toHaveClass(/collapsed/)
@@ -98,29 +124,20 @@ test.describe('bug-fix: tracker rail collapsed state is reachable via a real tog
     await expect(page.getByTestId('todo-tracker-card')).not.toBeVisible()
     await expect(page.getByTestId('tracker-rail-mini-badges')).toBeVisible()
 
-    // No overlap/clipping vs. the main chat column while collapsed (same
-    // pairwise-rect-overlap check pattern as
-    // audit-window-resize-layout.spec.ts's checkNoSiblingOverlap).
-    const overlapCheck = await page.locator('.main-area > div:has(.tracker-rail) > *').evaluateAll((els) => {
-      const slack = 1
-      const panels = (els as HTMLElement[])
-        .filter((el) => el.offsetParent !== null || getComputedStyle(el).position === 'fixed')
-        .map((el) => {
-          const r = el.getBoundingClientRect()
-          return { label: el.getAttribute('data-testid') || el.className || el.tagName, rect: r }
-        })
-        .filter((p) => p.rect.width > 0 && p.rect.height > 0)
-      for (let i = 0; i < panels.length; i++) {
-        for (let j = i + 1; j < panels.length; j++) {
-          const a = panels[i].rect
-          const b = panels[j].rect
-          const overlaps = a.x + a.width - slack > b.x && b.x + b.width - slack > a.x && a.y + a.height - slack > b.y && b.y + b.height - slack > a.y
-          if (overlaps) return { ok: false, reason: `overlap between "${panels[i].label}" and "${panels[j].label}"` }
-        }
+    const collapsedGeometry = await page.evaluate(() => {
+      const row = document.querySelector('.chat-body-row')
+      const col = document.querySelector('.chat-main-col')
+      const icons = document.querySelector('[data-testid="tracker-rail"]')
+      if (!row || !col || !icons) return null
+      return {
+        position: getComputedStyle(icons).position,
+        rowWidth: row.getBoundingClientRect().width,
+        colWidth: col.getBoundingClientRect().width
       }
-      return { ok: true, reason: '' }
     })
-    expect(overlapCheck.ok, overlapCheck.reason).toBe(true)
+    expect(collapsedGeometry).not.toBeNull()
+    expect(collapsedGeometry!.position).toBe('absolute')
+    expect(Math.abs(collapsedGeometry!.rowWidth - collapsedGeometry!.colWidth)).toBeLessThanOrEqual(1)
 
     await page.screenshot({ path: join(artifactsDir, 'bug-tracker-rail-collapse-toggle-collapsed.png') })
     await rail.screenshot({ path: join(artifactsDir, 'bug-tracker-rail-collapse-toggle-collapsed-closeup.png') })
