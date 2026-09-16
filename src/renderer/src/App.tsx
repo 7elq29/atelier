@@ -1023,6 +1023,18 @@ export default function App(): JSX.Element {
     [activeSessionId, rememberActiveTab]
   )
 
+  const toggleWorkspaceTool = useCallback(
+    (tab: WorkspaceToolTab) => {
+      if (tab === 'ports' && !activeSession?.hostname) return
+      if (activeWorkspaceTool === tab) {
+        handleWorkspaceSplitPaneClose(tab)
+        return
+      }
+      selectTab(tab)
+    },
+    [activeSession?.hostname, activeWorkspaceTool, handleWorkspaceSplitPaneClose, selectTab]
+  )
+
   const handleWorkspaceToolToggleMaximize = useCallback(
     (tab: SessionTab) => {
       if (!activeSessionId || tab === 'chat') return
@@ -1160,10 +1172,13 @@ export default function App(): JSX.Element {
 
   const handleSessionTabHintShortcut = useCallback(
     (tab: SessionTab) => {
-      if (tab === 'ports' && !activeSession?.hostname) return
-      selectTab(tab)
+      if (tab === 'chat') {
+        selectTab(tab)
+        return
+      }
+      toggleWorkspaceTool(tab)
     },
-    [activeSession?.hostname, selectTab]
+    [selectTab, toggleWorkspaceTool]
   )
 
   const openNoteInSplit = useCallback(
@@ -1949,14 +1964,15 @@ export default function App(): JSX.Element {
   anyModalOpenRef.current = anyModalOpen
   fileQuickOpenOpenRef.current = fileQuickOpenOpen
   /**
-   * ESC / Stop while busy delegates to `handleInterrupt`, which withdraws a
-   * not-yet-executed prompt (restores composer text + removes the user row) or
-   * interrupts a running turn without restoring the prompt.
+   * Double-ESC / Stop while busy delegates to `handleInterrupt`, which
+   * withdraws a not-yet-executed prompt (restores composer text + removes the
+   * user row) or interrupts a running turn without restoring the prompt.
    */
   const chatSessionInterruptEnabledRef = useRef(false)
-  // ESC interrupts the active chat session's in-flight turn (same as Stop),
-  // but only while the chat tab is foreground — not from sidebar, daily
-  // notes, other tabs, or modals.
+  const pendingChatEscapeRef = useRef<{ sessionId: string; at: number } | null>(null)
+  // Double-ESC interrupts the active chat session's in-flight turn (same as
+  // Stop), but only while the chat tab is foreground — not from sidebar,
+  // daily notes, other tabs, or modals.
   const chatSessionInterruptEnabled = Boolean(
     activeSessionId &&
       activeSession?.mode === 'claude-code' &&
@@ -1981,18 +1997,94 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     function handleChatEscape(e: KeyboardEvent): void {
-      if (e.key !== 'Escape') return
-      if (anyModalOpenRef.current) return
-      if (!chatSessionInterruptEnabledRef.current) return
-      if (transcriptSearchOpenRef.current) return
+      if (e.key !== 'Escape') {
+        if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
+          pendingChatEscapeRef.current = null
+        }
+        return
+      }
+      if (
+        anyModalOpenRef.current ||
+        !chatSessionInterruptEnabledRef.current ||
+        transcriptSearchOpenRef.current
+      ) {
+        pendingChatEscapeRef.current = null
+        return
+      }
       const sid = activeSessionIdRef.current
-      if (!sid || !busyBySessionRef.current[sid]) return
+      if (!sid || !busyBySessionRef.current[sid]) {
+        pendingChatEscapeRef.current = null
+        return
+      }
       e.preventDefault()
+      if (e.repeat) return
+
+      const now = performance.now()
+      const pending = pendingChatEscapeRef.current
+      if (!pending || pending.sessionId !== sid || now - pending.at > 600) {
+        pendingChatEscapeRef.current = { sessionId: sid, at: now }
+        return
+      }
+
+      pendingChatEscapeRef.current = null
       void handleInterruptRef.current(sid)
     }
     window.addEventListener('keydown', handleChatEscape)
     return () => window.removeEventListener('keydown', handleChatEscape)
   }, [])
+
+  const workspacePanelShortcutsEnabled = Boolean(
+    activeSession &&
+      activeSession.mode === 'claude-code' &&
+      !activeAppNote &&
+      !activeDailyNoteDate &&
+      !activeWeeklyPlanSurface &&
+      !activeSessionDisconnected
+  )
+
+  useEffect(() => {
+    function handleWorkspacePanelShortcut(e: KeyboardEvent): void {
+      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat) return
+      if (anyModalOpen) return
+
+      if (e.code === 'ArrowRight') {
+        e.preventDefault()
+        e.stopPropagation()
+        void toggleDailyNotesPanel()
+        return
+      }
+      if (e.code === 'ArrowLeft') {
+        e.preventDefault()
+        e.stopPropagation()
+        updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })
+        return
+      }
+      if (!workspacePanelShortcutsEnabled) return
+
+      const tabByCode: Partial<Record<string, WorkspaceToolTab>> = {
+        KeyD: 'diff',
+        KeyF: 'files',
+        KeyT: 'terminal',
+        KeyP: 'ports'
+      }
+      const tab = tabByCode[e.code]
+      if (!tab || (tab === 'ports' && !activeSession?.hostname)) return
+      e.preventDefault()
+      e.stopPropagation()
+      toggleWorkspaceTool(tab)
+    }
+
+    window.addEventListener('keydown', handleWorkspacePanelShortcut)
+    return () => window.removeEventListener('keydown', handleWorkspacePanelShortcut)
+  }, [
+    activeSession?.hostname,
+    anyModalOpen,
+    config.sidebarCollapsed,
+    toggleDailyNotesPanel,
+    toggleWorkspaceTool,
+    updateConfig,
+    workspacePanelShortcutsEnabled
+  ])
 
   // A layout effect, not a plain effect: it must remove `inert` before the
   // newly-active session panel's passive autofocus runs. A `.focus()` call

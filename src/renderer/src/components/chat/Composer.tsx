@@ -1049,13 +1049,6 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       }
     }
 
-    if (e.key === 'Escape' && busy) {
-      e.preventDefault()
-      e.stopPropagation()
-      onInterrupt()
-      return
-    }
-
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       void handleSend()

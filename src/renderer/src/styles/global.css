@@ -1330,13 +1330,18 @@ input[type='range'] {
    Selectors/values copied verbatim from Features/UI-Design/mocks/index.html
    (+shared.css tokens) — see spec.md's "respect the interactive UI design". */
 .chat-tab-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
-/* 15-conversation-scrollbar-outer-edge: .chat-body-row is the single
-   scrolling container for the transcript + tracker rail, so the native
-   scrollbar renders at the true outer-right edge of the window instead of
-   at the transcript/rail boundary. min-height:0 stays removed so the row
-   can grow to its natural (overflowing) content height rather than being
-   clipped by the flex parent. */
-.chat-body-row { flex: 1; display: flex; overflow-y: auto; width: max(60%, min(1080px, 100%)); margin-inline: auto; }
+/* .chat-body-row remains the single scrolling container for the transcript
+   and tracker rail, but its native scrollbar chrome stays hidden. Wheel,
+   trackpad, keyboard, and programmatic scrolling are unaffected. */
+.chat-body-row {
+  flex: 1;
+  display: flex;
+  overflow-y: auto;
+  width: max(60%, min(1080px, 100%));
+  margin-inline: auto;
+  scrollbar-width: none;
+}
+.chat-body-row::-webkit-scrollbar { display: none; }
 .chat-main-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
 .transcript {
@@ -1477,7 +1482,14 @@ input[type='range'] {
   margin-inline: 0;
 }
 .chat-body-row.response-review-open .tracker-rail { display: none; }
-.chat-body-row.response-review-open .chat-main-col { min-width: 0; flex: 1 1 0; overflow-y: auto; min-height: 0; }
+.chat-body-row.response-review-open .chat-main-col {
+  min-width: 0;
+  flex: 1 1 0;
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: none;
+}
+.chat-body-row.response-review-open .chat-main-col::-webkit-scrollbar { display: none; }
 .chat-body-row.response-review-open .response-review-split-handle,
 .chat-body-row.response-review-open .response-review-pane { align-self: stretch; flex-shrink: 0; }
 /* Compact panel-header language, shared with the terminal and files headers. */

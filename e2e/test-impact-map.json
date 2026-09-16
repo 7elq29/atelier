@@ -759,6 +759,28 @@
       ]
     },
     {
+      "id": "workspace-panel-shortcuts",
+      "paths": ["src/renderer/src/App.tsx"],
+      "changedLines": "toggleWorkspaceTool|handleWorkspacePanelShortcut|workspacePanelShortcutsEnabled|handleSessionTabHintShortcut|tabByCode|ArrowRight|ArrowLeft",
+      "targets": [
+        { "file": "e2e/command-palette-workspace-tools.spec.ts" },
+        { "file": "e2e/app-shell.spec.ts", "grep": "keyboard hints: ⌘\\+f|keyboard hints: ⌘\\+c" }
+      ]
+    },
+    {
+      "id": "chat-double-escape-interrupt",
+      "paths": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/components/chat/Composer.tsx"
+      ],
+      "changedLines": "pendingChatEscapeRef|handleChatEscape|Double-ESC|e\\.key === 'Escape' && busy",
+      "targets": [
+        { "file": "e2e/chat-double-escape-interrupt.spec.ts" },
+        { "file": "e2e/bug-command-palette-escape-running-chat.spec.ts" },
+        { "file": "e2e/bug-changes-popover-escape-running-chat.spec.ts" }
+      ]
+    },
+    {
       "id": "settings",
       "paths": [
         "src/renderer/src/components/SettingsPanel.tsx",
@@ -967,6 +989,14 @@
       "paths": ["src/renderer/src/styles/global.css"],
       "changedLines": "chat-body-row|composer-cache-entry.active|1080px|720px",
       "targets": [{ "file": "e2e/ui-chat-transcript-typography.spec.ts" }]
+    },
+    {
+      "id": "chat-scrollbar-hidden",
+      "paths": ["src/renderer/src/styles/global.css"],
+      "changedLines": "chat-body-row|scrollbar-width|::-webkit-scrollbar",
+      "targets": [
+        { "file": "e2e/chat-scrollbar-hidden.spec.ts" }
+      ]
     },
     {
       "id": "chat-prose-shared-css",
