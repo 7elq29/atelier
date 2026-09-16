@@ -416,6 +416,31 @@
 .topbar > button {
   flex-shrink: 0;
 }
+.topbar-timeline-toggle {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.topbar-timeline-toggle:hover,
+.topbar-timeline-toggle.active {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+.topbar-timeline-toggle .icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
 /* The tab row is the other genuinely flexible child: it shrinks along with
    the title, and once its buttons no longer fit it scrolls horizontally
    in place rather than forcing `.topbar` itself to overflow (see comment

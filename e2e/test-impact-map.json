@@ -824,6 +824,16 @@
       "targets": [{ "file": "e2e/enrichment-export-conversation.spec.ts" }]
     },
     {
+      "id": "timeline-toggle-topbar",
+      "paths": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/components/Sidebar.tsx",
+        "src/renderer/src/styles/global.css"
+      ],
+      "changedLines": "topbar-timeline-toggle|toggleDailyNotesPanel|dailyNotesPanelOpen|onToggleDailyNotesPanel",
+      "targets": [{ "file": "e2e/sidebar-refinement.spec.ts" }]
+    },
+    {
       "id": "fullscreen-titlebar",
       "paths": ["src/renderer/src/components/TitleBar.tsx"],
       "targets": [

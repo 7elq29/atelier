@@ -268,6 +268,9 @@
   .sidebar-utility-button { width: 24px; height: 24px; flex: 0 0 24px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-tertiary); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
   .sidebar-utility-button:hover, .sidebar-utility-button.active { color: var(--text-secondary); background: var(--bg-hover); }
   .sidebar-utility-button .icon { width: 14px; height: 14px; display: block; }
+  .topbar-timeline-toggle { width: 24px; height: 24px; flex: 0 0 24px; margin-left: auto; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-tertiary); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .topbar-timeline-toggle:hover, .topbar-timeline-toggle.active { color: var(--text-secondary); background: var(--bg-hover); }
+  .topbar-timeline-toggle .icon { width: 14px; height: 14px; display: block; }
 
   /* ===== Main area ===== */
   .main-area { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
@@ -1359,7 +1362,6 @@
         </div>
         <div class="sidebar-utility-row">
           <button class="sidebar-utility-button" title="Toggle sidebar collapse" onclick="document.getElementById('sidebar').classList.toggle('collapsed')"><svg class="icon" width="14" height="14"><use href="#icon-review"/></svg></button>
-          <button class="sidebar-utility-button" title="Daily notes" onclick="toggleDailyNotes()"><svg class="icon" width="14" height="14"><use href="#icon-book"/></svg></button>
           <button class="sidebar-utility-button" title="Settings" onclick="openModal('modal-settings')"><svg class="icon" width="14" height="14"><use href="#icon-gear"/></svg></button>
         </div>
       </div>
@@ -1552,6 +1554,7 @@
             <span class="smatches" id="searchmatches-s1"></span>
           </div>
           <button class="btn btn-sm" onclick="toggleDrawer('s1')" style="margin-left:4px;">▤ Terminal</button>
+          <button class="topbar-timeline-toggle" title="Timeline" aria-label="Toggle timeline panel" onclick="toggleDailyNotes()"><svg class="icon" width="14" height="14"><use href="#icon-book"/></svg></button>
         </div>
 
         <!-- CHAT TAB -->

@@ -66,7 +66,7 @@ test.describe('sidebar refinement', () => {
     )).toBeLessThanOrEqual(1)
 
     const utilityButtons = utilityRow.locator('.sidebar-utility-button')
-    await expect(utilityButtons).toHaveCount(3)
+    await expect(utilityButtons).toHaveCount(2)
     const buttonBoxes = await utilityButtons.evaluateAll((buttons) =>
       buttons.map((button) => {
         const buttonRect = button.getBoundingClientRect()
@@ -82,16 +82,13 @@ test.describe('sidebar refinement', () => {
     )
     expect(buttonBoxes.map(({ width, height }) => [width, height])).toEqual([
       [24, 24],
-      [24, 24],
       [24, 24]
     ])
     expect(buttonBoxes.map(({ iconWidth, iconHeight }) => [iconWidth, iconHeight])).toEqual([
       [14, 14],
-      [14, 14],
       [14, 14]
     ])
     expect(buttonBoxes[1].x - (buttonBoxes[0].x + buttonBoxes[0].width)).toBe(2)
-    expect(buttonBoxes[2].x - (buttonBoxes[1].x + buttonBoxes[1].width)).toBe(2)
 
     await page.getByTestId('sidebar-collapse-toggle').click()
     await expect(page.getByTestId('sidebar')).toHaveClass(/collapsed/)
@@ -99,11 +96,24 @@ test.describe('sidebar refinement', () => {
     await expect(page.getByTestId('sidebar')).not.toHaveClass(/collapsed/)
 
     const dailyNotesButton = page.getByTestId('toggle-daily-notes-panel')
+    await expect(dailyNotesButton).toHaveClass(/topbar-timeline-toggle/)
+    const topbarBox = await page.locator('.topbar').boundingBox()
+    const dailyNotesButtonBox = await dailyNotesButton.boundingBox()
+    const dailyNotesIconBox = await dailyNotesButton.locator('svg').boundingBox()
+    expect(topbarBox).not.toBeNull()
+    expect(dailyNotesButtonBox).not.toBeNull()
+    expect(dailyNotesIconBox).not.toBeNull()
+    expect([dailyNotesButtonBox!.width, dailyNotesButtonBox!.height]).toEqual([24, 24])
+    expect([dailyNotesIconBox!.width, dailyNotesIconBox!.height]).toEqual([14, 14])
+    expect(topbarBox!.x + topbarBox!.width - (dailyNotesButtonBox!.x + dailyNotesButtonBox!.width)).toBe(24)
+
     const dailyNotesWasOpen = (await dailyNotesButton.getAttribute('aria-pressed')) === 'true'
     await dailyNotesButton.click()
     await expect(dailyNotesButton).toHaveAttribute('aria-pressed', dailyNotesWasOpen ? 'false' : 'true')
+    await expect(page.getByTestId('daily-notes-panel')).toHaveCount(dailyNotesWasOpen ? 0 : 1)
     await dailyNotesButton.click()
     await expect(dailyNotesButton).toHaveAttribute('aria-pressed', dailyNotesWasOpen ? 'true' : 'false')
+    await expect(page.getByTestId('daily-notes-panel')).toHaveCount(dailyNotesWasOpen ? 1 : 0)
 
     await page.getByTestId('open-settings-button').click()
     await expect(page.getByTestId('settings-panel')).toBeVisible()
@@ -113,6 +123,7 @@ test.describe('sidebar refinement', () => {
     await page.getByTestId('sidebar').screenshot({
       path: join(artifactsDir, 'sidebar-top-utility-icons.png')
     })
+    await page.screenshot({ path: join(artifactsDir, 'timeline-toggle-topbar.png') })
 
     await expect(daily).toContainText('Daily note')
     await expect(daily).not.toContainText('Obsidian vault')
