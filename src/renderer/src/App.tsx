@@ -217,6 +217,7 @@ export default function App(): JSX.Element {
 
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [splitOpenPickerOpen, setSplitOpenPickerOpen] = useState(false)
+  const [bufferSwitcherOpen, setBufferSwitcherOpen] = useState(false)
   const [fileQuickOpenOpen, setFileQuickOpenOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsInitialPane, setSettingsInitialPane] = useState<
@@ -568,6 +569,14 @@ export default function App(): JSX.Element {
             }
             return
           }
+          if (e.code === 'KeyB') {
+            fileQuickOpenChordAtRef.current = null
+            if (!anyModalOpenRef.current) {
+              e.preventDefault()
+              setBufferSwitcherOpen(true)
+            }
+            return
+          }
           if (e.code === 'Digit0') {
             fileQuickOpenChordAtRef.current = null
             const session = activeSessionRef.current
@@ -618,6 +627,7 @@ export default function App(): JSX.Element {
         if (anyModalOpenRef.current) {
           setPaletteOpen(false)
           setSplitOpenPickerOpen(false)
+          setBufferSwitcherOpen(false)
           setSettingsOpen(false)
           setNewSessionOpen(false)
           setFileQuickOpenOpen(false)
@@ -627,6 +637,7 @@ export default function App(): JSX.Element {
         // be open (redundant when anyModalOpen is false, but harmless).
         setPaletteOpen(false)
         setSplitOpenPickerOpen(false)
+        setBufferSwitcherOpen(false)
         setSettingsOpen(false)
         setNewSessionOpen(false)
         setReplaceLinkedDialogOpen(false)
@@ -1452,6 +1463,76 @@ export default function App(): JSX.Element {
     openChangedFileInFilesWithDiff
   ])
 
+  const bufferSwitcherItems = useMemo<SplitPickerItem[]>(() => {
+    const items: SplitPickerItem[] = []
+
+    // Active claude-code sessions
+    for (const s of sessions.activeSessions) {
+      if (s.mode !== 'claude-code') continue
+      items.push({
+        id: `buf-session-${s.id}`,
+        label: s.name,
+        hint: s.worktreePath ?? s.projectPath,
+        category: 'Sessions',
+        run: () => void selectSession(s)
+      })
+    }
+
+    // Active terminal sessions
+    for (const s of sessions.activeSessions) {
+      if (s.mode !== 'terminal') continue
+      items.push({
+        id: `buf-terminal-${s.id}`,
+        label: s.name,
+        hint: s.hostname ?? 'local',
+        category: 'Terminals',
+        run: () => void selectSession(s)
+      })
+    }
+
+    // App notes
+    for (const note of appNotes.notes) {
+      items.push({
+        id: `buf-note-${note.id}`,
+        label: note.title || 'Untitled',
+        category: 'Notes',
+        run: () => selectAppNote(note.id)
+      })
+    }
+
+    // Daily note (always shown)
+    items.push({
+      id: 'buf-daily-note',
+      label: 'Daily Note',
+      hint: date ?? undefined,
+      category: 'Daily Note',
+      run: () => selectDailyNote()
+    })
+
+    // Weekly plan (always shown — dispatch depends on whether a plan file exists)
+    items.push({
+      id: 'buf-weekly-plan',
+      label: 'Weekly Plan',
+      category: 'Weekly Plan',
+      run: () => {
+        if (weeklyPlanStatus?.fileExists) void onWeeklyPlanRowClick()
+        else void startWeeklyPlanWizard()
+      }
+    })
+
+    return items
+  }, [
+    sessions.activeSessions,
+    appNotes.notes,
+    date,
+    weeklyPlanStatus,
+    selectAppNote,
+    selectDailyNote,
+    onWeeklyPlanRowClick,
+    startWeeklyPlanWizard
+    // selectSession intentionally omitted — plain async fn, reads own current state via refs
+  ])
+
   function handleOnboardingFinish(identity: { name: string; email: string }): void {
     updateConfig({ onboardingCompleted: true, gitIdentity: identity })
   }
@@ -1814,6 +1895,7 @@ export default function App(): JSX.Element {
     showOnboarding ||
     paletteOpen ||
     splitOpenPickerOpen ||
+    bufferSwitcherOpen ||
     settingsOpen ||
     newSessionOpen ||
     fileQuickOpenOpen ||
@@ -2558,6 +2640,14 @@ export default function App(): JSX.Element {
         isOpen={splitOpenPickerOpen}
         onClose={() => setSplitOpenPickerOpen(false)}
         items={splitPickerItems}
+      />
+
+      <SplitOpenPicker
+        isOpen={bufferSwitcherOpen}
+        onClose={() => setBufferSwitcherOpen(false)}
+        items={bufferSwitcherItems}
+        placeholder="Switch to…"
+        testIdPrefix="buffer-switcher"
       />
 
       {activeSession?.mode === 'claude-code' && !activeAppNote && (
