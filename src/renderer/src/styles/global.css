@@ -3808,7 +3808,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   align-items: center;
   gap: 14px;
 }
-.daily-note-header-controls .daily-sync-chip {
+.daily-sync-chip {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -3819,18 +3819,21 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   color: var(--text-tertiary);
   margin-left: auto;
 }
-.daily-note-header-controls .daily-sync-dot {
+.daily-sync-dot {
   width: 5px;
   height: 5px;
   flex-shrink: 0;
   border-radius: 50%;
   background: currentColor;
 }
-.daily-note-header-controls .daily-sync-chip.synced {
+.daily-sync-chip.synced {
   color: var(--accent);
 }
-.daily-note-header-controls .daily-sync-chip.external {
+.daily-sync-chip.external {
   color: var(--warning);
+}
+.daily-sync-chip.error {
+  color: var(--danger);
 }
 .daily-note-editor-panel .daily-note-vault-path {
   font-family: var(--font-mono);

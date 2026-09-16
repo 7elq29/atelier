@@ -59,6 +59,7 @@ export function registerAppNotesHandlers(): void {
   ipcMain.handle('app-note:update', (_event, id: string, patch: AppNoteUpdate) => {
     const note = fileStore().update(id, patch)
     if (!note) throw new Error(`app note not found: ${id}`)
+    logger.info('app-note updated', { id, fields: Object.keys(patch) })
     return note
   })
 

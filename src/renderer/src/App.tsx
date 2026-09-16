@@ -238,6 +238,10 @@ export default function App(): JSX.Element {
   const [deleteAppNotePrompt, setDeleteAppNotePrompt] = useState<{ id: string; title: string } | null>(null)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [activeAppNoteId, setActiveAppNoteId] = useState<string | null>(null)
+  const [appNoteSyncById, setAppNoteSyncById] = useState<
+    Record<string, 'synced' | 'saving' | 'error'>
+  >({})
+  const appNoteSyncVersionRef = useRef(new Map<string, number>())
   const [activeDailyNoteDate, setActiveDailyNoteDate] = useState<string | null>(null)
   const [dailyNoteHeaderHost, setDailyNoteHeaderHost] = useState<HTMLDivElement | null>(null)
   const [activeWeeklyPlanOpen, setActiveWeeklyPlanOpen] = useState(false)
@@ -949,6 +953,35 @@ export default function App(): JSX.Element {
     }
   }, [appNotes])
 
+  const markAppNoteSaving = useCallback((noteId: string): number => {
+    const version = (appNoteSyncVersionRef.current.get(noteId) ?? 0) + 1
+    appNoteSyncVersionRef.current.set(noteId, version)
+    setAppNoteSyncById((prev) => ({ ...prev, [noteId]: 'saving' }))
+    return version
+  }, [])
+
+  const updateAppNoteWithSync = useCallback(
+    async (
+      noteId: string,
+      patch: { title?: string; content?: string },
+      pendingVersion?: number
+    ): Promise<void> => {
+      const version = pendingVersion ?? markAppNoteSaving(noteId)
+      try {
+        await appNotes.updateNote(noteId, patch)
+        if (appNoteSyncVersionRef.current.get(noteId) === version) {
+          setAppNoteSyncById((prev) => ({ ...prev, [noteId]: 'synced' }))
+        }
+      } catch (error) {
+        if (appNoteSyncVersionRef.current.get(noteId) === version) {
+          setAppNoteSyncById((prev) => ({ ...prev, [noteId]: 'error' }))
+        }
+        throw error
+      }
+    },
+    [appNotes, markAppNoteSaving]
+  )
+
   const deleteAppNote = useCallback(
     async (noteId: string, permanently = false) => {
       const other = appNotes.notes.filter((n) => n.id !== noteId)
@@ -956,6 +989,11 @@ export default function App(): JSX.Element {
         setActiveAppNoteId(other[0]?.id ?? null)
       }
       noteCursorPositionsRef.current.delete(`app:${noteId}`)
+      appNoteSyncVersionRef.current.delete(noteId)
+      setAppNoteSyncById((prev) => {
+        const { [noteId]: _removed, ...rest } = prev
+        return rest
+      })
       await appNotes.deleteNote(noteId, permanently)
     },
     [activeAppNoteId, appNotes]
@@ -2165,7 +2203,7 @@ export default function App(): JSX.Element {
           dailyNotesPanelOpen={date !== null}
           onToggleDailyNotesPanel={() => void toggleDailyNotesPanel()}
           onCreateAppNote={() => void createAppNote()}
-          onRenameAppNote={(id, title) => void appNotes.updateNote(id, { title })}
+          onRenameAppNote={(id, title) => void updateAppNoteWithSync(id, { title })}
           onDeleteAppNote={requestDeleteAppNote}
           bookmarks={appBookmarks.bookmarks}
           onCreateBookmark={(input) => void appBookmarks.createBookmark(input)}
@@ -2213,7 +2251,9 @@ export default function App(): JSX.Element {
                     data-testid="app-note-title-input"
                     value={activeAppNote.title}
                     placeholder="Untitled note"
-                    onChange={(e) => void appNotes.updateNote(activeAppNote.id, { title: e.target.value })}
+                    onChange={(e) =>
+                      void updateAppNoteWithSync(activeAppNote.id, { title: e.target.value })
+                    }
                   />
                 ) : activeSession ? (
                   activeSession.name
@@ -2221,6 +2261,39 @@ export default function App(): JSX.Element {
                   'Atelier'
                 )}
               </span>
+              {activeAppNote ? (
+                <span
+                  className={`daily-sync-chip app-note-sync-chip ${
+                    appNoteSyncById[activeAppNote.id] ?? 'synced'
+                  }`}
+                  data-testid="app-note-sync-chip"
+                  role="status"
+                  aria-live="polite"
+                  aria-label={
+                    appNoteSyncById[activeAppNote.id] === 'saving'
+                      ? 'Saving…'
+                      : appNoteSyncById[activeAppNote.id] === 'error'
+                        ? 'Save failed'
+                        : 'Synced'
+                  }
+                  title={
+                    appNoteSyncById[activeAppNote.id] === 'saving'
+                      ? 'Saving…'
+                      : appNoteSyncById[activeAppNote.id] === 'error'
+                        ? 'Save failed'
+                        : 'Synced'
+                  }
+                >
+                  <span className="daily-sync-dot" aria-hidden="true" />
+                  <span className="daily-sync-label">
+                    {appNoteSyncById[activeAppNote.id] === 'saving'
+                      ? 'Saving…'
+                      : appNoteSyncById[activeAppNote.id] === 'error'
+                        ? 'Save failed'
+                        : 'Synced'}
+                  </span>
+                </span>
+              ) : null}
               {activeSession &&
               !activeAppNote &&
               !activeDailyNoteDate &&
@@ -2470,8 +2543,9 @@ export default function App(): JSX.Element {
               activeNoteId={activeAppNote.id}
               effectiveTheme={effectiveTheme}
               onUpdateNote={async (id, patch) => {
-                await appNotes.updateNote(id, patch)
+                await updateAppNoteWithSync(id, patch, appNoteSyncVersionRef.current.get(id))
               }}
+              onDirty={markAppNoteSaving}
               onSelectNote={selectAppNote}
               cursorPositions={noteCursorPositionsRef.current}
             />

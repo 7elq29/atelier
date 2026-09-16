@@ -48,7 +48,8 @@
         {
           "file": "e2e/daily-note-notes-editor.spec.ts",
           "grep": "opens from sidebar, edits"
-        }
+        },
+        { "file": "e2e/obsidian-app-notes.spec.ts" }
       ]
     },
     {
@@ -284,9 +285,9 @@
       "id": "files-panel",
       "paths": ["src/renderer/src/components/panels/FilesPanel.tsx"],
       "targets": [
+        { "file": "e2e/bug-files-directory-ctrl-n.spec.ts" },
         { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|files panel:" },
         { "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts" },
-        { "file": "e2e/chat-surface-core.spec.ts", "grep": "file.*Files tab" },
         { "file": "e2e/bug-files-walk-failure-visible.spec.ts" }
       ]
     },
@@ -813,7 +814,7 @@
       ],
       "targets": [
         { "file": "e2e/obsidian-app-notes.spec.ts" },
-        { "file": "e2e/session-organization.spec.ts", "grep": "note" },
+        { "file": "e2e/session-organization.spec.ts", "grep": "setup:|app notes:" },
         { "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts" }
       ]
     },
@@ -827,7 +828,7 @@
         "src/preload/index.ts",
         "src/shared/config.ts"
       ],
-      "changedLines": "appNotesFolder|appNotesMigrated|DeleteAppNoteDialog|deleteAppNotePrompt|requestDeleteAppNote|createAppNote|appNotes.reload|deleteAppNote|vault-app-notes-folder-input|Atelier notes folder",
+      "changedLines": "appNotesFolder|appNotesMigrated|DeleteAppNoteDialog|deleteAppNotePrompt|requestDeleteAppNote|createAppNote|appNotes.reload|deleteAppNote|vault-app-notes-folder-input|Atelier notes folder|appNoteSync|markAppNoteSaving|updateAppNoteWithSync|app-note-sync-chip",
       "targets": [
         { "file": "e2e/obsidian-app-notes.spec.ts" },
         { "file": "e2e/session-organization.spec.ts", "grep": "app notes:" }
