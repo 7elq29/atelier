@@ -2783,6 +2783,7 @@ export default function App(): JSX.Element {
         isOpen={splitOpenPickerOpen}
         onClose={() => setSplitOpenPickerOpen(false)}
         items={splitPickerItems}
+        showCategoryHeaders={false}
       />
 
       <SplitOpenPicker
