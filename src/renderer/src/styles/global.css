@@ -3116,16 +3116,24 @@ body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cur
   bottom: 0;
   height: calc((1 - var(--workspace-split-ratio, 0.5)) * 100% - 2.5px);
 }
-/* Active-pane indicator: dim inactive pane with brightness filter so ALL content
-   inside looks muted regardless of its own background color. */
-[data-split-active-panel] .workspace-split-pane--primary,
-[data-split-active-panel] .workspace-split-pane--secondary {
-  filter: brightness(0.6);
-  transition: filter 0.15s;
+/* Active-pane indicator: inactive pane gets a white overlay so it appears lighter;
+   active pane is untouched (natural dark bg, fonts unaffected).
+   z-index 11: above terminal canvas, below .workspace-pane-head (z-index 12).
+   pointer-events: none so the overlay never blocks clicks/input. */
+[data-split-active-panel] .workspace-split-pane--primary::after,
+[data-split-active-panel] .workspace-split-pane--secondary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+  z-index: 11;
+  transition: opacity 0.15s;
+  opacity: 1;
 }
-[data-split-active-panel='primary'] .workspace-split-pane--primary,
-[data-split-active-panel='secondary'] .workspace-split-pane--secondary {
-  filter: brightness(1);
+[data-split-active-panel='primary'] .workspace-split-pane--primary::after,
+[data-split-active-panel='secondary'] .workspace-split-pane--secondary::after {
+  opacity: 0;
 }
 /* Empty layout slot for the Terminal tab. The real terminal overlays it from the
    keep-alive layer, and in a split both take the same geometry — so the slot must
