@@ -17,13 +17,18 @@ interface SplitOpenPickerProps {
   placeholder?: string
   /** Prefix for all data-testid attributes. Defaults to "split-open-picker". */
   testIdPrefix?: string
+  /**
+   * When false: no category header rows; shows item.category as the inline
+   * type label instead of item.hint. Defaults to true.
+   */
+  showCategoryHeaders?: boolean
 }
 
 /**
  * Keyboard-driven category picker. Used for both the Ctrl+X 2 split-open picker
  * and the Ctrl+X B buffer switcher.
  */
-export default function SplitOpenPicker({ isOpen, onClose, items, placeholder, testIdPrefix }: SplitOpenPickerProps): JSX.Element | null {
+export default function SplitOpenPicker({ isOpen, onClose, items, placeholder, testIdPrefix, showCategoryHeaders = true }: SplitOpenPickerProps): JSX.Element | null {
   const pfx = testIdPrefix ?? 'split-open-picker'
   const ph = placeholder ?? 'Open in split pane…'
   const [query, setQuery] = useState('')
@@ -120,9 +125,10 @@ export default function SplitOpenPicker({ isOpen, onClose, items, placeholder, t
             cat.items.map((item, idxInCat) => {
               const globalIdx = cat.startIndex + idxInCat
               const isFirst = idxInCat === 0
+              const sub = showCategoryHeaders ? item.hint : item.category
               return (
                 <div key={item.id}>
-                  {isFirst && (
+                  {showCategoryHeaders && isFirst && (
                     <div className="cp-category-header" data-testid={`${pfx}-category`}>
                       {cat.name}
                     </div>
@@ -135,7 +141,7 @@ export default function SplitOpenPicker({ isOpen, onClose, items, placeholder, t
                     onClick={() => runItem(item)}
                   >
                     <span>{item.label}</span>
-                    {item.hint && <span className="cpsub">{item.hint}</span>}
+                    {sub && <span className="cpsub">{sub}</span>}
                   </div>
                 </div>
               )

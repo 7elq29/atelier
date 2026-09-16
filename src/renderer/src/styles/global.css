@@ -3187,6 +3187,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 .ft-del { color: var(--danger); margin-left: 4px; }
 .diff-area { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 16px; }
 .diff-file-card { border: 1px solid var(--border-default); border-radius: var(--r-md); margin-bottom: 16px; overflow: hidden; }
+.diff-file-card:last-child { margin-bottom: 0; }
 .diff-file-header { display: flex; align-items: center; gap: 8px; padding: 7px 11px; background: var(--bg-hover); font-family: var(--font-ui); font-size: 13.5px; overflow-x: auto; white-space: nowrap; }
 .diff-file-header .diff-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-file-expand-btn:disabled { opacity: 0.45; cursor: not-allowed; }
