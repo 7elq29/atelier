@@ -17,11 +17,12 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
 test.describe('Obsidian-backed app notes', () => {
   let electronApp: ElectronApplication
   let page: Page
+  let userDataDir: string
   let vault: string
   let notesFolder: string
 
   test.beforeAll(async () => {
-    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-obsidian-notes-'))
+    userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-obsidian-notes-'))
     vault = join(userDataDir, 'vault')
     notesFolder = join(vault, 'Atelier')
     mkdirSync(notesFolder, { recursive: true })
@@ -49,8 +50,12 @@ test.describe('Obsidian-backed app notes', () => {
 
     await page.getByTestId('app-note-editor').click()
     await page.keyboard.type('Saved into Obsidian')
-    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s')
+    await page.screenshot({ path: join(artifactsDir, 'obsidian-app-note-sync-status.png') })
+    const syncChip = page.getByTestId('app-note-sync-chip')
+    await expect.soft(syncChip).toHaveText('Saving…')
     await expect.poll(() => readFileSync(originalPath, 'utf-8')).toContain('Saved into Obsidian')
+    await expect.soft(readFileSync(join(userDataDir, 'logs', 'main.log'), 'utf-8')).toContain('app-note updated')
+    await expect(syncChip).toHaveText('Synced')
 
     await row.getByTestId('app-note-menu-button').click()
     await page.getByTestId('app-note-menu-rename').click()

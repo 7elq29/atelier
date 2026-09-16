@@ -21,12 +21,14 @@ export default function AppNotesPanel({
   activeNoteId,
   effectiveTheme,
   onUpdateNote,
+  onDirty,
   cursorPositions
 }: {
   notes: AppNoteRecord[]
   activeNoteId: string
   effectiveTheme: 'light' | 'dark'
   onUpdateNote: (id: string, patch: { title?: string; content?: string }) => Promise<void>
+  onDirty?: (id: string) => void
   onSelectNote: (noteId: string) => void
   cursorPositions: NoteCursorPositions
 }): JSX.Element {
@@ -58,7 +60,7 @@ export default function AppNotesPanel({
           {
             key: 'Mod-s',
             run: () => {
-              void saveRef.current?.()
+              void saveRef.current?.().catch(() => undefined)
               return true
             }
           }
@@ -70,8 +72,12 @@ export default function AppNotesPanel({
 
   const handleMarkdownChange = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => void saveRef.current?.(), 600)
-  }, [])
+    onDirty?.(activeNoteIdRef.current)
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null
+      void saveRef.current?.().catch(() => undefined)
+    }, 600)
+  }, [onDirty])
 
   useEffect(() => {
     return () => {

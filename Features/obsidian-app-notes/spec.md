@@ -26,7 +26,10 @@
 5. Editing an app note keeps the existing 600ms autosave and explicit
    `⌘S` behavior, but atomically writes the note Markdown file. The app editor
    receives Markdown without its frontmatter so it never exposes integration
-   metadata to the author.
+   metadata to the author. As soon as the editor changes, a status beside the
+   note title reads **Saving…**; after the atomic file write resolves it reads
+   **Synced**. A failed write reads **Save failed** and is never presented as
+   synced.
 6. Renaming a note atomically renames its Markdown file to the sanitized title
    plus `.md`, retaining its content and frontmatter.
 7. Choosing **Delete** opens a confirmation dialog. **Delete** removes the
@@ -47,6 +50,12 @@ button treatment. The confirmation has a concise explanation of the archive
 operation and three visibly distinct actions: Cancel, Delete, and Delete
 permanently.
 
+The app-note sync status reuses the Daily Note topbar treatment exactly:
+`.daily-sync-chip`, `.daily-sync-dot`, and `.daily-sync-label`. It sits beside
+the app-note title, uses the same **Saving…** and **Synced** labels, and adds
+the existing danger token only for **Save failed**. The mock does not include
+an app-note editor state, so this placement is defined here.
+
 ## Done
 
 - [ ] A configured folder creates tagged Markdown notes; untagged Markdown
@@ -54,6 +63,8 @@ permanently.
 - [ ] Legacy DB notes export once, then load from their Markdown files after a
       real relaunch.
 - [ ] Typing/autosaving and `⌘S` update the source file atomically.
+- [ ] App-note edits show Saving… immediately, Synced only after the file write,
+      and Save failed when the write rejects.
 - [ ] Rename changes the source filename without losing body or frontmatter.
 - [ ] Each delete choice has the stated filesystem result.
 - [ ] `npm run build` passes.
