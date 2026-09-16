@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type {
@@ -18,6 +18,7 @@ import {
 import ChatBookmarkContextMenu, {
   type ChatBookmarkMenuState
 } from './ChatBookmarkContextMenu'
+import { rehypeMarkdownSourcePositions, selectedMarkdown } from './markdown-selection-copy'
 
 export type MarkdownLinkOptions = {
   workspaceRoot?: string
@@ -222,6 +223,7 @@ export default function MarkdownMessage({
   onToggleBookmark?: (bookmark: CreateSessionBookmarkInput, bookmarked: boolean) => void
 }): JSX.Element {
   const [bookmarkMenu, setBookmarkMenu] = useState<ChatBookmarkMenuState | null>(null)
+  const markdownRootRef = useRef<HTMLDivElement>(null)
   const closeBookmarkMenu = useCallback(() => setBookmarkMenu(null), [])
   const onBookmarkRequest = useCallback(
     (event: React.MouseEvent, bookmark: CreateSessionBookmarkInput) => {
@@ -252,11 +254,25 @@ export default function MarkdownMessage({
     [workspaceRoot, projectRoot, filePathCandidates, onOpenFileInFiles, onBookmarkRequest]
   )
 
+  useEffect(() => {
+    function handleCopy(event: ClipboardEvent): void {
+      const root = markdownRootRef.current
+      if (!root) return
+      const markdown = selectedMarkdown(root, content)
+      if (markdown == null) return
+      event.preventDefault()
+      event.clipboardData?.setData('text/plain', markdown)
+    }
+    document.addEventListener('copy', handleCopy)
+    return () => document.removeEventListener('copy', handleCopy)
+  }, [content])
+
   return (
     <>
-      <div className="md-body">
+      <div className="md-body" ref={markdownRootRef}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeMarkdownSourcePositions]}
           components={components}
           urlTransform={(url) =>
             url.startsWith(ATELIER_FILE_SCHEME) ? url : defaultUrlTransform(url)

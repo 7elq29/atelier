@@ -560,6 +560,7 @@
     {
       "id": "transcript",
       "paths": ["src/renderer/src/components/chat/MarkdownMessage.tsx"],
+      "changedLines": "MarkdownLinkOptions|linkifyFilePathsInMarkdown|ATELIER_FILE_SCHEME|hrefToAtelierFilePath|looksLikeFilePath|resolveKnownSessionFilePath",
       "targets": [
         { "file": "e2e/chat-surface-core.spec.ts" },
         { "file": "e2e/chat-transcript-window.spec.ts" },
@@ -567,6 +568,17 @@
         { "file": "e2e/message-actions.spec.ts" },
         { "file": "e2e/enrichment-full-text-search.spec.ts" },
         { "file": "e2e/enrichment-export-conversation.spec.ts" }
+      ]
+    },
+    {
+      "id": "chat-selection-copy-markdown",
+      "paths": [
+        "src/renderer/src/components/chat/MarkdownMessage.tsx",
+        "src/renderer/src/components/chat/markdown-selection-copy.ts"
+      ],
+      "changedLines": "selectedMarkdown|rehypeMarkdownSourcePositions|markdownRootRef|handleCopy|addEventListener\\('copy'|rehypePlugins|data-md-source",
+      "targets": [
+        { "file": "e2e/chat-selection-copy-markdown.spec.ts" }
       ]
     },
     {
