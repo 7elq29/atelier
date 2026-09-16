@@ -1156,13 +1156,13 @@ const FilesPanel = forwardRef(function FilesPanel(
   useImperativeHandle(ref, () => ({
     focus() {
       if (browseDirPath && browseDirChildren && browseDirChildren.length > 0) {
-        setListingSelectedIndex(0)
+        if (listingSelectedIndex < 0) setListingSelectedIndex(0)
         dirListingRef.current?.focus()
       } else {
         editorRef.current?.focus()
       }
     }
-  }), [browseDirPath, browseDirChildren])
+  }), [browseDirPath, browseDirChildren, listingSelectedIndex])
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
