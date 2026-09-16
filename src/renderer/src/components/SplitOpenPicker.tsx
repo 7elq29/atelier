@@ -13,13 +13,19 @@ interface SplitOpenPickerProps {
   isOpen: boolean
   onClose: () => void
   items: SplitPickerItem[]
+  /** Input placeholder text. Defaults to "Open in split pane…". */
+  placeholder?: string
+  /** Prefix for all data-testid attributes. Defaults to "split-open-picker". */
+  testIdPrefix?: string
 }
 
 /**
- * Keyboard-driven picker that opens when the user presses Ctrl+X 2.
- * Shows what can be opened in the split secondary pane, grouped by category.
+ * Keyboard-driven category picker. Used for both the Ctrl+X 2 split-open picker
+ * and the Ctrl+X B buffer switcher.
  */
-export default function SplitOpenPicker({ isOpen, onClose, items }: SplitOpenPickerProps): JSX.Element | null {
+export default function SplitOpenPicker({ isOpen, onClose, items, placeholder, testIdPrefix }: SplitOpenPickerProps): JSX.Element | null {
+  const pfx = testIdPrefix ?? 'split-open-picker'
+  const ph = placeholder ?? 'Open in split pane…'
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -90,23 +96,23 @@ export default function SplitOpenPicker({ isOpen, onClose, items }: SplitOpenPic
   return (
     <div
       className="modal-backdrop"
-      data-testid="split-open-picker-backdrop"
+      data-testid={`${pfx}-backdrop`}
       onClick={handleBackdropClick}
     >
-      <div className="modal-dialog cp-dialog" data-testid="split-open-picker">
+      <div className="modal-dialog cp-dialog" data-testid={pfx}>
         <div className="cp-input">
           <input
             ref={inputRef}
-            data-testid="split-open-picker-input"
-            placeholder="Open in split pane…"
+            data-testid={`${pfx}-input`}
+            placeholder={ph}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
           />
         </div>
-        <div className="cp-results" data-testid="split-open-picker-results">
+        <div className="cp-results" data-testid={`${pfx}-results`}>
           {filtered.length === 0 && (
-            <div className="cp-empty" data-testid="split-open-picker-empty">
+            <div className="cp-empty" data-testid={`${pfx}-empty`}>
               No results
             </div>
           )}
@@ -117,13 +123,13 @@ export default function SplitOpenPicker({ isOpen, onClose, items }: SplitOpenPic
               return (
                 <div key={item.id}>
                   {isFirst && (
-                    <div className="cp-category-header" data-testid="split-open-picker-category">
+                    <div className="cp-category-header" data-testid={`${pfx}-category`}>
                       {cat.name}
                     </div>
                   )}
                   <div
                     className={'cp-item' + (globalIdx === selectedIndex ? ' selected' : '')}
-                    data-testid="split-open-picker-item"
+                    data-testid={`${pfx}-item`}
                     data-item-id={item.id}
                     onMouseEnter={() => setSelectedIndex(globalIdx)}
                     onClick={() => runItem(item)}

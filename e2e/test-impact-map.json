@@ -736,6 +736,17 @@
       ]
     },
     {
+      "id": "buffer-switcher",
+      "paths": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/components/SplitOpenPicker.tsx"
+      ],
+      "changedLines": "bufferSwitcherOpen|bufferSwitcherItems|KeyB|testIdPrefix|placeholder.*Switch",
+      "targets": [
+        { "file": "e2e/buffer-switcher.spec.ts" }
+      ]
+    },
+    {
       "id": "settings",
       "paths": [
         "src/renderer/src/components/SettingsPanel.tsx",
