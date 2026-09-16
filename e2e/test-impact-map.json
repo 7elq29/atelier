@@ -759,6 +759,15 @@
       ]
     },
     {
+      "id": "split-picker-keyboard-navigation",
+      "paths": ["src/renderer/src/components/SplitOpenPicker.tsx"],
+      "changedLines": "selectedItemRef|scrollIntoView|KeyN|KeyP|ArrowDown|ArrowUp",
+      "targets": [
+        { "file": "e2e/buffer-switcher.spec.ts" },
+        { "file": "e2e/split-open-picker.spec.ts" }
+      ]
+    },
+    {
       "id": "workspace-panel-shortcuts",
       "paths": ["src/renderer/src/App.tsx"],
       "changedLines": "toggleWorkspaceTool|handleWorkspacePanelShortcut|workspacePanelShortcutsEnabled|handleSessionTabHintShortcut|tabByCode|ArrowRight|ArrowLeft",

@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { seedSkipOnboarding } from './e2e-config'
+import { seedE2eConfig } from './e2e-config'
 
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
@@ -29,7 +29,9 @@ test.describe('buffer switcher (Ctrl+X B)', () => {
 
   test.beforeAll(async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-buffer-switcher-'))
-    seedSkipOnboarding(userDataDir)
+    const vaultPath = join(userDataDir, 'vault')
+    mkdirSync(join(vaultPath, 'Atelier'), { recursive: true })
+    seedE2eConfig(userDataDir, { vault: { root: vaultPath, appNotesFolder: 'Atelier' } })
     projectPath = join(userDataDir, 'project')
     mkdirSync(projectPath, { recursive: true })
     ;({ app: electronApp, page } = await launchApp(userDataDir))
@@ -124,5 +126,52 @@ test.describe('buffer switcher (Ctrl+X B)', () => {
     await page.getByTestId('buffer-switcher-input').fill('Reply with exactly')
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('daily-note-editor')).toHaveCount(0)
+  })
+
+  test('Ctrl+N/Ctrl+P navigate and keyboard selection stays visible while results scroll', async () => {
+    await page.evaluate(async () => {
+      for (let i = 0; i < 16; i++) {
+        await window.atelier.createAppNote(`Picker note ${i + 1}`)
+      }
+    })
+    await page.reload()
+    await page.waitForLoadState('domcontentloaded')
+    await expect(page.getByTestId('new-session-button')).toBeVisible()
+    await page.getByTestId('new-session-button').focus()
+    await openSwitcher(page)
+    await expect(page.getByTestId('buffer-switcher')).toBeVisible()
+
+    const input = page.getByTestId('buffer-switcher-input')
+    const results = page.getByTestId('buffer-switcher-results')
+    const items = page.getByTestId('buffer-switcher-item')
+    await expect(input).toBeFocused()
+    await page.waitForTimeout(100)
+    await input.fill('')
+    await expect.poll(() => items.count()).toBeGreaterThanOrEqual(17)
+    await expect.poll(() => results.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
+
+    await input.press('Control+n')
+    const ctrlNSelectedNextItem = await items.nth(1).evaluate((el) => el.classList.contains('selected'))
+    await input.fill('no matching picker item')
+    await expect(items).toHaveCount(0)
+    await input.fill('')
+    await expect.poll(() => items.count()).toBeGreaterThanOrEqual(17)
+    await expect(items.first()).toHaveClass(/selected/)
+
+    for (let i = 0; i < 15; i++) {
+      await input.press('ArrowDown')
+    }
+    await expect(items.nth(15)).toHaveClass(/selected/)
+    await page.screenshot({ path: 'e2e-artifacts/bug-buffer-switcher-selection-visible.png' })
+
+    const [resultsBox, selectedBox] = await Promise.all([results.boundingBox(), items.nth(15).boundingBox()])
+    expect(resultsBox).not.toBeNull()
+    expect(selectedBox).not.toBeNull()
+    expect(ctrlNSelectedNextItem).toBe(true)
+    expect(selectedBox!.y).toBeGreaterThanOrEqual(resultsBox!.y)
+    expect(selectedBox!.y + selectedBox!.height).toBeLessThanOrEqual(resultsBox!.y + resultsBox!.height)
+    await input.press('Control+p')
+    await expect(items.nth(14)).toHaveClass(/selected/)
+    await page.keyboard.press('Escape')
   })
 })

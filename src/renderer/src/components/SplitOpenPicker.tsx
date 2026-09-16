@@ -29,6 +29,7 @@ export default function SplitOpenPicker({ isOpen, onClose, items, placeholder, t
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const selectedItemRef = useRef<HTMLDivElement>(null)
 
   const q = query.toLowerCase()
   const filtered = items.filter(
@@ -52,6 +53,11 @@ export default function SplitOpenPicker({ isOpen, onClose, items, placeholder, t
     setSelectedIndex(0)
   }, [query])
 
+  useEffect(() => {
+    if (!isOpen) return
+    selectedItemRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [isOpen, query, selectedIndex])
+
   if (!isOpen) return null
 
   function runItem(item: SplitPickerItem): void {
@@ -60,10 +66,11 @@ export default function SplitOpenPicker({ isOpen, onClose, items, placeholder, t
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>): void {
-    if (e.key === 'ArrowDown') {
+    const ctrlOnly = e.ctrlKey && !e.metaKey && !e.altKey
+    if (e.key === 'ArrowDown' || (ctrlOnly && e.code === 'KeyN')) {
       e.preventDefault()
       setSelectedIndex((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)))
-    } else if (e.key === 'ArrowUp') {
+    } else if (e.key === 'ArrowUp' || (ctrlOnly && e.code === 'KeyP')) {
       e.preventDefault()
       setSelectedIndex((i) => Math.max(i - 1, 0))
     } else if (e.key === 'Enter') {
@@ -128,10 +135,11 @@ export default function SplitOpenPicker({ isOpen, onClose, items, placeholder, t
                     </div>
                   )}
                   <div
+                    ref={globalIdx === selectedIndex ? selectedItemRef : undefined}
                     className={'cp-item' + (globalIdx === selectedIndex ? ' selected' : '')}
                     data-testid={`${pfx}-item`}
                     data-item-id={item.id}
-                    onMouseEnter={() => setSelectedIndex(globalIdx)}
+                    onMouseMove={() => setSelectedIndex(globalIdx)}
                     onClick={() => runItem(item)}
                   >
                     <span>{item.label}</span>
