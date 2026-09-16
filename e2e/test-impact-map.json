@@ -722,6 +722,20 @@
       ]
     },
     {
+      "id": "split-open-picker",
+      "paths": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/components/SplitOpenPicker.tsx",
+        "src/renderer/src/workspace-split/workspace-split-types.ts",
+        "src/renderer/src/workspace-split/workspace-split-logic.ts",
+        "src/renderer/src/components/session/SessionWorkspacePanels.tsx"
+      ],
+      "changedLines": "splitOpenPickerOpen|SplitOpenPicker|splitPickerItems|openNoteInSplit|WorkspaceSecondaryTab|secondaryAppNoteId|Digit2",
+      "targets": [
+        { "file": "e2e/split-open-picker.spec.ts" }
+      ]
+    },
+    {
       "id": "settings",
       "paths": [
         "src/renderer/src/components/SettingsPanel.tsx",

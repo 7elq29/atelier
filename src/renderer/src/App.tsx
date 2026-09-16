@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import CommandPalette, { type PaletteItem } from './components/CommandPalette'
+import SplitOpenPicker, { type SplitPickerItem } from './components/SplitOpenPicker'
 import FileQuickOpenPalette from './components/FileQuickOpenPalette'
 import KeyboardHintsOverlay from './components/KeyboardHintsOverlay'
 import OnboardingWizard from './components/OnboardingWizard'
@@ -23,6 +24,7 @@ import {
   tabContentClass
 } from './workspace-split/workspace-split-logic'
 import type { WorkspaceSplitState } from './workspace-split/workspace-split-types'
+import type { WorkspaceSecondaryTab } from './workspace-split/workspace-split-types'
 import { WorkspaceSplitDivider } from './workspace-split/WorkspaceSplitDivider'
 import { WorkspaceSplitDropOverlay } from './workspace-split/WorkspaceSplitDropOverlay'
 import { WorkspaceSplitDragGhost } from './workspace-split/WorkspaceSplitDragGhost'
@@ -214,6 +216,7 @@ export default function App(): JSX.Element {
   const appBookmarks = useAppBookmarks()
 
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [splitOpenPickerOpen, setSplitOpenPickerOpen] = useState(false)
   const [fileQuickOpenOpen, setFileQuickOpenOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsInitialPane, setSettingsInitialPane] = useState<
@@ -544,10 +547,10 @@ export default function App(): JSX.Element {
             const session = activeSessionRef.current
             if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
               const split = activeWorkspaceSplitRef.current
-              if (split && !split.fullscreenTab) {
+              if (split && !split.fullscreenTab && split.secondaryTab !== 'app-note') {
                 const focusedPanel = (document.activeElement as HTMLElement | null)
                   ?.closest<HTMLElement>('[data-panel]')
-                  ?.dataset.panel as SessionTab | undefined
+                  ?.dataset.panel as string | undefined
                 if (focusedPanel === split.secondaryTab) {
                   e.preventDefault()
                   handleWorkspaceToolToggleMaximizeRef.current(split.secondaryTab)
@@ -556,12 +559,21 @@ export default function App(): JSX.Element {
             }
             return
           }
+          if (e.code === 'Digit2') {
+            fileQuickOpenChordAtRef.current = null
+            const session = activeSessionRef.current
+            if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
+              e.preventDefault()
+              setSplitOpenPickerOpen(true)
+            }
+            return
+          }
           if (e.code === 'Digit0') {
             fileQuickOpenChordAtRef.current = null
             const session = activeSessionRef.current
             if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
               const split = activeWorkspaceSplitRef.current
-              if (split && split.fullscreenTab === split.secondaryTab) {
+              if (split && split.secondaryTab !== 'app-note' && split.fullscreenTab === split.secondaryTab) {
                 e.preventDefault()
                 handleWorkspaceToolToggleMaximizeRef.current(split.secondaryTab)
               }
@@ -576,10 +588,10 @@ export default function App(): JSX.Element {
               if (split && !split.fullscreenTab) {
                 const focusedPanel = (document.activeElement as HTMLElement | null)
                   ?.closest<HTMLElement>('[data-panel]')
-                  ?.dataset.panel as SessionTab | undefined
+                  ?.dataset.panel as string | undefined
                 if (focusedPanel === split.secondaryTab) {
                   e.preventDefault()
-                  handleWorkspaceSplitPaneCloseRef.current(split.secondaryTab)
+                  handleWorkspaceSplitPaneCloseRef.current(split.secondaryTab as SessionTab)
                 }
               }
             }
@@ -605,6 +617,7 @@ export default function App(): JSX.Element {
         // Modal-close always takes priority — if any overlay is open, close it.
         if (anyModalOpenRef.current) {
           setPaletteOpen(false)
+          setSplitOpenPickerOpen(false)
           setSettingsOpen(false)
           setNewSessionOpen(false)
           setFileQuickOpenOpen(false)
@@ -613,6 +626,7 @@ export default function App(): JSX.Element {
         // Idle session or no session: still close any modals that happen to
         // be open (redundant when anyModalOpen is false, but harmless).
         setPaletteOpen(false)
+        setSplitOpenPickerOpen(false)
         setSettingsOpen(false)
         setNewSessionOpen(false)
         setReplaceLinkedDialogOpen(false)
@@ -954,9 +968,11 @@ export default function App(): JSX.Element {
   const splitLayoutVisible = isSplitLayoutVisible(activeWorkspaceSplit)
   const activeWorkspaceTool = useMemo<WorkspaceToolTab | null>(() => {
     if (!activeWorkspaceSplit) return null
+    const secondaryToolTab =
+      activeWorkspaceSplit.secondaryTab !== 'app-note' ? activeWorkspaceSplit.secondaryTab : null
     const visible = [
       activeWorkspaceSplit.fullscreenTab,
-      activeWorkspaceSplit.secondaryTab,
+      secondaryToolTab,
       activeWorkspaceSplit.primaryTab
     ].find((tab): tab is WorkspaceToolTab => Boolean(tab && tab !== 'chat'))
     return visible ?? null
@@ -1117,6 +1133,32 @@ export default function App(): JSX.Element {
       selectTab(tab)
     },
     [activeSession?.hostname, selectTab]
+  )
+
+  const openNoteInSplit = useCallback(
+    (noteId: string) => {
+      if (!activeSessionId) return
+      setWorkspaceSplitBySession((prev) => {
+        const existing = prev[activeSessionId]
+        const ratio = existing?.splitRatio ?? 0.5
+        const next = createSplit('chat', 'app-note', ratio, 'row', noteId)
+        if (!next) return prev
+        return { ...prev, [activeSessionId]: next }
+      })
+    },
+    [activeSessionId]
+  )
+
+  const selectAppNoteInSplit = useCallback(
+    (noteId: string) => {
+      if (!activeSessionId) return
+      setWorkspaceSplitBySession((prev) => {
+        const existing = prev[activeSessionId]
+        if (!existing || existing.secondaryTab !== 'app-note') return prev
+        return { ...prev, [activeSessionId]: { ...existing, secondaryAppNoteId: noteId } }
+      })
+    },
+    [activeSessionId]
   )
 
   const openFileInFiles = useCallback(
@@ -1333,6 +1375,84 @@ export default function App(): JSX.Element {
       toggleDailyNotesPanel
     ]
   )
+
+  const splitPickerItems = useMemo<SplitPickerItem[]>(() => {
+    if (!activeSession || activeSession.mode !== 'claude-code') return []
+    if (claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)) return []
+    const ws = activeSessionId ? sessionWorkspace.workspaceBySession[activeSessionId] : undefined
+    const items: SplitPickerItem[] = []
+
+    // Workspace tools
+    items.push(
+      { id: 'split-diff', label: 'Diff', category: 'Workspace', run: () => selectTab('diff') },
+      { id: 'split-files', label: 'Files', category: 'Workspace', run: () => selectTab('files') },
+      { id: 'split-terminal', label: 'Terminal', category: 'Workspace', run: () => selectTab('terminal') }
+    )
+    if (activeSession.hostname) {
+      items.push({ id: 'split-ports', label: 'Ports', category: 'Workspace', run: () => selectTab('ports') })
+    }
+
+    // Notes (app notes only — daily note and weekly plan are separate systems)
+    for (const note of appNotes.notes) {
+      items.push({
+        id: `split-note-${note.id}`,
+        label: note.title || 'Untitled',
+        category: 'Notes',
+        run: () => openNoteInSplit(note.id)
+      })
+    }
+
+    // Session items: changed files, plan, bookmarks
+    const capItems = ws?.sessionChangesCap?.items ?? []
+    const bookmarkItems = activeSessionId ? (sessionBookmarks.bookmarksBySession[activeSessionId] ?? []) : []
+    for (const item of capItems) {
+      if (item.kind !== 'file') continue
+      const basename = item.path.replace(/\\/g, '/').split('/').pop() ?? item.path
+      if (isClaudePlanPath(item.path)) {
+        items.push({
+          id: `split-plan-${item.path}`,
+          label: 'Plan',
+          hint: item.path,
+          category: 'Session',
+          run: () => openChangedFileInDiff(item.path)
+        })
+      } else {
+        items.push({
+          id: `split-changed-${item.path}`,
+          label: basename,
+          hint: item.path,
+          category: 'Session',
+          run: () =>
+            item.opensInFilesTab
+              ? openChangedFileInFilesWithDiff(item.path)
+              : openChangedFileInDiff(item.path)
+        })
+      }
+    }
+    for (const bm of bookmarkItems) {
+      if (bm.kind !== 'file') continue
+      items.push({
+        id: `split-bm-${bm.id}`,
+        label: bm.label,
+        hint: bm.target,
+        category: 'Session',
+        run: () => openChangedFileInFilesWithDiff(bm.target)
+      })
+    }
+
+    return items
+  }, [
+    activeSession,
+    activeSessionId,
+    sessions.statuses,
+    sessionWorkspace.workspaceBySession,
+    appNotes.notes,
+    sessionBookmarks.bookmarksBySession,
+    selectTab,
+    openNoteInSplit,
+    openChangedFileInDiff,
+    openChangedFileInFilesWithDiff
+  ])
 
   function handleOnboardingFinish(identity: { name: string; email: string }): void {
     updateConfig({ onboardingCompleted: true, gitIdentity: identity })
@@ -1696,6 +1816,7 @@ export default function App(): JSX.Element {
   const anyModalOpen =
     showOnboarding ||
     paletteOpen ||
+    splitOpenPickerOpen ||
     settingsOpen ||
     newSessionOpen ||
     fileQuickOpenOpen ||
@@ -2111,6 +2232,10 @@ export default function App(): JSX.Element {
                 refreshingBySession={sessionWorkspace.refreshingBySession}
                 setDiffPanelRef={setDiffPanelRef}
                 setFilesPanelRef={setFilesPanelRef}
+                appNotes={appNotes.notes}
+                onUpdateAppNote={async (id, patch) => { await appNotes.updateNote(id, patch) }}
+                onSelectAppNoteInSplit={selectAppNoteInSplit}
+                noteCursorPositions={noteCursorPositionsRef.current}
               />
             </div>
 
@@ -2457,6 +2582,12 @@ export default function App(): JSX.Element {
         isOpen={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         items={paletteItems}
+      />
+
+      <SplitOpenPicker
+        isOpen={splitOpenPickerOpen}
+        onClose={() => setSplitOpenPickerOpen(false)}
+        items={splitPickerItems}
       />
 
       {activeSession?.mode === 'claude-code' && !activeAppNote && (
