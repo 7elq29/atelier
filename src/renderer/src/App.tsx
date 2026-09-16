@@ -1080,7 +1080,7 @@ export default function App(): JSX.Element {
             : result.content,
         capFilePath: absolutePath
       })
-      window.atelier.log('info', 'bookmark:file opened in dedicated review pane', {
+      window.atelier.log('info', 'bookmark:file opened in review panel', {
         sessionId: session.id,
         path: absolutePath,
         fileKind: result.kind
