@@ -7,7 +7,11 @@ import Sidebar from './components/Sidebar'
 import NewSessionModal from './components/NewSessionModal'
 import SettingsPanel from './components/SettingsPanel'
 import DailyNotesSidebar from './components/daily-notes/DailyNotesSidebar'
-import { DeleteSessionLinkedTaskDialog, TaskSessionReplaceDialog } from './components/daily-notes/TaskSessionLinkDialogs'
+import {
+  DeleteAppNoteDialog,
+  DeleteSessionLinkedTaskDialog,
+  TaskSessionReplaceDialog
+} from './components/daily-notes/TaskSessionLinkDialogs'
 import TranscriptSearchBar from './components/chat/TranscriptSearchBar'
 import Composer, { type ComposerHandle } from './components/chat/Composer'
 import SdkToastStack from './components/chat/SdkToastStack'
@@ -224,6 +228,7 @@ export default function App(): JSX.Element {
   } | null>(null)
   const [replaceLinkedDialogOpen, setReplaceLinkedDialogOpen] = useState(false)
   const [deleteLinkedPrompt, setDeleteLinkedPrompt] = useState<{ sessionId: string; sessionName: string } | null>(null)
+  const [deleteAppNotePrompt, setDeleteAppNotePrompt] = useState<{ id: string; title: string } | null>(null)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [activeAppNoteId, setActiveAppNoteId] = useState<string | null>(null)
   const [activeDailyNoteDate, setActiveDailyNoteDate] = useState<string | null>(null)
@@ -423,11 +428,12 @@ export default function App(): JSX.Element {
         if (partial.vault !== undefined) {
           setWeeklyPlanExistsHint(null)
           void refreshWeeklyPlanStatus()
+          void appNotes.reload()
         }
         return saved
       })
     },
-    [updateConfig, refreshWeeklyPlanStatus]
+    [updateConfig, refreshWeeklyPlanStatus, appNotes.reload]
   )
 
   useEffect(() => {
@@ -807,23 +813,37 @@ export default function App(): JSX.Element {
   }, [weeklyPlanStatus])
 
   const createAppNote = useCallback(async () => {
-    const note = await appNotes.createNote()
-    setActiveDailyNoteDate(null)
-    setActiveWeeklyPlanOpen(false)
-    setWeeklyPlanViewDoc(null)
-    setActiveAppNoteId(note.id)
+    try {
+      const note = await appNotes.createNote()
+      setActiveDailyNoteDate(null)
+      setActiveWeeklyPlanOpen(false)
+      setWeeklyPlanViewDoc(null)
+      setActiveAppNoteId(note.id)
+    } catch (error) {
+      setSettingsInitialPane('vault')
+      setSettingsOpen(true)
+      setAppToast(error instanceof Error ? error.message : 'Configure an Obsidian vault before creating a note.')
+    }
   }, [appNotes])
 
   const deleteAppNote = useCallback(
-    async (noteId: string) => {
+    async (noteId: string, permanently = false) => {
       const other = appNotes.notes.filter((n) => n.id !== noteId)
       if (activeAppNoteId === noteId) {
         setActiveAppNoteId(other[0]?.id ?? null)
       }
       noteCursorPositionsRef.current.delete(`app:${noteId}`)
-      await appNotes.deleteNote(noteId)
+      await appNotes.deleteNote(noteId, permanently)
     },
     [activeAppNoteId, appNotes]
+  )
+
+  const requestDeleteAppNote = useCallback(
+    (noteId: string) => {
+      const note = appNotes.notes.find((candidate) => candidate.id === noteId)
+      if (note) setDeleteAppNotePrompt({ id: note.id, title: note.title || 'Untitled note' })
+    },
+    [appNotes.notes]
   )
 
   const activeSession = activeSessionId
@@ -1737,7 +1757,7 @@ export default function App(): JSX.Element {
           onToggleDailyNotesPanel={() => void toggleDailyNotesPanel()}
           onCreateAppNote={() => void createAppNote()}
           onRenameAppNote={(id, title) => void appNotes.updateNote(id, { title })}
-          onDeleteAppNote={(id) => void deleteAppNote(id)}
+          onDeleteAppNote={requestDeleteAppNote}
           bookmarks={appBookmarks.bookmarks}
           onCreateBookmark={(input) => void appBookmarks.createBookmark(input)}
           onUpdateBookmark={(id, patch) => void appBookmarks.updateBookmark(id, patch)}
@@ -2393,6 +2413,23 @@ export default function App(): JSX.Element {
               performDeleteSession(sessionId)
             })
           }}
+        />
+      )}
+
+      {deleteAppNotePrompt && (
+        <DeleteAppNoteDialog
+          noteName={deleteAppNotePrompt.title}
+          onArchive={() => {
+            const { id } = deleteAppNotePrompt
+            setDeleteAppNotePrompt(null)
+            void deleteAppNote(id)
+          }}
+          onDeletePermanently={() => {
+            const { id } = deleteAppNotePrompt
+            setDeleteAppNotePrompt(null)
+            void deleteAppNote(id, true)
+          }}
+          onCancel={() => setDeleteAppNotePrompt(null)}
         />
       )}
 

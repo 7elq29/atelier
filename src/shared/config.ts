@@ -32,6 +32,10 @@ export interface VaultConfig {
   root: string
   /** Folder inside the vault root where daily notes live, e.g. "01.dailynotes". */
   dailyNotesFolder: string
+  /** Folder inside the vault root containing Markdown notes managed by Atelier. */
+  appNotesFolder: string
+  /** Internal marker preventing legacy database notes from being re-imported after deletion. */
+  appNotesMigrated: boolean
   /**
    * Path pattern relative to dailyNotesFolder. Tokens: {yyyy} {MMM} {ww} {date}.
    * e.g. "{yyyy}/{MMM}/{ww}/{date}.md"
@@ -131,6 +135,8 @@ export const DEFAULT_CONFIG: AtelierConfig = {
   vault: {
     root: '',
     dailyNotesFolder: '01.dailynotes',
+    appNotesFolder: 'Atelier',
+    appNotesMigrated: false,
     notePathPattern: '{yyyy}/{MMM}/{ww}/{date}.md',
     templatePath: '92.templates/Daily Note Template.md'
   },

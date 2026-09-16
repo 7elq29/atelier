@@ -186,3 +186,40 @@ export function DeleteSessionLinkedTaskDialog({
     </div>
   )
 }
+
+export function DeleteAppNoteDialog({
+  noteName,
+  onArchive,
+  onDeletePermanently,
+  onCancel
+}: {
+  noteName: string
+  onArchive: () => void
+  onDeletePermanently: () => void
+  onCancel: () => void
+}): JSX.Element {
+  const testId = 'delete-app-note-dialog'
+  return (
+    <ConfirmDialogShell
+      testId={testId}
+      title="Delete note?"
+      lead="Delete moves this note to the archive folder and removes its Atelier tag. Delete permanently cannot be undone."
+      subjectLabel="Note"
+      subject={noteName}
+      onCancel={onCancel}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost btn-sm" data-testid="delete-app-note-cancel" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary btn-sm" data-testid="delete-app-note-archive" onClick={onArchive}>
+            Delete
+          </button>
+          <button type="button" className="btn btn-danger btn-sm" data-testid="delete-app-note-permanently" onClick={onDeletePermanently}>
+            Delete permanently
+          </button>
+        </>
+      }
+    />
+  )
+}
