@@ -622,7 +622,7 @@ const FilesPanel = forwardRef(function FilesPanel(
       theme: monacoThemeId(effectiveTheme),
       automaticLayout: true,
       readOnly: false,
-      minimap: { enabled: true },
+      minimap: { enabled: false },
       scrollBeyondLastLine: false,
       fontSize: 13,
       lineHeight: 21,
