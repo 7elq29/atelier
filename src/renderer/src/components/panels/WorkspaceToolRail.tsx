@@ -1,4 +1,5 @@
 import type { SessionTab } from '../../../../shared/session-types'
+import { SESSION_TAB_SHORTCUT_LABELS } from '../../keyboard-hints/keyboard-hints'
 
 export type WorkspaceToolTab = Exclude<SessionTab, 'chat'>
 
@@ -65,6 +66,8 @@ export default function WorkspaceToolRail({
           className={`workspace-tool-button workspace-tab-draggable${activeTool === tab ? ' active' : ''}`}
           data-testid={`tab-${tab}`}
           data-tab={tab}
+          data-hint-exclude=""
+          data-session-tab-shortcut={SESSION_TAB_SHORTCUT_LABELS[tab]}
           title={LABELS[tab]}
           aria-label={LABELS[tab]}
           aria-pressed={activeTool === tab}

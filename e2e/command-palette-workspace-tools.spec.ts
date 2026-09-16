@@ -83,6 +83,21 @@ test.describe('command palette workspace tools', () => {
     await page.keyboard.press('Escape')
   })
 
+  test('holding Command shows the mapped workspace tool shortcut badges', async () => {
+    await page.keyboard.down('Meta')
+    try {
+      await expect(page.getByTestId('keyboard-hints-overlay')).toBeVisible({ timeout: 10_000 })
+      await page.screenshot({ path: 'e2e-artifacts/bug-workspace-tool-shortcut-hints.png' })
+
+      await expect(page.getByTestId('keyboard-hint-tab-badge-d')).toBeVisible()
+      await expect(page.getByTestId('keyboard-hint-tab-badge-f')).toBeVisible()
+      await expect(page.getByTestId('keyboard-hint-tab-badge-t')).toBeVisible()
+    } finally {
+      await page.keyboard.up('Meta')
+    }
+    await expect(page.getByTestId('keyboard-hints-overlay')).toHaveCount(0)
+  })
+
   test('Command shortcuts toggle workspace tools, Timeline, and the left sidebar', async () => {
     const workspace = page.getByTestId('session-workspace-tabs')
 
