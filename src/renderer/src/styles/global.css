@@ -3084,6 +3084,7 @@ body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cur
   display: flex !important;
   min-height: 0;
   z-index: 0;
+  outline: none;
 }
 /* Row: side by side, from a left/right drop. */
 [data-split-direction='row'] .workspace-split-pane {
@@ -3126,14 +3127,19 @@ body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cur
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.015);
   pointer-events: none;
   z-index: 11;
   opacity: 1;
   transition: opacity 0.15s;
 }
-.workspace-split-pane--primary:focus-within::after,
-.workspace-split-pane--secondary:focus-within::after {
+/* Set by a focusin listener in App.tsx that reads data-panel from the focused
+   element's closest ancestor — covers the composer layer which lives outside
+   .workspace-split-pane--primary in the DOM. */
+[data-split-active-panel='primary'] .workspace-split-pane--primary::after {
+  opacity: 0;
+}
+[data-split-active-panel='secondary'] .workspace-split-pane--secondary::after {
   opacity: 0;
 }
 /* Empty layout slot for the Terminal tab. The real terminal overlays it from the

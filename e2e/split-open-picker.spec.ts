@@ -105,6 +105,28 @@ test.describe('split-open picker (Ctrl+X 2)', () => {
     await page.screenshot({ path: 'e2e-artifacts/split-open-picker-files.png' })
   })
 
+  test('Clicking primary pane sets splitActivePanel to primary', async () => {
+    // Split is still open from the previous test (Files on secondary).
+    const primaryPane = page.locator('.workspace-split-pane--primary')
+    const secondaryPane = page.locator('.workspace-split-pane--secondary')
+    await expect(primaryPane).toBeVisible()
+    await expect(secondaryPane).toBeVisible()
+
+    // Click inside the secondary pane first to make primary the "not active" starting point.
+    await secondaryPane.click({ position: { x: 20, y: 20 }, force: true })
+    await page.waitForTimeout(100)
+    const afterSecondaryClick = await page.evaluate(() => document.body.dataset.splitActivePanel)
+    expect(afterSecondaryClick).toBe('secondary')
+
+    // Now click inside the primary pane (chat transcript area).
+    await primaryPane.click({ position: { x: 20, y: 20 }, force: true })
+    await page.waitForTimeout(100)
+    const afterPrimaryClick = await page.evaluate(() => document.body.dataset.splitActivePanel)
+    expect(afterPrimaryClick).toBe('primary')
+
+    await page.screenshot({ path: 'e2e-artifacts/split-active-pane-primary.png' })
+  })
+
   test('Clicking backdrop closes the picker', async () => {
     // Close the split first via Ctrl+X K.
     await page.keyboard.press('Control+x')
