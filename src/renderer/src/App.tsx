@@ -468,7 +468,6 @@ export default function App(): JSX.Element {
     }
   }, [])
 
-
   const handleConfigUpdate = useCallback(
     (partial: Partial<AtelierConfig>): Promise<AtelierConfig> => {
       return updateConfig(partial).then((saved) => {
@@ -1039,6 +1038,17 @@ export default function App(): JSX.Element {
 
   const activeWorkspaceSplit = activeSessionId ? workspaceSplitBySession[activeSessionId] ?? null : null
   const splitLayoutVisible = isSplitLayoutVisible(activeWorkspaceSplit)
+
+  // Seed the active-panel attribute whenever a split appears or the session changes,
+  // so the CSS contrast is visible immediately without requiring a click first.
+  // The click/focusin listeners in the earlier effect will override this as the user interacts.
+  useEffect(() => {
+    if (activeWorkspaceSplit) {
+      document.body.dataset.splitActivePanel = 'primary'
+    } else {
+      delete document.body.dataset.splitActivePanel
+    }
+  }, [activeWorkspaceSplit, activeSessionId])
   const activeWorkspaceTool = useMemo<WorkspaceToolTab | null>(() => {
     if (!activeWorkspaceSplit) return null
     const secondaryToolTab =
