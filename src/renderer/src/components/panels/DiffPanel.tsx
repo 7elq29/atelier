@@ -1,4 +1,4 @@
-import { type ForwardedRef, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { type ForwardedRef, forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CommitInfo, DiffFileChange, DiffSummary, WorktreeInfo } from '../../../../shared/panel-types'
 import Linkify, { openExternalLink } from './Linkify'
 import DiffFullFileEditor from './DiffFullFileEditor'
@@ -80,9 +80,31 @@ function DiffFileCard({
   onSubmitComment: (file: string, lineKey: string, lineText: string) => void
   onCancelComment: () => void
 }): JSX.Element {
+  const linesRef = useRef<HTMLDivElement>(null)
+  const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState(false)
+
+  useLayoutEffect(() => {
+    const lines = linesRef.current
+    if (!lines) return
+    const rows = [...lines.querySelectorAll<HTMLElement>('.diff-line')]
+    const update = (): void => {
+      const overflowing = rows.some((row) => row.scrollWidth - lines.clientWidth > 2)
+      setHasHorizontalOverflow((previous) => (previous === overflowing ? previous : overflowing))
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(lines)
+    rows.forEach((row) => observer.observe(row))
+    return () => observer.disconnect()
+  }, [activeFile, fileDiffLoading])
+
   return (
     <div className="diff-file-card" data-testid="diff-file-card">
-      <div className="diff-lines">
+      <div
+        ref={linesRef}
+        className={`diff-lines${hasHorizontalOverflow ? ' diff-lines--scrollable' : ''}`}
+        style={{ overflowX: hasHorizontalOverflow ? 'auto' : 'hidden', overflowY: 'hidden' }}
+      >
         {activeFile.hunks.length === 0 && !fileDiffLoading ? (
           <div style={{ padding: 12, color: 'var(--text-tertiary)', fontSize: 13.5 }}>
             {activeFile.additions === 0 && activeFile.deletions === 0
