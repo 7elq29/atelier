@@ -436,6 +436,42 @@ export default function App(): JSX.Element {
     void refreshWeeklyPlanStatus()
   }, [loaded, refreshWeeklyPlanStatus])
 
+  // Track which split pane is active via a body data attribute so CSS can
+  // lighten the inactive pane. Uses both focusin (keyboard) and pointerdown
+  // (click on non-focusable areas) since focusin alone doesn't fire for clicks
+  // on the transcript or tool panel backgrounds.
+  useEffect(() => {
+    function setActivePanel(target: EventTarget | null): void {
+      const el = target as HTMLElement | null
+      const panel = el?.closest<HTMLElement>('[data-panel]')?.dataset.panel
+      if (panel === 'chat') {
+        document.body.dataset.splitActivePanel = 'primary'
+      } else if (panel) {
+        document.body.dataset.splitActivePanel = 'secondary'
+      } else {
+        // Fallback: click on the transcript area (no data-panel) — check which
+        // split pane container the target lives in.
+        const pane = el?.closest<HTMLElement>(
+          '.workspace-split-pane--primary, .workspace-split-pane--secondary'
+        )
+        if (pane?.classList.contains('workspace-split-pane--primary')) {
+          document.body.dataset.splitActivePanel = 'primary'
+        } else if (pane?.classList.contains('workspace-split-pane--secondary')) {
+          document.body.dataset.splitActivePanel = 'secondary'
+        }
+      }
+    }
+    const onFocusin = (e: FocusEvent) => setActivePanel(e.target)
+    const onPointerdown = (e: PointerEvent) => setActivePanel(e.target)
+    document.addEventListener('focusin', onFocusin)
+    // Use capture so React components that call stopPropagation() don't prevent this from firing.
+    document.addEventListener('pointerdown', onPointerdown, { capture: true })
+    return () => {
+      document.removeEventListener('focusin', onFocusin)
+      document.removeEventListener('pointerdown', onPointerdown, { capture: true })
+    }
+  }, [])
+
   const handleConfigUpdate = useCallback(
     (partial: Partial<AtelierConfig>): Promise<AtelierConfig> => {
       return updateConfig(partial).then((saved) => {
@@ -660,8 +696,8 @@ export default function App(): JSX.Element {
         setDeleteLinkedPrompt(null)
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown, { capture: true })
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true })
   }, [])
 
   const allSessions = useMemo(
@@ -1040,6 +1076,17 @@ export default function App(): JSX.Element {
 
   const activeWorkspaceSplit = activeSessionId ? workspaceSplitBySession[activeSessionId] ?? null : null
   const splitLayoutVisible = isSplitLayoutVisible(activeWorkspaceSplit)
+
+  // Seed the active-panel attribute whenever a split appears or the session changes,
+  // so the CSS contrast is visible immediately without requiring a click first.
+  // The click/focusin listeners in the earlier effect will override this as the user interacts.
+  useEffect(() => {
+    if (activeWorkspaceSplit) {
+      document.body.dataset.splitActivePanel = 'primary'
+    } else {
+      delete document.body.dataset.splitActivePanel
+    }
+  }, [activeWorkspaceSplit, activeSessionId])
   const activeWorkspaceTool = useMemo<WorkspaceToolTab | null>(() => {
     if (!activeWorkspaceSplit) return null
     const secondaryToolTab =
