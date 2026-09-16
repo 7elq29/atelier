@@ -1,4 +1,5 @@
-import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useRef } from 'react'
+import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { MessageRecord } from '../../../../shared/session-types'
 import type { PromptDecision } from '../../../../shared/session-types'
 import { parseStructuredContent, type ToolCallContent, type ThinkingBlockContent, type TranscriptNoticeContent, type LocalCommandOutputContent } from '../../../../shared/chat-content'
@@ -781,6 +782,8 @@ export default function ChatTranscript({
   // DOM nesting changes between `.transcript` and `.chat-body-row`.
   const containerRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
+  const [showScrollToEnd, setShowScrollToEnd] = useState(false)
+  const [overlayHost, setOverlayHost] = useState<HTMLElement | null>(null)
   const NEAR_BOTTOM_THRESHOLD_PX = 48
 
   function getScrollContainer(): HTMLElement | null {
@@ -800,9 +803,28 @@ export default function ChatTranscript({
     el.scrollTop = el.scrollHeight
   }
 
+  function updateScrollState(): void {
+    const el = getScrollContainer()
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop
+    isNearBottomRef.current = distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_PX
+    setShowScrollToEnd(distanceFromBottom > el.clientHeight)
+  }
+
+  function scrollToEnd(): void {
+    const el = getScrollContainer()
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }
+
   useLayoutEffect(() => {
     scrollToBottomIfPinned()
+    updateScrollState()
   }, [messages, reviewTarget])
+
+  useLayoutEffect(() => {
+    setOverlayHost(containerRef.current?.closest<HTMLElement>('.chat-tab-wrap') ?? null)
+  }, [])
 
   // When the composer grows after submit (turn-status row, queued strip,
   // changes card), `.chat-body-row` shrinks but scrollTop is unchanged —
@@ -816,6 +838,7 @@ export default function ChatTranscript({
     if (!composer) return
     const observer = new ResizeObserver(() => {
       scrollToBottomIfPinned()
+      updateScrollState()
     })
     observer.observe(composer)
     return () => observer.disconnect()
@@ -823,10 +846,7 @@ export default function ChatTranscript({
   }, [reviewTarget])
 
   function handleScroll(): void {
-    const el = getScrollContainer()
-    if (!el) return
-    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop
-    isNearBottomRef.current = distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_PX
+    updateScrollState()
   }
 
   // `.transcript` no longer scrolls, so a React `onScroll` prop on it would
@@ -835,26 +855,61 @@ export default function ChatTranscript({
   useEffect(() => {
     const el = getScrollContainer()
     if (!el) return
+    handleScroll()
     el.addEventListener('scroll', handleScroll)
-    return () => el.removeEventListener('scroll', handleScroll)
+    const observer = new ResizeObserver(handleScroll)
+    observer.observe(el)
+    return () => {
+      el.removeEventListener('scroll', handleScroll)
+      observer.disconnect()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewTarget])
 
   return (
-    <div className="transcript" data-testid="transcript" ref={containerRef}>
-      {transcriptTruncated && hiddenTurnCount > 0 ? (
-        <div
-          className="compaction-banner"
-          data-testid="transcript-history-truncated"
-          style={{ margin: '12px auto' }}
-        >
-          Showing last {CHAT_TRANSCRIPT_MAX_TURNS} conversations — {hiddenTurnCount} earlier hidden
-        </div>
-      ) : null}
-      {emptyState && messages.length === 0 ? emptyState : rows}
-      {sdkChrome && (sdkChrome.status === 'compacting' || sdkChrome.compactFailed) && (
-        <ConversationStatusCard chrome={sdkChrome} />
-      )}
-    </div>
+    <>
+      <div className="transcript" data-testid="transcript" ref={containerRef}>
+        {transcriptTruncated && hiddenTurnCount > 0 ? (
+          <div
+            className="compaction-banner"
+            data-testid="transcript-history-truncated"
+            style={{ margin: '12px auto' }}
+          >
+            Showing last {CHAT_TRANSCRIPT_MAX_TURNS} conversations — {hiddenTurnCount} earlier hidden
+          </div>
+        ) : null}
+        {emptyState && messages.length === 0 ? emptyState : rows}
+        {sdkChrome && (sdkChrome.status === 'compacting' || sdkChrome.compactFailed) && (
+          <ConversationStatusCard chrome={sdkChrome} />
+        )}
+      </div>
+      {overlayHost && showScrollToEnd
+        ? createPortal(
+            <button
+              type="button"
+              className={`chat-scroll-to-end${reviewTarget ? ' chat-scroll-to-end--review' : ''}`}
+              data-testid="chat-scroll-to-end"
+              title="Scroll to end"
+              aria-label="Scroll to end"
+              onClick={scrollToEnd}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>,
+            overlayHost
+          )
+        : null}
+    </>
   )
 }

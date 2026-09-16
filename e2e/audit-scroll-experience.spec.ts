@@ -264,7 +264,7 @@ test.describe('audit: real scroll-experience verification (not just overflow met
     await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('initial-prompt').fill(
-      'Reply with a numbered list from 1 to 40, one short line per number (e.g. "1. one"), and nothing else.'
+      'Reply with a numbered list from 1 to 80, one short line per number (e.g. "1. one"), and nothing else.'
     )
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
@@ -283,7 +283,10 @@ test.describe('audit: real scroll-experience verification (not just overflow met
 
     // Wait for the long real reply to land, forcing real overflow.
     await expect
-      .poll(async () => scrollContainer.evaluate((el) => el.scrollHeight > el.clientHeight), { timeout: 30_000 })
+      .poll(
+        async () => scrollContainer.evaluate((el) => el.scrollHeight > el.clientHeight * 2),
+        { timeout: 30_000 }
+      )
       .toBe(true)
 
     const bodyRowOverflowY = await computedOverflowY(page, '.chat-body-row')
@@ -294,6 +297,55 @@ test.describe('audit: real scroll-experience verification (not just overflow met
       transcriptOverflowY,
       '.transcript itself should no longer be an auto/scroll container — .chat-body-row owns scrolling now'
     ).not.toMatch(/^(auto|scroll)$/)
+
+    const scrollToEnd = page.getByTestId('chat-scroll-to-end')
+    await scrollContainer.evaluate((el) => {
+      el.scrollTop = el.scrollHeight - el.clientHeight * 2 + 1
+    })
+    await expect(scrollToEnd).toHaveCount(0)
+    await scrollContainer.evaluate((el) => {
+      el.scrollTop = 0
+    })
+    await expect(scrollToEnd).toBeVisible()
+    await page.screenshot({ path: join(artifactsDir, 'chat-scroll-to-end-visible.png') })
+    await scrollToEnd.click()
+    await expect
+      .poll(async () =>
+        scrollContainer.evaluate(
+          (el) => el.scrollHeight - el.clientHeight - el.scrollTop
+        )
+      )
+      .toBeLessThanOrEqual(4)
+    await expect(scrollToEnd).toHaveCount(0)
+
+    const lastReviewableMessage = page
+      .locator('.msg-wrap')
+      .filter({ has: page.getByTestId('msg-review-button') })
+      .last()
+    await lastReviewableMessage.hover()
+    await lastReviewableMessage.getByTestId('msg-review-button').click({ force: true })
+    await expect(page.getByTestId('response-review-pane')).toBeVisible()
+    const reviewChatScroller = page.locator('.chat-main-col')
+    await expect
+      .poll(() =>
+        reviewChatScroller.evaluate((el) => el.scrollHeight > el.clientHeight * 2)
+      )
+      .toBe(true)
+    await reviewChatScroller.evaluate((el) => {
+      el.scrollTop = 0
+    })
+    await expect(scrollToEnd).toBeVisible()
+    await expect(scrollToEnd).toHaveClass(/chat-scroll-to-end--review/)
+    await scrollToEnd.click()
+    await expect
+      .poll(() =>
+        reviewChatScroller.evaluate(
+          (el) => el.scrollHeight - el.clientHeight - el.scrollTop
+        )
+      )
+      .toBeLessThanOrEqual(4)
+    await expect(scrollToEnd).toHaveCount(0)
+    await page.getByTestId('response-review-close').click()
 
     // Send one more short real message and observe whether the transcript
     // follows it to the bottom WITHOUT any manual scroll — this is the "real
