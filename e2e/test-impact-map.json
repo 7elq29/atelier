@@ -758,8 +758,25 @@
         "src/main/app-notes/**"
       ],
       "targets": [
+        { "file": "e2e/obsidian-app-notes.spec.ts" },
         { "file": "e2e/session-organization.spec.ts", "grep": "note" },
         { "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts" }
+      ]
+    },
+    {
+      "id": "obsidian-app-notes-ui",
+      "paths": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/hooks/useAppNotes.ts",
+        "src/renderer/src/components/SettingsPanel.tsx",
+        "src/renderer/src/components/daily-notes/TaskSessionLinkDialogs.tsx",
+        "src/preload/index.ts",
+        "src/shared/config.ts"
+      ],
+      "changedLines": "appNotesFolder|appNotesMigrated|DeleteAppNoteDialog|deleteAppNotePrompt|requestDeleteAppNote|createAppNote|appNotes.reload|deleteAppNote|vault-app-notes-folder-input|Atelier notes folder",
+      "targets": [
+        { "file": "e2e/obsidian-app-notes.spec.ts" },
+        { "file": "e2e/session-organization.spec.ts", "grep": "app notes:" }
       ]
     },
     {

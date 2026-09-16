@@ -88,6 +88,7 @@ test.describe('06-session-organization', () => {
   let page: Page
   let userDataDir: string
   let projectDir: string
+  let appNotesDir: string
   let sessionA: string
   let sessionB: string
   let sessionC: string
@@ -95,7 +96,9 @@ test.describe('06-session-organization', () => {
 
   test.beforeAll(async () => {
     userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-org-'))
-    seedSkipOnboarding(userDataDir)
+    appNotesDir = join(userDataDir, 'vault', 'Atelier')
+    mkdirSync(appNotesDir, { recursive: true })
+    seedE2eConfig(userDataDir, { vault: { root: join(userDataDir, 'vault'), appNotesFolder: 'Atelier' } })
     projectDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-org-project-'))
     writeFileSync(join(projectDir, 'README.md'), '# org test project\n')
     ;({ app: electronApp, page } = await launchApp(userDataDir))
@@ -206,16 +209,11 @@ test.describe('06-session-organization', () => {
     await page.keyboard.type('# Release checklist\n\n- [ ] Run e2e')
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s')
 
-    await expect
-      .poll(async () => {
-        const rows = await queryDb<{ content: string }>(page, 'SELECT content FROM app_notes LIMIT 1')
-        return rows[0]?.content ?? ''
-      }, { timeout: 15_000 })
-      .toContain('Release checklist')
+    await expect.poll(() => readFileSync(join(appNotesDir, 'Untitled note.md'), 'utf-8'), { timeout: 15_000 }).toContain(
+      'Release checklist'
+    )
 
-    const beforeCursorRestore = (
-      await queryDb<{ content: string }>(page, 'SELECT content FROM app_notes LIMIT 1')
-    )[0]!.content
+    const beforeCursorRestore = readFileSync(join(appNotesDir, 'Untitled note.md'), 'utf-8')
     await page.keyboard.press('ArrowLeft')
     await page.keyboard.press('ArrowLeft')
     await page.keyboard.press('ArrowLeft')
@@ -233,12 +231,9 @@ test.describe('06-session-organization', () => {
 
     const expectedAfterCursorRestore =
       `${beforeCursorRestore.slice(0, -3)}X${beforeCursorRestore.slice(-3)}`
-    await expect
-      .poll(async () => {
-        const rows = await queryDb<{ content: string }>(page, 'SELECT content FROM app_notes LIMIT 1')
-        return rows[0]?.content ?? ''
-      }, { timeout: 15_000 })
-      .toBe(expectedAfterCursorRestore)
+    await expect.poll(() => readFileSync(join(appNotesDir, 'Untitled note.md'), 'utf-8'), { timeout: 15_000 }).toBe(
+      expectedAfterCursorRestore
+    )
 
     await page.screenshot({ path: join(artifactsDir, '06-app-notes-editor.png') })
 
@@ -256,9 +251,9 @@ test.describe('06-session-organization', () => {
     await noteRow.getByTestId('app-note-menu-button').click()
     // The menu is portaled to <body>, so it is not inside the row.
     await page.getByTestId('app-note-menu-delete').click()
+    await page.getByTestId('delete-app-note-archive').click()
     await expect(page.locator(`[data-note-id="${noteId}"]`)).toHaveCount(0)
-    const dbRows = await queryDb<{ id: string }>(page, 'SELECT id FROM app_notes WHERE id = ?', [noteId])
-    expect(dbRows).toHaveLength(0)
+    expect(existsSync(join(appNotesDir, 'archive', 'Untitled note.md'))).toBe(true)
   })
 
   // Repro: a note surface (daily note, weekly plan, app note) replaces the
@@ -292,6 +287,7 @@ test.describe('06-session-organization', () => {
     const noteId = (await appNoteRow.getAttribute('data-note-id')) as string
     await appNoteRow.getByTestId('app-note-menu-button').click()
     await page.getByTestId('app-note-menu-delete').click()
+    await page.getByTestId('delete-app-note-archive').click()
     await expect(page.locator(`[data-note-id="${noteId}"]`)).toHaveCount(0)
   })
 

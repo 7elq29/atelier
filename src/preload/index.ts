@@ -584,7 +584,8 @@ const api = {
   createAppNote: (title?: string): Promise<AppNoteRecord> => ipcRenderer.invoke('app-note:create', title),
   updateAppNote: (id: string, patch: AppNoteUpdate): Promise<AppNoteRecord> =>
     ipcRenderer.invoke('app-note:update', id, patch),
-  deleteAppNote: (id: string): Promise<void> => ipcRenderer.invoke('app-note:delete', id),
+  deleteAppNote: (id: string, permanently = false): Promise<void> =>
+    ipcRenderer.invoke('app-note:delete', id, permanently),
 
   listAppBookmarks: (): Promise<AppBookmarkRecord[]> => ipcRenderer.invoke('app-bookmark:list'),
   createAppBookmark: (input: AppBookmarkInput): Promise<AppBookmarkRecord> =>

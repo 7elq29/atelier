@@ -86,7 +86,7 @@ export default function SettingsPanel({
     if (!isOpen) return
     setVaultEdit(config.vault)
     setVaultSaved(false)
-  }, [isOpen, config.vault.root, config.vault.dailyNotesFolder, config.vault.notePathPattern, config.vault.templatePath])
+  }, [isOpen, config.vault.root, config.vault.dailyNotesFolder, config.vault.appNotesFolder, config.vault.notePathPattern, config.vault.templatePath])
 
   useEffect(() => {
     if (!isOpen || pane !== 'vault') return
@@ -531,6 +531,20 @@ export default function SettingsPanel({
                   style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13.5px' }}
                 />
                 <div className="field-hint">Folder inside the vault root where daily notes live.</div>
+              </div>
+              <div>
+                <div className="field-label">Atelier notes folder</div>
+                <input
+                  className="input"
+                  type="text"
+                  data-testid="vault-app-notes-folder-input"
+                  value={vaultEdit.appNotesFolder}
+                  onChange={(e) => setVaultEdit((prev) => ({ ...prev, appNotesFolder: e.target.value }))}
+                  style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13.5px' }}
+                />
+                <div className="field-hint">
+                  Folder inside the vault root for Markdown notes tagged <code>atelier</code>.
+                </div>
               </div>
               <div>
                 <div className="field-label">Note path pattern</div>
