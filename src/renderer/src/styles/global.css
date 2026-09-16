@@ -3115,6 +3115,27 @@ body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cur
   bottom: 0;
   height: calc((1 - var(--workspace-split-ratio, 0.5)) * 100% - 2.5px);
 }
+/* Active-pane indicator: the focused split pane shows its natural (darker)
+   background. The non-focused pane gets a subtle white overlay that lightens
+   it slightly, making the comparison clear without changing any inner colors.
+   Only applies when the --primary / --secondary classes are present (split mode).
+   z-index 11 stays below .workspace-pane-head (z-index 12) so buttons remain
+   clickable on the inactive pane. */
+.workspace-split-pane--primary::after,
+.workspace-split-pane--secondary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+  z-index: 11;
+  opacity: 1;
+  transition: opacity 0.15s;
+}
+.workspace-split-pane--primary:focus-within::after,
+.workspace-split-pane--secondary:focus-within::after {
+  opacity: 0;
+}
 /* Empty layout slot for the Terminal tab. The real terminal overlays it from the
    keep-alive layer, and in a split both take the same geometry — so the slot must
    stay click-through or it would swallow input meant for the terminal. */
