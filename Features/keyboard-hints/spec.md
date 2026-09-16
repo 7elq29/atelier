@@ -1,5 +1,19 @@
 # Keyboard hints (Vimium-style)
 
+## Workspace tool rail regression
+
+1. Open a Claude Code session so the floating Diff, Files, and Terminal tool
+   buttons are visible.
+2. Hold Command until hint mode appears.
+3. Current failure: the tool buttons receive generic generated hint labels
+   instead of their mapped `d`, `f`, and `t` shortcut labels because the
+   floating rail does not expose `data-session-tab-shortcut`.
+4. Expected: Diff shows `d`, Files shows `f`, Terminal shows `t`, and a
+   remote session's Ports button shows `p`.
+
+This is a renderer-only attribute/overlay issue and emits no main-process log
+event. The existing `keyboard-hint-badge` visual treatment is reused.
+
 ## User flow
 
 1. User **holds ⌘** (Command) anywhere in the main app shell (`#app`), with no modal open.
@@ -19,5 +33,7 @@ Excluded from labeling (not from activation): modal overlays, terminal (xterm), 
 ## Done criteria
 
 - Hold ⌘ shows overlay; matching key activates a known sidebar control (e2e).
+- Floating workspace tools show their fixed `d`/`f`/`t`/`p` labels instead
+  of generated chrome labels.
 - Modals open → hints inactive.
 - `npm run build` clean; `global-nav-and-settings.spec.ts` + `app-shell.spec.ts` pass (styles + App wiring).

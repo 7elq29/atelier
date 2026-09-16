@@ -388,6 +388,14 @@
       ]
     },
     {
+      "id": "workspace-tool-hint-labels",
+      "paths": ["src/renderer/src/components/panels/WorkspaceToolRail.tsx"],
+      "changedLines": "data-session-tab-shortcut|data-hint-exclude|SESSION_TAB_SHORTCUT_LABELS",
+      "targets": [
+        { "file": "e2e/command-palette-workspace-tools.spec.ts", "grep": "mapped workspace tool" }
+      ]
+    },
+    {
       "id": "secondary-tool-rail-css",
       "paths": ["src/renderer/src/styles/global.css"],
       "changedLines": "workspace-shell|workspace-tool|workspace-pane-head|workspace-split-pane-close|diff-files-toggle|diff-vertical-list|diff-stacked-file|files-path|files-directory|files-body-inner--directory|pointer-events",
