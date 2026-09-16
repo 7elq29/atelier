@@ -215,6 +215,13 @@ app.whenReady().then(() => {
     app.dock?.setBadge('DEV')
   }
 
+  // Prune tmux sessions left over from previous runs or crashes before
+  // reattaching to live ones, so stale shells don't accumulate unboundedly.
+  if (ptyManager) {
+    const liveIds = sessionStore.listAllSessions().map((s) => s.id)
+    ptyManager.pruneOrphanedTmuxSessions(liveIds)
+  }
+
   // Let the renderer paint durable "Cleaning up session…" rows before
   // resuming cleanup left by a prior quit/crash.
   setTimeout(() => manager.resumePendingSessionCleanup(), 500)

@@ -419,4 +419,35 @@ export class PtyManager {
     for (const id of [...this.ptys.keys()]) this.kill(id)
     shellPool?.cleanup()
   }
+
+  /**
+   * Kill every local `atelier-*` tmux session whose name does NOT start with
+   * any of the given live session-id prefixes. Call once at startup after the
+   * session list is loaded to evict sessions left over from previous runs or
+   * app crashes. No-op if tmux is not installed.
+   */
+  pruneOrphanedTmuxSessions(liveSessionIds: string[]): void {
+    if (!tmuxBin) return
+    let allSessions: string
+    try {
+      allSessions = execFileSync(tmuxBin, ['list-sessions', '-F', '#{session_name}'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore']
+      })
+    } catch {
+      return // tmux server not running — nothing to prune
+    }
+    const prefixes = liveSessionIds.map((id) => `atelier-${id.slice(0, 8)}`)
+    for (const name of allSessions.split('\n').map((s) => s.trim()).filter(Boolean)) {
+      if (!name.startsWith('atelier-')) continue
+      if (name.startsWith('atelier-pool-') || name.startsWith('atelier-e2e-')) continue
+      const isLive = prefixes.some((p) => name.startsWith(p))
+      if (!isLive) {
+        try {
+          execFileSync(tmuxBin, ['kill-session', '-t', name], { stdio: 'ignore' })
+          logger.info('tmux orphaned session pruned', { name })
+        } catch { /* already gone */ }
+      }
+    }
+  }
 }
