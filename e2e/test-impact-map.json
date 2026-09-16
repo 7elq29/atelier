@@ -532,7 +532,8 @@
       "paths": ["src/renderer/src/components/chat/ChatUncommittedChanges.tsx"],
       "targets": [
         { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
-        { "file": "e2e/chat-surface-core.spec.ts", "grep": "assistant file paths open Files directly" },
+        { "file": "e2e/bug-changes-popover-escape-running-chat.spec.ts" },
+        { "file": "e2e/chat-surface-core.spec.ts", "grep": "create session:|changed files and file bookmarks" },
         { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|chat:" }
       ]
     },
@@ -821,6 +822,16 @@
       ],
       "changedLines": "topbar-cost|cost-chip|flex: 0 1 auto",
       "targets": [{ "file": "e2e/enrichment-export-conversation.spec.ts" }]
+    },
+    {
+      "id": "timeline-toggle-topbar",
+      "paths": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/components/Sidebar.tsx",
+        "src/renderer/src/styles/global.css"
+      ],
+      "changedLines": "topbar-timeline-toggle|toggleDailyNotesPanel|dailyNotesPanelOpen|onToggleDailyNotesPanel",
+      "targets": [{ "file": "e2e/sidebar-refinement.spec.ts" }]
     },
     {
       "id": "fullscreen-titlebar",

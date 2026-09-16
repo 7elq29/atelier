@@ -160,13 +160,16 @@ export default function ChatUncommittedChanges({
       if (!rootRef.current?.contains(event.target as Node)) setOpenList(null)
     }
     const closeOnEscape = (event: globalThis.KeyboardEvent): void => {
-      if (event.key === 'Escape') setOpenList(null)
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      setOpenList(null)
     }
     document.addEventListener('mousedown', closeOnOutsideClick)
-    document.addEventListener('keydown', closeOnEscape)
+    document.addEventListener('keydown', closeOnEscape, true)
     return () => {
       document.removeEventListener('mousedown', closeOnOutsideClick)
-      document.removeEventListener('keydown', closeOnEscape)
+      document.removeEventListener('keydown', closeOnEscape, true)
     }
   }, [openList])
 
