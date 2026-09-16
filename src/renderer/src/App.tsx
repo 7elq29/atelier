@@ -554,13 +554,18 @@ export default function App(): JSX.Element {
             const session = activeSessionRef.current
             if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
               const split = activeWorkspaceSplitRef.current
-              if (split && !split.fullscreenTab && split.secondaryTab !== 'app-note') {
+              if (split && !split.fullscreenTab) {
                 const focusedPanel = (document.activeElement as HTMLElement | null)
                   ?.closest<HTMLElement>('[data-panel]')
                   ?.dataset.panel as string | undefined
-                if (focusedPanel === split.secondaryTab) {
+                if (split.secondaryTab !== 'app-note' && focusedPanel === split.secondaryTab) {
+                  // Focused on secondary: fullscreen it (keep only this pane)
                   e.preventDefault()
                   handleWorkspaceToolToggleMaximizeRef.current(split.secondaryTab)
+                } else if (focusedPanel === 'chat') {
+                  // Focused on primary: close the split so chat is the only pane
+                  e.preventDefault()
+                  handleWorkspaceSplitPaneCloseRef.current(split.secondaryTab as SessionTab)
                 }
               }
             }
@@ -1509,7 +1514,6 @@ export default function App(): JSX.Element {
       items.push({
         id: `buf-session-${s.id}`,
         label: s.name,
-        hint: s.worktreePath ?? s.projectPath,
         category: 'Sessions',
         run: () => void selectSession(s)
       })
@@ -1521,7 +1525,6 @@ export default function App(): JSX.Element {
       items.push({
         id: `buf-terminal-${s.id}`,
         label: s.name,
-        hint: s.hostname ?? 'local',
         category: 'Terminals',
         run: () => void selectSession(s)
       })
@@ -1541,7 +1544,6 @@ export default function App(): JSX.Element {
     items.push({
       id: 'buf-daily-note',
       label: 'Daily Note',
-      hint: date ?? undefined,
       category: 'Daily Note',
       run: () => selectDailyNote()
     })
@@ -1561,7 +1563,6 @@ export default function App(): JSX.Element {
   }, [
     sessions.activeSessions,
     appNotes.notes,
-    date,
     weeklyPlanStatus,
     selectAppNote,
     selectDailyNote,
@@ -2790,6 +2791,7 @@ export default function App(): JSX.Element {
         items={bufferSwitcherItems}
         placeholder="Switch to…"
         testIdPrefix="buffer-switcher"
+        showCategoryHeaders={false}
       />
 
       {activeSession?.mode === 'claude-code' && !activeAppNote && (
