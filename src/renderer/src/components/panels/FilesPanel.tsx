@@ -1441,10 +1441,10 @@ const FilesPanel = forwardRef(function FilesPanel(
                 style={{ position: 'absolute', inset: 0, overflow: 'auto', zIndex: 5, background: 'var(--bg-code)', outline: 'none' }}
                 onKeyDown={(e) => {
                   if (!browseDirChildren) return
-                  if (e.key === 'ArrowDown') {
+                  if (e.key === 'ArrowDown' || (e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyV')) {
                     e.preventDefault()
                     setListingSelectedIndex((i) => Math.min(i + 1, browseDirChildren.length - 1))
-                  } else if (e.key === 'ArrowUp') {
+                  } else if (e.key === 'ArrowUp' || (e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyP')) {
                     e.preventDefault()
                     setListingSelectedIndex((i) => Math.max(i - 1, 0))
                   } else if (e.key === 'Enter') {
