@@ -3173,7 +3173,7 @@ body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cur
 .workspace-split-divider {
   position: absolute;
   z-index: 2;
-  background: var(--border-subtle);
+  background: transparent;
   transition: background .12s;
 }
 .workspace-split-divider--row {
