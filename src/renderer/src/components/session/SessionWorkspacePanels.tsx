@@ -1,10 +1,13 @@
 import { memo } from 'react'
 import type { AtelierConfig } from '../../../../shared/config'
+import type { AppNoteRecord } from '../../../../shared/app-note-types'
 import type { SessionRecord } from '../../../../shared/session-types'
 import type { SessionWorkspacePayload } from '../../../../shared/session-workspace-types'
 import { resolveSessionProfileFileTree } from '../../../../shared/session-profile-resolve'
 import DiffPanel, { type DiffPanelHandle } from '../panels/DiffPanel'
 import FilesPanel, { type FilesPanelHandle } from '../panels/FilesPanel'
+import AppNotesPanel from '../panels/AppNotesPanel'
+import type { NoteCursorPositions } from '../../editor/note-cursor-memory'
 import type { SessionTab } from '../panels/TabBar'
 import {
   isSplitLayoutVisible,
@@ -45,7 +48,11 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   onRefreshWorkspace,
   refreshingBySession,
   setDiffPanelRef,
-  setFilesPanelRef
+  setFilesPanelRef,
+  appNotes,
+  onUpdateAppNote,
+  onSelectAppNoteInSplit,
+  noteCursorPositions
 }: {
   sessionIds: string[]
   allSessions: SessionRecord[]
@@ -79,6 +86,10 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
   refreshingBySession: Record<string, boolean>
   setDiffPanelRef: (sessionId: string, handle: DiffPanelHandle | null) => void
   setFilesPanelRef: (sessionId: string, handle: FilesPanelHandle | null) => void
+  appNotes: AppNoteRecord[]
+  onUpdateAppNote: (id: string, patch: { title?: string; content?: string }) => Promise<void>
+  onSelectAppNoteInSplit: (noteId: string) => void
+  noteCursorPositions: NoteCursorPositions
 }): JSX.Element {
   return (
     <>
@@ -91,10 +102,11 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
         const split = panelsVisible ? workspaceSplit : null
         const diffVisible = resolveTabVisibility('diff', activeTab, split)
         const filesVisible = resolveTabVisibility('files', activeTab, split)
+        const noteSecondaryVisible = panelsVisible && split?.secondaryTab === 'app-note' && Boolean(split.secondaryAppNoteId)
         // The layer sits on top of the whole content area, so it may only take
         // pointer events while one of its own tabs is actually showing — either
         // as the selected tab or as a pane of the split.
-        const entryActive = panelsVisible && (diffVisible !== 'hidden' || filesVisible !== 'hidden')
+        const entryActive = panelsVisible && (diffVisible !== 'hidden' || filesVisible !== 'hidden' || noteSecondaryVisible)
         // Diff/Files live in this layer rather than inside .session-workspace-tabs,
         // so the split geometry has to be mirrored here to stay aligned with the
         // chat pane that is still laid out over there.
@@ -187,6 +199,36 @@ export const SessionWorkspacePanels = memo(function SessionWorkspacePanels({
                 onOpenFileQuickOpen={onOpenFileQuickOpen}
               />
             </div>
+
+            {noteSecondaryVisible && split?.secondaryAppNoteId && (
+              <div
+                className="tab-content workspace-split-pane workspace-split-pane--secondary workspace-pane--tool"
+                data-tab="app-note"
+                data-panel="app-note"
+              >
+                <div className="workspace-pane-head" data-testid="workspace-tool-pane-actions">
+                  <button
+                    type="button"
+                    className="workspace-pane-close workspace-split-pane-close"
+                    data-testid="workspace-split-pane-close"
+                    data-tab="app-note"
+                    title="Close Note pane"
+                    aria-label="Close Note pane"
+                    onClick={() => onCloseSplitPane('chat')}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <AppNotesPanel
+                  notes={appNotes}
+                  activeNoteId={split.secondaryAppNoteId}
+                  effectiveTheme={effectiveTheme}
+                  onUpdateNote={onUpdateAppNote}
+                  onSelectNote={onSelectAppNoteInSplit}
+                  cursorPositions={noteCursorPositions}
+                />
+              </div>
+            )}
           </div>
         )
       })}

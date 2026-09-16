@@ -2,7 +2,8 @@ import type { SessionTab } from '../components/panels/TabBar'
 import type {
   WorkspaceSplitDirection,
   WorkspaceSplitState,
-  WorkspaceTabVisibility
+  WorkspaceTabVisibility,
+  WorkspaceSecondaryTab
 } from './workspace-split-types'
 import { WORKSPACE_SPLITTABLE_TABS } from './workspace-split-types'
 
@@ -55,7 +56,11 @@ export function applyStripTabSelect(
   if (!split) {
     return { split: null, restoreSplit: false }
   }
-  const splitTabs = new Set<SessionTab>([split.primaryTab, split.secondaryTab])
+  const sessionSecondary = split.secondaryTab !== 'app-note' ? split.secondaryTab : null
+  const splitTabs = new Set<SessionTab>([
+    split.primaryTab,
+    ...(sessionSecondary ? [sessionSecondary] : [])
+  ])
   if (split.fullscreenTab) {
     if (splitTabs.has(tab)) {
       return { split: { ...split, fullscreenTab: null }, restoreSplit: true }
@@ -73,13 +78,22 @@ export function applyStripTabSelect(
 
 export function createSplit(
   primaryTab: SessionTab,
-  secondaryTab: SessionTab,
+  secondaryTab: WorkspaceSecondaryTab,
   splitRatio = 0.5,
-  direction: WorkspaceSplitDirection = 'row'
+  direction: WorkspaceSplitDirection = 'row',
+  secondaryAppNoteId?: string
 ): WorkspaceSplitState | null {
-  if (primaryTab === secondaryTab) return null
-  if (!isWorkspaceSplittableTab(primaryTab) || !isWorkspaceSplittableTab(secondaryTab)) return null
-  return { primaryTab, secondaryTab, splitRatio, direction, fullscreenTab: null }
+  if (primaryTab === (secondaryTab as string)) return null
+  if (!isWorkspaceSplittableTab(primaryTab)) return null
+  if (secondaryTab !== 'app-note' && !isWorkspaceSplittableTab(secondaryTab)) return null
+  return {
+    primaryTab,
+    secondaryTab,
+    secondaryAppNoteId,
+    splitRatio,
+    direction,
+    fullscreenTab: null
+  }
 }
 
 /** left/right split side by side; top/bottom stack, matching the mock's pane tree. */

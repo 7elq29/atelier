@@ -16,9 +16,14 @@ export type WorkspaceSplitEdge = 'left' | 'right' | 'top' | 'bottom'
 /** Row = side by side (left/right drop), col = stacked (top/bottom drop). */
 export type WorkspaceSplitDirection = 'row' | 'col'
 
+/** Tab kinds that can appear in the secondary (right/bottom) split pane. */
+export type WorkspaceSecondaryTab = SessionTab | 'app-note'
+
 export interface WorkspaceSplitState {
   primaryTab: SessionTab
-  secondaryTab: SessionTab
+  secondaryTab: WorkspaceSecondaryTab
+  /** Populated when secondaryTab is 'app-note'. */
+  secondaryAppNoteId?: string
   splitRatio: number
   direction: WorkspaceSplitDirection
   fullscreenTab: SessionTab | null
