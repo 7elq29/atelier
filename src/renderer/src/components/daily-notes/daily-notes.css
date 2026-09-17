@@ -1163,6 +1163,15 @@
 .dn-task-external-link:hover {
   text-decoration: underline;
 }
+.dn-task-text-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.dn-task-text-tags .dn-inline-tag {
+  margin-left: 0;
+}
 .dn-inline-tag {
   display: inline-flex;
   align-items: center;

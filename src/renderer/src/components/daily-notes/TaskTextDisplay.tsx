@@ -32,47 +32,71 @@ export default function TaskTextDisplay({
   const links = mergeExternalLinks(embeddedLinks, task.externalLinks)
   const title = formatTaskDisplayTitle(task)
 
-  return (
-    <span
-      className={clamp ? 'dn-task-text-clamp' : undefined}
-      title={clamp && title ? title : undefined}
-      data-testid="task-text-display"
-    >
-      <Linkify text={displayText} />
-      {tags.map((tag) => (
-        <span className="dn-inline-tag" key={tag} data-testid="task-tag-chip">
-          {tag}
-          {onRemoveTag ? (
-            <button
-              type="button"
-              className="dn-tag-chip-remove"
-              data-testid="task-tag-remove"
-              onClick={(e) => {
-                e.stopPropagation()
-                onRemoveTag(tag)
-              }}
-              aria-label={`remove tag ${tag}`}
-            >
-              ×
-            </button>
-          ) : null}
-        </span>
-      ))}
-      {links.map((link) => (
-        <span
-          key={`${link.url}\0${link.label}`}
-          className="ext-link dn-task-external-link"
-          data-testid="task-external-link"
-          data-link-url={link.url}
+  const tagChips = tags.map((tag) => (
+    <span className="dn-inline-tag" key={tag} data-testid="task-tag-chip">
+      {tag}
+      {onRemoveTag ? (
+        <button
+          type="button"
+          className="dn-tag-chip-remove"
+          data-testid="task-tag-remove"
           onClick={(e) => {
-            e.preventDefault()
             e.stopPropagation()
-            openExternalLink(link.url)
+            onRemoveTag(tag)
           }}
+          aria-label={`remove tag ${tag}`}
         >
-          {link.label}
-        </span>
-      ))}
+          ×
+        </button>
+      ) : null}
     </span>
+  ))
+
+  const linkChips = links.map((link) => (
+    <span
+      key={`${link.url}\0${link.label}`}
+      className="ext-link dn-task-external-link"
+      data-testid="task-external-link"
+      data-link-url={link.url}
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        openExternalLink(link.url)
+      }}
+    >
+      {link.label}
+    </span>
+  ))
+
+  if (!clamp) {
+    // Inline layout: text, tags, and links all flow together.
+    return (
+      <span data-testid="task-text-display">
+        <Linkify text={displayText} />
+        {tagChips}
+        {linkChips}
+      </span>
+    )
+  }
+
+  // Clamped layout: text (and links) go inside the clamp container so they get
+  // truncated, but tags are rendered OUTSIDE the overflow:hidden span so they
+  // are never clipped by -webkit-line-clamp.
+  return (
+    <>
+      <span
+        className="dn-task-text-clamp"
+        title={title}
+        data-testid="task-text-display"
+      >
+        <Linkify text={displayText} />
+        {linkChips}
+      </span>
+      {tagChips.length > 0 && (
+        <span className="dn-task-text-tags">
+          {tagChips}
+        </span>
+      )}
+    </>
   )
 }

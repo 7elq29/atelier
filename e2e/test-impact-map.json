@@ -167,6 +167,7 @@
       "paths": [
         "src/renderer/src/components/daily-notes/Timeline.tsx",
         "src/renderer/src/components/daily-notes/TaskItem.tsx",
+        "src/renderer/src/components/daily-notes/TaskTextDisplay.tsx",
         "src/renderer/src/components/daily-notes/CurrentTimeLine.tsx",
         "src/renderer/src/components/daily-notes/section-resize.ts",
         "src/renderer/src/components/daily-notes/timeline-scale.ts"
@@ -181,9 +182,15 @@
     },
     {
       "id": "unscheduled-task-full-width",
-      "paths": ["src/renderer/src/components/daily-notes/daily-notes.css"],
-      "changedLines": "dn-task-chip|dn-task-tag-add|dn-task-chip-remove",
-      "targets": [{ "file": "e2e/bug-unscheduled-task-full-width.spec.ts" }]
+      "paths": [
+        "src/renderer/src/components/daily-notes/daily-notes.css",
+        "src/renderer/src/components/daily-notes/TaskTextDisplay.tsx"
+      ],
+      "changedLines": "dn-task-chip|dn-task-tag-add|dn-task-chip-remove|dn-task-text-tags|dn-inline-tag|tagChips|clamp",
+      "targets": [
+        { "file": "e2e/bug-unscheduled-task-full-width.spec.ts" },
+        { "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts" }
+      ]
     },
     {
       "id": "daily-task-move",
