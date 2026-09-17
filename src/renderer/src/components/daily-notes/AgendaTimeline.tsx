@@ -4,7 +4,7 @@ import { formatTaskEditBuffer } from '../../../../shared/task-priority'
 import { priorityTimelineAccentClass } from '../../../../shared/task-priority'
 import TaskMoveContextMenu from './TaskMoveContextMenu'
 import type { MoveDateOptions } from './move-date-options'
-import { buildTaskEditPatch, TaskEditInput, TaskPriorityBadge } from './task-priority-ui'
+import { buildTaskEditPatch, TaskEditInput } from './task-priority-ui'
 import TaskTextDisplay from './TaskTextDisplay'
 import { minutesToTime, parseTimeBlock } from './timeline-scale'
 
@@ -348,15 +348,12 @@ export default function AgendaTimeline({
                     />
                   </div>
                 ) : (
-                  <>
-                    <span className="dn-agenda-label">
-                      <TaskTextDisplay task={task} />
-                    </span>
-                    {task.priority ? <TaskPriorityBadge priority={task.priority} /> : null}
-                  </>
+                  <span className="dn-agenda-label">
+                    <TaskTextDisplay task={task} />
+                  </span>
                 )}
               </div>
-              <span className="dn-agenda-duration">{formatDuration(end - start)}</span>
+              <span className={`dn-agenda-duration${priorityTimelineAccentClass(task.priority) ? ' dn-agenda-duration--hi-pri' : ''}`}>{formatDuration(end - start)}</span>
               <button
                 type="button"
                 className="btn btn-icon btn-sm dn-agenda-delete"
