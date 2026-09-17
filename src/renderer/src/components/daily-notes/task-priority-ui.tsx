@@ -106,6 +106,8 @@ export function TaskEditInput({
   const menuRef = useRef<HTMLDivElement>(null)
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([])
   const editBufferRef = useRef(value)
+  // Suppresses the blur-commit that fires when Tab+onTab moves focus away
+  const suppressNextBlurRef = useRef(false)
 
   useEffect(() => {
     editBufferRef.current = value
@@ -240,6 +242,7 @@ export function TaskEditInput({
         onKeyUp={syncCursor}
         onMouseDown={onMouseDown}
         onBlur={() => {
+          if (suppressNextBlurRef.current) { suppressNextBlurRef.current = false; return }
           if (showPriorityMenu) return
           if (showTagMenu) return
           if (blurPolicy === 'nonEmpty' && !parseTaskEditContent(editBufferRef.current).text.trim()) return
@@ -286,6 +289,7 @@ export function TaskEditInput({
           // Caller-supplied Tab handler (e.g. jump to start-time input)
           if (e.key === 'Tab' && onTab) {
             e.preventDefault()
+            suppressNextBlurRef.current = true
             onTab()
             return
           }
