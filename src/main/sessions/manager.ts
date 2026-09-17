@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import type { HarnessDriver, HarnessEvent, HarnessSession, HarnessStartOptions, PromptResponse, RemoteHost } from '../harness/types'
@@ -11,6 +12,7 @@ import type {
   ModelInfo,
   ModelSelection,
   MessageSearchHit,
+  PendingQueuedMessage,
   PermissionModeValue,
   PromptDecision,
   RemoteHostOption,
@@ -299,6 +301,15 @@ export class SessionManager {
 
   /** Bumped on close/delete to drop stale `consume()` loops (pty generation pattern). */
   private readonly consumeGeneration = new Map<string, number>()
+
+  /**
+   * Per-session FIFO queue of messages waiting for the current SDK turn to
+   * complete. The main process owns this queue; the renderer no longer needs
+   * its own busy-gated queue state. Each item carries the full payload needed
+   * for dispatch (text, attachments, model override). `inflightId` is the id
+   * of the item currently dispatched to the harness — null when idle.
+   */
+  private readonly turnQueues = new Map<string, { items: PendingQueuedMessage[]; inflightId: string | null }>()
 
   /** Debounced cap + workspace refresh after file edits / mutating git Bash — coalesces multi-tool turns. */
   private readonly capRefreshDebounce = new Map<string, ReturnType<typeof setTimeout>>()
@@ -1522,77 +1533,102 @@ export class SessionManager {
 
   // ── Send message into a live (or reconnected) session ──────────────
 
-  /**
-   * Sends a follow-up user message.
-   *
-   * `ClaudeAgentSdkHarness.normalize()` used to complete its event generator
-   * after every turn's terminal `result`, which tore down that turn's
-   * internal session entry — so a bare `streamInput()` call would silently
-   * no-op for any message after the first turn, and every follow-up here
-   * had to go through `resume()` (a fresh `--resume <id>` reconnect) even
-   * when the previous turn's process was still sitting right there. Fixed
-   * in this task (04-composer-core) after verifying against the real SDK
-   * (see `normalize()`'s comment) that the same `query()`/subprocess
-   * happily accepts further turns pushed into its still-open input queue
-   * with no reconnect — including a message pushed WHILE the current turn
-   * is still streaming, which the SDK simply folds into that turn's own
-   * response instead of queuing it for later.
-   *
-   * So: if the harness reports this session `isActive` (its generator
-   * hasn't returned — covers both "mid-turn, still streaming" and "idle,
-   * connected, between turns"), this pushes straight into the live queue
-   * via `streamInput()` and returns — the ALREADY-RUNNING `consume()` loop
-   * from whenever this session last started/reconnected keeps delivering
-   * this turn's events, live, with no new subprocess. Only a session with
-   * no live harness entry at all (freshly reopened after being properly
-   * closed/interrupted, or after an app relaunch) falls back to the
-   * `resume()` reconnect path. Turn-count bookkeeping (for auto-naming) is
-   * preserved across a `resume()` reconnect — it only resets on session
-   * close or a real app relaunch.
-   */
-  async sendUserMessage(sessionId: string, text: string, override?: ModelSelection, attachments?: FileAttachment[]): Promise<void> {
-    const session = this.store.getSession(sessionId)
-    if (!session) throw new Error(`Unknown session: ${sessionId}`)
-    if (!attachments?.length && text.trim() === '/clear') {
-      await this.clearConversation(sessionId)
-      return
+  /** Full message payload kept in the main-process turn queue (superset of the IPC-visible PendingQueuedMessage). */
+  private makeQueuedEntry(text: string, attachments?: FileAttachment[], modelOverride?: ModelSelection, userMessageId?: number): {
+    id: string
+    text: string
+    attachments?: FileAttachment[]
+    modelOverride?: ModelSelection
+    userMessageId: number | null
+  } {
+    return {
+      id: randomUUID(),
+      text,
+      attachments,
+      modelOverride,
+      userMessageId: userMessageId ?? null,
     }
-    const content: string = attachments?.length
-      ? JSON.stringify({ kind: 'files_attachment', files: attachments.map(({ mimeType, data, name }) => ({ mimeType, data, name })), text } satisfies FilesAttachmentContent)
-      : text
-    const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
-    this.touchLastActive(sessionId)
-    this.sendPromptSuggestion(sessionId, null)
-    this.sendMessage(sessionId, userMessage)
+  }
 
-    if (session.mode !== 'claude-code') return
-    this.beginPendingUserTurn(sessionId, userMessage.id)
+  private getOrCreateTurnQueue(sessionId: string): { items: ReturnType<typeof this.makeQueuedEntry>[]; inflightId: string | null } {
+    let q = this.turnQueues.get(sessionId)
+    if (!q) {
+      q = { items: [], inflightId: null }
+      this.turnQueues.set(sessionId, q)
+    }
+    return q as { items: ReturnType<typeof this.makeQueuedEntry>[]; inflightId: string | null }
+  }
+
+  private sendQueueState(sessionId: string): void {
+    const q = this.turnQueues.get(sessionId)
+    const items: PendingQueuedMessage[] = (q?.items ?? []).map((item) => ({ id: item.id, text: item.text }))
+    this.getWindow()?.webContents.send('session:queueUpdated', { sessionId, items })
+  }
+
+  /** Remove all pending (non-inflight) items from the queue and notify the renderer. */
+  private clearTurnQueue(sessionId: string): void {
+    const q = this.turnQueues.get(sessionId)
+    if (!q) return
+    q.items = []
+    q.inflightId = null
+    this.sendQueueState(sessionId)
+  }
+
+  cancelQueued(sessionId: string, id: string): void {
+    const q = this.turnQueues.get(sessionId)
+    if (!q) return
+    q.items = q.items.filter((item) => item.id !== id)
+    this.sendQueueState(sessionId)
+    logger.info('turnQueue: cancelled queued message', { sessionId, id })
+  }
+
+  /**
+   * Drain the next pending message from the turn queue after a turn completes.
+   * Returns true if a new turn was dispatched (caller should NOT call
+   * sendTurnState(false) in that case — dispatchTurnToHarness does it).
+   */
+  private drainTurnQueue(sessionId: string): boolean {
+    const q = this.turnQueues.get(sessionId)
+    if (!q || q.items.length === 0) {
+      if (q) q.inflightId = null
+      return false
+    }
+    const next = q.items.shift()!
+    q.inflightId = next.id
+    this.sendQueueState(sessionId)
+    logger.info('turnQueue: draining next queued message', { sessionId, id: next.id })
+    void this.dispatchTurnToHarness(sessionId, next).catch((err) => {
+      this.reportHarnessFailure(sessionId, 'drainTurnQueue', err)
+    })
+    return true
+  }
+
+  /**
+   * Actual harness dispatch for one queued turn. Mirrors the former body of
+   * `sendUserMessage` from `beginPendingUserTurn` onward. Safe to call for
+   * both immediately-dispatched (inflightId already set) and drain-triggered
+   * messages.
+   */
+  private async dispatchTurnToHarness(
+    sessionId: string,
+    item: ReturnType<typeof this.makeQueuedEntry>,
+  ): Promise<void> {
+    const session = this.store.getSession(sessionId)
+    if (!session) return
+    const { text, attachments, modelOverride, userMessageId } = item
+    if (userMessageId != null) this.beginPendingUserTurn(sessionId, userMessageId)
     this.sendTurnState(sessionId, true)
     try {
-      // 10f-enrichment-model-effort-picker: a caller (the composer's model
-      // picker) can ask for THIS message onward to use a different
-      // model/effort than the session's live connection is currently
-      // running with. `override === undefined` (the composer never touched
-      // the picker) preserves every pre-existing caller's behavior exactly.
-      // A genuinely NEW selection, though, can only take effect on a fresh
-      // start()/resume() call (see HarnessStartOptions.model/.effort) — an
-      // already-open streaming-input query has no live setter for either —
-      // so if the session is currently live, it must be torn down first via
-      // `harness.interrupt()` (verified safe to immediately follow with a
-      // resume(): see the pump()/finally race comment in
-      // claude-agent-sdk-harness.ts) before falling into the same
-      // `resume()` path already used below for a session with no live
-      // connection at all.
       const previousSelection = this.modelSelections.get(sessionId)
-      const selectionChanged = override !== undefined && !modelSelectionsEqual(override, previousSelection)
+      const selectionChanged = modelOverride !== undefined && !modelSelectionsEqual(modelOverride, previousSelection)
       if (selectionChanged) {
-        logger.info('sendUserMessage: model/effort selection changed, applying from next turn', {
+        logger.info('dispatchTurnToHarness: model/effort selection changed, applying from next turn', {
           sessionId,
           previous: previousSelection,
-          next: override
+          next: modelOverride
         })
-        this.modelSelections.set(sessionId, override)
-        this.store.setModelSelection(sessionId, override)
+        this.modelSelections.set(sessionId, modelOverride)
+        this.store.setModelSelection(sessionId, modelOverride)
         if (this.harness.isActive(sessionId)) {
           await this.harness.interrupt(sessionId)
         }
@@ -1611,19 +1647,8 @@ export class SessionManager {
       // `selectionChanged` reconnect ALWAYS falls through to the `resume()`
       // path below, regardless of what `isActive()` reports afterward.
       if (!selectionChanged && this.harness.isActive(sessionId)) {
-        logger.info('sendUserMessage: live injection (streamInput, no resume)', { sessionId })
+        logger.info('dispatchTurnToHarness: live injection (streamInput, no resume)', { sessionId })
         await this.harness.streamInput(sessionId, text, attachments)
-        // This reuses the EXISTING `consume()` loop/live entry from whenever
-        // the session last started/reconnected — no new `live.busy = true`
-        // assignment happens anywhere else on this path (unlike the
-        // create/resume paths below, which each set it right after standing
-        // up their own live entry). Left unset, the dot stays stuck on
-        // whatever it last was ('waiting', rendered purple) for this entire
-        // new turn — including through any permission/AskUserQuestion/plan
-        // prompt it raises and the `respondToPrompt` that answers it — even
-        // though the harness is genuinely running again. Set it explicitly
-        // here so the dot flips to 'working' immediately, same as every
-        // other turn-start path.
         const liveEntry = this.live.get(sessionId)
         if (liveEntry) {
           liveEntry.busy = true
@@ -1634,7 +1659,7 @@ export class SessionManager {
       if (this.connecting.has(sessionId)) {
         await this.waitUntilNotConnecting(sessionId)
         if (!selectionChanged && this.harness.isActive(sessionId)) {
-          logger.info('sendUserMessage: live injection after reconnect wait (streamInput)', { sessionId })
+          logger.info('dispatchTurnToHarness: live injection after reconnect wait (streamInput)', { sessionId })
           await this.harness.streamInput(sessionId, text, attachments)
           const liveEntry = this.live.get(sessionId)
           if (liveEntry) {
@@ -1644,7 +1669,7 @@ export class SessionManager {
           return
         }
       }
-      logger.info('sendUserMessage: no live harness session, reconnecting via resume()', { sessionId })
+      logger.info('dispatchTurnToHarness: no live harness session, reconnecting via resume()', { sessionId })
       const sessionForReconnect = await this.ensureSessionWorktreePath(session)
       const permissionMode = this.permissionModes.get(sessionId) ?? sessionForReconnect.permissionMode
       const modelSelection = this.modelSelections.get(sessionId) ?? sessionForReconnect.modelSelection ?? undefined
@@ -1672,14 +1697,63 @@ export class SessionManager {
       this.resetHarnessUiForSession(sessionId)
       const liveEntry = this.live.get(sessionId)!
       liveEntry.busy = true
-      liveEntry.pendingUserMessageId = userMessage.id
-      liveEntry.turnExecutionStarted = false
+      if (userMessageId != null) {
+        liveEntry.pendingUserMessageId = userMessageId
+        liveEntry.turnExecutionStarted = false
+      }
       this.sendStatus(sessionId)
       void this.consume(sessionId, harnessSession.events, this.bumpConsumeGeneration(sessionId))
     } catch (err) {
+      const q = this.turnQueues.get(sessionId)
+      if (q) q.inflightId = null
       this.sendTurnState(sessionId, false)
-      this.reportHarnessFailure(sessionId, 'sendUserMessage', err)
       throw err
+    }
+  }
+
+  /**
+   * Enqueues a user message and immediately dispatches it if no turn is currently
+   * inflight. The main process now owns the send queue; the renderer always calls
+   * this regardless of busy state — no client-side queuing needed.
+   */
+  async sendUserMessage(sessionId: string, text: string, override?: ModelSelection, attachments?: FileAttachment[]): Promise<void> {
+    const session = this.store.getSession(sessionId)
+    if (!session) throw new Error(`Unknown session: ${sessionId}`)
+    if (!attachments?.length && text.trim() === '/clear') {
+      this.clearTurnQueue(sessionId)
+      await this.clearConversation(sessionId)
+      return
+    }
+    const content: string = attachments?.length
+      ? JSON.stringify({ kind: 'files_attachment', files: attachments.map(({ mimeType, data, name }) => ({ mimeType, data, name })), text } satisfies FilesAttachmentContent)
+      : text
+    const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
+    this.touchLastActive(sessionId)
+    this.sendPromptSuggestion(sessionId, null)
+    this.sendMessage(sessionId, userMessage)
+
+    if (session.mode !== 'claude-code') return
+
+    const q = this.getOrCreateTurnQueue(sessionId)
+    const item = this.makeQueuedEntry(text, attachments, override, userMessage.id)
+
+    if (q.inflightId === null) {
+      // Nothing inflight — dispatch immediately.
+      q.inflightId = item.id
+      // No items to show in the queue strip (this message is already dispatching).
+      this.sendQueueState(sessionId)
+      logger.info('turnQueue: dispatching immediately (queue idle)', { sessionId, id: item.id })
+      try {
+        await this.dispatchTurnToHarness(sessionId, item)
+      } catch (err) {
+        this.reportHarnessFailure(sessionId, 'sendUserMessage', err)
+        throw err
+      }
+    } else {
+      // A turn is inflight — enqueue for dispatch after it completes.
+      q.items.push(item)
+      this.sendQueueState(sessionId)
+      logger.info('turnQueue: enqueued (turn inflight)', { sessionId, id: item.id, queueDepth: q.items.length })
     }
   }
 
@@ -1705,6 +1779,7 @@ export class SessionManager {
     this.finalizeStaleRunningToolCalls(sessionId, live)
     this.clearPendingUserTurn(live)
     live.busy = false
+    this.clearTurnQueue(sessionId)
     this.sendTurnState(sessionId, false)
     if (this.connecting.has(sessionId)) {
       this.connecting.delete(sessionId)
@@ -2039,6 +2114,8 @@ export class SessionManager {
     this.workspacePreloadInFlight.delete(sessionId)
     this.clearCapRefreshDebounce(sessionId)
     this.workspace?.evictSession(sessionId)
+    this.clearTurnQueue(sessionId)
+    this.turnQueues.delete(sessionId)
     this.sendTurnState(sessionId, false)
     this.resetHarnessUiForSession(sessionId)
     const session = this.store.closeSession(sessionId)
@@ -2794,6 +2871,7 @@ export class SessionManager {
         live.busy = false
         live.interruptRequested = false
         this.clearPendingUserTurn(live)
+        this.clearTurnQueue(sessionId)
         this.sendStatus(sessionId)
         logger.info('harness event: interrupted (terminal)', { sessionId })
         this.sendTurnState(sessionId, false)
@@ -2847,7 +2925,13 @@ export class SessionManager {
           })
           this.sendLifecycle({ type: 'session.updated', session: costUpdated })
         }
-        this.sendTurnState(sessionId, false)
+        // Drain the turn queue before signalling idle — if a queued message
+        // is dispatched here, it sets busy=true again and the renderer never
+        // sees a brief idle flash between turns.
+        const q = this.turnQueues.get(sessionId)
+        if (q) q.inflightId = null
+        const drained = this.drainTurnQueue(sessionId)
+        if (!drained) this.sendTurnState(sessionId, false)
         void this.refreshSessionWorkspace(sessionId, false).catch(() => undefined)
         // token-usage-indicator: pull context usage directly from the SDK's
         // own query — `totalTokens` is full in-context usage; cap is the

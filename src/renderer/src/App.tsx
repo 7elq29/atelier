@@ -318,14 +318,10 @@ export default function App(): JSX.Element {
     Record<string, { file: DiffFileChange; seq: number }>
   >({})
   /** Per-session FIFO queue while that session is busy (message-queue). */
-  const [queuedMessagesBySession, setQueuedMessagesBySession] = useState<Record<string, string[]>>({})
   const [reviewCommentsBySession, setReviewCommentsBySession] = useState<
     Record<string, ReviewComposerComment[]>
   >({})
   const reviewCommentIdSeq = useRef(0)
-  const queuedMessagesBySessionRef = useRef(queuedMessagesBySession)
-  queuedMessagesBySessionRef.current = queuedMessagesBySession
-
   // Claude-code chat composers stay mounted per visited session (draft + git cap).
   const [aliveChatComposers, setAliveChatComposers] = useState<Set<string>>(() => new Set())
 
@@ -912,12 +908,6 @@ export default function App(): JSX.Element {
     (id: string) => {
       sessionWorkspace.evictSession(id)
       sessionBookmarks.evict(id)
-      setQueuedMessagesBySession((prev) => {
-        if (!(id in prev)) return prev
-        const next = { ...prev }
-        delete next[id]
-        return next
-      })
       setModelSelectionBySession((prev) => {
         if (!(id in prev)) return prev
         const next = { ...prev }
@@ -1913,19 +1903,6 @@ export default function App(): JSX.Element {
     const mergedText = buildComposerSendText(text, reviewComments)
     if (!mergedText && !attachments?.length) return
     if (sessions.rateLimitBySession[sessionId]?.sendBlocked) return
-    const busy = sessions.busyBySession[sessionId] ?? false
-    if (busy && !attachments?.length) {
-      // Session is in flight — queue for automatic dispatch when busy → idle.
-      // Attachment sends bypass the queue (they need to go immediately).
-      setQueuedMessagesBySession((prev) => ({
-        ...prev,
-        [sessionId]: [...(prev[sessionId] ?? []), mergedText]
-      }))
-      if (reviewComments.length > 0) {
-        setReviewCommentsBySession((prev) => ({ ...prev, [sessionId]: [] }))
-      }
-      return
-    }
     const session = allSessions.find((s) => s.id === sessionId)
     const model = modelSelectionForSession(sessionId, session, modelSelectionBySession, config)
     await sessions.sendMessage(sessionId, mergedText, model, attachments)
@@ -1942,20 +1919,6 @@ export default function App(): JSX.Element {
   }
   handleInterruptRef.current = handleInterrupt
 
-  // Drain per-session queues when that session transitions busy → idle (message-queue).
-  useEffect(() => {
-    for (const [sessionId, queue] of Object.entries(queuedMessagesBySessionRef.current)) {
-      if (queue.length === 0) continue
-      const busy = sessions.busyBySession[sessionId] ?? false
-      if (busy) continue
-      const [next, ...rest] = queue
-      setQueuedMessagesBySession((prev) => ({ ...prev, [sessionId]: rest }))
-      const session = allSessions.find((s) => s.id === sessionId)
-      const model = modelSelectionForSession(sessionId, session, modelSelectionBySession, config)
-      void sessions.sendMessage(sessionId, next, model)
-      break
-    }
-  }, [sessions.busyBySession, allSessions, modelSelectionBySession, sessions, config])
 
   const openChangedFileFromCap = useCallback(
     async (path: string, opensInFilesTab: boolean) => {
@@ -3126,12 +3089,6 @@ export default function App(): JSX.Element {
                       }
                       onFork={() => void sessions.forkSession(sessionId).then((forked) => setActiveSessionId(forked.id))}
                       onClearConversation={() => {
-                        setQueuedMessagesBySession((prev) => {
-                          if (!(sessionId in prev)) return prev
-                          const next = { ...prev }
-                          delete next[sessionId]
-                          return next
-                        })
                         void window.atelier.clearConversation(sessionId)
                       }}
                       modelSelection={modelSelectionForSession(sessionId, session, modelSelectionBySession, config)}
@@ -3143,18 +3100,16 @@ export default function App(): JSX.Element {
                       liveModels={sessions.modelsBySession[sessionId] ?? []}
                       mode={session.permissionMode}
                       onCycleMode={() => void sessions.cycleMode(sessionId)}
-                      queuedMessages={queuedMessagesBySession[sessionId] ?? []}
+                      queuedMessages={(sessions.queuedBySession[sessionId] ?? []).map((m) => m.text)}
                       reviewComments={reviewCommentsBySession[sessionId] ?? []}
                       onUpdateReviewCommentBody={(commentId, body) =>
                         updateReviewCommentBody(sessionId, commentId, body)
                       }
                       onDeleteReviewComment={(commentId) => deleteReviewComment(sessionId, commentId)}
-                      onCancelQueued={(index) =>
-                        setQueuedMessagesBySession((prev) => ({
-                          ...prev,
-                          [sessionId]: (prev[sessionId] ?? []).filter((_, i) => i !== index)
-                        }))
-                      }
+                      onCancelQueued={(index) => {
+                        const item = (sessions.queuedBySession[sessionId] ?? [])[index]
+                        if (item) void sessions.cancelQueued(sessionId, item.id)
+                      }}
                       tokenUsage={sessions.tokenUsageBySession[sessionId]}
                       promptSuggestion={sessions.promptSuggestionBySession[sessionId]}
                       rateLimit={sessions.rateLimitBySession[sessionId] ?? null}

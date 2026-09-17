@@ -39,7 +39,8 @@ import type {
   SessionPromptSuggestionEvent,
   SessionTurnStateEvent,
   SessionWorktreeProgressEvent,
-  ModelValidationResult
+  ModelValidationResult,
+  SessionQueueEvent
 } from '../shared/session-types'
 import type { SessionMessagesResult } from '../shared/chat-transcript-window'
 import type {
@@ -256,6 +257,7 @@ const api = {
   isSessionStartupIdle: (sessionId: string): Promise<boolean> => ipcRenderer.invoke('session:isStartupIdle', sessionId),
   sendSessionMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, attachments?: FileAttachment[]): Promise<void> =>
     ipcRenderer.invoke('session:sendMessage', sessionId, text, modelSelection, attachments),
+  cancelQueued: (sessionId: string, id: string): Promise<void> => ipcRenderer.invoke('session:cancelQueued', sessionId, id),
   interruptSession: (sessionId: string): Promise<SessionInterruptResult> => ipcRenderer.invoke('session:interrupt', sessionId),
   clearConversation: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:clearConversation', sessionId),
   validateModel: (sessionId: string, model: string): Promise<ModelValidationResult> =>
@@ -356,6 +358,12 @@ const api = {
     const listener = (_event: unknown, payload: SessionTurnStateEvent): void => callback(payload)
     ipcRenderer.on('session:turnState', listener)
     return () => ipcRenderer.removeListener('session:turnState', listener)
+  },
+  /** Main-process turn queue state push — fires on enqueue, drain, cancel, and clear. */
+  onSessionQueue: (callback: (event: SessionQueueEvent) => void): (() => void) => {
+    const listener = (_event: unknown, payload: SessionQueueEvent): void => callback(payload)
+    ipcRenderer.on('session:queueUpdated', listener)
+    return () => ipcRenderer.removeListener('session:queueUpdated', listener)
   },
   /** Live slash-command registry push (bug #56) — see SessionCommandsEvent. Fires once shortly after session start/resume and again on any mid-session SDK `commands_changed` push; always the FULL replacement list. */
   onSessionCommands: (callback: (event: SessionCommandsEvent) => void): (() => void) => {
