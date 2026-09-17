@@ -1438,7 +1438,7 @@ const FilesPanel = forwardRef(function FilesPanel(
                 className="files-dir-listing files-directory-view"
                 data-testid="files-dir-listing"
                 tabIndex={-1}
-                style={{ position: 'absolute', inset: 0, overflow: 'auto', zIndex: 5, background: 'var(--bg-code)', outline: 'none' }}
+                style={{ position: 'absolute', inset: 0, overflow: 'auto', zIndex: 5, background: 'var(--bg-app)', outline: 'none' }}
                 onKeyDown={(e) => {
                   if (!browseDirChildren) return
                   if (e.key === 'ArrowDown' || (e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyN')) {
@@ -1490,12 +1490,12 @@ const FilesPanel = forwardRef(function FilesPanel(
             )}
 
             {!capDiff && !fileResult && !browseDirPath && !selectedPath && (
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-code)', color: 'var(--text-tertiary)' }}>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-app)', color: 'var(--text-tertiary)' }}>
                 Select a file to edit
               </div>
             )}
             {!capDiff && fileResult?.kind === 'image' && !browseDirPath && (
-              <div style={{ position: 'absolute', inset: 0, background: 'var(--bg-code)', display: 'flex', alignItems: 'flex-start', padding: 14, overflow: 'auto' }}>
+              <div style={{ position: 'absolute', inset: 0, background: 'var(--bg-app)', display: 'flex', alignItems: 'flex-start', padding: 14, overflow: 'auto' }}>
                 <img
                   className="file-preview-image"
                   src={fileResult.content}
@@ -1516,7 +1516,7 @@ const FilesPanel = forwardRef(function FilesPanel(
               />
             )}
             {!capDiff && fileResult?.kind === 'binary' && !browseDirPath && (
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-code)', color: 'var(--text-tertiary)' }}>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-app)', color: 'var(--text-tertiary)' }}>
                 Binary file — no preview available
               </div>
             )}

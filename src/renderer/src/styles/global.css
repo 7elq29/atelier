@@ -3096,6 +3096,7 @@ body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cur
   min-height: 0;
   z-index: 0;
   outline: none;
+  background: var(--bg-app);
 }
 /* Row: side by side, from a left/right drop. */
 [data-split-direction='row'] .workspace-split-pane {
@@ -3105,12 +3106,12 @@ body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cur
 [data-split-direction='row'] .workspace-split-pane--primary {
   left: 0;
   right: auto;
-  width: calc(var(--workspace-split-ratio, 0.5) * 100% - 2.5px);
+  width: calc(var(--workspace-split-ratio, 0.5) * 100%);
 }
 [data-split-direction='row'] .workspace-split-pane--secondary {
   left: auto;
   right: 0;
-  width: calc((1 - var(--workspace-split-ratio, 0.5)) * 100% - 2.5px);
+  width: calc((1 - var(--workspace-split-ratio, 0.5)) * 100%);
 }
 /* Column: stacked, from a top/bottom drop. */
 [data-split-direction='col'] .workspace-split-pane {
@@ -3120,31 +3121,21 @@ body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cur
 [data-split-direction='col'] .workspace-split-pane--primary {
   top: 0;
   bottom: auto;
-  height: calc(var(--workspace-split-ratio, 0.5) * 100% - 2.5px);
+  height: calc(var(--workspace-split-ratio, 0.5) * 100%);
 }
 [data-split-direction='col'] .workspace-split-pane--secondary {
   top: auto;
   bottom: 0;
-  height: calc((1 - var(--workspace-split-ratio, 0.5)) * 100% - 2.5px);
+  height: calc((1 - var(--workspace-split-ratio, 0.5)) * 100%);
 }
-/* Active-pane indicator: inactive pane gets a white overlay so it appears lighter;
-   active pane is untouched (natural dark bg, fonts unaffected).
-   z-index 11: above terminal canvas, below .workspace-pane-head (z-index 12).
-   pointer-events: none so the overlay never blocks clicks/input. */
-[data-split-active-panel] .workspace-split-pane--primary::after,
-[data-split-active-panel] .workspace-split-pane--secondary::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.015);
-  pointer-events: none;
-  z-index: 11;
-  transition: opacity 0.15s;
-  opacity: 1;
-}
-[data-split-active-panel='primary'] .workspace-split-pane--primary::after,
-[data-split-active-panel='secondary'] .workspace-split-pane--secondary::after {
-  opacity: 0;
+/* Active-pane indicator: darken bg tokens on the active pane only.
+   Inactive pane stays at the root token values, matching the body bg and the
+   transparent resize handle — so no third color appears at any boundary.
+   Active pane gets a slightly darker bg, making it visually distinct. */
+[data-split-active-panel='primary'] .workspace-split-pane--primary,
+[data-split-active-panel='secondary'] .workspace-split-pane--secondary {
+  --bg-app: #191714;
+  --bg-code: #141209;
 }
 /* Empty layout slot for the Terminal tab. The real terminal overlays it from the
    keep-alive layer, and in a split both take the same geometry — so the slot must
@@ -3703,7 +3694,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 }
 .files-tree-root-label .root-kind { color: var(--accent); margin-right: 4px; }
 .files-tree .ft-item.dir { color: var(--text-secondary); }
-.files-dir-listing { background: var(--bg-code); padding: 14px 18px; }
+.files-dir-listing { background: var(--bg-app); padding: 14px 18px; }
 .files-dir-listing-header {
   font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary);
   margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -3758,7 +3749,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   min-width: 0;
 }
 .app-notes-panel .app-notes-editor-surface {
-  background: var(--bg-code);
+  background: var(--bg-app);
   padding: 0;
 }
 .app-notes-panel .app-notes-atomic-host,
@@ -3772,7 +3763,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 }
 .app-notes-panel .atomic-cm-editor {
   --atomic-editor-measure: var(--notes-editor-measure);
-  --atomic-editor-bg: var(--bg-code);
+  --atomic-editor-bg: var(--bg-app);
   --atomic-editor-fg: var(--text-primary);
   --atomic-editor-fg-muted: var(--text-secondary);
   --atomic-editor-fg-faint: var(--text-tertiary);
@@ -3897,7 +3888,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 .daily-note-editor-panel .atomic-cm-editor {
   height: 100%;
   min-height: 0;
-  background: var(--bg-code);
+  background: var(--bg-app);
 }
 /* Gap below date toolbar — host padding is reliable; .cm-content padding alone often doesn’t show. */
 .daily-note-editor-panel .daily-note-atomic-host {
@@ -3928,7 +3919,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 }
 .daily-note-editor-panel .atomic-cm-editor {
   --atomic-editor-measure: var(--notes-editor-measure);
-  --atomic-editor-bg: var(--bg-code);
+  --atomic-editor-bg: var(--bg-app);
   --atomic-editor-fg: var(--text-primary);
   --atomic-editor-fg-muted: var(--text-secondary);
   --atomic-editor-fg-faint: var(--text-tertiary);
@@ -3968,7 +3959,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 .tok-num { color: var(--warning); }
 
 /* ===== Terminal tab ===== */
-.term-body { flex: 1; min-height: 0; overflow: hidden; background: var(--bg-code); }
+.term-body { flex: 1; min-height: 0; overflow: hidden; background: var(--bg-app); }
 /* The inset belongs on the xterm element, not on `.term-body`. FitAddon derives
    the row count from the *parent's* computed height — which under our global
    border-box rule includes the parent's padding — and only subtracts padding
@@ -4014,18 +4005,18 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 }
 .composer-cache--split-row.composer-cache--split-primary {
   left: 0;
-  width: calc(var(--workspace-split-ratio, 0.5) * 100% - 2.5px);
+  width: calc(var(--workspace-split-ratio, 0.5) * 100%);
 }
 .composer-cache--split-row.composer-cache--split-secondary {
   right: 0;
-  width: calc((1 - var(--workspace-split-ratio, 0.5)) * 100% - 2.5px);
+  width: calc((1 - var(--workspace-split-ratio, 0.5)) * 100%);
 }
 .composer-cache--split-col {
   left: 0;
   width: 100%;
 }
 .composer-cache--split-col.composer-cache--split-primary {
-  bottom: calc((1 - var(--workspace-split-ratio, 0.5)) * 100% + 2.5px);
+  bottom: calc((1 - var(--workspace-split-ratio, 0.5)) * 100%);
 }
 .composer-cache--split-col.composer-cache--split-secondary {
   bottom: 0;
