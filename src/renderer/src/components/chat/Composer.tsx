@@ -1199,7 +1199,15 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           })()}
           <span className="context-bar-spacer" aria-hidden="true" />
           {displayBranch && (
-            <span className="context-bar-item" data-testid="composer-context-branch" title={displayBranch}>
+            <span
+              className="context-bar-item context-bar-item--copyable"
+              data-testid="composer-context-branch"
+              title={`${displayBranch} — click to copy`}
+              role="button"
+              tabIndex={0}
+              onClick={() => void navigator.clipboard.writeText(displayBranch)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') void navigator.clipboard.writeText(displayBranch) }}
+            >
               {CONTEXT_BRANCH_ICON}
               <span className="context-bar-value">{displayBranch}</span>
             </span>

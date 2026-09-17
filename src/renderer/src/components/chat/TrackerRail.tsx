@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { MessageRecord } from '../../../../shared/session-types'
 import { parseStructuredContent } from '../../../../shared/chat-content'
 import type { BackgroundTaskRow } from '../../../../shared/harness-ui-types'
@@ -72,6 +72,17 @@ export default function TrackerRail({
   }
 
   const doneCount = todos.filter((t) => t.status === 'completed').length
+
+  useEffect(() => {
+    if (todos.length > 0 && doneCount === todos.length) {
+      setCollapsedCards((prev) => {
+        if (prev.has('todos')) return prev
+        const next = new Set(prev)
+        next.add('todos')
+        return next
+      })
+    }
+  }, [todos.length, doneCount])
 
   const bgMonitors: BackgroundTaskRow[] = []
   const bgSubagents: BackgroundTaskRow[] = []
