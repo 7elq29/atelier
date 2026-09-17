@@ -1087,7 +1087,7 @@
   letter-spacing: .02em;
 }
 .dn-dur-card-at--editable {
-  cursor: ns-resize;
+  cursor: text;
   user-select: none;
   border-radius: 3px;
   padding: 1px 4px;
@@ -1096,6 +1096,21 @@
 }
 .dn-dur-card-at--editable:hover {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.dn-dur-card-start-input {
+  display: block;
+  width: 100%;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--accent);
+  outline: none;
+  text-align: center;
+  margin-bottom: 12px;
+  letter-spacing: .02em;
+  padding: 1px 4px 2px;
 }
 
 .dn-dur-card-ring {

@@ -84,6 +84,39 @@ function durDisplayParts(min: number): { num: string; unit: string } {
   return { num: m ? `${h}:${String(m).padStart(2, '0')}` : String(h), unit: 'hr' }
 }
 
+/** Parse a human-typed time string into total minutes from midnight, or null on failure. */
+function parseTimeInput(raw: string): number | null {
+  const s = raw.trim().toLowerCase().replace(/\s+/g, ' ')
+  // "3:30 pm" / "3:30pm"
+  const m12 = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/)
+  if (m12) {
+    let h = parseInt(m12[1]!, 10)
+    const min = parseInt(m12[2]!, 10)
+    if (m12[3] === 'pm' && h < 12) h += 12
+    if (m12[3] === 'am' && h === 12) h = 0
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null
+    return h * 60 + min
+  }
+  // "15:30" (24-hour)
+  const m24 = s.match(/^(\d{1,2}):(\d{2})$/)
+  if (m24) {
+    const h = parseInt(m24[1]!, 10)
+    const min = parseInt(m24[2]!, 10)
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null
+    return h * 60 + min
+  }
+  // "3 pm" / "3pm"
+  const mHour = s.match(/^(\d{1,2})\s*(am|pm)$/)
+  if (mHour) {
+    let h = parseInt(mHour[1]!, 10)
+    if (mHour[2] === 'pm' && h < 12) h += 12
+    if (mHour[2] === 'am' && h === 12) h = 0
+    if (h < 0 || h > 23) return null
+    return h * 60
+  }
+  return null
+}
+
 function hourLabel(h: number): string {
   if (h === 12) return '12p'
   if (h === 0)  return '12a'
@@ -123,8 +156,10 @@ export default function AgendaTimeline({
 
   // Time-edit popover (click on time label)
   const [timeEdit, setTimeEdit] = useState<TimeEditState | null>(null)
+  const [timeEditStartText, setTimeEditStartText] = useState<string | null>(null)
   const timeEditRef = useRef<HTMLDivElement>(null)
   const timeEditStartRef = useRef<HTMLDivElement>(null)
+  const timeEditStartInputRef = useRef<HTMLInputElement>(null)
 
   const agendaRef = useRef<HTMLDivElement>(null)
   const cardRef   = useRef<HTMLDivElement>(null)
@@ -277,6 +312,7 @@ export default function AgendaTimeline({
     function onClick(e: MouseEvent): void {
       if (timeEditRef.current?.contains(e.target as Node)) return
       setTimeEdit(null)
+      setTimeEditStartText(null)
     }
     const t = setTimeout(() => document.addEventListener('click', onClick, { capture: true }), 80)
     return () => { clearTimeout(t); document.removeEventListener('click', onClick, { capture: true }) }
@@ -313,6 +349,7 @@ export default function AgendaTimeline({
       DEFAULT_DUR_IDX
     )
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    setTimeEditStartText(null)
     setTimeEdit({ taskId: task.id, taskLabel: task.text, startMin: snappedStart, durIdx, x: rect.left, y: rect.bottom + 6 })
     setPendingDrop(null)
     setPendingCreate(null)
@@ -324,6 +361,16 @@ export default function AgendaTimeline({
     const endMin = timeEdit.startMin + durMin
     onUpdateTask(timeEdit.taskId, { timeBlock: `${minutesToTime(timeEdit.startMin)}-${minutesToTime(endMin)}` })
     setTimeEdit(null)
+    setTimeEditStartText(null)
+  }
+
+  function commitStartText(): void {
+    if (timeEditStartText === null) return
+    const parsed = parseTimeInput(timeEditStartText)
+    if (parsed !== null) {
+      setTimeEdit((t) => t ? { ...t, startMin: parsed } : t)
+    }
+    setTimeEditStartText(null)
   }
 
   function commitCreate(parsed?: { text: string }): void {
@@ -787,14 +834,35 @@ export default function AgendaTimeline({
         >
           <div className="dn-dur-card-task">{timeEdit.taskLabel}</div>
 
-          {/* "starting X:XX pm" — scroll to adjust start time */}
-          <div
-            ref={timeEditStartRef}
-            className="dn-dur-card-at dn-dur-card-at--editable"
-            title="Scroll to adjust start time"
-          >
-            {`starting ${teHour12}:${String(teMinute).padStart(2, '0')} ${teSuffix}`}
-          </div>
+          {/* "starting X:XX pm" — click to type, scroll to nudge ±15 min */}
+          {timeEditStartText !== null ? (
+            <input
+              ref={timeEditStartInputRef}
+              className="dn-dur-card-start-input"
+              value={timeEditStartText}
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+              onChange={(e) => setTimeEditStartText(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter')  { e.preventDefault(); commitStartText() }
+                if (e.key === 'Escape') { e.preventDefault(); setTimeEditStartText(null) }
+              }}
+              onBlur={commitStartText}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+          ) : (
+            <div
+              ref={timeEditStartRef}
+              className="dn-dur-card-at dn-dur-card-at--editable"
+              title="Click to type or scroll to nudge ±15 min"
+              onClick={() =>
+                setTimeEditStartText(`${teHour12}:${String(teMinute).padStart(2, '0')} ${teSuffix}`)
+              }
+            >
+              {`starting ${teHour12}:${String(teMinute).padStart(2, '0')} ${teSuffix}`}
+            </div>
+          )}
 
           {/* Arc ring (duration) */}
           <svg
