@@ -763,11 +763,6 @@ export default function App(): JSX.Element {
           }
         }
       }
-      if (e.metaKey && !e.altKey && !e.ctrlKey && e.code === 'KeyK') {
-        e.preventDefault()
-        setPaletteOpen(true)
-        return
-      }
       if (e.altKey && e.code === 'KeyX') {
         e.preventDefault()
         setPaletteOpen(true)
