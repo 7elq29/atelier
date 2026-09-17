@@ -759,17 +759,6 @@ export default function AgendaTimeline({
             <span className="dn-dur-card-unit">{durUnit}</span>
           </div>
 
-          {/* Scroll hint */}
-          <div className="dn-dur-card-hint">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
-              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-              <rect x="5" y="2" width="6" height="10" rx="3"/>
-              <line x1="8" y1="5" x2="8" y2="7"/>
-            </svg>
-            scroll to adjust
-          </div>
-
-          <div className="dn-dur-card-confirm">click anywhere to confirm</div>
         </div>
       )}
 
@@ -867,16 +856,6 @@ export default function AgendaTimeline({
             <span className="dn-dur-card-unit">{createDurUnit}</span>
           </div>
 
-          <div className="dn-dur-card-hint">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
-              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-              <rect x="5" y="2" width="6" height="10" rx="3"/>
-              <line x1="8" y1="5" x2="8" y2="7"/>
-            </svg>
-            scroll to adjust
-          </div>
-
-          <div className="dn-dur-card-confirm">Enter to create · Esc to cancel</div>
         </div>
       )}
 
@@ -959,16 +938,6 @@ export default function AgendaTimeline({
             <span className="dn-dur-card-unit">{teDurUnit}</span>
           </div>
 
-          <div className="dn-dur-card-hint">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
-              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-              <rect x="5" y="2" width="6" height="10" rx="3"/>
-              <line x1="8" y1="5" x2="8" y2="7"/>
-            </svg>
-            scroll to adjust
-          </div>
-
-          <div className="dn-dur-card-confirm">Enter to save · Esc to cancel</div>
         </div>
       )}
     </div>
