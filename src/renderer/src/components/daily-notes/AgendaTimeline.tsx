@@ -13,6 +13,16 @@ const MEANINGFUL_GAP_MINUTES = 60
 
 const AGENDA_HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
 const AGENDA_SLOT_H_PX = 36 // px per hour slot in the drag overlay grid
+const MINUTE_STEPS = [0, 15, 30, 45]
+
+interface TimeEditState {
+  taskId: string
+  hour: number
+  minuteIdx: number // index into MINUTE_STEPS
+  durIdx: number    // index into DUR_STEPS_MIN
+  x: number
+  y: number
+}
 const DUR_STEPS_MIN = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240]
 const DUR_MAX_MIN = DUR_STEPS_MIN[DUR_STEPS_MIN.length - 1]
 const DEFAULT_DUR_IDX = 1 // 30 min
@@ -111,6 +121,10 @@ export default function AgendaTimeline({
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null)
   const createCardRef  = useRef<HTMLDivElement>(null)
   const createInputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  // Time-edit popover (click on time label)
+  const [timeEdit, setTimeEdit] = useState<TimeEditState | null>(null)
+  const timeEditRef = useRef<HTMLDivElement>(null)
 
   const agendaRef = useRef<HTMLDivElement>(null)
   const cardRef   = useRef<HTMLDivElement>(null)
@@ -253,6 +267,44 @@ export default function AgendaTimeline({
 
   function cancelDrop(): void {
     setPendingDrop(null)
+  }
+
+  // ── Time-edit popover ────────────────────────────────────────────────────
+
+  const timeEditOpen = timeEdit !== null
+  useEffect(() => {
+    if (!timeEditOpen) return
+    function onClick(e: MouseEvent): void {
+      if (timeEditRef.current?.contains(e.target as Node)) return
+      setTimeEdit(null)
+    }
+    const t = setTimeout(() => document.addEventListener('click', onClick, { capture: true }), 80)
+    return () => { clearTimeout(t); document.removeEventListener('click', onClick, { capture: true }) }
+  }, [timeEditOpen])
+
+  function openTimeEdit(event: React.MouseEvent, task: DailyTask, start: number, end: number): void {
+    event.stopPropagation()
+    const hour = Math.floor(start / 60)
+    const minute = start % 60
+    const mIdx = MINUTE_STEPS.indexOf(minute) >= 0 ? MINUTE_STEPS.indexOf(minute) : 0
+    const durMin = end - start
+    const durIdx = DUR_STEPS_MIN.reduce(
+      (best, v, i) => Math.abs(v - durMin) < Math.abs(DUR_STEPS_MIN[best]! - durMin) ? i : best,
+      DEFAULT_DUR_IDX
+    )
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    setTimeEdit({ taskId: task.id, hour, minuteIdx: mIdx, durIdx, x: rect.left, y: rect.bottom + 6 })
+    setPendingDrop(null)
+    setPendingCreate(null)
+  }
+
+  function commitTimeEdit(): void {
+    if (!timeEdit) return
+    const startMin = timeEdit.hour * 60 + MINUTE_STEPS[timeEdit.minuteIdx]!
+    const durMin   = DUR_STEPS_MIN[timeEdit.durIdx]!
+    const endMin   = startMin + durMin
+    onUpdateTask(timeEdit.taskId, { timeBlock: `${minutesToTime(startMin)}-${minutesToTime(endMin)}` })
+    setTimeEdit(null)
   }
 
   function commitCreate(parsed?: { text: string }): void {
@@ -440,7 +492,11 @@ export default function AgendaTimeline({
                 setMoveMenu({ x: event.clientX, y: event.clientY, taskId: task.id })
               }}
             >
-              <span className="dn-agenda-time">{formatClock(start)}</span>
+              <span
+                className="dn-agenda-time dn-agenda-time--editable"
+                title="Click to edit time"
+                onClick={(e) => openTimeEdit(e, task, start, end)}
+              >{formatClock(start)}</span>
               {!task.isNote ? (
                 <button
                   type="button"
@@ -679,6 +735,68 @@ export default function AgendaTimeline({
           </div>
 
           <div className="dn-dur-card-confirm">Enter to create · Esc to cancel</div>
+        </div>
+      )}
+
+      {/* ── Time-edit popover ── */}
+      {timeEdit && (
+        <div
+          ref={timeEditRef}
+          className="dn-time-popover"
+          style={{ left: Math.min(timeEdit.x, window.innerWidth - 230), top: Math.min(timeEdit.y, window.innerHeight - 140) }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { e.preventDefault(); setTimeEdit(null) }
+            if (e.key === 'Enter') { e.preventDefault(); commitTimeEdit() }
+          }}
+        >
+          {/* Start time row */}
+          <div className="dn-tp-row">
+            <span className="dn-tp-label">Start</span>
+            <div className="dn-tp-spin">
+              {/* Hour part */}
+              <button
+                type="button"
+                className="dn-tp-part"
+                title="Scroll or click ±1h"
+                onWheel={(e) => { e.preventDefault(); setTimeEdit(t => t ? { ...t, hour: (t.hour + (e.deltaY < 0 ? 1 : -1) + 24) % 24 } : t) }}
+                onClick={() => setTimeEdit(t => t ? { ...t, hour: (t.hour + 1) % 24 } : t)}
+              >
+                {timeEdit.hour % 12 || 12}
+              </button>
+              <span className="dn-tp-sep">:</span>
+              {/* Minute part */}
+              <button
+                type="button"
+                className="dn-tp-part"
+                title="Scroll or click +15m"
+                onWheel={(e) => { e.preventDefault(); setTimeEdit(t => t ? { ...t, minuteIdx: (t.minuteIdx + (e.deltaY < 0 ? 1 : -1) + MINUTE_STEPS.length) % MINUTE_STEPS.length } : t) }}
+                onClick={() => setTimeEdit(t => t ? { ...t, minuteIdx: (t.minuteIdx + 1) % MINUTE_STEPS.length } : t)}
+              >
+                {String(MINUTE_STEPS[timeEdit.minuteIdx]).padStart(2, '0')}
+              </button>
+              <span className="dn-tp-sep dn-tp-ampm">{timeEdit.hour < 12 ? 'am' : 'pm'}</span>
+            </div>
+          </div>
+          {/* Duration row */}
+          <div className="dn-tp-row">
+            <span className="dn-tp-label">Duration</span>
+            <div className="dn-tp-spin">
+              <button
+                type="button"
+                className="dn-tp-part dn-tp-part--wide"
+                title="Scroll to adjust duration"
+                onWheel={(e) => { e.preventDefault(); setTimeEdit(t => t ? { ...t, durIdx: Math.max(0, Math.min(DUR_STEPS_MIN.length - 1, t.durIdx + (e.deltaY < 0 ? 1 : -1))) } : t) }}
+                onClick={() => setTimeEdit(t => t ? { ...t, durIdx: Math.min(DUR_STEPS_MIN.length - 1, t.durIdx + 1) } : t)}
+              >
+                {formatDuration(DUR_STEPS_MIN[timeEdit.durIdx]!)}
+              </button>
+            </div>
+          </div>
+          {/* Actions */}
+          <div className="dn-tp-actions">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setTimeEdit(null)}>Cancel</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={commitTimeEdit}>Save</button>
+          </div>
         </div>
       )}
     </div>
