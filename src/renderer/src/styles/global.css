@@ -439,6 +439,44 @@
 }
 .topbar-sidebar-toggle:hover { color: var(--text-secondary); background: var(--bg-hover); }
 .topbar-sidebar-toggle .icon { width: 15px; height: 15px; }
+
+/* Dynamic icon (sidebar collapsed) — use --text-secondary so the circle
+   has the same visual weight as the static panel glyph */
+.topbar-sidebar-toggle:has(.topbar-sidebar-toggle__dynamic) {
+  color: var(--text-secondary);
+}
+.topbar-sidebar-toggle__dynamic {
+  width: 22px;
+  height: 22px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.topbar-sidebar-toggle__dynamic svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.topbar-sidebar-toggle__track { opacity: .55; }
+.topbar-sidebar-toggle__arc {
+  transform-origin: 50% 50%;
+  animation: sidebar-toggle-spin 1.4s linear infinite;
+}
+@keyframes sidebar-toggle-spin {
+  to { transform: rotate(360deg); }
+}
+.topbar-sidebar-toggle__count {
+  position: relative;
+  z-index: 1;
+  font-size: 8px;
+  font-weight: 700;
+  font-family: var(--font-ui);
+  line-height: 1;
+  color: currentColor;
+  letter-spacing: -.2px;
+}
 .topbar-timeline-toggle {
   position: relative;
   width: 24px;
