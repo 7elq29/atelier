@@ -627,49 +627,51 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   pointer-events: none;
   z-index: 45;
 }
-/* Dark pill — neutral at rest, accent only when actively targeted */
+/* Pill badge — high-contrast neutral at rest, accent only when targeted */
 .keyboard-hint-badge {
   position: fixed;
   pointer-events: none;
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 700;
   line-height: 1;
-  letter-spacing: 0.02em;
-  padding: 2px 5px;
+  letter-spacing: 0.03em;
+  padding: 3px 7px;
   border-radius: 100px;
-  color: var(--text-primary);
-  background: rgba(6, 6, 10, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
-  transition: opacity 80ms;
+  color: #e8e8f0;
+  background: rgba(36, 36, 52, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.7), 0 0 0 0.5px rgba(0,0,0,0.5);
+  transition: opacity 100ms, background 80ms, border-color 80ms, color 80ms;
 }
-/* Badge whose prefix matches what the user has typed */
+/* Badge whose prefix matches what the user has typed —
+   keep the dark pill shape, accent border + tint signals "reachable" */
 .keyboard-hint-badge--matched {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: rgba(91, 142, 240, 0.18);
+  border-color: rgba(91, 142, 240, 0.7);
+  color: #cddeff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(91, 142, 240, 0.2);
 }
-/* All other badges fade to near-invisible while a prefix is active */
+/* Non-matching badges step back but stay readable */
 .keyboard-hint-badge--dimmed {
-  opacity: 0.18;
+  opacity: 0.3;
 }
-/* Numbered session/note rows — same pill but muted */
+/* Numbered session/note rows */
 .keyboard-hint-badge--session {
-  background: rgba(6, 6, 10, 0.9);
-  border-color: rgba(255, 255, 255, 0.22);
-  color: var(--text-primary);
-  min-width: 1.1em;
-  padding-inline: 4px;
+  background: rgba(36, 36, 52, 0.96);
+  border-color: rgba(255, 255, 255, 0.38);
+  color: #e8e8f0;
+  min-width: 1.4em;
+  padding-inline: 5px;
   text-align: center;
 }
-/* Reserved tab shortcuts (h/d/f/t/p) — accent-tinted to distinguish from navigation hints */
+/* Reserved tab shortcuts (h/d/f/t/p) */
 .keyboard-hint-badge--tab {
-  background: rgba(91, 142, 240, 0.15);
-  border-color: rgba(91, 142, 240, 0.4);
-  color: var(--accent);
-  min-width: 1.1em;
-  padding-inline: 4px;
+  background: rgba(91, 142, 240, 0.2);
+  border-color: rgba(91, 142, 240, 0.55);
+  color: #a8c4f8;
+  min-width: 1.4em;
+  padding-inline: 5px;
   text-align: center;
 }
 /* Thin status bar at the bottom: ⌘ held · [buffer] · type a letter */
