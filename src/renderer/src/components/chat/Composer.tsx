@@ -568,6 +568,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   const [popover, setPopover] = useState<PopoverState>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [branch, setBranch] = useState<string | null>(null)
+  const [branchCopied, setBranchCopied] = useState(false)
   const [fileList, setFileList] = useState<string[]>([])
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
   const [pendingAppNotes, setPendingAppNotes] = useState<PendingAppNoteAttach[]>([])
@@ -1200,16 +1201,28 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           <span className="context-bar-spacer" aria-hidden="true" />
           {displayBranch && (
             <span
-              className="context-bar-item context-bar-item--copyable"
+              className={`context-bar-item context-bar-item--copyable${branchCopied ? ' context-bar-item--copied' : ''}`}
               data-testid="composer-context-branch"
-              title={`${displayBranch} — click to copy`}
+              title={branchCopied ? 'Copied!' : `${displayBranch} — click to copy`}
               role="button"
               tabIndex={0}
-              onClick={() => void navigator.clipboard.writeText(displayBranch)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') void navigator.clipboard.writeText(displayBranch) }}
+              onClick={() => {
+                void navigator.clipboard.writeText(displayBranch)
+                setBranchCopied(true)
+                setTimeout(() => setBranchCopied(false), 1500)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  void navigator.clipboard.writeText(displayBranch)
+                  setBranchCopied(true)
+                  setTimeout(() => setBranchCopied(false), 1500)
+                }
+              }}
             >
-              {CONTEXT_BRANCH_ICON}
-              <span className="context-bar-value">{displayBranch}</span>
+              {branchCopied ? (
+                <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              ) : CONTEXT_BRANCH_ICON}
+              <span className="context-bar-value">{branchCopied ? 'Copied!' : displayBranch}</span>
             </span>
           )}
           {worktreePath && (
