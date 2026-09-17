@@ -871,7 +871,7 @@ export default function App(): JSX.Element {
     })
   }, [])
 
-  /**
+/**
    * Sessions that need the user's attention while the sidebar is fully hidden.
    * 'blocked' = waiting for permission / approval / plan confirm.
    * 'ready'   = agent finished its turn, waiting for the next message.
@@ -1411,7 +1411,10 @@ export default function App(): JSX.Element {
       if (sessionId === activeSessionId) {
         if (!hasSessionMessages(sessionId)) composerRefs.current.get(sessionId)?.focus()
       } else {
-        setAppToast(`Session ready to chat — ${sessionWorkspaceLabel(session)}`)
+        const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
+        const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === sessionId)
+        const shortcutPart = rowIndex >= 0 ? ` · ⌘${rowIndex + 1}` : ''
+        setAppToast(`Session ready to chat — ${sessionWorkspaceLabel(session)}${shortcutPart}`)
       }
     }
   }, [activeSessionId, allSessions, sessions.statuses])
@@ -2251,6 +2254,28 @@ export default function App(): JSX.Element {
   handleWorkspaceSplitPaneCloseRef.current = handleWorkspaceSplitPaneClose
   const handleWorkspaceToolToggleMaximizeRef = useRef(handleWorkspaceToolToggleMaximize)
   handleWorkspaceToolToggleMaximizeRef.current = handleWorkspaceToolToggleMaximize
+  // Always-fresh handler for Cmd+number when sidebar is collapsed: reads current
+  // allSessions + navigation callbacks without adding them to the effect's deps.
+  const activateSidebarRowRef = useRef<(n: number) => void>(() => {})
+  activateSidebarRowRef.current = (n: number) => {
+    const rows = [...document.querySelectorAll<HTMLElement>('[data-hint-session-row], [data-hint-note-row]')]
+    const target = rows[n]
+    if (!target) return
+    const sessionId = target.getAttribute('data-session-id')
+    if (sessionId) {
+      const session = allSessions.find((s) => s.id === sessionId)
+      if (session) void selectSession(session)
+    } else {
+      const noteId = target.getAttribute('data-note-id')
+      if (noteId) {
+        selectAppNote(noteId)
+      } else if (target.classList.contains('app-note-row--daily')) {
+        selectDailyNote()
+      } else if (target.classList.contains('app-note-row--weekly')) {
+        void onWeeklyPlanRowClick()
+      }
+    }
+  }
   const busyBySessionRef = useRef<Record<string, boolean>>({})
   busyBySessionRef.current = sessions.busyBySession
   const anyModalOpenRef = useRef(false)
@@ -2352,6 +2377,18 @@ export default function App(): JSX.Element {
         updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })
         return
       }
+
+      if (config.sidebarCollapsed) {
+        const digitMatch = /^Digit([1-9])$/.exec(e.code)
+        if (digitMatch) {
+          const n = parseInt(digitMatch[1]!, 10) - 1
+          e.preventDefault()
+          e.stopPropagation()
+          activateSidebarRowRef.current(n)
+          return
+        }
+      }
+
       if (!workspacePanelShortcutsEnabled) return
 
       const tabByCode: Partial<Record<string, WorkspaceToolTab>> = {
@@ -2485,29 +2522,39 @@ export default function App(): JSX.Element {
         {/* Alert chips — float on the left edge when sidebar is hidden */}
         {collapsedAlerts && (
           <div className="sidebar-alert-chips" data-testid="sidebar-alert-chips">
-            {collapsedAlerts.blocked.map((session) => (
-              <CollapsedAlertChip
-                key={session.id}
-                session={session}
-                kind="blocked"
-                onClick={() => {
-                  void updateConfig({ sidebarCollapsed: false })
-                  void selectSession(session)
-                }}
-              />
-            ))}
-            {collapsedAlerts.ready.map((session) => (
-              <CollapsedAlertChip
-                key={session.id}
-                session={session}
-                kind="ready"
-                onClick={() => {
-                  clearWaitingInputAlert(session.id)
-                  void updateConfig({ sidebarCollapsed: false })
-                  void selectSession(session)
-                }}
-              />
-            ))}
+            {collapsedAlerts.blocked.map((session) => {
+              const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
+              const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
+              return (
+                <CollapsedAlertChip
+                  key={session.id}
+                  session={session}
+                  kind="blocked"
+                  shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
+                  onClick={() => {
+                    void updateConfig({ sidebarCollapsed: false })
+                    void selectSession(session)
+                  }}
+                />
+              )
+            })}
+            {collapsedAlerts.ready.map((session) => {
+              const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
+              const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
+              return (
+                <CollapsedAlertChip
+                  key={session.id}
+                  session={session}
+                  kind="ready"
+                  shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
+                  onClick={() => {
+                    clearWaitingInputAlert(session.id)
+                    void updateConfig({ sidebarCollapsed: false })
+                    void selectSession(session)
+                  }}
+                />
+              )
+            })}
           </div>
         )}
 

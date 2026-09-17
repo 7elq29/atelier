@@ -1472,6 +1472,16 @@ input[type='range'] {
   background: color-mix(in srgb, var(--warning) 20%, var(--bg-panel-raised));
 }
 
+/* ⌘N label — replaces the dot/icon when a shortcut number is known */
+.collapsed-alert-chip .chip-shortcut-label {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--warning);
+  letter-spacing: -0.5px;
+  pointer-events: none;
+}
+
 /* Icons */
 .collapsed-alert-chip .chip-icon {
   width: 13px;

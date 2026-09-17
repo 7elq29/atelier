@@ -9,10 +9,12 @@ interface CollapsedAlertChipProps {
   session: SessionRecord
   /** 'blocked' = needs approval (permission/question/plan), 'ready' = agent done, waiting for next message */
   kind: 'blocked' | 'ready'
+  /** 1-based shortcut index — replaces the dot/icon when present */
+  shortcutNumber?: number
   onClick: () => void
 }
 
-export default function CollapsedAlertChip({ session, kind, onClick }: CollapsedAlertChipProps): JSX.Element {
+export default function CollapsedAlertChip({ session, kind, shortcutNumber, onClick }: CollapsedAlertChipProps): JSX.Element {
   const label = session.name || session.projectPath.split('/').filter(Boolean).pop() || 'Session'
   const statusLabel = kind === 'blocked' ? 'Needs approval' : 'Agent ready'
 
@@ -26,8 +28,9 @@ export default function CollapsedAlertChip({ session, kind, onClick }: Collapsed
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       data-testid={`collapsed-alert-chip-${session.id}`}
     >
-      {kind === 'blocked' ? (
-        /* Alert circle icon */
+      {shortcutNumber != null ? (
+        <span className="chip-shortcut-label">⌘{shortcutNumber}</span>
+      ) : kind === 'blocked' ? (
         <svg className="chip-icon" viewBox="0 0 16 16" fill="none"
           stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
           <circle cx="8" cy="8" r="6.2"/>
@@ -35,7 +38,6 @@ export default function CollapsedAlertChip({ session, kind, onClick }: Collapsed
           <circle cx="8" cy="10.5" r="0.5" fill="currentColor" stroke="none"/>
         </svg>
       ) : (
-        /* Waiting dot */
         <span className="chip-dot" />
       )}
 
@@ -46,7 +48,7 @@ export default function CollapsedAlertChip({ session, kind, onClick }: Collapsed
           <span className="chip-tooltip-dot" />
           {statusLabel}
         </div>
-        <div className="chip-tooltip-hint">Click to open</div>
+        <div className="chip-tooltip-hint">{shortcutNumber != null ? `⌘${shortcutNumber} to switch` : 'Click to open'}</div>
       </div>
     </div>
   )
