@@ -1121,6 +1121,29 @@
       "id": "runtime-build-config-fallback",
       "paths": ["package.json", "electron.vite.config.*", "electron-builder.yml"],
       "targets": [{ "file": "e2e/app-shell.spec.ts" }]
+    },
+    {
+      "id": "sidebar-pane-label-icons",
+      "paths": ["src/renderer/src/components/Sidebar.tsx"],
+      "changedLines": "sidebar-pane-label",
+      "targets": [
+        { "file": "e2e/sidebar-refinement.spec.ts" },
+        { "file": "e2e/app-shell.spec.ts", "grep": "sidebar" }
+      ]
+    },
+    {
+      "id": "tool-card-error-class",
+      "paths": ["src/renderer/src/components/chat/ToolCallCard.tsx"],
+      "changedLines": "tool-error",
+      "targets": [
+        { "file": "e2e/secondary-panels.spec.ts", "grep": "tool" }
+      ]
+    },
+    {
+      "id": "daily-notes-section-css",
+      "paths": ["src/renderer/src/components/daily-notes/daily-notes.css"],
+      "changedLines": "dn-section",
+      "targets": [{ "file": "e2e/daily-panel-unified-redesign.spec.ts" }]
     }
   ]
 }

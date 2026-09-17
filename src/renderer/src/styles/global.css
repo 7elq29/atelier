@@ -150,6 +150,7 @@
 }
 .sidebar-action-icon:hover {
   color: var(--text-secondary);
+  background: var(--bg-hover);
 }
 .sidebar-action-icon svg {
   display: block;
@@ -177,7 +178,7 @@
 .sidebar-section-hsep {
   height: 1px;
   flex-shrink: 0;
-  background: var(--border-default);
+  background: transparent;
   margin: 6px 6px 4px;
 }
 .sidebar-list-pane {
@@ -186,11 +187,17 @@
   flex-direction: column;
 }
 .sidebar-pane-label {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-disabled);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+}
+.sidebar-pane-label svg {
+  display: block;
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 .session-list--natural {
   flex: none;
@@ -620,6 +627,7 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   pointer-events: none;
   z-index: 45;
 }
+/* Dark pill — neutral at rest, accent only when actively targeted */
 .keyboard-hint-badge {
   position: fixed;
   pointer-events: none;
@@ -629,23 +637,73 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   line-height: 1;
   letter-spacing: 0.02em;
   padding: 2px 5px;
-  border-radius: var(--r-sm);
-  color: var(--bg-app);
-  background: var(--accent);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  border-radius: 100px;
+  color: var(--text-primary);
+  background: rgba(6, 6, 10, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+  transition: opacity 80ms;
 }
+/* Badge whose prefix matches what the user has typed */
+.keyboard-hint-badge--matched {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+/* All other badges fade to near-invisible while a prefix is active */
+.keyboard-hint-badge--dimmed {
+  opacity: 0.18;
+}
+/* Numbered session/note rows — same pill but muted */
 .keyboard-hint-badge--session {
-  background: var(--sc-blue);
+  background: rgba(6, 6, 10, 0.9);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text-primary);
   min-width: 1.1em;
   padding-inline: 4px;
   text-align: center;
 }
+/* Reserved tab shortcuts (h/d/f/t/p) — accent-tinted to distinguish from navigation hints */
 .keyboard-hint-badge--tab {
-  background: var(--accent);
+  background: rgba(91, 142, 240, 0.15);
+  border-color: rgba(91, 142, 240, 0.4);
+  color: var(--accent);
   min-width: 1.1em;
   padding-inline: 4px;
   text-align: center;
 }
+/* Thin status bar at the bottom: ⌘ held · [buffer] · type a letter */
+.keyboard-hints-status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 26px;
+  z-index: 46;
+  pointer-events: none;
+  background: rgba(6, 6, 10, 0.88);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+}
+.keyboard-hints-sep { opacity: 0.3; }
+.keyboard-hints-buffer {
+  background: rgba(91, 142, 240, 0.14);
+  border: 1px solid rgba(91, 142, 240, 0.26);
+  border-radius: 4px;
+  padding: 1px 7px;
+  color: var(--text-primary);
+  letter-spacing: 0.05em;
+  min-width: 20px;
+  text-align: center;
+}
+.keyboard-hints-buffer--empty { opacity: 0.35; }
 
 /* ===== Modals (command palette / settings / onboarding) ===== */
 .modal-backdrop {
@@ -1101,15 +1159,21 @@ input[type='range'] {
   gap: 6px;
   padding: 6px 8px;
   color: var(--text-tertiary);
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 .group-header .count {
   margin-left: auto;
-  font-weight: 500;
+  font-weight: 400;
+  font-size: 11px;
   color: var(--text-disabled);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.group-header:hover .count {
+  opacity: 1;
 }
 .group-header .sidebar-pane-label {
   flex: 0 1 auto;
@@ -1139,9 +1203,18 @@ input[type='range'] {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 12.5px;
+  font-size: 11.5px;
   color: var(--text-tertiary);
   margin-top: 1px;
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 0.15s, max-height 0.15s;
+}
+.session-row:hover .session-meta,
+.session-row.active .session-meta {
+  opacity: 0.7;
+  max-height: 20px;
 }
 .pin-icon {
   font-size: 12.5px;
@@ -1928,17 +2001,20 @@ input[type='range'] {
 }
 .msg-jump-highlight { animation: msg-jump-flash 1.6s ease-out; border-radius: var(--r-md); }
 
-/* Tool call ("code card"): tinted strip + colored left accent rule, no border box. */
-.tool-card { background: var(--bg-tint); border-left: 3px solid var(--accent); border-radius: 4px var(--r-md) var(--r-md) 4px; max-width: 84%; overflow: hidden; cursor: pointer; }
+/* Tool call card: neutral bordered box, color only for errors. */
+.tool-card { background: var(--bg-tint); border: 1px solid var(--border-default); border-radius: var(--r-md); max-width: 84%; overflow: hidden; cursor: pointer; }
+/* Error: subtle red tint — border + background */
+.tool-card.tool-error { border-color: rgba(210, 70, 70, 0.28); background: rgba(210, 70, 70, 0.04); }
 .tool-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; font-size: var(--text-sm); }
-.tool-badge { font-size: 11.5px; font-weight: 700; flex-shrink: 0; }
-.tool-badge.bash { color: var(--warning); }
-.tool-badge.read { color: var(--sc-teal); }
-.tool-badge.edit { color: var(--accent); }
-.tool-badge.task { color: var(--sc-purple); }
-.tool-badge.grep, .tool-badge.glob { color: var(--sc-cyan); }
-.tool-badge.web { color: var(--sc-blue); }
-.tool-badge.todo { color: var(--sc-amber); }
+/* All tool badge types are monochrome — color adds noise when nothing is wrong */
+.tool-badge { font-size: 11.5px; font-weight: 700; flex-shrink: 0; color: var(--text-secondary); }
+.tool-badge.bash,
+.tool-badge.read,
+.tool-badge.edit,
+.tool-badge.task,
+.tool-badge.grep,
+.tool-badge.web,
+.tool-badge.todo,
 .tool-badge.other { color: var(--text-secondary); }
 .tool-headline { font-family: var(--font-mono); font-size: 13.5px; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-status { font-size: 13.5px; color: var(--text-tertiary); }
@@ -1971,7 +2047,8 @@ input[type='range'] {
 .thinking-inline-text { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.45; }
 .thinking-inline-cursor { display: inline-block; width: 7px; height: 14px; background: var(--text-tertiary); vertical-align: middle; margin-left: 2px; animation: thinking-cursor-blink 1s steps(1) infinite; }
 @keyframes thinking-cursor-blink { 50% { opacity: 0; } }
-.tool-card.thinking-block { border-left-color: var(--border-strong); max-width: 84%; }
+/* Thinking block keeps a left-only border to signal it's a subordinate / internal step */
+.tool-card.thinking-block { border-left: 3px solid var(--border-strong); border-right: none; border-top: none; border-bottom: none; border-radius: 4px var(--r-md) var(--r-md) 4px; max-width: 84%; }
 .tool-card.thinking-block-running .tool-headline { color: var(--text-secondary); }
 .tool-card.thinking-block .tool-body pre,
 .tool-card.thinking-block .tool-body pre.thinking-block-detail {
@@ -1981,7 +2058,7 @@ input[type='range'] {
   font-family: var(--font-ui);
   padding: 4px 12px 12px 18px;
 }
-.tool-status.ok { color: var(--accent); }
+.tool-status.ok { color: var(--text-disabled); }
 .tool-status.interrupted { color: var(--text-secondary); }
 .tool-status.error { color: var(--danger); }
 .tool-chev { font-size: 10.5px; color: var(--text-tertiary); transition: transform .12s; }
@@ -2856,10 +2933,10 @@ input[type='range'] {
   gap: 6px;
   padding: 6px 8px;
   color: var(--text-tertiary);
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
   cursor: pointer;
   user-select: none;
 }
@@ -2872,8 +2949,14 @@ input[type='range'] {
 }
 .group-header .count {
   margin-left: auto;
-  font-weight: 500;
+  font-weight: 400;
+  font-size: 11px;
   color: var(--text-disabled);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.group-header:hover .count {
+  opacity: 1;
 }
 .group-header .sidebar-pane-label {
   flex: 0 1 auto;
@@ -4451,7 +4534,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   padding: 8px 14px 0;
 }
 
-.tool-card.tool-denied { border-left-color: var(--danger); opacity: 0.95; }
+.tool-card.tool-denied { border-color: rgba(210, 70, 70, 0.28); background: rgba(210, 70, 70, 0.04); opacity: 0.95; }
 .tool-status.denied { color: var(--danger); }
 
 .local-cmd-output {

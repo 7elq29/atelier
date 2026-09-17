@@ -151,7 +151,7 @@ export default function ToolCallCard({
 
   return (
     <div
-      className={`tool-card${open ? ' open' : ''}${content.status === 'denied' ? ' tool-denied' : ''}`}
+      className={`tool-card${open ? ' open' : ''}${content.status === 'error' ? ' tool-error' : ''}${content.status === 'denied' ? ' tool-denied' : ''}`}
       data-testid="tool-card"
       data-tool-name={content.name}
       data-tool-status={content.status}

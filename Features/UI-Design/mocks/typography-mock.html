@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Typography scale — current vs proposed</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:           #111113;
+  --bg-panel:     #18181c;
+  --bg-raised:    #20202a;
+  --border:       rgba(255,255,255,.07);
+  --border-mid:   rgba(255,255,255,.12);
+  --text-primary: #e4e4ee;
+  --text-secondary:#9898b4;
+  --text-tertiary: #60607a;
+  --accent:       #5b8ef0;
+  --success:      #4caf79;
+  --font-ui:      -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:    'SF Mono', 'Fira Code', monospace;
+}
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  padding: 48px;
+  display: flex;
+  gap: 60px;
+  align-items: flex-start;
+}
+h2 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 28px;
+}
+.panel {
+  width: 380px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.panel-head {
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── CURRENT typography sample ── */
+.current .panel-head-title   { font-size: 15px; font-weight: 600; }
+.current .panel-head-sub     { font-size: 12px; color: var(--text-tertiary); margin-top: 3px; letter-spacing: .04em; text-transform: uppercase; }
+.current .section-label      { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-tertiary); padding: 14px 18px 6px; }
+.current .item               { display: flex; align-items: baseline; gap: 8px; padding: 7px 18px; font-size: 13.5px; }
+.current .item-sub           { font-size: 12px; color: var(--text-tertiary); }
+.current .item-badge         { font-size: 11.5px; padding: 1px 6px; border-radius: 4px; background: rgba(91,142,240,.15); color: var(--accent); border: 1px solid rgba(91,142,240,.25); }
+.current .item-meta          { font-size: 11px; color: var(--text-tertiary); letter-spacing: .03em; }
+.current .msg-label          { font-size: 11px; font-weight: 600; color: var(--text-tertiary); padding: 10px 18px 4px; text-transform: uppercase; letter-spacing: .06em; }
+.current .msg-body           { font-size: 14px; line-height: 1.6; padding: 0 18px 12px; }
+.current .tool-line          { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-secondary); padding: 4px 18px; background: var(--bg-raised); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+/* ── PROPOSED typography sample ── */
+.proposed .panel-head-title  { font-size: 14px; font-weight: 500; letter-spacing: -.01em; }
+.proposed .panel-head-sub    { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
+.proposed .section-label     { font-size: 10px; font-weight: 500; color: var(--text-tertiary); padding: 14px 18px 6px; }
+.proposed .item              { display: flex; align-items: baseline; gap: 8px; padding: 7px 18px; font-size: 13.5px; font-weight: 400; }
+.proposed .item-sub          { font-size: 12px; color: var(--text-tertiary); }
+.proposed .item-badge        { font-size: 11px; padding: 1px 5px; border-radius: 3px; background: rgba(91,142,240,.12); color: var(--accent); }
+.proposed .item-meta         { font-size: 11px; color: var(--text-tertiary); }
+.proposed .msg-label         { font-size: 10.5px; color: var(--text-tertiary); padding: 10px 18px 4px; }
+.proposed .msg-body          { font-size: 14px; line-height: 1.65; padding: 0 18px 12px; font-weight: 400; }
+.proposed .tool-line         { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); padding: 5px 18px; background: var(--bg-raised); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+/* Dividers */
+.divider { height: 1px; background: var(--border); }
+
+/* Annotations */
+.anno-col { width: 260px; }
+.anno { margin-bottom: 20px; }
+.anno-title { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; letter-spacing: .04em; }
+.anno-body { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.55; }
+.delta { display: inline-block; font-family: var(--font-mono); font-size: 11px; background: var(--bg-raised); padding: 1px 5px; border-radius: 3px; color: var(--success); margin-top: 3px; }
+</style>
+</head>
+<body>
+
+<!-- CURRENT -->
+<div>
+  <h2>Current</h2>
+  <div class="panel current">
+    <div class="panel-head">
+      <div class="panel-head-title">2026-09-17</div>
+      <div class="panel-head-sub">0/3 tasks done</div>
+    </div>
+    <div class="section-label">Sessions</div>
+    <div class="item">
+      App install
+      <span class="item-badge">active</span>
+      <span class="item-meta">gardenia</span>
+    </div>
+    <div class="item">
+      Command platte
+      <span class="item-sub">gardenia</span>
+    </div>
+    <div class="divider"></div>
+    <div class="section-label">Notes</div>
+    <div class="item">Daily note</div>
+    <div class="item">Weekly plan</div>
+    <div class="divider"></div>
+    <div class="msg-label">Assistant</div>
+    <div class="msg-body">Found the type error — <code style="font-family:var(--font-mono);font-size:12.5px">DUR_STEPS_MIN[idx]</code> can be undefined. Adding a non-null assertion.</div>
+    <div class="tool-line">▶ bash — npm run build · ✓ done</div>
+  </div>
+
+  <div style="margin-top:20px;font-size:12px;color:var(--text-tertiary);line-height:1.7">
+    <div>Issues:</div>
+    <div>• 6 different font sizes (10.5, 11, 12, 12.5, 13.5, 14, 15px)</div>
+    <div>• 4 different weights (400, 500, 600, bold)</div>
+    <div>• Mix of uppercase+lowercase+tracking styles</div>
+    <div>• Hierarchy created by size, weight, AND color simultaneously</div>
+  </div>
+</div>
+
+<!-- PROPOSED -->
+<div>
+  <h2>Proposed — two sizes, one weight axis</h2>
+  <div class="panel proposed">
+    <div class="panel-head">
+      <div class="panel-head-title">2026-09-17</div>
+      <div class="panel-head-sub">0/3 tasks done</div>
+    </div>
+    <div class="section-label">Sessions</div>
+    <div class="item">
+      App install
+      <span class="item-badge">active</span>
+      <span class="item-meta">gardenia</span>
+    </div>
+    <div class="item">
+      Command platte
+      <span class="item-sub">gardenia</span>
+    </div>
+    <div class="divider"></div>
+    <div class="section-label">Notes</div>
+    <div class="item">Daily note</div>
+    <div class="item">Weekly plan</div>
+    <div class="divider"></div>
+    <div class="msg-label">Assistant</div>
+    <div class="msg-body">Found the type error — <code style="font-family:var(--font-mono);font-size:12px">DUR_STEPS_MIN[idx]</code> can be undefined. Adding a non-null assertion.</div>
+    <div class="tool-line">▶ bash — npm run build · ✓ done</div>
+  </div>
+
+  <div style="margin-top:20px;font-size:12px;color:var(--text-tertiary);line-height:1.7">
+    <div>Changes:</div>
+    <div>• Two sizes: 14px body, 10–12px meta — not 7</div>
+    <div>• Section labels: title-case, no uppercase, no tracking</div>
+    <div>• Weight only varies: 500 headers → 400 content</div>
+    <div>• Color alone distinguishes primary/secondary/tertiary</div>
+  </div>
+</div>
+
+<!-- Annotations -->
+<div class="anno-col">
+  <h2>Scale</h2>
+
+  <div class="anno">
+    <div class="anno-title">Body text</div>
+    <div class="anno-body">14px / weight 400 — all readable content: messages, notes, session names.</div>
+    <div class="delta">unchanged</div>
+  </div>
+
+  <div class="anno">
+    <div class="anno-title">Meta / labels</div>
+    <div class="anno-body">11–12px / weight 400–500 — workspace paths, timestamps, section heads, badges. Currently spans 10.5 → 13.5px with 4 weights.</div>
+    <div class="delta">simplified</div>
+  </div>
+
+  <div class="anno">
+    <div class="anno-title">Section heads</div>
+    <div class="anno-body">Remove uppercase + wide tracking. Title-case + 10px + tertiary color is enough to separate sections without competing with content.</div>
+    <div class="delta">Sessions not SESSIONS</div>
+  </div>
+
+  <div class="anno">
+    <div class="anno-title">Hierarchy rule</div>
+    <div class="anno-body">Use ONE dimension at a time: either size OR weight OR color — not all three. Current design layers all three, producing visual noise.</div>
+    <div class="delta">fewer dimensions</div>
+  </div>
+
+  <div class="anno">
+    <div class="anno-title">Monospace stays</div>
+    <div class="anno-body">Tool output, code, paths, times — always monospace. Clear boundary between prose and technical content.</div>
+    <div class="delta">unchanged</div>
+  </div>
+</div>
+
+</body>
+</html>

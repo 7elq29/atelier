@@ -21,11 +21,14 @@ import {
 /** Hold ⌘ this long before badges appear — quick ⌘K / other chords stay unaffected. */
 const HINT_HOLD_DELAY_MS = 200
 
+type BadgeState = 'normal' | 'matched' | 'dimmed'
+
 type BadgeLayout = {
   label: string
   top: number
   left: number
   kind: 'hint' | 'tab'
+  state: BadgeState
 }
 
 type Props = {
@@ -75,20 +78,28 @@ export default function KeyboardHintsOverlay({
   }, [clearActivationTimer])
 
   const refreshBadges = useCallback(() => {
-    const filtered = matchHintEntries(entriesRef.current, bufferRef.current)
-    const next: BadgeLayout[] = filtered.map(({ element, label }) => {
-      const displayLabel = hintBadgeDisplayLabel(label, bufferRef.current)
+    const buf = bufferRef.current
+    const next: BadgeLayout[] = []
+
+    // Show ALL entries — matched ones get accent fill, others dim.
+    // When no buffer is typed every badge is neutral ('normal').
+    for (const { element, label } of entriesRef.current) {
+      const isMatch = buf.length === 0 || label.startsWith(buf)
+      const displayLabel = isMatch ? hintBadgeDisplayLabel(label, buf) : label
+      const state: BadgeState =
+        buf.length === 0 ? 'normal' : isMatch ? 'matched' : 'dimmed'
       const rect = element.getBoundingClientRect()
       const { top, left } = layoutHintBadge(rect, displayLabel)
-      return { label: displayLabel, top, left, kind: 'hint' as const }
-    })
+      next.push({ label: displayLabel, top, left, kind: 'hint' as const, state })
+    }
 
+    // Session tab shortcut badges — always normal (dedicated shortcuts, not navigational)
     const root = document.getElementById(scanRootId)
     if (root) {
       for (const { element, label } of collectSessionTabShortcutBadges(root)) {
         const rect = element.getBoundingClientRect()
         const { top, left } = layoutHintBadge(rect, label)
-        next.push({ label, top, left, kind: 'tab' })
+        next.push({ label, top, left, kind: 'tab', state: 'normal' })
       }
     }
 
@@ -292,32 +303,52 @@ export default function KeyboardHintsOverlay({
   if (!active) return null
 
   return createPortal(
-    <div
-      className="keyboard-hints-layer"
-      data-testid="keyboard-hints-overlay"
-      data-keyboard-hints-root=""
-      aria-hidden="true"
-    >
-      {badges.map((b) => (
-        <span
-          key={`${b.kind}-${b.label}-${b.top}-${b.left}`}
-          className={
-            'keyboard-hint-badge' +
-            (b.kind === 'tab'
+    <>
+      <div
+        className="keyboard-hints-layer"
+        data-testid="keyboard-hints-overlay"
+        data-keyboard-hints-root=""
+        aria-hidden="true"
+      >
+        {badges.map((b) => {
+          const stateClass =
+            b.state === 'matched'
+              ? ' keyboard-hint-badge--matched'
+              : b.state === 'dimmed'
+                ? ' keyboard-hint-badge--dimmed'
+                : ''
+          const kindClass =
+            b.kind === 'tab'
               ? ' keyboard-hint-badge--tab'
               : /^[0-9]+$/.test(b.label)
                 ? ' keyboard-hint-badge--session'
-                : '')
-          }
-          data-testid={
-            b.kind === 'tab' ? `keyboard-hint-tab-badge-${b.label}` : `keyboard-hint-badge-${b.label}`
-          }
-          style={{ top: b.top, left: b.left }}
-        >
-          {b.label}
+                : ''
+          return (
+            <span
+              key={`${b.kind}-${b.label}-${b.top}-${b.left}`}
+              className={`keyboard-hint-badge${stateClass}${kindClass}`}
+              data-testid={
+                b.kind === 'tab'
+                  ? `keyboard-hint-tab-badge-${b.label}`
+                  : `keyboard-hint-badge-${b.label}`
+              }
+              style={{ top: b.top, left: b.left }}
+            >
+              {b.label}
+            </span>
+          )
+        })}
+      </div>
+      <div className="keyboard-hints-status-bar" aria-hidden="true">
+        <span>⌘ held</span>
+        <span className="keyboard-hints-sep">·</span>
+        <span className={`keyboard-hints-buffer${buffer ? '' : ' keyboard-hints-buffer--empty'}`}>
+          {buffer || '_'}
         </span>
-      ))}
-    </div>,
+        <span className="keyboard-hints-sep">·</span>
+        <span>{buffer ? 'continue…' : 'type a letter'}</span>
+      </div>
+    </>,
     document.body
   )
 }
