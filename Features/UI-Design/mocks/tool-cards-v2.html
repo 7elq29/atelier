@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tool Cards v2 — minimal color, structured output</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:          #111113;
+  --bg-panel:    #17171b;
+  --bg-raised:   #1e1e24;
+  --bg-err:      rgba(224,92,92,.06);
+  --border:      rgba(255,255,255,.07);
+  --border-err:  rgba(224,92,92,.25);
+  --text-1:      #e0e0ec;
+  --text-2:      #8888a4;
+  --text-3:      #55556a;
+  --danger:      #d96060;
+  --success:     #4aaa74;
+  --font-ui:     -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:   'SF Mono', 'Fira Code', ui-monospace, monospace;
+}
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.5;
+  padding: 40px;
+  display: flex;
+  gap: 50px;
+  align-items: flex-start;
+}
+.col-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 20px;
+}
+.thread { width: 540px; display: flex; flex-direction: column; gap: 3px; }
+
+/* ── User message ── */
+.user {
+  align-self: flex-end;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 3px 12px;
+  padding: 9px 13px;
+  font-size: 13.5px;
+  max-width: 78%;
+  margin-bottom: 8px;
+}
+
+/* ── Tool card ── */
+.card {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--bg-panel);
+  transition: border-color 80ms;
+}
+.card.err { border-color: var(--border-err); background: var(--bg-err); }
+.card.open .card-head { border-bottom: 1px solid var(--border); }
+.card.err.open .card-head { border-bottom-color: var(--border-err); }
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.card-head:hover { background: rgba(255,255,255,.025); }
+.card.err .card-head:hover { background: rgba(224,92,92,.04); }
+
+.chev {
+  color: var(--text-3);
+  font-size: 9px;
+  transition: transform 140ms;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.card.open .chev { transform: rotate(90deg); }
+
+/* Running spinner */
+.spinner {
+  width: 10px; height: 10px;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--text-2);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.tool-name {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.card.err .tool-name { color: var(--danger); }
+
+.tool-arg {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+.card.err .tool-arg { color: rgba(217,96,96,.7); }
+
+/* Body */
+.card-body {
+  display: none;
+  padding: 9px 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+  overflow-x: auto;
+}
+.card.open .card-body { display: block; }
+
+/* Structured output tokens */
+.out-ok  { color: var(--success); }
+.out-err { color: var(--danger); }
+.out-dim { color: var(--text-3); }
+.out-path { color: var(--text-2); text-decoration: underline; text-decoration-style: dotted; }
+.out-num { color: var(--text-2); }
+
+/* Test summary row */
+.out-summary {
+  display: inline-flex;
+  gap: 12px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.sum-pass { color: var(--success); }
+.sum-skip { color: var(--text-3); }
+.sum-time { color: var(--text-3); }
+
+/* File read body */
+.file-head {
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+.file-lines { display: flex; flex-direction: column; }
+.file-line {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 10px;
+}
+.line-no { color: var(--text-3); text-align: right; }
+.line-hl { background: rgba(224,92,92,.1); border-radius: 2px; }
+
+/* Prose */
+.prose {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-1);
+  padding: 6px 0 2px;
+}
+code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: var(--bg-raised);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--text-1);
+}
+
+/* ── Annotations ── */
+.notes { width: 250px; }
+.note { margin-bottom: 18px; }
+.note-title { font-size: 11.5px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
+.note-body { font-size: 12px; color: var(--text-3); line-height: 1.55; }
+</style>
+</head>
+<body>
+
+<div>
+  <div class="col-label">Tool cards v2 — click cards to expand</div>
+  <div class="thread">
+
+    <div class="user">Run the tests and fix any failures</div>
+
+    <!-- 1: bash — test run, collapsed, no noise -->
+    <div class="card open" onclick="this.classList.toggle('open')">
+      <div class="card-head">
+        <span class="chev">▶</span>
+        <span class="tool-name">bash</span>
+        <span class="tool-arg">npm run test:e2e:affected --base main</span>
+      </div>
+      <div class="card-body">
+<span class="out-dim">  daily-panel-unified-redesign   </span><span class="out-ok">pass</span><span class="out-dim">  4.1s</span>
+<span class="out-dim">  secondary-panels               </span><span class="out-ok">pass</span><span class="out-dim">  2.3s</span>
+<span class="out-dim">  daily-big-three-edit           </span><span class="out-ok">pass</span><span class="out-dim">  1.8s</span>
+<span class="out-dim">  obsidian-integration           </span><span class="out-ok">pass</span><span class="out-dim">  3.2s</span>
+<div class="out-summary">
+  <span class="sum-pass">7 passed</span>
+  <span class="sum-time">18.4s</span>
+</div>
+      </div>
+    </div>
+
+    <!-- 2: bash — running, spinner instead of dot -->
+    <div class="card">
+      <div class="card-head">
+        <span class="chev" style="opacity:.3">▶</span>
+        <span class="tool-name">bash</span>
+        <span class="tool-arg">npm run build</span>
+        <div class="spinner" style="margin-left:auto"></div>
+      </div>
+    </div>
+
+    <!-- 3: bash — error, auto-expanded -->
+    <div class="card err open" onclick="this.classList.toggle('open')">
+      <div class="card-head">
+        <span class="chev">▶</span>
+        <span class="tool-name">bash</span>
+        <span class="tool-arg">git commit -m "fix daily panel"</span>
+      </div>
+      <div class="card-body">
+<span class="out-err">pre-commit hook failed (exit 1)</span>
+
+<span class="out-dim">src/renderer/src/components/daily-notes/</span><span class="out-path">AgendaTimeline.tsx</span><span class="out-dim">:142:7</span>
+  <span class="out-err">Type 'number | undefined' is not assignable to 'number'</span>
+
+<span class="out-dim">src/renderer/src/components/daily-notes/</span><span class="out-path">AgendaTimeline.tsx</span><span class="out-dim">:158:3</span>
+  <span class="out-err">Argument of type 'string | undefined' not assignable</span>
+      </div>
+    </div>
+
+    <!-- 4: read — structured with line numbers -->
+    <div class="card open" onclick="this.classList.toggle('open')">
+      <div class="card-head">
+        <span class="chev">▶</span>
+        <span class="tool-name">read</span>
+        <span class="tool-arg">AgendaTimeline.tsx · 138–148</span>
+      </div>
+      <div class="card-body">
+        <div class="file-head">AgendaTimeline.tsx</div>
+        <div class="file-lines">
+          <div class="file-line"><span class="line-no out-dim">138</span><span>const durMin = pendingDrop</span></div>
+          <div class="file-line"><span class="line-no out-dim">139</span><span>  ? DUR_STEPS_MIN[pendingDrop.durIdx]</span></div>
+          <div class="file-line"><span class="line-no out-dim">140</span><span>  : 30</span></div>
+          <div class="file-line line-hl"><span class="line-no out-dim">141</span><span>const timeBlock = `${minutesToTime(durMin)}`</span></div>
+          <div class="file-line line-hl"><span class="line-no out-dim">142</span><span>onDropExisting(id, timeBlock)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5: edit — diff-style -->
+    <div class="card" onclick="this.classList.toggle('open')">
+      <div class="card-head">
+        <span class="chev">▶</span>
+        <span class="tool-name">edit</span>
+        <span class="tool-arg">AgendaTimeline.tsx · line 141</span>
+      </div>
+      <div class="card-body">
+<span class="out-dim">  139  ? DUR_STEPS_MIN[pendingDrop.durIdx]</span>
+<span class="out-dim">  140  : 30</span>
+<span class="out-err">- 141  const timeBlock = `${minutesToTime(durMin)}`</span>
+<span class="out-ok">+ 141  const timeBlock = `${minutesToTime(durMin!)}`</span>
+      </div>
+    </div>
+
+    <div class="prose">
+      Fixed — added <code>!</code> non-null assertion on line 141 and 158.
+      Both errors were the same root cause: <code>DUR_STEPS_MIN[idx]</code> typed
+      as <code>number | undefined</code> because the array is <code>number[]</code>,
+      not <code>readonly [number, ...]</code>.
+    </div>
+
+  </div>
+</div>
+
+<!-- annotations -->
+<div class="notes">
+  <div class="col-label">What changed</div>
+
+  <div class="note">
+    <div class="note-title">No color unless needed</div>
+    <div class="note-body">Success cards are fully monochrome. Only errors get a color signal — a subtle red border tint and red text. Running shows a spinner instead of a colored dot.</div>
+  </div>
+
+  <div class="note">
+    <div class="note-title">Spinner over dot</div>
+    <div class="note-body">A spinning border communicates "in progress" without adding a color. Disappears when done — nothing to show for a finished card.</div>
+  </div>
+
+  <div class="note">
+    <div class="note-title">Parsed test output</div>
+    <div class="note-body">Test runner output is parsed into aligned columns: spec name, pass/fail, duration. No raw terminal dump.</div>
+  </div>
+
+  <div class="note">
+    <div class="note-title">Parsed TypeScript errors</div>
+    <div class="note-body">File path + line on one row, error message indented below. Paths are styled differently from messages for quick scanning.</div>
+  </div>
+
+  <div class="note">
+    <div class="note-title">Read = line numbers</div>
+    <div class="note-body">File reads show line numbers in a grid layout. Relevant lines highlighted with a faint red tint when they contain the error.</div>
+  </div>
+
+  <div class="note">
+    <div class="note-title">Edit = diff view</div>
+    <div class="note-body">Edits show the removed/added lines with — and + prefixes. Context lines muted. No need to open the file to understand what changed.</div>
+  </div>
+</div>
+
+<script>
+// Auto-open the error card
+document.querySelectorAll('.card.err').forEach(c => c.classList.add('open'));
+</script>
+</body>
+</html>

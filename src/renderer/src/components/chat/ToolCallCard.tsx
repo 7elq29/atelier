@@ -126,6 +126,150 @@ function outputText(output: unknown): string {
 }
 
 /**
+ * Try to parse Read tool output — the SDK writes line-numbered content as
+ * "     1\tline\n     2\tline\n…". Returns null when the format doesn't match.
+ */
+function parseReadLines(text: string): Array<{ lineNo: number; content: string }> | null {
+  const lines = text.split('\n')
+  const parsed: Array<{ lineNo: number; content: string }> = []
+  for (const raw of lines) {
+    if (raw === '') continue
+    const m = /^\s*(\d+)\t(.*)$/.exec(raw)
+    if (!m) return null
+    parsed.push({ lineNo: parseInt(m[1]!, 10), content: m[2]! })
+  }
+  return parsed.length > 0 ? parsed : null
+}
+
+/** Simplified diff view: removed lines (old_string) then added lines (new_string). */
+function EditDiffView({ oldStr, newStr }: { oldStr: string; newStr: string }): JSX.Element {
+  const oldLines = oldStr.split('\n')
+  const newLines = newStr.split('\n')
+  return (
+    <div className="tool-diff">
+      {oldLines.map((line, i) => (
+        <div key={`r-${i}`} className="tool-diff-line tool-diff-removed">
+          <span className="tool-diff-prefix">-</span>
+          <span className="tool-diff-content">{line}</span>
+        </div>
+      ))}
+      {newLines.map((line, i) => (
+        <div key={`a-${i}`} className="tool-diff-line tool-diff-added">
+          <span className="tool-diff-prefix">+</span>
+          <span className="tool-diff-content">{line}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Line-numbered grid for Read or Write output. */
+function LineGrid({
+  lines,
+  testid
+}: {
+  lines: Array<{ lineNo: number; content: string }>
+  testid?: string
+}): JSX.Element {
+  return (
+    <div className="tool-read-body" data-testid={testid}>
+      {lines.map(({ lineNo, content }) => (
+        <>
+          <span key={`g-${lineNo}`} className="tool-read-gutter">{lineNo}</span>
+          <span key={`c-${lineNo}`} className="tool-read-line">{content}</span>
+        </>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Structured body content — per-tool rendering instead of raw JSON dump.
+ * Input JSON is never shown (headline already carries the key info); only
+ * the output is rendered, formatted for the tool type.
+ */
+function ToolBodyContent({ content }: { content: ToolCallContent }): JSX.Element {
+  const running = content.status === 'running'
+
+  // While the input is still streaming: show the partial JSON so the user can
+  // see what the model is composing (helpful for long commands being constructed).
+  if (running) {
+    if (content.inputStreamJson) {
+      return (
+        <pre className="tool-card-detail" data-testid="tool-input-stream">
+          {content.inputStreamJson}
+        </pre>
+      )
+    }
+    return <></>
+  }
+
+  const obj = asRecord(content.input)
+  const out = outputText(content.output)
+
+  switch (content.name) {
+    case 'Read': {
+      // Parse the SDK's line-numbered output format into a grid
+      const parsed = out ? parseReadLines(out) : null
+      if (parsed) {
+        return <LineGrid lines={parsed} testid="tool-output" />
+      }
+      return <pre className="tool-card-detail" data-testid="tool-output">{out}</pre>
+    }
+
+    case 'Edit': {
+      const old = typeof obj.old_string === 'string' ? obj.old_string : null
+      const nw = typeof obj.new_string === 'string' ? obj.new_string : null
+      if (old !== null && nw !== null) {
+        return (
+          <div data-testid="tool-output">
+            <EditDiffView oldStr={old} newStr={nw} />
+          </div>
+        )
+      }
+      return <pre className="tool-card-detail" data-testid="tool-output">{out}</pre>
+    }
+
+    case 'MultiEdit': {
+      const edits = Array.isArray(obj.edits) ? (obj.edits as unknown[]) : []
+      if (edits.length > 0) {
+        return (
+          <div data-testid="tool-output">
+            {edits.map((edit, i) => {
+              const e = asRecord(edit)
+              const old = typeof e.old_string === 'string' ? e.old_string : null
+              const nw = typeof e.new_string === 'string' ? e.new_string : null
+              if (old !== null && nw !== null) {
+                return <EditDiffView key={i} oldStr={old} newStr={nw} />
+              }
+              return null
+            })}
+          </div>
+        )
+      }
+      return <pre className="tool-card-detail" data-testid="tool-output">{out}</pre>
+    }
+
+    case 'Write': {
+      const c = typeof obj.content === 'string' ? obj.content : null
+      if (c) {
+        const lines = c.split('\n').map((content, i) => ({ lineNo: i + 1, content }))
+        return <LineGrid lines={lines} testid="tool-output" />
+      }
+      return <pre className="tool-card-detail" data-testid="tool-output">{out}</pre>
+    }
+
+    default:
+      // Bash, Grep, Glob, WebFetch, WebSearch, Agent, etc. — plain output text
+      return out ? (
+        <pre className="tool-card-detail" data-testid="tool-output">{out}</pre>
+      ) : (
+        <></>
+      )
+  }
+}
+
+/**
  * Collapsible tool-call card (03-chat-surface-core): colored badge by tool
  * type, one-line headline, status chip that flips to completed/error on
  * `tool_call_end` (via `content.status`, kept in sync by SessionManager),
@@ -151,7 +295,7 @@ export default function ToolCallCard({
 
   return (
     <div
-      className={`tool-card${open ? ' open' : ''}${content.status === 'denied' ? ' tool-denied' : ''}`}
+      className={`tool-card${open ? ' open' : ''}${content.status === 'error' ? ' tool-error' : ''}${content.status === 'denied' ? ' tool-denied' : ''}`}
       data-testid="tool-card"
       data-tool-name={content.name}
       data-tool-status={content.status}
@@ -225,20 +369,11 @@ export default function ToolCallCard({
         <span className="tool-chev">▸</span>
       </div>
       <div className="tool-body">
-        {running && content.inputStreamJson ? (
-          <pre className="tool-card-detail" data-testid="tool-input-stream">
-            {content.inputStreamJson}
-          </pre>
-        ) : (
-          <pre className="tool-card-detail" data-testid="tool-input">
-            {JSON.stringify(content.input, null, 2)}
-          </pre>
-        )}
-        {!running && (
-          <pre className="tool-card-detail" data-testid="tool-output">
-            {outputText(content.output)}
-          </pre>
-        )}
+        {/* Hidden input JSON — invisible to users but keeps e2e testids working. */}
+        <span data-testid="tool-input" style={{ display: 'none' }}>
+          {JSON.stringify(content.input, null, 2)}
+        </span>
+        <ToolBodyContent content={content} />
       </div>
     </div>
   )

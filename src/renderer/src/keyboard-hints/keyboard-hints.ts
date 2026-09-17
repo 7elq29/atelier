@@ -222,8 +222,8 @@ export function findCompletedHintMatch(entries: HintEntry[], buffer: string): Hi
 
 const HINT_BADGE_VIEWPORT_MARGIN = 4
 const HINT_BADGE_GAP = 2
-/** Matches `.keyboard-hint-badge` (11px mono, padding 2×5, line-height 1). */
-const HINT_BADGE_HEIGHT = 15
+/** Matches `.keyboard-hint-badge` (11.5px mono, padding 3×7, line-height 1, 1px border top+bottom). */
+const HINT_BADGE_HEIGHT = 19
 
 /** Approximate rendered width for viewport clamping (`.keyboard-hint-badge`). */
 export function estimateHintBadgeWidth(label: string): number {

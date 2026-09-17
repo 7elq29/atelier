@@ -150,6 +150,7 @@
 }
 .sidebar-action-icon:hover {
   color: var(--text-secondary);
+  background: var(--bg-hover);
 }
 .sidebar-action-icon svg {
   display: block;
@@ -177,7 +178,7 @@
 .sidebar-section-hsep {
   height: 1px;
   flex-shrink: 0;
-  background: var(--border-default);
+  background: transparent;
   margin: 6px 6px 4px;
 }
 .sidebar-list-pane {
@@ -186,11 +187,17 @@
   flex-direction: column;
 }
 .sidebar-pane-label {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-disabled);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+}
+.sidebar-pane-label svg {
+  display: block;
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 .session-list--natural {
   flex: none;
@@ -620,32 +627,85 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   pointer-events: none;
   z-index: 45;
 }
+/* Pill badge — high-contrast neutral at rest, accent only when targeted */
 .keyboard-hint-badge {
   position: fixed;
   pointer-events: none;
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 700;
   line-height: 1;
-  letter-spacing: 0.02em;
-  padding: 2px 5px;
-  border-radius: var(--r-sm);
-  color: var(--bg-app);
-  background: var(--accent);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  letter-spacing: 0.03em;
+  padding: 3px 7px;
+  border-radius: 100px;
+  color: #e8e8f0;
+  background: rgba(36, 36, 52, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.7), 0 0 0 0.5px rgba(0,0,0,0.5);
+  transition: opacity 100ms, background 80ms, border-color 80ms, color 80ms;
 }
+/* Badge whose prefix matches what the user has typed —
+   keep the dark pill shape, accent border + tint signals "reachable" */
+.keyboard-hint-badge--matched {
+  background: rgba(91, 142, 240, 0.18);
+  border-color: rgba(91, 142, 240, 0.7);
+  color: #cddeff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(91, 142, 240, 0.2);
+}
+/* Non-matching badges step back but stay readable */
+.keyboard-hint-badge--dimmed {
+  opacity: 0.3;
+}
+/* Numbered session/note rows */
 .keyboard-hint-badge--session {
-  background: var(--sc-blue);
-  min-width: 1.1em;
-  padding-inline: 4px;
+  background: rgba(36, 36, 52, 0.96);
+  border-color: rgba(255, 255, 255, 0.38);
+  color: #e8e8f0;
+  min-width: 1.4em;
+  padding-inline: 5px;
   text-align: center;
 }
+/* Reserved tab shortcuts (h/d/f/t/p) */
 .keyboard-hint-badge--tab {
-  background: var(--accent);
-  min-width: 1.1em;
-  padding-inline: 4px;
+  background: rgba(91, 142, 240, 0.2);
+  border-color: rgba(91, 142, 240, 0.55);
+  color: #a8c4f8;
+  min-width: 1.4em;
+  padding-inline: 5px;
   text-align: center;
 }
+/* Thin status bar at the bottom: ⌘ held · [buffer] · type a letter */
+.keyboard-hints-status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 26px;
+  z-index: 46;
+  pointer-events: none;
+  background: rgba(6, 6, 10, 0.88);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+}
+.keyboard-hints-sep { opacity: 0.3; }
+.keyboard-hints-buffer {
+  background: rgba(91, 142, 240, 0.14);
+  border: 1px solid rgba(91, 142, 240, 0.26);
+  border-radius: 4px;
+  padding: 1px 7px;
+  color: var(--text-primary);
+  letter-spacing: 0.05em;
+  min-width: 20px;
+  text-align: center;
+}
+.keyboard-hints-buffer--empty { opacity: 0.35; }
 
 /* ===== Modals (command palette / settings / onboarding) ===== */
 .modal-backdrop {
@@ -1313,15 +1373,21 @@ input[type='range'] {
   gap: 6px;
   padding: 6px 8px;
   color: var(--text-tertiary);
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 .group-header .count {
   margin-left: auto;
-  font-weight: 500;
+  font-weight: 400;
+  font-size: 11px;
   color: var(--text-disabled);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.group-header:hover .count {
+  opacity: 1;
 }
 .group-header .sidebar-pane-label {
   flex: 0 1 auto;
@@ -1351,9 +1417,18 @@ input[type='range'] {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 12.5px;
+  font-size: 11.5px;
   color: var(--text-tertiary);
   margin-top: 1px;
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 0.15s, max-height 0.15s;
+}
+.session-row:hover .session-meta,
+.session-row.active .session-meta {
+  opacity: 0.7;
+  max-height: 20px;
 }
 .pin-icon {
   font-size: 12.5px;
@@ -2140,17 +2215,20 @@ input[type='range'] {
 }
 .msg-jump-highlight { animation: msg-jump-flash 1.6s ease-out; border-radius: var(--r-md); }
 
-/* Tool call ("code card"): tinted strip + colored left accent rule, no border box. */
-.tool-card { background: var(--bg-tint); border-left: 3px solid var(--accent); border-radius: 4px var(--r-md) var(--r-md) 4px; max-width: 84%; overflow: hidden; cursor: pointer; }
+/* Tool call card: neutral bordered box, color only for errors. */
+.tool-card { background: var(--bg-tint); border: 1px solid var(--border-default); border-radius: var(--r-md); max-width: 84%; overflow: hidden; cursor: pointer; }
+/* Error: subtle red tint — border + background */
+.tool-card.tool-error { border-color: rgba(210, 70, 70, 0.28); background: rgba(210, 70, 70, 0.04); }
 .tool-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; font-size: var(--text-sm); }
-.tool-badge { font-size: 11.5px; font-weight: 700; flex-shrink: 0; }
-.tool-badge.bash { color: var(--warning); }
-.tool-badge.read { color: var(--sc-teal); }
-.tool-badge.edit { color: var(--accent); }
-.tool-badge.task { color: var(--sc-purple); }
-.tool-badge.grep, .tool-badge.glob { color: var(--sc-cyan); }
-.tool-badge.web { color: var(--sc-blue); }
-.tool-badge.todo { color: var(--sc-amber); }
+/* All tool badge types are monochrome — color adds noise when nothing is wrong */
+.tool-badge { font-size: 11.5px; font-weight: 700; flex-shrink: 0; color: var(--text-secondary); }
+.tool-badge.bash,
+.tool-badge.read,
+.tool-badge.edit,
+.tool-badge.task,
+.tool-badge.grep,
+.tool-badge.web,
+.tool-badge.todo,
 .tool-badge.other { color: var(--text-secondary); }
 .tool-headline { font-family: var(--font-mono); font-size: 13.5px; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-status { font-size: 13.5px; color: var(--text-tertiary); }
@@ -2183,7 +2261,8 @@ input[type='range'] {
 .thinking-inline-text { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.45; }
 .thinking-inline-cursor { display: inline-block; width: 7px; height: 14px; background: var(--text-tertiary); vertical-align: middle; margin-left: 2px; animation: thinking-cursor-blink 1s steps(1) infinite; }
 @keyframes thinking-cursor-blink { 50% { opacity: 0; } }
-.tool-card.thinking-block { border-left-color: var(--border-strong); max-width: 84%; }
+/* Thinking block keeps a left-only border to signal it's a subordinate / internal step */
+.tool-card.thinking-block { border-left: 3px solid var(--border-strong); border-right: none; border-top: none; border-bottom: none; border-radius: 4px var(--r-md) var(--r-md) 4px; max-width: 84%; }
 .tool-card.thinking-block-running .tool-headline { color: var(--text-secondary); }
 .tool-card.thinking-block .tool-body pre,
 .tool-card.thinking-block .tool-body pre.thinking-block-detail {
@@ -2193,7 +2272,7 @@ input[type='range'] {
   font-family: var(--font-ui);
   padding: 4px 12px 12px 18px;
 }
-.tool-status.ok { color: var(--accent); }
+.tool-status.ok { color: var(--text-disabled); }
 .tool-status.interrupted { color: var(--text-secondary); }
 .tool-status.error { color: var(--danger); }
 .tool-chev { font-size: 10.5px; color: var(--text-tertiary); transition: transform .12s; }
@@ -2214,6 +2293,59 @@ input[type='range'] {
   line-height: 1.45;
 }
 .tool-edit-summary { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); flex-shrink: 0; }
+
+/* ── Structured tool body: Read / Write — line-numbered grid ── */
+.tool-read-body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  padding: 6px 12px 10px;
+  max-height: 220px;
+  overflow: auto;
+}
+.tool-read-gutter {
+  color: var(--text-disabled);
+  text-align: right;
+  padding-right: 12px;
+  user-select: none;
+  min-width: 28px;
+}
+.tool-read-line {
+  color: var(--text-secondary);
+  white-space: pre;
+  overflow-x: visible;
+}
+
+/* ── Structured tool body: Edit / MultiEdit — inline diff ── */
+.tool-diff {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  padding: 6px 12px 10px;
+  max-height: 220px;
+  overflow: auto;
+}
+.tool-diff-line {
+  display: flex;
+  gap: 8px;
+  white-space: pre;
+}
+.tool-diff-prefix {
+  flex-shrink: 0;
+  width: 10px;
+  text-align: center;
+}
+.tool-diff-content { flex: 1; overflow-x: hidden; text-overflow: ellipsis; }
+.tool-diff-removed {
+  color: var(--danger);
+  background: rgba(210, 70, 70, 0.06);
+}
+.tool-diff-added {
+  color: var(--success);
+  background: rgba(74, 170, 116, 0.06);
+}
 
 /* Aggregate row a finished tool-call sequence collapses into
    (14-tool-call-sequence-collapse). Plain expandable text — not a card. */
@@ -3095,10 +3227,10 @@ input[type='range'] {
   gap: 6px;
   padding: 6px 8px;
   color: var(--text-tertiary);
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
   cursor: pointer;
   user-select: none;
 }
@@ -3111,8 +3243,14 @@ input[type='range'] {
 }
 .group-header .count {
   margin-left: auto;
-  font-weight: 500;
+  font-weight: 400;
+  font-size: 11px;
   color: var(--text-disabled);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.group-header:hover .count {
+  opacity: 1;
 }
 .group-header .sidebar-pane-label {
   flex: 0 1 auto;
@@ -4681,7 +4819,7 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   padding: 8px 14px 0;
 }
 
-.tool-card.tool-denied { border-left-color: var(--danger); opacity: 0.95; }
+.tool-card.tool-denied { border-color: rgba(210, 70, 70, 0.28); background: rgba(210, 70, 70, 0.04); opacity: 0.95; }
 .tool-status.denied { color: var(--danger); }
 
 .local-cmd-output {
