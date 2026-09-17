@@ -1200,6 +1200,8 @@
   font-size: 13px;
   padding: 5px 8px;
   outline: none;
+  resize: none;
+  overflow: hidden;
 }
 .dn-create-card-input:focus {
   border-color: var(--accent);
