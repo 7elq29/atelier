@@ -61,6 +61,24 @@
   color: var(--accent);
   font-weight: 700;
 }
+.title-bar-toggle-btn {
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  margin-right: 4px;
+}
+.title-bar-toggle-btn:hover { color: var(--text-secondary); background: var(--bg-tint); }
+.title-bar-toggle-btn .icon { width: 16px; height: 16px; }
 
 /* ===== Sidebar ===== */
 .sidebar-shell {

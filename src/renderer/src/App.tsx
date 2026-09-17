@@ -2224,7 +2224,12 @@ export default function App(): JSX.Element {
 
   return (
     <div className="app-root">
-      {showIntegratedTitleBar ? <TitleBar /> : null}
+      {showIntegratedTitleBar ? (
+        <TitleBar
+          collapsed={config.sidebarCollapsed}
+          onToggleCollapse={() => updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })}
+        />
+      ) : null}
       <div
         id="app"
         className={`app-body${resizing ? ' app-body--resizing-panels' : ''}${
@@ -2239,7 +2244,6 @@ export default function App(): JSX.Element {
         >
           <Sidebar
           collapsed={config.sidebarCollapsed}
-          onToggleCollapse={() => updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })}
           activeSessions={sessions.activeSessions}
           historySessions={sessions.historySessions}
           activeSessionId={activeSessionId}
