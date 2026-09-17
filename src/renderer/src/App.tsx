@@ -51,6 +51,7 @@ import { SessionMessagesHydrator } from './components/session/SessionMessagesHyd
 import { getSessionMessages, hasSessionMessages } from './stores/session-messages-store'
 import { useConfig } from './hooks/useConfig'
 import { defaultClaudeModelFromConfig, defaultClaudeEffortFromConfig, type AtelierConfig } from '../../shared/config'
+import { TOKEN_CSS_VARS, type CustomThemeColors } from '../../shared/theme-types'
 import { useSessions } from './hooks/useSessions'
 import { useSessionWorkspace } from './hooks/useSessionWorkspace'
 import { useSessionBookmarks } from './hooks/useSessionBookmarks'
@@ -214,6 +215,11 @@ export default function App(): JSX.Element {
   const [todayNoteExists, setTodayNoteExists] = useState<boolean | null>(null)
   const calendarDateRef = useRef<string | null>(null)
   const { config, loaded, updateConfig } = useConfig()
+  // Keep a ref to the latest config so IPC callbacks (which close over the
+  // initial value) can always read the current persisted state without being
+  // re-registered on every render.
+  const configRef = useRef(config)
+  useEffect(() => { configRef.current = config }, [config])
   const sessions = useSessions()
   const sessionWorkspace = useSessionWorkspace()
   const sessionBookmarks = useSessionBookmarks()
@@ -505,11 +511,28 @@ export default function App(): JSX.Element {
     })
   }, [])
 
-  // Theme: really flips `data-theme` on <html> — this is the one source of
-  // truth every CSS custom property in tokens.css keys off of.
+  // Theme: sets `data-theme` on <html> — the single source of truth for all
+  // CSS custom properties in tokens.css.  When a custom theme is active we also
+  // write its color tokens as inline properties on documentElement (which take
+  // precedence over the stylesheet values), removing all of them first so
+  // switching themes never leaves stale overrides.
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', resolveEffectiveTheme(config.theme))
-  }, [config.theme])
+    const el = document.documentElement
+    // Always clear previous custom-property overrides first.
+    for (const cssVar of Object.values(TOKEN_CSS_VARS)) {
+      el.style.removeProperty(cssVar)
+    }
+    const activeTheme = (config.customThemes ?? []).find((t) => t.id === config.activeCustomThemeId)
+    if (activeTheme) {
+      el.setAttribute('data-theme', activeTheme.base)
+      for (const [key, cssVar] of Object.entries(TOKEN_CSS_VARS)) {
+        const val = activeTheme.colors[key as keyof typeof activeTheme.colors]
+        if (val) el.style.setProperty(cssVar, val)
+      }
+    } else {
+      el.setAttribute('data-theme', resolveEffectiveTheme(config.theme))
+    }
+  }, [config.theme, config.activeCustomThemeId, config.customThemes])
 
   // Three independent font-size CSS custom properties, each in its own
   // effect keyed on its own config field only — changing one can never touch
@@ -523,6 +546,61 @@ export default function App(): JSX.Element {
   useEffect(() => {
     document.documentElement.style.setProperty('--font-agent-message-size', `${config.fontSizes.agentMessage}px`)
   }, [config.fontSizes.agentMessage])
+
+  // Detached theme-editor window events ─────────────────────────────────────
+  // Live preview: apply colors as the user picks them in the editor window.
+  useEffect(() => {
+    return window.atelier.onThemeEditorPreview((colors: CustomThemeColors, base: 'light' | 'dark') => {
+      const el = document.documentElement
+      el.setAttribute('data-theme', base)
+      for (const [key, cssVar] of Object.entries(TOKEN_CSS_VARS)) {
+        const val = colors[key as keyof CustomThemeColors]
+        if (val) el.style.setProperty(cssVar, val)
+        else el.style.removeProperty(cssVar)
+      }
+    })
+  }, [])
+
+  // Save: persist the new/edited theme and make it active.
+  useEffect(() => {
+    return window.atelier.onThemeEditorSaved((theme) => {
+      const cfg = configRef.current
+      const existing = cfg.customThemes ?? []
+      const next = existing.some((t) => t.id === theme.id)
+        ? existing.map((t) => (t.id === theme.id ? theme : t))
+        : [...existing, theme]
+      void updateConfig({ customThemes: next, activeCustomThemeId: theme.id })
+    })
+  }, [updateConfig])
+
+  // Delete: remove the theme; fall back to the built-in if it was active.
+  useEffect(() => {
+    return window.atelier.onThemeEditorDeleted((id) => {
+      const cfg = configRef.current
+      const next = (cfg.customThemes ?? []).filter((t) => t.id !== id)
+      const wasActive = cfg.activeCustomThemeId === id
+      void updateConfig({ customThemes: next, activeCustomThemeId: wasActive ? null : cfg.activeCustomThemeId })
+    })
+  }, [updateConfig])
+
+  // Cancel: revert inline CSS to the persisted theme without touching config.
+  useEffect(() => {
+    return window.atelier.onThemeEditorCancelled(() => {
+      const cfg = configRef.current
+      const el = document.documentElement
+      for (const cssVar of Object.values(TOKEN_CSS_VARS)) el.style.removeProperty(cssVar)
+      const active = (cfg.customThemes ?? []).find((t) => t.id === cfg.activeCustomThemeId)
+      if (active) {
+        el.setAttribute('data-theme', active.base)
+        for (const [key, cssVar] of Object.entries(TOKEN_CSS_VARS)) {
+          const val = active.colors[key as keyof typeof active.colors]
+          if (val) el.style.setProperty(cssVar, val)
+        }
+      } else {
+        el.setAttribute('data-theme', resolveEffectiveTheme(cfg.theme))
+      }
+    })
+  }, [])
 
   // Keyboard-only trigger for the command palette + a global Escape to close
   // whichever overlay is open. CommandPalette also closes itself on Escape

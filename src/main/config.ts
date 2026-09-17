@@ -26,7 +26,9 @@ function mergeConfig(base: AtelierConfig, partial: Partial<AtelierConfig>): Atel
     terminalToolbox: partial.terminalToolbox
       ? { commands: partial.terminalToolbox.commands ?? base.terminalToolbox.commands }
       : base.terminalToolbox,
-    sessionProfiles: partial.sessionProfiles ?? base.sessionProfiles
+    sessionProfiles: partial.sessionProfiles ?? base.sessionProfiles,
+    customThemes: partial.customThemes ?? base.customThemes,
+    activeCustomThemeId: 'activeCustomThemeId' in partial ? partial.activeCustomThemeId! : base.activeCustomThemeId
   }
 }
 

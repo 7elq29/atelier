@@ -13,6 +13,7 @@ import { worktreeRootFromConfig } from '../../../shared/worktree-path'
 import type { EffortLevel, PermissionModeValue } from '../../../shared/session-types'
 import type { SessionProfile } from '../../../shared/session-profile-types'
 import type { SessionAuthStatusEvent } from '../../../shared/harness-ui-types'
+import type { CustomTheme } from '../../../shared/theme-types'
 import ProfileEditModal from './ProfileEditModal'
 
 interface SettingsPanelProps {
@@ -170,6 +171,19 @@ export default function SettingsPanel({
     setEditingProfile(null)
   }
 
+  function openThemeEdit(theme: CustomTheme | null): void {
+    void window.atelier.openThemeEditor(theme)
+  }
+
+  async function deleteTheme(id: string): Promise<void> {
+    const next = (config.customThemes ?? []).filter((t) => t.id !== id)
+    const wasActive = config.activeCustomThemeId === id
+    await onUpdate({
+      customThemes: next,
+      activeCustomThemeId: wasActive ? null : config.activeCustomThemeId
+    })
+  }
+
   return (
     <div className="modal-backdrop" data-testid="settings-backdrop" onClick={handleBackdropClick}>
       <div className="modal-dialog settings-dialog" data-testid="settings-panel">
@@ -221,6 +235,7 @@ export default function SettingsPanel({
 
           {pane === 'theme' && (
             <div className="settings-pane active" data-testid="settings-pane-theme">
+              {/* Built-in appearance */}
               <div className="setting-row">
                 <div>
                   <div className="stitle">Appearance</div>
@@ -228,27 +243,91 @@ export default function SettingsPanel({
                 </div>
                 <div className="theme-btns">
                   <button
-                    className={'btn btn-sm' + (config.theme === 'light' ? ' sel' : '')}
+                    className={'btn btn-sm' + (config.theme === 'light' && !config.activeCustomThemeId ? ' sel' : '')}
                     data-testid="theme-light-btn"
-                    onClick={() => onUpdate({ theme: 'light' })}
+                    onClick={() => onUpdate({ theme: 'light', activeCustomThemeId: null })}
                   >
                     Light
                   </button>
                   <button
-                    className={'btn btn-sm' + (config.theme === 'dark' ? ' sel' : '')}
+                    className={'btn btn-sm' + (config.theme === 'dark' && !config.activeCustomThemeId ? ' sel' : '')}
                     data-testid="theme-dark-btn"
-                    onClick={() => onUpdate({ theme: 'dark' })}
+                    onClick={() => onUpdate({ theme: 'dark', activeCustomThemeId: null })}
                   >
                     Dark
                   </button>
                   <button
-                    className={'btn btn-sm' + (config.theme === 'system' ? ' sel' : '')}
+                    className={'btn btn-sm' + (config.theme === 'system' && !config.activeCustomThemeId ? ' sel' : '')}
                     data-testid="theme-system-btn"
-                    onClick={() => onUpdate({ theme: 'system' })}
+                    onClick={() => onUpdate({ theme: 'system', activeCustomThemeId: null })}
                   >
                     System
                   </button>
                 </div>
+              </div>
+
+              <div className="pane-sep" />
+
+              {/* Custom theme list */}
+              <div>
+                <div className="pane-section-label">Custom themes</div>
+                <div className="theme-list" data-testid="custom-theme-list">
+                  {(config.customThemes ?? []).length === 0 && (
+                    <div className="theme-empty">No custom themes yet.</div>
+                  )}
+                  {(config.customThemes ?? []).map((t) => {
+                    const isActive = config.activeCustomThemeId === t.id
+                    return (
+                      <div
+                        key={t.id}
+                        className={'theme-row' + (isActive ? ' selected' : '')}
+                        data-testid={`theme-row-${t.id}`}
+                        onClick={() => onUpdate({ activeCustomThemeId: t.id })}
+                      >
+                        <div className="theme-radio">
+                          <div className="theme-radio-dot" />
+                        </div>
+                        <div className="theme-row-info">
+                          <div className="theme-row-name">{t.name}</div>
+                          <div className="theme-base-chip">{t.base}</div>
+                        </div>
+                        <div className="theme-row-actions">
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            data-testid={`theme-edit-btn-${t.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openThemeEdit(t)
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-danger"
+                            data-testid={`theme-delete-btn-${t.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void deleteTheme(t.id)
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  style={{ marginTop: 10 }}
+                  data-testid="theme-add-btn"
+                  onClick={() => openThemeEdit(null)}
+                >
+                  + New theme
+                </button>
               </div>
             </div>
           )}

@@ -825,6 +825,18 @@
       "targets": [{ "file": "e2e/global-nav-and-settings.spec.ts" }]
     },
     {
+      "id": "theme-customization",
+      "paths": [
+        "src/shared/theme-types.ts",
+        "src/renderer/src/components/ThemeEditModal.tsx",
+        "src/renderer/src/components/SettingsPanel.tsx",
+        "src/renderer/src/App.tsx",
+        "src/shared/config.ts",
+        "src/main/config.ts"
+      ],
+      "targets": [{ "file": "e2e/theme-customization.spec.ts" }]
+    },
+    {
       "id": "keyboard-hints",
       "paths": [
         "src/renderer/src/components/KeyboardHintsOverlay.tsx",

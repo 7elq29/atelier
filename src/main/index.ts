@@ -11,6 +11,7 @@ import { closeDatabase, openDatabase } from './db'
 import { getLogFilePath, logger, rendererLogger } from './logger'
 import { migrateLegacyUserDataFromGardeniaProfiles } from './migrations/gardenia-to-atelier'
 import type { AtelierConfig } from '../shared/config'
+import type { CustomTheme, CustomThemeColors } from '../shared/theme-types'
 import { registerDailyNoteHandlers } from './daily-notes-handlers'
 import { registerWeeklyPlanHandlers } from './weekly-notes-handlers'
 import { ClaudeAgentSdkHarness } from './harness'
@@ -35,6 +36,8 @@ const isDev =
   process.env['ELECTRON_RENDERER_URL'] != null ||
   !app.isPackaged
 let mainWindow: BrowserWindow | null = null
+let themeEditorWindow: BrowserWindow | null = null
+let themeEditorInitialTheme: CustomTheme | null = null
 let ptyManager: PtyManager | null = null
 let portManager: PortForwardManager | null = null
 let sessionManager: SessionManager | null = null
@@ -143,6 +146,65 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
   ipcMain.handle('config:set', (_event, partial: Partial<AtelierConfig>) => saveConfig(partial))
 
   ipcMain.handle('config:validateClaudeModel', (_event, model: string) => sessionManager.validateClaudeModel(model))
+
+  // ── Theme editor detached window ─────────────────────────────────────────
+  ipcMain.handle('theme-editor:open', async (_event, theme: CustomTheme | null) => {
+    if (themeEditorWindow && !themeEditorWindow.isDestroyed()) {
+      themeEditorWindow.focus()
+      return
+    }
+    themeEditorInitialTheme = theme
+    const preloadPath = join(__dirname, '../preload/index.js')
+    themeEditorWindow = new BrowserWindow({
+      width: 580,
+      height: 720,
+      title: theme ? 'Edit Theme' : 'New Theme',
+      backgroundColor: '#1c1a16',
+      webPreferences: {
+        preload: preloadPath,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true
+      }
+    })
+    const rendererDevUrl = process.env['ELECTRON_RENDERER_URL']
+    if (isDev && rendererDevUrl) {
+      await themeEditorWindow.loadURL(rendererDevUrl + '#theme-editor')
+    } else {
+      await themeEditorWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: 'theme-editor' })
+    }
+    themeEditorWindow.on('closed', () => {
+      themeEditorWindow = null
+      themeEditorInitialTheme = null
+      // Notify main window that the editor was dismissed (cancel path).
+      mainWindow?.webContents.send('theme-editor:cancelled')
+    })
+  })
+
+  ipcMain.handle('theme-editor:get-initial', () => themeEditorInitialTheme)
+
+  // Editor → main window: live preview relay.
+  ipcMain.on('theme-editor:preview', (_event, colors: CustomThemeColors, base: string) => {
+    mainWindow?.webContents.send('theme-editor:preview', colors, base)
+  })
+
+  // Editor → main window: save result relay.
+  ipcMain.on('theme-editor:save', (_event, theme: CustomTheme) => {
+    mainWindow?.webContents.send('theme-editor:saved', theme)
+    themeEditorWindow?.close()
+  })
+
+  // Editor → main window: cancel relay.
+  ipcMain.on('theme-editor:cancel', () => {
+    mainWindow?.webContents.send('theme-editor:cancelled')
+    themeEditorWindow?.close()
+  })
+
+  // Editor → main window: delete relay.
+  ipcMain.on('theme-editor:delete', (_event, id: string) => {
+    mainWindow?.webContents.send('theme-editor:deleted', id)
+    themeEditorWindow?.close()
+  })
 
   // Debug-only trigger for desktop notifications: there's no real "session
   // needs attention" event yet (that lands with the session/chat surfaces),

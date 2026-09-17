@@ -12,9 +12,10 @@ const NOW_POLL_MS = 30_000
 const MEANINGFUL_GAP_MINUTES = 60
 
 const AGENDA_HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
-const DUR_STEPS_MIN = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240]
-const DUR_MAX_MIN = DUR_STEPS_MIN[DUR_STEPS_MIN.length - 1]
-const DEFAULT_DUR_IDX = 1 // 30 min
+const DUR_STEP_MIN  = 5
+const DUR_MIN_MIN   = 5
+const DUR_MAX_MIN   = 240
+const DEFAULT_DUR_MIN = 30
 
 interface AgendaTimelineProps {
   tasks: DailyTask[]
@@ -34,7 +35,7 @@ interface PendingDrop {
   taskId: string
   taskLabel: string
   hour: number
-  durIdx: number
+  durMin: number
   cardX: number
   cardY: number
 }
@@ -118,10 +119,10 @@ export default function AgendaTimeline({
       setPendingDrop((prev) => {
         if (!prev) return null
         const next = Math.max(
-          0,
-          Math.min(DUR_STEPS_MIN.length - 1, prev.durIdx + (e.deltaY < 0 ? 1 : -1))
+          DUR_MIN_MIN,
+          Math.min(DUR_MAX_MIN, prev.durMin + (e.deltaY < 0 ? DUR_STEP_MIN : -DUR_STEP_MIN))
         )
-        return { ...prev, durIdx: next }
+        return { ...prev, durMin: next }
       })
     }
     window.addEventListener('wheel', onWheel, { passive: false, capture: true })
@@ -186,7 +187,7 @@ export default function AgendaTimeline({
       taskId: id,
       taskLabel: label || 'Task',
       hour,
-      durIdx: DEFAULT_DUR_IDX,
+      durMin: DEFAULT_DUR_MIN,
       cardX: e.clientX,
       cardY: e.clientY,
     })
@@ -195,8 +196,7 @@ export default function AgendaTimeline({
   function confirmDrop(): void {
     if (!pendingDrop || !onDropExisting) return
     const startMin  = pendingDrop.hour * 60
-    const durMin    = DUR_STEPS_MIN[pendingDrop.durIdx]!
-    const endMin    = startMin + durMin
+    const endMin    = startMin + pendingDrop.durMin
     const timeBlock = `${minutesToTime(startMin)}-${minutesToTime(endMin)}`
     onDropExisting(pendingDrop.taskId, timeBlock)
     setPendingDrop(null)
@@ -246,7 +246,7 @@ export default function AgendaTimeline({
   const ghostSuf = ghostHour !== null ? (ghostHour < 12 ? 'am' : 'pm') : ''
 
   // Duration card derived values
-  const durMin      = pendingDrop ? DUR_STEPS_MIN[pendingDrop.durIdx]! : 30
+  const durMin      = pendingDrop ? pendingDrop.durMin : DEFAULT_DUR_MIN
   const { num: durNum, unit: durUnit } = durDisplayParts(durMin)
   const pct         = durMin / DUR_MAX_MIN
   const R           = 28
@@ -383,7 +383,7 @@ export default function AgendaTimeline({
             <div className="dn-agenda-task-main">
               <span className="dn-agenda-label">{pendingDrop.taskLabel}</span>
             </div>
-            <span className="dn-agenda-duration">{formatDuration(DUR_STEPS_MIN[pendingDrop.durIdx]!)}</span>
+            <span className="dn-agenda-duration">{formatDuration(pendingDrop.durMin)}</span>
           </div>
         </div>
       )}
@@ -433,8 +433,8 @@ export default function AgendaTimeline({
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); confirmDrop() }
             if (e.key === 'Escape') { e.preventDefault(); cancelDrop() }
-            if (e.key === 'ArrowUp')   { e.preventDefault(); setPendingDrop(p => p ? { ...p, durIdx: Math.min(DUR_STEPS_MIN.length - 1, p.durIdx + 1) } : p) }
-            if (e.key === 'ArrowDown') { e.preventDefault(); setPendingDrop(p => p ? { ...p, durIdx: Math.max(0, p.durIdx - 1) } : p) }
+            if (e.key === 'ArrowUp')   { e.preventDefault(); setPendingDrop(p => p ? { ...p, durMin: Math.min(DUR_MAX_MIN, p.durMin + DUR_STEP_MIN) } : p) }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setPendingDrop(p => p ? { ...p, durMin: Math.max(DUR_MIN_MIN, p.durMin - DUR_STEP_MIN) } : p) }
           }}
         >
           <div className="dn-dur-card-task">{pendingDrop.taskLabel}</div>
@@ -473,14 +473,14 @@ export default function AgendaTimeline({
             <span className="dn-dur-card-unit">{durUnit}</span>
           </div>
 
-          {/* Scroll hint */}
+          {/* Scroll / arrow hint */}
           <div className="dn-dur-card-hint">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
               stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
               <rect x="5" y="2" width="6" height="10" rx="3"/>
               <line x1="8" y1="5" x2="8" y2="7"/>
             </svg>
-            scroll to adjust
+            scroll or ↑↓ to adjust
           </div>
 
           <div className="dn-dur-card-confirm">click anywhere to confirm</div>
