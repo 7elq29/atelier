@@ -78,6 +78,13 @@ interface SidebarProps {
   onUpdateBookmark: (bookmarkId: string, patch: AppBookmarkUpdate) => void
   onDeleteBookmark: (bookmarkId: string) => void
   onOpenBookmark: (url: string) => void
+
+  /** IDs of non-active sessions that just transitioned to waiting-input and
+   *  have not yet been dismissed by the user opening that session.
+   *  Managed by the parent (App.tsx) so the collapsed-rail alert chips and the
+   *  sidebar corner-dot use the same source of truth. */
+  waitingInputAlertIds: Set<string>
+  onClearWaitingInputAlert: (sessionId: string) => void
 }
 
 const SESSION_COLORS = ['--sc-blue', '--sc-green', '--sc-purple', '--sc-amber', '--sc-rose', '--sc-cyan', '--sc-indigo', '--sc-teal']
@@ -118,7 +125,7 @@ function displayStatus(session: SessionRecord, closed: boolean, statuses: Record
 }
 
 /** Harness is connected and between turns — not still reconnecting or offline. */
-function sessionLiveWaitingForInput(
+export function sessionLiveWaitingForInput(
   session: SessionRecord,
   closed: boolean,
   statuses: Record<string, SessionStatus>
@@ -147,7 +154,7 @@ function dotStatusClass(status: SessionStatus, promptDot: SessionPromptDot): str
   return 'waiting-input'
 }
 
-function sessionDotStatus(
+export function sessionDotStatus(
   session: SessionRecord,
   closed: boolean,
   statuses: Record<string, SessionStatus>,
@@ -986,7 +993,9 @@ export default function Sidebar({
   onCreateBookmark,
   onUpdateBookmark,
   onDeleteBookmark,
-  onOpenBookmark
+  onOpenBookmark,
+  waitingInputAlertIds,
+  onClearWaitingInputAlert
 }: SidebarProps): JSX.Element {
   const promptDotsBySession = useSessionPromptDotsMap()
   const [newGroupOpen, setNewGroupOpen] = useState(false)
@@ -1014,55 +1023,8 @@ export default function Sidebar({
       return false
     }
   })
-  const [waitingInputAlertIds, setWaitingInputAlertIds] = useState<Set<string>>(() => new Set())
-  const prevDotStatusBySessionRef = useRef<Record<string, string>>({})
-
-  useEffect(() => {
-    setWaitingInputAlertIds((prev) => {
-      let next: Set<string> | null = null
-      const touch = (): Set<string> => {
-        if (!next) next = new Set(prev)
-        return next
-      }
-      for (const session of activeSessions) {
-        const dotStatus = sessionDotStatus(
-          session,
-          false,
-          statuses,
-          staleSessionIds,
-          promptDotsBySession[session.id] ?? null
-        )
-        const prevStatus = prevDotStatusBySessionRef.current[session.id]
-        if (
-          dotStatus === 'waiting-input' &&
-          sessionLiveWaitingForInput(session, false, statuses) &&
-          prevStatus !== undefined &&
-          prevStatus !== 'waiting-input' &&
-          session.id !== activeSessionId
-        ) {
-          touch().add(session.id)
-        }
-        prevDotStatusBySessionRef.current[session.id] = dotStatus
-      }
-      for (const id of prev) {
-        const session = activeSessions.find((s) => s.id === id)
-        if (!session || !sessionLiveWaitingForInput(session, false, statuses)) {
-          touch().delete(id)
-        }
-      }
-      return next ?? prev
-    })
-  }, [activeSessions, statuses, promptDotsBySession, staleSessionIds, activeSessionId])
-
-  useEffect(() => {
-    if (!activeSessionId) return
-    setWaitingInputAlertIds((prev) => {
-      if (!prev.has(activeSessionId)) return prev
-      const next = new Set(prev)
-      next.delete(activeSessionId)
-      return next
-    })
-  }, [activeSessionId])
+  // waitingInputAlertIds and its tracking logic live in App.tsx (lifted up so
+  // the collapsed-sidebar alert chips share the same source of truth).
 
   useEffect(() => {
     try {
@@ -1171,12 +1133,7 @@ export default function Sidebar({
         }
         draggable={!closed}
         onSelect={() => {
-          setWaitingInputAlertIds((prev) => {
-            if (!prev.has(session.id)) return prev
-            const next = new Set(prev)
-            next.delete(session.id)
-            return next
-          })
+          onClearWaitingInputAlert(session.id)
           onSelectSession(session)
         }}
         onRename={(name) => onRename(session.id, name)}

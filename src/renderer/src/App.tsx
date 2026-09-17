@@ -55,6 +55,9 @@ import { TOKEN_CSS_VARS, type CustomThemeColors } from '../../shared/theme-types
 import { useSessions } from './hooks/useSessions'
 import { useSessionWorkspace } from './hooks/useSessionWorkspace'
 import { useSessionBookmarks } from './hooks/useSessionBookmarks'
+import { useSessionPromptDotsMap } from './hooks/useSessionMessages'
+import CollapsedAlertChip from './components/CollapsedAlertChip'
+import { sessionLiveWaitingForInput, sessionDotStatus } from './components/Sidebar'
 import { truncateContextPath } from './utils/truncateContextPath'
 import { sessionWorkspaceLabel } from './utils/sessionWorkspaceLabel'
 import { useAppNotes } from './hooks/useAppNotes'
@@ -220,6 +223,11 @@ export default function App(): JSX.Element {
   // re-registered on every render.
   const configRef = useRef(config)
   useEffect(() => { configRef.current = config }, [config])
+
+  // ── Collapsed-sidebar alert chips + sidebar corner-dot (shared state) ────
+  const promptDotsBySession = useSessionPromptDotsMap()
+
+  // waitingInputAlertIds state block is declared below allSessions (deps ordering).
   const sessions = useSessions()
   const sessionWorkspace = useSessionWorkspace()
   const sessionBookmarks = useSessionBookmarks()
@@ -799,6 +807,85 @@ export default function App(): JSX.Element {
     () => [...sessions.activeSessions, ...sessions.historySessions],
     [sessions.activeSessions, sessions.historySessions]
   )
+
+  // Tracks sessions that transitioned into waiting-input while not active and
+  // have not yet been dismissed. This is the same signal as the orange corner
+  // dot on session rows — lifted here so the collapsed-sidebar chips and the
+  // sidebar row indicator use the same source of truth.
+  const [waitingInputAlertIds, setWaitingInputAlertIds] = useState<Set<string>>(() => new Set())
+  const prevDotStatusBySessionRef = useRef<Record<string, string>>({})
+
+  useEffect(() => {
+    setWaitingInputAlertIds((prev) => {
+      let next: Set<string> | null = null
+      const touch = (): Set<string> => { if (!next) next = new Set(prev); return next! }
+      for (const session of sessions.activeSessions) {
+        const dotStatus = sessionDotStatus(
+          session, false, sessions.statuses, sessions.staleSessionIds, promptDotsBySession[session.id] ?? null
+        )
+        const prevStatus = prevDotStatusBySessionRef.current[session.id]
+        if (
+          dotStatus === 'waiting-input' &&
+          sessionLiveWaitingForInput(session, false, sessions.statuses) &&
+          prevStatus !== undefined &&
+          prevStatus !== 'waiting-input' &&
+          session.id !== activeSessionId
+        ) {
+          touch().add(session.id)
+        }
+        prevDotStatusBySessionRef.current[session.id] = dotStatus
+      }
+      for (const id of prev) {
+        const session = sessions.activeSessions.find((s) => s.id === id)
+        if (!session || !sessionLiveWaitingForInput(session, false, sessions.statuses)) touch().delete(id)
+      }
+      return next ?? prev
+    })
+  }, [sessions.activeSessions, sessions.statuses, promptDotsBySession, sessions.staleSessionIds, activeSessionId])
+
+  useEffect(() => {
+    if (!activeSessionId) return
+    setWaitingInputAlertIds((prev) => {
+      if (!prev.has(activeSessionId)) return prev
+      const next = new Set(prev)
+      next.delete(activeSessionId)
+      return next
+    })
+  }, [activeSessionId])
+
+  const clearWaitingInputAlert = useCallback((sessionId: string) => {
+    setWaitingInputAlertIds((prev) => {
+      if (!prev.has(sessionId)) return prev
+      const next = new Set(prev)
+      next.delete(sessionId)
+      return next
+    })
+  }, [])
+
+  /**
+   * Sessions that need the user's attention while the sidebar is fully hidden.
+   * 'blocked' = waiting for permission / approval / plan confirm.
+   * 'ready'   = agent finished its turn, waiting for the next message.
+   * Only non-active sessions are included — the active session's state is
+   * already visible in the main panel.
+   */
+  const collapsedAlerts = useMemo(() => {
+    if (!config.sidebarCollapsed) return null
+    const blocked: (typeof allSessions)[0][] = []
+    const ready: (typeof allSessions)[0][] = []
+    for (const session of allSessions) {
+      if (session.deletedAt || session.id === activeSessionId) continue
+      const promptDot = promptDotsBySession[session.id] ?? null
+      if (promptDot === 'waiting-blocked') {
+        blocked.push(session)
+      } else if (waitingInputAlertIds.has(session.id)) {
+        // Only show "agent ready" when the user hasn't yet seen the response
+        // (same transient signal as the orange corner dot on session rows).
+        ready.push(session)
+      }
+    }
+    return blocked.length + ready.length > 0 ? { blocked, ready } : null
+  }, [config.sidebarCollapsed, allSessions, activeSessionId, promptDotsBySession, waitingInputAlertIds])
 
   const evictSessionRendererState = useCallback(
     (id: string) => {
@@ -2369,6 +2456,8 @@ export default function App(): JSX.Element {
           onUpdateBookmark={(id, patch) => void appBookmarks.updateBookmark(id, patch)}
           onDeleteBookmark={(id) => void appBookmarks.deleteBookmark(id)}
           onOpenBookmark={(url) => void window.atelier.openExternal(url)}
+          waitingInputAlertIds={waitingInputAlertIds}
+          onClearWaitingInputAlert={clearWaitingInputAlert}
           />
         </div>
 
@@ -2379,6 +2468,35 @@ export default function App(): JSX.Element {
             onMouseDown={startSidebarResize}
           />
         ) : null}
+
+        {/* Alert chips — float on the left edge when sidebar is hidden */}
+        {collapsedAlerts && (
+          <div className="sidebar-alert-chips" data-testid="sidebar-alert-chips">
+            {collapsedAlerts.blocked.map((session) => (
+              <CollapsedAlertChip
+                key={session.id}
+                session={session}
+                kind="blocked"
+                onClick={() => {
+                  void updateConfig({ sidebarCollapsed: false })
+                  void selectSession(session)
+                }}
+              />
+            ))}
+            {collapsedAlerts.ready.map((session) => (
+              <CollapsedAlertChip
+                key={session.id}
+                session={session}
+                kind="ready"
+                onClick={() => {
+                  clearWaitingInputAlert(session.id)
+                  void updateConfig({ sidebarCollapsed: false })
+                  void selectSession(session)
+                }}
+              />
+            ))}
+          </div>
+        )}
 
         <div className="main-area">
           <div
