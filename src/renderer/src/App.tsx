@@ -295,7 +295,17 @@ export default function App(): JSX.Element {
   const pendingReadySessionsRef = useRef<Set<string>>(new Set())
   const [workspaceSplitBySession, setWorkspaceSplitBySession] = useState<
     Record<string, WorkspaceSplitState>
-  >({})
+  >(() => {
+    try {
+      const raw = localStorage.getItem('atelier-split-state-v1')
+      return raw ? (JSON.parse(raw) as Record<string, WorkspaceSplitState>) : {}
+    } catch {
+      return {}
+    }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('atelier-split-state-v1', JSON.stringify(workspaceSplitBySession)) } catch {}
+  }, [workspaceSplitBySession])
   const [revealChangePath, setRevealChangePath] = useState<string | undefined>()
   const [revealChangeSeq, setRevealChangeSeq] = useState(0)
   const [revealCommitHash, setRevealCommitHash] = useState<string | undefined>()
@@ -657,18 +667,25 @@ export default function App(): JSX.Element {
             if (session?.mode === 'claude-code' && !activeAppNoteIdRef.current && !anyModalOpenRef.current) {
               const split = activeWorkspaceSplitRef.current
               const tab = activeTabRef.current
-              const ORDER: SessionTab[] = ['chat', 'diff', 'files', 'terminal', 'ports']
-              const visible = ORDER.filter((t) => resolveTabVisibility(t, tab, split) !== 'hidden')
+              const ORDER: (SessionTab | 'app-note')[] = ['chat', 'diff', 'files', 'terminal', 'ports']
+              if (split?.secondaryTab === 'app-note') ORDER.splice(1, 0, 'app-note')
+              const visible = ORDER.filter((t) => {
+                if (t === 'app-note') return split?.secondaryTab === 'app-note'
+                return resolveTabVisibility(t, tab, split) !== 'hidden'
+              })
               if (visible.length > 1) {
                 e.preventDefault()
                 const currentPanel = (document.activeElement as HTMLElement | null)
                   ?.closest<HTMLElement>('[data-panel]')
-                  ?.dataset.panel as SessionTab | undefined
+                  ?.dataset.panel as (SessionTab | 'app-note') | undefined
                 const currentIdx = currentPanel ? visible.indexOf(currentPanel) : -1
                 const nextPanel = visible[(currentIdx + 1) % visible.length]
                 switch (nextPanel) {
                   case 'chat':
                     composerRefs.current.get(session.id)?.focus()
+                    break
+                  case 'app-note':
+                    document.querySelector<HTMLElement>('[data-panel="app-note"] textarea, [data-panel="app-note"] .cm-content, [data-panel="app-note"] [contenteditable]')?.focus()
                     break
                   case 'files':
                     filesPanelRefs.current.get(session.id)?.focus()
@@ -1016,11 +1033,14 @@ export default function App(): JSX.Element {
     setActiveTab(restoredTab)
     setVisitedTabs(new Set<SessionTab>(['chat', restoredTab]))
     setWorkspaceSplitBySession((prev) => {
+      // Preserve any persisted split (e.g. an app-note split); only compute
+      // from restoredTab when no split state exists yet for this session.
+      if (prev[session.id]) return prev
       if (restoredTab === 'chat') {
         const { [session.id]: _removed, ...rest } = prev
         return rest
       }
-      const split = createSplit('chat', restoredTab, prev[session.id]?.splitRatio ?? 0.5, 'row')
+      const split = createSplit('chat', restoredTab, 0.5, 'row')
       return split ? { ...prev, [session.id]: split } : prev
     })
     const startupIdle =

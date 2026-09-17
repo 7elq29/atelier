@@ -589,24 +589,24 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const ta = textareaRef.current
     if (!ta) return
     const position = ta.selectionStart ?? 0
+    const composer = ta.closest<HTMLElement>('.composer-box')
+    if (!composer) return
+    const composerRect = composer.getBoundingClientRect()
     const renderedCoords = markdownInputRef.current?.getCursorCoordinates(position)
     if (renderedCoords) {
-      const composerBox = ta.closest<HTMLElement>('.composer-box')
-      if (composerBox) {
-        const composerRect = composerBox.getBoundingClientRect()
-        setCursorPos({
-          top: renderedCoords.top - composerRect.top,
-          left: renderedCoords.left - composerRect.left,
-          height: renderedCoords.height
-        })
+      const relTop = renderedCoords.top - composerRect.top
+      const relLeft = renderedCoords.left - composerRect.left
+      // Only use CM6 coords when they land within the visible composer area.
+      // The CM6 scroll position is a pixel copy from the textarea but the two
+      // layouts have different line heights, so the coordinates can drift
+      // outside the box when headings/code blocks push lines past the cursor.
+      if (relTop >= 0 && relTop <= composerRect.height && relLeft >= 0) {
+        setCursorPos({ top: relTop, left: relLeft, height: renderedCoords.height })
         return
       }
     }
     const coords = getCaretCoordinates(ta, position)
-    const composer = ta.closest<HTMLElement>('.composer-box')
-    if (!composer) return
     const textareaRect = ta.getBoundingClientRect()
-    const composerRect = composer.getBoundingClientRect()
     setCursorPos({
       top: coords.top + textareaRect.top - composerRect.top - composer.clientTop,
       left: coords.left + textareaRect.left - composerRect.left - composer.clientLeft
