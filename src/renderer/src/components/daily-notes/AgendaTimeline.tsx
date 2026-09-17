@@ -355,7 +355,12 @@ export default function AgendaTimeline({
       {/* ── Drop insertion line (shown while dragging) ── */}
       {/* ── Time grid overlay (shown while dragging) ── */}
       {isDragOver && (
-        <div className="dn-agenda-overlay" aria-hidden="true">
+        <div
+          className="dn-agenda-overlay"
+          style={{ height: AGENDA_HOURS.length * AGENDA_SLOT_H_PX }}
+          aria-hidden="true"
+        >
+          {/* Hour grid lines */}
           {AGENDA_HOURS.map((h) => (
             <div key={h} className="dn-agenda-overlay-slot">
               <span className="dn-agenda-overlay-label">
@@ -364,6 +369,24 @@ export default function AgendaTimeline({
               <span className="dn-agenda-overlay-line" />
             </div>
           ))}
+          {/* Existing tasks rendered at their correct time positions */}
+          {entries.map(({ task, start, end }) => {
+            const topH = start / 60
+            const durH = (end - start) / 60
+            const topPx = (topH - AGENDA_HOURS[0]!) * AGENDA_SLOT_H_PX
+            const heightPx = Math.max(durH * AGENDA_SLOT_H_PX, 8)
+            if (topPx < 0 || topPx > AGENDA_HOURS.length * AGENDA_SLOT_H_PX) return null
+            return (
+              <div
+                key={task.id}
+                className="dn-agenda-overlay-task"
+                style={{ top: topPx, height: heightPx }}
+              >
+                {task.text}
+              </div>
+            )
+          })}
+          {/* Ghost block for the task being dropped */}
           {ghostHour !== null && (
             <div
               className="dn-agenda-ghost"
