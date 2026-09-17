@@ -61,25 +61,6 @@
   color: var(--accent);
   font-weight: 700;
 }
-.title-bar-toggle-btn {
-  -webkit-app-region: no-drag;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  margin-right: 4px;
-}
-.title-bar-toggle-btn:hover { color: var(--text-secondary); background: var(--bg-tint); }
-.title-bar-toggle-btn .icon { width: 16px; height: 16px; }
-
 /* ===== Sidebar ===== */
 .sidebar-shell {
   flex-shrink: 0;
@@ -434,6 +415,23 @@
 .topbar > button {
   flex-shrink: 0;
 }
+.topbar-sidebar-toggle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  margin-right: 6px;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.topbar-sidebar-toggle:hover { color: var(--text-secondary); background: var(--bg-hover); }
+.topbar-sidebar-toggle .icon { width: 15px; height: 15px; }
 .topbar-timeline-toggle {
   position: relative;
   width: 24px;
