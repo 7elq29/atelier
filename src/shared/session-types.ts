@@ -390,6 +390,20 @@ export type SessionInterruptResult =
   | { action: 'withdrawn'; restoredText: string }
   | { action: 'interrupted' }
 
+/** A user message held in the main-process turn queue, waiting for the current SDK turn to complete. */
+export interface PendingQueuedMessage {
+  /** UUID for cancellation via `session:cancelQueued`. */
+  id: string
+  /** Display text shown in the queued-strip UI. */
+  text: string
+}
+
+/** Pushed from main → renderer whenever the per-session turn queue changes (enqueue, drain, cancel, clear). */
+export interface SessionQueueEvent {
+  sessionId: string
+  items: PendingQueuedMessage[]
+}
+
 /** Notifies the renderer that a persisted transcript row was removed (e.g. ESC-withdraw before execution). */
 export interface SessionMessageRemovedEvent {
   sessionId: string

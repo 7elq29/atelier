@@ -5,6 +5,7 @@ import type {
   MessageRecord,
   ModelSelection,
   ModelValidationResult,
+  PendingQueuedMessage,
   PromptDecision,
   RemoteHostOption,
   SessionGroupRecord,
@@ -55,6 +56,9 @@ export interface UseSessionsResult {
   worktreeProgressBySession: Record<string, number>
   /** Sessions detected as unrecoverable on startup (transcript gone or tmux dead). */
   staleSessionIds: Set<string>
+  /** Main-process turn queue state per session — pending messages waiting for the current SDK turn to complete. */
+  queuedBySession: Record<string, PendingQueuedMessage[]>
+  cancelQueued: (sessionId: string, id: string) => Promise<void>
   refresh: () => Promise<void>
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
@@ -121,6 +125,7 @@ export function useSessions(): UseSessionsResult {
   const [hookLogBySession, setHookLogBySession] = useState<Record<string, string[]>>({})
   const [worktreeProgressBySession, setWorktreeProgressBySession] = useState<Record<string, number>>({})
   const [staleSessionIds, setStaleSessionIds] = useState<Set<string>>(new Set())
+  const [queuedBySession, setQueuedBySession] = useState<Record<string, PendingQueuedMessage[]>>({})
 
   const refresh = useCallback(async () => {
     const [active, history, tags] = await Promise.all([
@@ -240,6 +245,17 @@ export function useSessions(): UseSessionsResult {
     const offTurnState = window.atelier.onSessionTurnState(({ sessionId, busy }) => {
       setBusyBySession((prev) => (prev[sessionId] === busy ? prev : { ...prev, [sessionId]: busy }))
     })
+    const offQueue = window.atelier.onSessionQueue(({ sessionId, items }) => {
+      setQueuedBySession((prev) => {
+        if (items.length === 0 && !(sessionId in prev)) return prev
+        if (items.length === 0) {
+          const next = { ...prev }
+          delete next[sessionId]
+          return next
+        }
+        return { ...prev, [sessionId]: items }
+      })
+    })
     // Live slash-command registry (bug #56): always REPLACE the cached list
     // for this session, never merge — matches SessionCommandsEvent's own
     // doc comment (the SDK's own commands_changed push is itself a full
@@ -311,6 +327,7 @@ export function useSessions(): UseSessionsResult {
       offStatus()
       offGroup()
       offTurnState()
+      offQueue()
       offCommands()
       offModels()
       offHarnessCwd()
@@ -365,6 +382,10 @@ export function useSessions(): UseSessionsResult {
 
   const sendMessage = useCallback(async (sessionId: string, text: string, modelSelection?: ModelSelection, attachments?: FileAttachment[]): Promise<void> => {
     await window.atelier.sendSessionMessage(sessionId, text, modelSelection, attachments)
+  }, [])
+
+  const cancelQueued = useCallback(async (sessionId: string, id: string): Promise<void> => {
+    await window.atelier.cancelQueued(sessionId, id)
   }, [])
 
   const interrupt = useCallback(async (sessionId: string): Promise<SessionInterruptResult> => {
@@ -564,6 +585,8 @@ export function useSessions(): UseSessionsResult {
     hookLogBySession,
     worktreeProgressBySession,
     staleSessionIds,
+    queuedBySession,
+    cancelQueued,
     refresh,
     createSession,
     resumeSession,
