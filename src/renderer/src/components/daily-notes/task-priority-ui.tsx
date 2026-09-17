@@ -244,12 +244,12 @@ export function TaskEditInput({
         }}
         onKeyDown={(e) => {
           if (showPriorityMenu) {
-            if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) {
+            if (e.ctrlKey && e.key === 'n') {
               e.preventDefault()
               moveHighlight(1)
               return
             }
-            if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) {
+            if (e.ctrlKey && e.key === 'p') {
               e.preventDefault()
               moveHighlight(-1)
               return
