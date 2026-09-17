@@ -655,13 +655,20 @@ export default function App(): JSX.Element {
             const session = activeSessionRef.current
             if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
               const split = activeWorkspaceSplitRef.current
-              if (split && !split.fullscreenTab) {
-                const focusedPanel = (document.activeElement as HTMLElement | null)
-                  ?.closest<HTMLElement>('[data-panel]')
-                  ?.dataset.panel as string | undefined
-                if (focusedPanel === split.secondaryTab) {
+              if (split) {
+                if (split.fullscreenTab === split.secondaryTab) {
+                  // Secondary pane is fullscreened — close directly, no focus check needed.
                   e.preventDefault()
                   handleWorkspaceSplitPaneCloseRef.current(split.secondaryTab as SessionTab)
+                } else if (!split.fullscreenTab) {
+                  // Split is visible — only close if focus is in the secondary pane.
+                  const focusedPanel = (document.activeElement as HTMLElement | null)
+                    ?.closest<HTMLElement>('[data-panel]')
+                    ?.dataset.panel as string | undefined
+                  if (focusedPanel === split.secondaryTab) {
+                    e.preventDefault()
+                    handleWorkspaceSplitPaneCloseRef.current(split.secondaryTab as SessionTab)
+                  }
                 }
               }
             }
