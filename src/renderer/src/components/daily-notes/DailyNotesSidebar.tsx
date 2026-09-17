@@ -342,6 +342,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
             onToggle={toggleTask}
             onMoveToUnscheduled={(id) => moveTask(id, 'unscheduled', undefined)}
             onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
+            onCreate={(text, timeBlock) => addTask(text, 'day-plan', timeBlock)}
             onDelete={deleteTask}
             onUpdateText={updateTaskText}
             onUpdateTask={updateTask}

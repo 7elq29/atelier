@@ -28,6 +28,8 @@ interface AgendaTimelineProps {
   onCreateSessionFromTask?: (task: DailyTask) => void
   /** Drop an unscheduled task onto the agenda; receives a computed timeBlock. */
   onDropExisting?: (id: string, timeBlock: string) => void
+  /** Right-click create: receives task text and computed timeBlock. */
+  onCreate?: (text: string, timeBlock: string) => void
 }
 
 interface PendingDrop {
@@ -35,6 +37,14 @@ interface PendingDrop {
   taskLabel: string
   hour: number
   durIdx: number
+  cardX: number
+  cardY: number
+}
+
+interface PendingCreate {
+  hour: number
+  durIdx: number
+  text: string
   cardX: number
   cardY: number
 }
@@ -80,7 +90,8 @@ export default function AgendaTimeline({
   moveDateOptions,
   onMoveToDate,
   onCreateSessionFromTask,
-  onDropExisting
+  onDropExisting,
+  onCreate
 }: AgendaTimelineProps): JSX.Element {
   const [nowMinutes, setNowMinutes] = useState(minutesNow)
   const [moveMenu, setMoveMenu] = useState<{ x: number; y: number; taskId: string } | null>(null)
@@ -92,8 +103,13 @@ export default function AgendaTimeline({
   const [isDragOver, setIsDragOver] = useState(false)
   const [ghostHour, setGhostHour] = useState<number | null>(null)
 
-  // Duration confirm card
+  // Duration confirm card (for drops)
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null)
+
+  // Right-click create draft
+  const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null)
+  const createCardRef  = useRef<HTMLDivElement>(null)
+  const createInputRef = useRef<HTMLInputElement>(null)
 
   const agendaRef = useRef<HTMLDivElement>(null)
   const cardRef   = useRef<HTMLDivElement>(null)
@@ -145,6 +161,42 @@ export default function AgendaTimeline({
       document.removeEventListener('click', onClick, { capture: true })
     }
   }, [pendingOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Wheel + click-outside for create draft card
+  const createOpen = pendingCreate !== null
+  useEffect(() => {
+    if (!createOpen) return
+    function onWheel(e: WheelEvent): void {
+      e.preventDefault()
+      setPendingCreate((prev) => {
+        if (!prev) return null
+        const next = Math.max(0, Math.min(DUR_STEPS_MIN.length - 1, prev.durIdx + (e.deltaY < 0 ? 1 : -1)))
+        return { ...prev, durIdx: next }
+      })
+    }
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => window.removeEventListener('wheel', onWheel, { capture: true })
+  }, [createOpen])
+
+  useEffect(() => {
+    if (!createOpen) return
+    function onClick(e: MouseEvent): void {
+      if (createCardRef.current?.contains(e.target as Node)) return
+      setPendingCreate(null)
+    }
+    const t = setTimeout(
+      () => document.addEventListener('click', onClick, { capture: true }),
+      80
+    )
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('click', onClick, { capture: true })
+    }
+  }, [createOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (createOpen) createInputRef.current?.focus()
+  }, [createOpen])
 
   function hourFromClientY(clientY: number): number {
     const el = agendaRef.current
@@ -206,6 +258,27 @@ export default function AgendaTimeline({
     setPendingDrop(null)
   }
 
+  function commitCreate(): void {
+    if (!pendingCreate || !onCreate) return
+    const text = pendingCreate.text.trim()
+    if (text) {
+      const startMin  = pendingCreate.hour * 60
+      const durMin    = DUR_STEPS_MIN[pendingCreate.durIdx]!
+      const endMin    = startMin + durMin
+      onCreate(text, `${minutesToTime(startMin)}-${minutesToTime(endMin)}`)
+    }
+    setPendingCreate(null)
+  }
+
+  function handleContextMenu(e: React.MouseEvent): void {
+    if (!onCreate) return
+    e.preventDefault()
+    if ((e.target as Element).closest('.dn-agenda-entry')) return
+    setPendingDrop(null)
+    const hour = hourFromClientY(e.clientY)
+    setPendingCreate({ hour, durIdx: DEFAULT_DUR_IDX, text: '', cardX: e.clientX, cardY: e.clientY })
+  }
+
   // ── Render helpers ────────────────────────────────────────────────────────
 
   const entries = tasks
@@ -254,11 +327,23 @@ export default function AgendaTimeline({
   const dashOffset  = CIRC * (1 - pct)
   const isLong      = pct > 0.75
 
-  // Card clamped position
+  // Drop card clamped position
   let cardLeft = 0, cardTop = 0
   if (pendingDrop) {
     cardLeft = Math.min(pendingDrop.cardX + 16, window.innerWidth  - 188)
     cardTop  = Math.max(8, Math.min(pendingDrop.cardY - 80,  window.innerHeight - 300))
+  }
+
+  // Create card derived values (separate durIdx from drop)
+  const createDurMin = pendingCreate ? DUR_STEPS_MIN[pendingCreate.durIdx]! : 30
+  const { num: createDurNum, unit: createDurUnit } = durDisplayParts(createDurMin)
+  const createPct        = createDurMin / DUR_MAX_MIN
+  const createDashOffset = CIRC * (1 - createPct)
+  const createIsLong     = createPct > 0.75
+  let createCardLeft = 0, createCardTop = 0
+  if (pendingCreate) {
+    createCardLeft = Math.min(pendingCreate.cardX + 16, window.innerWidth  - 220)
+    createCardTop  = Math.max(8, Math.min(pendingCreate.cardY - 80,  window.innerHeight - 340))
   }
 
   let nowPlaced = false
@@ -268,6 +353,7 @@ export default function AgendaTimeline({
       ref={agendaRef}
       className={`dn-agenda${isDragOver ? ' dn-agenda--drag-over' : ''}`}
       data-testid="timeline-agenda"
+      onContextMenu={onCreate ? handleContextMenu : undefined}
       onDragOver={onDropExisting ? handleDragOver : undefined}
       onDragLeave={onDropExisting ? handleDragLeave : undefined}
       onDrop={onDropExisting ? handleDrop : undefined}
@@ -484,6 +570,75 @@ export default function AgendaTimeline({
           </div>
 
           <div className="dn-dur-card-confirm">click anywhere to confirm</div>
+        </div>
+      )}
+
+      {/* ── Right-click create card ── */}
+      {pendingCreate && (
+        <div
+          ref={createCardRef}
+          className="dn-dur-card dn-create-card"
+          style={{ left: createCardLeft, top: createCardTop }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { e.preventDefault(); setPendingCreate(null) }
+            if (e.key === 'ArrowUp')   { e.preventDefault(); setPendingCreate(p => p ? { ...p, durIdx: Math.min(DUR_STEPS_MIN.length - 1, p.durIdx + 1) } : p) }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setPendingCreate(p => p ? { ...p, durIdx: Math.max(0, p.durIdx - 1) } : p) }
+          }}
+        >
+          <input
+            ref={createInputRef}
+            className="dn-create-card-input"
+            placeholder="Task name…"
+            value={pendingCreate.text}
+            onChange={(e) => setPendingCreate(p => p ? { ...p, text: e.target.value } : p)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); commitCreate() }
+            }}
+            data-testid="agenda-create-input"
+          />
+          <div className="dn-dur-card-at">
+            {`starting ${formatClock(pendingCreate.hour * 60)} ${pendingCreate.hour < 12 ? 'am' : 'pm'}`}
+          </div>
+
+          <svg
+            className="dn-dur-card-ring"
+            width="68" height="68" viewBox="0 0 68 68"
+            aria-hidden="true"
+          >
+            <circle cx="34" cy="34" r={R} className="dn-dur-ring-bg" />
+            <circle
+              cx="34" cy="34" r={R}
+              className="dn-dur-ring-fill"
+              style={{
+                stroke: createIsLong ? 'var(--warning, #f0a05b)' : 'var(--accent)',
+                strokeDasharray: CIRC,
+                strokeDashoffset: createDashOffset,
+                transform: 'rotate(-90deg)',
+                transformOrigin: '34px 34px',
+              }}
+            />
+          </svg>
+
+          <div className="dn-dur-card-value">
+            <span
+              className="dn-dur-card-num"
+              style={{ color: createIsLong ? 'var(--warning, #f0a05b)' : undefined }}
+            >
+              {createDurNum}
+            </span>
+            <span className="dn-dur-card-unit">{createDurUnit}</span>
+          </div>
+
+          <div className="dn-dur-card-hint">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+              <rect x="5" y="2" width="6" height="10" rx="3"/>
+              <line x1="8" y1="5" x2="8" y2="7"/>
+            </svg>
+            scroll to adjust
+          </div>
+
+          <div className="dn-dur-card-confirm">Enter to create · Esc to cancel</div>
         </div>
       )}
     </div>

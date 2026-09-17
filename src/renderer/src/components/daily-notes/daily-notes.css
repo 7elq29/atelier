@@ -1023,6 +1023,28 @@
   text-align: center;
 }
 
+/* Create card — wider to fit the input, otherwise inherits .dn-dur-card */
+.dn-create-card {
+  width: 200px;
+}
+.dn-create-card-input {
+  width: 100%;
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 5px 8px;
+  margin-bottom: 8px;
+  outline: none;
+}
+.dn-create-card-input:focus {
+  border-color: var(--accent);
+}
+.dn-create-card-input::placeholder {
+  color: var(--text-tertiary);
+}
+
 /* ---- Precise schedule ----
    Absolute-positioned 06:00-22:00 hour grid (mirrors the mock's
    `.time-block` / `.timeline-now-marker`, adapted to a real grid): the
