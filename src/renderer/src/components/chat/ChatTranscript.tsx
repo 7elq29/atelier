@@ -27,6 +27,38 @@ import { formatSystemTranscriptError } from '../../../../shared/harness-error-co
 /** Above this size, skip ReactMarkdown — a 10k+ token reply can freeze the UI for seconds. */
 const LARGE_ASSISTANT_TEXT_CHARS = 48_000
 
+/**
+ * Handles the `{"kind":"files_attachment","files":[...]}trailing text` format
+ * that some harness versions produce when multiple files (including screenshots)
+ * are attached. The trailing text sits outside the JSON object so standard
+ * JSON.parse fails — we walk to the matching closing brace manually.
+ */
+function parseFilesAttachment(content: string): { files: Array<{ mimeType: string; data: string }>; text: string } | null {
+  if (!content.startsWith('{"kind":"files_attachment"')) return null
+  let depth = 0
+  let end = -1
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === '{') depth++
+    else if (content[i] === '}') {
+      depth--
+      if (depth === 0) { end = i; break }
+    }
+  }
+  if (end === -1) return null
+  try {
+    const obj = JSON.parse(content.slice(0, end + 1)) as {
+      kind: string
+      files?: Array<{ mimeType: string; data: string }>
+      text?: string
+    }
+    if (obj.kind !== 'files_attachment' || !Array.isArray(obj.files)) return null
+    const trailing = content.slice(end + 1).trim()
+    return { files: obj.files, text: obj.text ?? trailing }
+  } catch {
+    return null
+  }
+}
+
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
   if (totalSeconds < 60) return `${totalSeconds}s`
@@ -533,13 +565,22 @@ export default function ChatTranscript({
         )
       }
       sawFirstUser = true
+      const filesAttachment = parsed?.kind !== 'image_attachment' ? parseFilesAttachment(message.content) : null
       if (parsed?.kind === 'image_attachment') {
         nodes.push(
           <div className="msg-wrap msg-wrap-user" key={message.id}>
             <MessageActions text={parsed.text ?? ''} />
             <div className="msg-user" data-testid="transcript-message" data-role="user" data-message-id={message.id}>
               <div className="attach-row" data-testid="transcript-attach-row">
-                <div className="attach-thumb" data-testid="transcript-attach-thumb">
+                <div
+                  className="attach-thumb attach-thumb--clickable"
+                  data-testid="transcript-attach-thumb"
+                  onClick={() => setLightboxSrc(`data:${parsed.mimeType};base64,${parsed.data}`)}
+                  role="button"
+                  aria-label="View full size"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setLightboxSrc(`data:${parsed.mimeType};base64,${parsed.data}`) }}
+                >
                   <img src={`data:${parsed.mimeType};base64,${parsed.data}`} alt="Attached" />
                 </div>
               </div>
@@ -548,6 +589,36 @@ export default function ChatTranscript({
                   highlightMatches(parsed.text, query, matchCounter, activeMatchIndex)
                 ) : (
                   <MarkdownMessage content={parsed.text} />
+                ))}
+            </div>
+          </div>
+        )
+      } else if (filesAttachment) {
+        nodes.push(
+          <div className="msg-wrap msg-wrap-user" key={message.id}>
+            <MessageActions text={filesAttachment.text} />
+            <div className="msg-user" data-testid="transcript-message" data-role="user" data-message-id={message.id}>
+              <div className="attach-row" data-testid="transcript-attach-row">
+                {filesAttachment.files.map((f, i) => (
+                  <div
+                    className="attach-thumb attach-thumb--clickable"
+                    data-testid="transcript-attach-thumb"
+                    key={i}
+                    onClick={() => setLightboxSrc(`data:${f.mimeType};base64,${f.data}`)}
+                    role="button"
+                    aria-label={`View attachment ${i + 1} full size`}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setLightboxSrc(`data:${f.mimeType};base64,${f.data}`) }}
+                  >
+                    <img src={`data:${f.mimeType};base64,${f.data}`} alt={`Attachment ${i + 1}`} />
+                  </div>
+                ))}
+              </div>
+              {filesAttachment.text &&
+                (query ? (
+                  highlightMatches(filesAttachment.text, query, matchCounter, activeMatchIndex)
+                ) : (
+                  <MarkdownMessage content={filesAttachment.text} />
                 ))}
             </div>
           </div>
@@ -784,6 +855,7 @@ export default function ChatTranscript({
   const isNearBottomRef = useRef(true)
   const [showScrollToEnd, setShowScrollToEnd] = useState(false)
   const [overlayHost, setOverlayHost] = useState<HTMLElement | null>(null)
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const NEAR_BOTTOM_THRESHOLD_PX = 48
 
   function getScrollContainer(): HTMLElement | null {
@@ -908,6 +980,36 @@ export default function ChatTranscript({
               </svg>
             </button>,
             overlayHost
+          )
+        : null}
+      {lightboxSrc
+        ? createPortal(
+            <div
+              className="img-lightbox-backdrop"
+              onClick={() => setLightboxSrc(null)}
+              onKeyDown={(e) => { if (e.key === 'Escape') setLightboxSrc(null) }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Image preview"
+              tabIndex={-1}
+            >
+              <img
+                className="img-lightbox-img"
+                src={lightboxSrc}
+                alt="Full size preview"
+                onClick={(e) => e.stopPropagation()}
+              />
+              <button
+                className="img-lightbox-close"
+                onClick={() => setLightboxSrc(null)}
+                aria-label="Close preview"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>,
+            document.body
           )
         : null}
     </>
