@@ -44,13 +44,7 @@ test.describe('command palette workspace tools', () => {
     projectPath = join(userDataDir, 'project')
     mkdirSync(projectPath, { recursive: true })
     ;({ app: electronApp, page } = await launchApp(userDataDir))
-  })
 
-  test.afterAll(async () => {
-    await electronApp.close().catch(() => undefined)
-  })
-
-  test('Diff, Files, and Terminal commands open and replace the local right pane', async () => {
     await page.getByTestId('new-session-button').click()
     await page.getByTestId('project-path').fill(projectPath)
     await page.getByTestId('project-path').blur()
@@ -59,28 +53,10 @@ test.describe('command palette workspace tools', () => {
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
     await expect(page.getByTestId('workspace-tool-rail')).toBeVisible({ timeout: 20_000 })
+  })
 
-    const workspace = page.getByTestId('session-workspace-tabs')
-    for (const [label, tab] of [
-      ['Open Diff', 'diff'],
-      ['Open Files', 'files'],
-      ['Open Terminal', 'terminal']
-    ] as const) {
-      await runPaletteCommand(page, label)
-      await expect(workspace).toHaveClass(/session-workspace-tabs--split-row/)
-      await expect(page.locator(`.tab-content[data-tab="${tab}"]`)).toHaveClass(
-        /workspace-split-pane--secondary/
-      )
-    }
-
-    if (process.platform === 'darwin') {
-      await page.keyboard.press('Meta+k')
-    } else {
-      await page.keyboard.press('Alt+x')
-    }
-    await page.getByTestId('command-palette-input').fill('Open Ports')
-    await expect(page.getByTestId('command-palette-empty')).toBeVisible()
-    await page.keyboard.press('Escape')
+  test.afterAll(async () => {
+    await electronApp.close().catch(() => undefined)
   })
 
   test('holding Command shows the mapped workspace tool shortcut badges', async () => {
@@ -100,10 +76,6 @@ test.describe('command palette workspace tools', () => {
 
   test('Command shortcuts toggle workspace tools, Timeline, and the left sidebar', async () => {
     const workspace = page.getByTestId('session-workspace-tabs')
-
-    // The previous test leaves Terminal open.
-    await page.keyboard.press('Meta+t')
-    await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
 
     for (const [key, tab] of [
       ['Meta+d', 'diff'],

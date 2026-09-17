@@ -231,6 +231,12 @@ export default function KeyboardHintsOverlay({
         }
       }
 
+      // Don't consume digit keys when no numbered rows exist in hint mode —
+      // those digits are reserved for the collapsed-sidebar session shortcuts.
+      const isDigit = /^[0-9]$/.test(e.key)
+      const hasNumberedRows = entriesRef.current.some((entry) => /^[0-9]/.test(entry.label))
+      if (isDigit && !hasNumberedRows) return
+
       if (tryConsumeHintKey(e.key)) {
         e.preventDefault()
         e.stopPropagation()

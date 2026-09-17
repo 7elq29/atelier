@@ -804,6 +804,15 @@
       ]
     },
     {
+      "id": "sidebar-collapsed-shortcuts",
+      "paths": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/components/CollapsedAlertChip.tsx"
+      ],
+      "changedLines": "activateSidebarRowRef|sidebarCollapsed.*Digit|shortcutNumber|chip-tooltip-hint",
+      "targets": [{ "file": "e2e/sidebar-collapsed-shortcuts.spec.ts" }]
+    },
+    {
       "id": "chat-double-escape-interrupt",
       "paths": [
         "src/renderer/src/App.tsx",
