@@ -152,7 +152,7 @@ export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Com
     },
     code: ({ className, children, ...props }) => {
       const isFenced = Boolean(className?.startsWith('language-'))
-      if (isFenced || !onOpenFileInFiles || !workspaceRoot) {
+      if (isFenced) {
         return (
           <code className={className} {...props}>
             {children}
@@ -160,6 +160,24 @@ export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Com
         )
       }
       const text = String(children).replace(/\n$/, '')
+      // Backtick-wrapped URLs (common in LLM output) — render as a real link.
+      if (/^https?:\/\//i.test(text)) {
+        return (
+          <a
+            href={text}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); openExternalLink(text) }}
+          >
+            {text}
+          </a>
+        )
+      }
+      if (!onOpenFileInFiles || !workspaceRoot) {
+        return (
+          <code className={className} {...props}>
+            {children}
+          </code>
+        )
+      }
       const resolved = resolveKnownSessionFilePath(
         text,
         workspaceRoot,
