@@ -152,6 +152,17 @@
       ]
     },
     {
+      "id": "daily-panel-unified-redesign",
+      "paths": [
+        "src/renderer/src/components/daily-notes/DailyNotesSidebar.tsx",
+        "src/renderer/src/components/daily-notes/AgendaTimeline.tsx",
+        "src/renderer/src/components/daily-notes/CarrySuggestionItem.tsx",
+        "src/renderer/src/components/daily-notes/daily-notes.css"
+      ],
+      "changedLines": "agenda|schedule|unified|carry|compact|dn-carry-review|dn-tracker-summary|timeline-open|timeline-back",
+      "targets": [{ "file": "e2e/daily-panel-unified-redesign.spec.ts" }]
+    },
+    {
       "id": "daily-timeline-editing",
       "paths": [
         "src/renderer/src/components/daily-notes/Timeline.tsx",

@@ -1,0 +1,494 @@
+import { useEffect, useRef, useState } from 'react'
+import type { DailyTask } from '../../../../shared/daily-note-types'
+import { formatTaskEditBuffer } from '../../../../shared/task-priority'
+import { priorityTimelineAccentClass } from '../../../../shared/task-priority'
+import TaskMoveContextMenu from './TaskMoveContextMenu'
+import type { MoveDateOptions } from './move-date-options'
+import { buildTaskEditPatch, TaskEditInput, TaskPriorityBadge } from './task-priority-ui'
+import TaskTextDisplay from './TaskTextDisplay'
+import { minutesToTime, parseTimeBlock } from './timeline-scale'
+
+const NOW_POLL_MS = 30_000
+const MEANINGFUL_GAP_MINUTES = 60
+
+const AGENDA_HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+const DUR_STEPS_MIN = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240]
+const DUR_MAX_MIN = DUR_STEPS_MIN[DUR_STEPS_MIN.length - 1]
+const DEFAULT_DUR_IDX = 1 // 30 min
+
+interface AgendaTimelineProps {
+  tasks: DailyTask[]
+  onToggle: (id: string) => void
+  onMoveToUnscheduled: (id: string) => void
+  onDelete: (id: string) => void
+  onUpdateText: (id: string, text: string) => void
+  onUpdateTask: (id: string, patch: Partial<DailyTask>) => void
+  moveDateOptions: MoveDateOptions
+  onMoveToDate: (id: string, targetDate: string) => void
+  onCreateSessionFromTask?: (task: DailyTask) => void
+  /** Drop an unscheduled task onto the agenda; receives a computed timeBlock. */
+  onDropExisting?: (id: string, timeBlock: string) => void
+}
+
+interface PendingDrop {
+  taskId: string
+  taskLabel: string
+  hour: number
+  durIdx: number
+  cardX: number
+  cardY: number
+}
+
+function minutesNow(): number {
+  const now = new Date()
+  return now.getHours() * 60 + now.getMinutes()
+}
+
+function formatClock(minutes: number): string {
+  const hour = Math.floor(minutes / 60)
+  const minute = minutes % 60
+  const hour12 = hour % 12 || 12
+  return `${hour12}:${String(minute).padStart(2, '0')}`
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const remainder = minutes % 60
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`
+}
+
+function durDisplayParts(min: number): { num: string; unit: string } {
+  if (min < 60) return { num: String(min), unit: 'min' }
+  const h = Math.floor(min / 60), m = min % 60
+  return { num: m ? `${h}:${String(m).padStart(2, '0')}` : String(h), unit: 'hr' }
+}
+
+function hourLabel(h: number): string {
+  if (h === 12) return '12p'
+  if (h === 0)  return '12a'
+  return h < 12 ? `${h}a` : `${h - 12}p`
+}
+
+export default function AgendaTimeline({
+  tasks,
+  onToggle,
+  onMoveToUnscheduled,
+  onDelete,
+  onUpdateText,
+  onUpdateTask,
+  moveDateOptions,
+  onMoveToDate,
+  onCreateSessionFromTask,
+  onDropExisting
+}: AgendaTimelineProps): JSX.Element {
+  const [nowMinutes, setNowMinutes] = useState(minutesNow)
+  const [moveMenu, setMoveMenu] = useState<{ x: number; y: number; taskId: string } | null>(null)
+  const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null)
+  const [renameText, setRenameText] = useState('')
+  const renameInputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Drag-over overlay state
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [ghostHour, setGhostHour] = useState<number | null>(null)
+
+  // Duration confirm card
+  const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null)
+
+  const agendaRef = useRef<HTMLDivElement>(null)
+  const cardRef   = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const interval = setInterval(() => setNowMinutes(minutesNow()), NOW_POLL_MS)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    if (moveMenu && !tasks.some((task) => task.id === moveMenu.taskId)) setMoveMenu(null)
+  }, [moveMenu, tasks])
+
+  // Global wheel listener — active only while the duration card is open.
+  // Fires regardless of cursor position so the user can scroll immediately
+  // after the drop without needing to hover over the card.
+  const pendingOpen = pendingDrop !== null
+  useEffect(() => {
+    if (!pendingOpen) return
+    function onWheel(e: WheelEvent): void {
+      e.preventDefault()
+      setPendingDrop((prev) => {
+        if (!prev) return null
+        const next = Math.max(
+          0,
+          Math.min(DUR_STEPS_MIN.length - 1, prev.durIdx + (e.deltaY < 0 ? 1 : -1))
+        )
+        return { ...prev, durIdx: next }
+      })
+    }
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => window.removeEventListener('wheel', onWheel, { capture: true })
+  }, [pendingOpen])
+
+  // Click-outside to confirm
+  useEffect(() => {
+    if (!pendingOpen) return
+    function onClick(e: MouseEvent): void {
+      if (cardRef.current?.contains(e.target as Node)) return
+      confirmDrop()
+    }
+    // Defer so the drop event itself doesn't immediately confirm
+    const t = setTimeout(
+      () => document.addEventListener('click', onClick, { capture: true }),
+      80
+    )
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('click', onClick, { capture: true })
+    }
+  }, [pendingOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function hourFromClientY(clientY: number): number {
+    const el = agendaRef.current
+    if (!el) return 9
+    const rect = el.getBoundingClientRect()
+    const relY = Math.max(0, Math.min(rect.height, clientY - rect.top))
+    const fraction = relY / rect.height
+    const first = AGENDA_HOURS[0]!
+    const last  = AGENDA_HOURS[AGENDA_HOURS.length - 1]! + 1
+    const hour  = first + Math.floor(fraction * (last - first))
+    return Math.max(first, Math.min(last - 1, hour))
+  }
+
+  function handleDragOver(e: React.DragEvent): void {
+    if (!onDropExisting || pendingDrop) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setIsDragOver(true)
+    setGhostHour(hourFromClientY(e.clientY))
+  }
+
+  function handleDragLeave(e: React.DragEvent): void {
+    if (!agendaRef.current?.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false)
+      setGhostHour(null)
+    }
+  }
+
+  function handleDrop(e: React.DragEvent): void {
+    e.preventDefault()
+    setIsDragOver(false)
+    if (!onDropExisting) return
+    const id    = e.dataTransfer.getData('text/task-id')
+    const label = e.dataTransfer.getData('text/task-label')
+    if (!id) { setGhostHour(null); return }
+    const hour = ghostHour ?? hourFromClientY(e.clientY)
+    setGhostHour(null)
+    setPendingDrop({
+      taskId: id,
+      taskLabel: label || 'Task',
+      hour,
+      durIdx: DEFAULT_DUR_IDX,
+      cardX: e.clientX,
+      cardY: e.clientY,
+    })
+  }
+
+  function confirmDrop(): void {
+    if (!pendingDrop || !onDropExisting) return
+    const startMin  = pendingDrop.hour * 60
+    const durMin    = DUR_STEPS_MIN[pendingDrop.durIdx]!
+    const endMin    = startMin + durMin
+    const timeBlock = `${minutesToTime(startMin)}-${minutesToTime(endMin)}`
+    onDropExisting(pendingDrop.taskId, timeBlock)
+    setPendingDrop(null)
+  }
+
+  function cancelDrop(): void {
+    setPendingDrop(null)
+  }
+
+  // ── Render helpers ────────────────────────────────────────────────────────
+
+  const entries = tasks
+    .map((task) => {
+      const block = parseTimeBlock(task.timeBlock)
+      return block ? { task, ...block } : null
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .sort((a, b) => a.start - b.start)
+
+  function startRename(task: DailyTask): void {
+    setRenameText(formatTaskEditBuffer(task))
+    setRenamingTaskId(task.id)
+  }
+
+  function commitRename(
+    taskId: string,
+    parsed: {
+      text: string
+      priority?: string
+      priorityTouched: boolean
+      externalLinks: DailyTask['externalLinks']
+    }
+  ): void {
+    const task = tasks.find((candidate) => candidate.id === taskId)
+    if (!task) { setRenamingTaskId(null); return }
+    const patch = buildTaskEditPatch(task, parsed)
+    if (Object.keys(patch).length > 0) onUpdateTask(taskId, patch)
+    else if (parsed.text.trim()) onUpdateText(taskId, parsed.text.trim())
+    setRenamingTaskId(null)
+  }
+
+  // Insertion line: position as % of agenda container height
+  const ghostTopPct = ghostHour !== null
+    ? ((ghostHour - AGENDA_HOURS[0]!) / AGENDA_HOURS.length) * 100
+    : 0
+  const ghostH12 = ghostHour !== null ? (ghostHour % 12 || 12) : 0
+  const ghostSuf = ghostHour !== null ? (ghostHour < 12 ? 'am' : 'pm') : ''
+
+  // Duration card derived values
+  const durMin      = pendingDrop ? DUR_STEPS_MIN[pendingDrop.durIdx]! : 30
+  const { num: durNum, unit: durUnit } = durDisplayParts(durMin)
+  const pct         = durMin / DUR_MAX_MIN
+  const R           = 28
+  const CIRC        = 2 * Math.PI * R
+  const dashOffset  = CIRC * (1 - pct)
+  const isLong      = pct > 0.75
+
+  // Card clamped position
+  let cardLeft = 0, cardTop = 0
+  if (pendingDrop) {
+    cardLeft = Math.min(pendingDrop.cardX + 16, window.innerWidth  - 188)
+    cardTop  = Math.max(8, Math.min(pendingDrop.cardY - 80,  window.innerHeight - 300))
+  }
+
+  let nowPlaced = false
+
+  return (
+    <div
+      ref={agendaRef}
+      className={`dn-agenda${isDragOver ? ' dn-agenda--drag-over' : ''}`}
+      data-testid="timeline-agenda"
+      onDragOver={onDropExisting ? handleDragOver : undefined}
+      onDragLeave={onDropExisting ? handleDragLeave : undefined}
+      onDrop={onDropExisting ? handleDrop : undefined}
+    >
+      {/* ── Drop insertion line (shown while dragging) ── */}
+      {isDragOver && ghostHour !== null && (
+        <div
+          className="dn-agenda-drop-line"
+          style={{ top: `${ghostTopPct}%` }}
+          aria-hidden="true"
+        >
+          <span className="dn-agenda-drop-line-label">
+            {`${ghostH12}:00 ${ghostSuf}`}
+          </span>
+        </div>
+      )}
+
+      {/* ── Agenda entries ── */}
+      {entries.map(({ task, start, end }, index) => {
+        const next = entries[index + 1]
+        const showNowBefore = !nowPlaced && nowMinutes <= start
+        if (showNowBefore) nowPlaced = true
+        const gapMinutes = next ? next.start - end : 0
+
+        return (
+          <div className="dn-agenda-entry-wrap" key={task.id}>
+            {showNowBefore && (
+              <div className="dn-agenda-now" data-testid="agenda-current-time">
+                <span>Now</span>
+                <i />
+              </div>
+            )}
+            <div
+              className={`dn-agenda-entry${task.status === 'done' ? ' done' : ''}${
+                task.isNote ? ' meeting' : ''
+              }${priorityTimelineAccentClass(task.priority)}`}
+              data-testid="agenda-task"
+              data-task-id={task.id}
+              draggable={renamingTaskId !== task.id}
+              onDragStart={(event) => {
+                event.dataTransfer.setData('text/task-id', task.id)
+                event.dataTransfer.setData('text/task-label', task.text)
+                event.dataTransfer.effectAllowed = 'move'
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                setMoveMenu({ x: event.clientX, y: event.clientY, taskId: task.id })
+              }}
+            >
+              <span className="dn-agenda-time">{formatClock(start)}</span>
+              {!task.isNote ? (
+                <button
+                  type="button"
+                  className="dn-tbox"
+                  data-testid="agenda-task-toggle"
+                  onClick={(event) => { event.stopPropagation(); onToggle(task.id) }}
+                  aria-label={task.status === 'done' ? 'Mark task incomplete' : 'Mark task complete'}
+                />
+              ) : (
+                <span className="dn-agenda-meeting-dot" aria-hidden="true" />
+              )}
+              <div
+                className="dn-agenda-task-main"
+                onDoubleClick={(event) => { event.stopPropagation(); startRename(task) }}
+              >
+                {renamingTaskId === task.id ? (
+                  <div className="dn-task-input-wrap" onMouseDown={(event) => event.stopPropagation()}>
+                    <TaskEditInput
+                      autoFocus
+                      deferFocus
+                      value={renameText}
+                      onChange={setRenameText}
+                      onCommit={(parsed) => commitRename(task.id, parsed)}
+                      onCancel={() => setRenamingTaskId(null)}
+                      inputRef={renameInputRef}
+                      className="dn-task-edit-input"
+                      testId="agenda-task-edit-input"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <span className="dn-agenda-label">
+                      <TaskTextDisplay task={task} />
+                    </span>
+                    {task.priority ? <TaskPriorityBadge priority={task.priority} /> : null}
+                  </>
+                )}
+              </div>
+              <span className="dn-agenda-duration">{formatDuration(end - start)}</span>
+              <button
+                type="button"
+                className="btn btn-icon btn-sm dn-agenda-delete"
+                data-testid="agenda-task-delete"
+                title="Delete task"
+                onClick={(event) => { event.stopPropagation(); onDelete(task.id) }}
+              >
+                ×
+              </button>
+            </div>
+            {gapMinutes >= MEANINGFUL_GAP_MINUTES && (
+              <div className="dn-agenda-gap" data-testid="agenda-free-gap">
+                <span />
+                <em>{formatDuration(gapMinutes)} free</em>
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {/* Pending drop preview row */}
+      {pendingDrop && (
+        <div className="dn-agenda-entry-wrap dn-agenda-entry-wrap--pending">
+          <div className="dn-agenda-entry dn-agenda-entry--pending">
+            <span className="dn-agenda-time">{formatClock(pendingDrop.hour * 60)}</span>
+            <span className="dn-agenda-dot-pending" aria-hidden="true" />
+            <div className="dn-agenda-task-main">
+              <span className="dn-agenda-label">{pendingDrop.taskLabel}</span>
+            </div>
+            <span className="dn-agenda-duration">{formatDuration(DUR_STEPS_MIN[pendingDrop.durIdx]!)}</span>
+          </div>
+        </div>
+      )}
+
+      {!nowPlaced && entries.length > 0 && nowMinutes > entries[entries.length - 1]!.end && (
+        <div className="dn-agenda-now dn-agenda-now--after" data-testid="agenda-current-time">
+          <span>Now</span>
+          <i />
+        </div>
+      )}
+      {entries.length === 0 && !pendingDrop && (
+        <div className="dn-agenda-empty">No scheduled tasks yet.</div>
+      )}
+
+      {moveMenu && (
+        <TaskMoveContextMenu
+          x={moveMenu.x}
+          y={moveMenu.y}
+          options={moveDateOptions}
+          onSelect={(targetDate) => onMoveToDate(moveMenu.taskId, targetDate)}
+          onRename={() => {
+            const task = tasks.find((candidate) => candidate.id === moveMenu.taskId)
+            if (task) startRename(task)
+          }}
+          onMoveToUnscheduled={() => onMoveToUnscheduled(moveMenu.taskId)}
+          onCreateSession={
+            onCreateSessionFromTask
+              ? () => {
+                  const task = tasks.find((candidate) => candidate.id === moveMenu.taskId)
+                  if (task) onCreateSessionFromTask(task)
+                }
+              : undefined
+          }
+          onClose={() => setMoveMenu(null)}
+        />
+      )}
+
+      {/* ── Duration confirm card ── */}
+      {pendingDrop && (
+        <div
+          ref={cardRef}
+          className="dn-dur-card"
+          style={{ left: cardLeft, top: cardTop }}
+          tabIndex={-1}
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); confirmDrop() }
+            if (e.key === 'Escape') { e.preventDefault(); cancelDrop() }
+            if (e.key === 'ArrowUp')   { e.preventDefault(); setPendingDrop(p => p ? { ...p, durIdx: Math.min(DUR_STEPS_MIN.length - 1, p.durIdx + 1) } : p) }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setPendingDrop(p => p ? { ...p, durIdx: Math.max(0, p.durIdx - 1) } : p) }
+          }}
+        >
+          <div className="dn-dur-card-task">{pendingDrop.taskLabel}</div>
+          <div className="dn-dur-card-at">
+            {`starting ${formatClock(pendingDrop.hour * 60)} ${pendingDrop.hour < 12 ? 'am' : 'pm'}`}
+          </div>
+
+          {/* Arc ring */}
+          <svg
+            className="dn-dur-card-ring"
+            width="68" height="68" viewBox="0 0 68 68"
+            aria-hidden="true"
+          >
+            <circle cx="34" cy="34" r={R} className="dn-dur-ring-bg" />
+            <circle
+              cx="34" cy="34" r={R}
+              className="dn-dur-ring-fill"
+              style={{
+                stroke: isLong ? 'var(--warning, #f0a05b)' : 'var(--accent)',
+                strokeDasharray: CIRC,
+                strokeDashoffset: dashOffset,
+                transform: 'rotate(-90deg)',
+                transformOrigin: '34px 34px',
+              }}
+            />
+          </svg>
+
+          {/* Big duration number */}
+          <div className="dn-dur-card-value">
+            <span
+              className="dn-dur-card-num"
+              style={{ color: isLong ? 'var(--warning, #f0a05b)' : undefined }}
+            >
+              {durNum}
+            </span>
+            <span className="dn-dur-card-unit">{durUnit}</span>
+          </div>
+
+          {/* Scroll hint */}
+          <div className="dn-dur-card-hint">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+              <rect x="5" y="2" width="6" height="10" rx="3"/>
+              <line x1="8" y1="5" x2="8" y2="7"/>
+            </svg>
+            scroll to adjust
+          </div>
+
+          <div className="dn-dur-card-confirm">click anywhere to confirm</div>
+        </div>
+      )}
+    </div>
+  )
+}

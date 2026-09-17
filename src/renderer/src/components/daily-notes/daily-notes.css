@@ -13,6 +13,19 @@
   transition: none;
 }
 
+@media (max-width: 699px) {
+  .app-body--daily-notes-open > .sidebar-shell,
+  .app-body--daily-notes-open > .main-area,
+  .app-body--daily-notes-open > .app-panel-resize-handle {
+    display: none;
+  }
+
+  .app-body--daily-notes-open > .daily-notes-panel-shell {
+    width: 100% !important;
+    flex: 1 1 auto;
+  }
+}
+
 .daily-notes-panel {
   width: 100%;
   flex-shrink: 0;
@@ -39,7 +52,7 @@
 .dn-head-info {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   flex: 1;
   min-width: 0;
 }
@@ -47,6 +60,13 @@
 .dn-close-button {
   flex-shrink: 0;
   font-size: 16px;
+}
+
+.dn-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 /* ---- Header progress (UC-3) ---- */
@@ -58,22 +78,22 @@
 }
 
 .dn-progress-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-tertiary);
   white-space: nowrap;
 }
 
 .dn-progress-bar {
   flex: 1;
-  height: 5px;
-  border-radius: 3px;
+  height: 2px;
+  border-radius: 1px;
   background: var(--border-subtle);
   overflow: hidden;
 }
 
 .dn-progress-fill {
   height: 100%;
-  background: var(--accent);
+  background: var(--info);
   border-radius: 3px;
   transition: width 150ms ease;
 }
@@ -81,45 +101,76 @@
 /* ---- Today's Focus / Big Three (UC-3) ---- */
 
 .dn-focus-block {
-  padding: 10px 18px 14px;
+  padding: 12px 20px 14px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
 .dn-focus-heading {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-secondary);
 }
 
 .dn-focus-heading-row {
-  min-height: 26px;
-  margin-bottom: 6px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 24px;
 }
 
 .dn-focus-edit-button {
-  min-height: 24px;
-  padding: 2px 7px;
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 4px;
+  color: var(--info);
+  opacity: 0.8;
+}
+
+.dn-focus-edit-button:focus-visible,
+.dn-focus-block:hover .dn-focus-edit-button {
+  opacity: 1;
+}
+
+.dn-focus-edit-button svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
 }
 
 .dn-focus-list {
-  margin: 0;
-  padding-left: 18px;
+  margin: 5px 0 0;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 14px;
+  gap: 5px;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.dn-focus-list li {
+  cursor: default;
+}
+
+.dn-focus-empty {
+  padding-top: 4px;
+  color: var(--text-tertiary);
+  font-size: 13px;
 }
 
 .dn-focus-editor {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-top: 6px;
 }
 
 .dn-focus-edit-row {
@@ -143,6 +194,120 @@
   justify-content: flex-end;
   gap: 6px;
   margin-top: 2px;
+}
+
+.dn-sections-stack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dn-sections-stack--schedule {
+  overflow: hidden;
+}
+
+.dn-sections-stack--agenda {
+  overflow-y: auto;
+  padding: 6px 12px 22px;
+}
+
+.dn-sections-stack--agenda .dn-section {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+  border-bottom: 0;
+}
+
+.dn-sections-stack--agenda .dn-section + .dn-section {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.dn-sections-stack--agenda .dn-timeline-section {
+  order: 0;
+}
+
+.dn-sections-stack--agenda .dn-trackers-section {
+  order: 1;
+}
+
+.dn-sections-stack--agenda .dn-unscheduled-section {
+  order: 2;
+  margin-top: auto;
+}
+
+.dn-sections-stack--agenda .dn-carry-review {
+  order: 3;
+}
+
+.dn-sections-stack--agenda .dn-section-body {
+  flex: none;
+  overflow: visible;
+  padding: 0 8px 16px;
+}
+
+.dn-sections-stack--agenda .dn-section-head {
+  padding: 16px 8px 8px;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-secondary);
+}
+
+.dn-sections-stack--agenda .dn-inline-add {
+  padding: 0 8px 10px;
+}
+
+.dn-sections-stack--agenda .dn-carry-review {
+  margin: 6px 0;
+  padding: 0 2px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--bg-hover);
+}
+
+.dn-sections-stack--agenda .dn-carry-review + .dn-section {
+  border-top: 0;
+}
+
+.dn-sections-stack--agenda .dn-task-chip {
+  gap: 7px;
+  min-height: 34px;
+  padding: 4px 0;
+  font-size: 13.5px;
+}
+
+.dn-sections-stack--agenda .dn-carry-item {
+  gap: 7px;
+  padding: 6px 0;
+  font-size: 13.5px;
+}
+
+.dn-sections-stack--agenda .dn-trackers-section .dn-task-chip {
+  color: var(--text-secondary);
+  font-size: 13.5px;
+}
+
+.dn-sections-stack--agenda .dn-trackers-section .dn-section-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  column-gap: 14px;
+}
+
+.dn-sections-stack--agenda .dn-chevron {
+  display: none;
+}
+
+.dn-sections-stack--agenda .dn-section-head-toggle {
+  gap: 0;
+}
+
+.dn-unscheduled-add-action {
+  min-height: 22px;
+  padding: 2px 4px;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-weight: 450;
 }
 
 .dn-section {
@@ -178,6 +343,65 @@
 }
 .dn-section-head-row .dn-section-head-toggle {
   flex: 1;
+}
+
+.dn-timeline-heading {
+  justify-content: space-between;
+}
+
+.dn-timeline-heading-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.dn-today-add-daily-three {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 2px;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+.dn-today-add-daily-three:hover {
+  opacity: 1;
+  color: var(--text-secondary);
+}
+.dn-today-add-daily-three svg {
+  width: 10px;
+  height: 10px;
+  display: block;
+}
+
+.dn-carry-heading {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dn-section-meta {
+  color: var(--text-disabled);
+  font-size: 10px;
+  font-weight: 450;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.dn-timeline-view-toggle {
+  min-height: 22px;
+  padding: 2px 5px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 450;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.dn-timeline-view-toggle:hover {
+  color: var(--text-primary);
 }
 
 .dn-inline-add {
@@ -451,7 +675,349 @@
   align-items: flex-start;
 }
 
-/* ---- Timeline ----
+/* ---- Compact agenda (default daily overview) ---- */
+
+.dn-agenda {
+  padding: 2px 8px 16px;
+}
+
+.dn-agenda-entry {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px 16px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 40px;
+  color: var(--text-primary);
+}
+
+.dn-agenda-entry.done {
+  color: var(--text-tertiary);
+}
+
+.dn-agenda-time,
+.dn-agenda-duration {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.dn-agenda-duration {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.dn-agenda-task-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.dn-agenda-label {
+  min-width: 0;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.dn-agenda-entry.done .dn-task-text-clamp {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.dn-agenda-entry .dn-tbox {
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+  justify-self: center;
+  padding: 0;
+}
+
+.dn-agenda-entry.done .dn-tbox::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 7px;
+  border: 1.5px solid var(--info);
+  border-top: none;
+  border-left: none;
+  transform: translate(-50%, -60%) rotate(45deg);
+}
+
+.dn-agenda-meeting-dot {
+  width: 5px;
+  height: 5px;
+  justify-self: center;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+
+.dn-agenda-entry.dn-tblock-pri-high .dn-agenda-meeting-dot {
+  background: #e5484d;
+}
+
+[data-theme='light'] .dn-agenda-entry.dn-tblock-pri-high .dn-agenda-meeting-dot {
+  background: #c53030;
+}
+
+.dn-agenda-entry.dn-tblock-pri-low {
+  color: var(--text-secondary);
+}
+
+.dn-agenda-delete {
+  position: absolute;
+  top: 4px;
+  right: -4px;
+  opacity: 0;
+  background: var(--bg-sidebar);
+}
+
+.dn-agenda-entry:hover .dn-agenda-delete,
+.dn-agenda-delete:focus-visible {
+  opacity: 1;
+}
+
+.dn-agenda-entry:hover .dn-agenda-duration {
+  opacity: 0;
+}
+
+.dn-agenda-now {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 7px;
+  min-height: 15px;
+  color: var(--info);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dn-agenda-now i {
+  height: 1px;
+  background: var(--info);
+  opacity: 0.6;
+}
+
+.dn-agenda-now--after {
+  margin-top: 3px;
+}
+
+.dn-agenda-gap {
+  display: grid;
+  grid-template-columns: 61px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 17px;
+  color: var(--text-tertiary);
+}
+
+.dn-agenda-gap span {
+  grid-column: 2;
+  border-top: 1px dotted var(--border-subtle);
+}
+
+.dn-agenda-gap em {
+  padding-left: 6px;
+  font-size: 11.5px;
+  font-style: normal;
+}
+
+.dn-agenda-empty {
+  padding: 7px 0 9px 61px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.dn-agenda .dn-task-edit-input {
+  font-size: 13px;
+}
+
+/* ---- Agenda drag-over ---- */
+
+.dn-agenda {
+  position: relative; /* anchor for insertion line */
+}
+
+.dn-agenda--drag-over {
+  background: rgba(91, 142, 240, .04);
+  border-radius: var(--r-sm, 4px);
+}
+
+/* Single insertion line that follows the cursor */
+.dn-agenda-drop-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 20;
+  transition: top 70ms ease;
+}
+
+.dn-agenda-drop-line-label {
+  position: absolute;
+  left: 0;
+  top: -18px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent);
+  background: var(--bg-panel, var(--bg));
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+/* ---- Pending drop row ---- */
+
+.dn-agenda-entry-wrap--pending {
+  opacity: 0.85;
+}
+
+.dn-agenda-entry--pending {
+  background: rgba(91, 142, 240, .07);
+  border-radius: 5px;
+  outline: 1.5px dashed rgba(91, 142, 240, .35);
+  outline-offset: -1px;
+}
+
+.dn-agenda-entry--pending .dn-agenda-time {
+  color: var(--accent);
+}
+
+.dn-agenda-entry--pending .dn-agenda-duration {
+  color: var(--accent);
+}
+
+.dn-agenda-dot-pending {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--accent);
+  flex-shrink: 0;
+}
+
+/* ---- Duration confirm card ---- */
+
+.dn-dur-card {
+  position: fixed;
+  z-index: 400;
+  background: var(--bg-panel-raised, var(--bg-raised, #2a2a32));
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 10px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .04);
+  padding: 16px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 172px;
+  outline: none;
+  animation: dn-dur-card-in 140ms cubic-bezier(.2, .8, .4, 1) both;
+}
+
+@keyframes dn-dur-card-in {
+  from { opacity: 0; transform: scale(.92) translateY(5px); }
+  to   { opacity: 1; transform: scale(1)   translateY(0); }
+}
+
+.dn-dur-card-task {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 6px;
+}
+
+.dn-dur-card-at {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  margin-bottom: 12px;
+  letter-spacing: .02em;
+}
+
+.dn-dur-card-ring {
+  margin-bottom: 4px;
+}
+
+.dn-dur-ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, .07);
+  stroke-width: 3;
+}
+
+.dn-dur-ring-fill {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.dn-dur-card-value {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 4px 14px;
+  border-radius: 7px;
+  margin-bottom: 8px;
+  transition: background 80ms;
+}
+
+.dn-dur-card:focus .dn-dur-card-value {
+  background: rgba(255, 255, 255, .06);
+}
+
+.dn-dur-card-num {
+  font-size: 38px;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+  transition: color 120ms;
+}
+
+.dn-dur-card-unit {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.dn-dur-card-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-disabled);
+  margin-bottom: 12px;
+}
+
+.dn-dur-card-hint svg {
+  opacity: .5;
+  flex-shrink: 0;
+}
+
+.dn-dur-card-confirm {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  border-top: 1px solid rgba(255, 255, 255, .07);
+  padding-top: 10px;
+  width: 100%;
+  text-align: center;
+}
+
+/* ---- Precise schedule ----
    Absolute-positioned 06:00-22:00 hour grid (mirrors the mock's
    `.time-block` / `.timeline-now-marker`, adapted to a real grid): the
    scrollable `.dn-section-body` (data-testid="timeline-body") contains a
@@ -707,25 +1273,26 @@
 .dn-tbox:hover {
   border-color: var(--text-secondary);
 }
+.dn-agenda-entry.done .dn-tbox,
 .dn-tblock.done .dn-tbox,
 .dn-task-chip.done .dn-tbox,
 .dn-carry-item.done .dn-tbox {
   background: transparent;
-  border-color: var(--text-secondary);
+  border-color: var(--info);
 }
 .dn-tblock.done .dn-tbox::after,
 .dn-task-chip.done .dn-tbox::after,
 .dn-carry-item.done .dn-tbox::after {
   content: '';
   position: absolute;
-  left: 4px;
-  top: 1px;
+  left: 50%;
+  top: 50%;
   width: 4px;
   height: 8px;
-  border: 1.5px solid var(--text-secondary);
+  border: 1.5px solid var(--info);
   border-top: none;
   border-left: none;
-  transform: rotate(45deg);
+  transform: translate(-50%, -60%) rotate(45deg);
 }
 
 /* Current-time line: an absolutely-positioned horizontal overlay across the
@@ -768,18 +1335,52 @@
   text-decoration: line-through;
   color: var(--text-tertiary);
 }
-.dn-task-chip .dn-task-tag-add {
+
+.dn-task-actions {
   position: absolute;
-  top: 7px;
-  right: 32px;
-}
-.dn-task-chip-remove {
-  position: absolute;
-  top: 7px;
+  top: 50%;
   right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 8px;
+  background: var(--bg-sidebar);
+  transform: translateY(-50%);
+}
+
+.dn-task-tag-add {
+  min-height: 22px;
+  padding: 2px 5px;
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.dn-task-more {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--text-disabled);
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.dn-sections-stack--agenda .dn-task-chip > .dn-tbox {
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+}
+
+.dn-task-chip-remove {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
   opacity: 0;
 }
 .dn-task-chip:hover .dn-task-chip-remove,
+.dn-task-chip:hover .dn-task-tag-add,
 .dn-task-chip .dn-task-chip-remove:focus-visible,
 .dn-task-chip .dn-task-tag-add:focus-visible {
   opacity: 1;
@@ -809,6 +1410,14 @@
   color: var(--text-tertiary);
 }
 
+.dn-carry-suggestion-arrow {
+  width: 13px;
+  flex: 0 0 13px;
+  color: var(--text-disabled);
+  font-size: 13px;
+  line-height: 1;
+}
+
 .dn-carry-item-actions {
   display: flex;
   align-items: center;
@@ -817,13 +1426,53 @@
 }
 
 .dn-carry-add,
-.dn-carry-dismiss {
+.dn-carry-dismiss,
+.dn-carry-complete {
   opacity: 0;
 }
 
 .dn-carry-item:hover .dn-carry-add,
-.dn-carry-item:hover .dn-carry-dismiss {
+.dn-carry-item:hover .dn-carry-dismiss,
+.dn-carry-item:hover .dn-carry-complete {
   opacity: 1;
+}
+
+.dn-carry-item--compact .dn-carry-item-actions {
+  position: relative;
+  width: 38px;
+  height: 22px;
+}
+
+.dn-carry-today {
+  position: absolute;
+  inset: 0;
+  min-height: 22px;
+  padding: 2px 3px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 450;
+}
+
+.dn-carry-item--compact .dn-carry-complete,
+.dn-carry-item--compact .dn-carry-dismiss {
+  position: absolute;
+  top: 0;
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+}
+
+.dn-carry-item--compact .dn-carry-complete {
+  left: -3px;
+}
+
+.dn-carry-item--compact .dn-carry-dismiss {
+  right: -3px;
+}
+
+.dn-carry-item--compact:hover .dn-carry-today {
+  opacity: 0;
 }
 
 /* ---- Trackers ---- */

@@ -94,6 +94,15 @@ function appendSyncLog(label: string, content: string): void {
   appendFileSync(syncLogPath, `\n\n===== ${label} =====\n${content}\n`)
 }
 
+async function openPreciseSchedule(targetPage: Page): Promise<void> {
+  const scheduleView = targetPage.getByTestId('daily-panel-schedule-view')
+  if (await scheduleView.isVisible()) return
+  const openButton = targetPage.getByTestId('timeline-open-schedule')
+  await expect(openButton).toBeVisible()
+  await openButton.click()
+  await expect(scheduleView).toBeVisible()
+}
+
 let electronApp: ElectronApplication
 let page: Page
 let userDataDir: string
@@ -131,6 +140,7 @@ test.beforeAll(async () => {
   page = await electronApp.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   await expect(page.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+  await openPreciseSchedule(page)
 })
 
 
@@ -210,12 +220,14 @@ test.describe('carry-over suggestions from prior daily note', () => {
     writeFileSync(priorPath, seedPriorDayCarryContent(), 'utf-8')
     await page.reload()
     await expect(page.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+    await openPreciseSchedule(page)
   })
 
   test('lists incomplete timeline and unscheduled todos after Unscheduled section', async () => {
     await expect(page.locator('[data-testid="carry-section"]')).toBeVisible()
     await expect(page.locator('[data-testid="carry-suggestion-item"]')).toHaveCount(3)
-    await expect(page.locator('[data-testid="carry-section-head"]')).toHaveText(`From ${PRIOR_DATE}`)
+    await expect(page.locator('[data-testid="carry-section-head"]')).toContainText('From yesterday')
+    await expect(page.locator('[data-testid="carry-section-head"]')).toContainText(PRIOR_DATE)
     await expect(
       page.locator('[data-testid="carry-suggestion-item"]', { hasText: 'Finish API draft' })
     ).toBeVisible()
@@ -266,6 +278,7 @@ test.describe('carry-over suggestions from prior daily note', () => {
 })
 
 test('current-time indicator is an absolutely-positioned overlay line on the hour grid (54a rewrite)', async () => {
+  await openPreciseSchedule(page)
   // Timeline is now an absolute-positioned hour grid (see the 54a rewrite):
   // the "now" marker is an absolutely-positioned overlay line at
   // `top: minutesToPx(minutes - TIMELINE_START_HOUR*60)`, not a row spliced
@@ -639,6 +652,7 @@ type: daily
     shapesPage = await shapesApp.firstWindow()
     await shapesPage.waitForLoadState('domcontentloaded')
     await expect(shapesPage.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+    await openPreciseSchedule(shapesPage)
   })
 
   test.afterAll(async () => {
@@ -787,6 +801,7 @@ type: daily
     inProgressPage = await inProgressApp.firstWindow()
     await inProgressPage.waitForLoadState('domcontentloaded')
     await expect(inProgressPage.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+    await openPreciseSchedule(inProgressPage)
   })
 
   test.afterAll(async () => {
@@ -879,6 +894,7 @@ type: daily
     gridPage = await gridApp.firstWindow()
     await gridPage.waitForLoadState('domcontentloaded')
     await expect(gridPage.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+    await openPreciseSchedule(gridPage)
     await expect(gridPage.locator('[data-testid="timeline-task"]')).toHaveCount(5)
   })
 
@@ -1091,7 +1107,8 @@ type: daily
 
     await expect(carryPage.locator('[data-testid="timeline-task"]')).toHaveCount(0)
     await expect(carryPage.locator('[data-testid="carry-section"]')).toBeVisible()
-    await expect(carryPage.locator('[data-testid="carry-section-head"]')).toHaveText(`From ${PRIOR_DATE}`)
+    await expect(carryPage.locator('[data-testid="carry-section-head"]')).toContainText('From yesterday')
+    await expect(carryPage.locator('[data-testid="carry-section-head"]')).toContainText('2 suggestions')
     await expect(carryPage.locator('[data-testid="carry-suggestion-item"]')).toHaveCount(2)
     await expect(
       carryPage.locator('[data-testid="carry-suggestion-item"]', { hasText: 'Standup carryover check' })
@@ -1190,6 +1207,7 @@ type: daily
     affPage = await affApp.firstWindow()
     await affPage.waitForLoadState('domcontentloaded')
     await expect(affPage.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+    await openPreciseSchedule(affPage)
   })
 
   test.afterAll(async () => {

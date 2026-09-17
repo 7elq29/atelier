@@ -4,6 +4,7 @@ import { sortUnscheduledTasksForDisplay } from '../../../../shared/daily-note-un
 import { useDailyNote } from '../../hooks/useDailyNote'
 import { useCarrySuggestions } from '../../hooks/useCarrySuggestions'
 import { useSectionResize } from './section-resize'
+import AgendaTimeline from './AgendaTimeline'
 import Timeline from './Timeline'
 import TaskItem from './TaskItem'
 import CarrySuggestionItem from './CarrySuggestionItem'
@@ -67,13 +68,10 @@ function AddTaskInput({ testId, buttonLabel = '+ New task', onAdd }: AddTaskInpu
 }
 
 /**
- * Daily Notes sidebar: four independently resizable/scrollable sections —
- * Timeline (time-blocked tasks), Unscheduled (backlog/delegated), Carry-over
- * (incomplete todos from the prior daily note), Trackers (habit trackers from
- * the `> [!invisible] Trackers` callout). Mirrors
- * `Features/UI-Design/mocks/index.html`'s `.daily-notes-panel` markup and
- * sizing (`.dn-head`, `.dn-section`, `.dn-section-head`, `.dn-resize-handle`,
- * `.dn-section-body`).
+ * Daily Notes sidebar. Its default Agenda view is one unified daily overview:
+ * compact scheduled work, Unscheduled, prior-day suggestions, then Trackers.
+ * "Open schedule" restores the proportional timeline and the persisted,
+ * independently resizable section layout for precise time-block editing.
  */
 export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSessionFromTask }: DailyNotesSidebarProps): JSX.Element {
   const {
@@ -103,6 +101,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
   const [carryMoveError, setCarryMoveError] = useState<string | null>(null)
   const [editingBigThree, setEditingBigThree] = useState(false)
   const [bigThreeDraft, setBigThreeDraft] = useState(['', '', ''])
+  const [scheduleView, setScheduleView] = useState(false)
   // 16-task-move-to-date: "today" for the "Move to..." menu's relative
   // labels (tomorrow/weekday-name/next-week) is the date of the note
   // currently open — the app has no other-date navigation today, so this is
@@ -207,9 +206,11 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
             </div>
           </div>
         </div>
-        <button className="btn btn-icon btn-sm dn-close-button" data-testid="daily-notes-close" onClick={onClose}>
-          ×
-        </button>
+        <div className="dn-head-actions">
+          <button className="btn btn-icon btn-sm dn-close-button" data-testid="daily-notes-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
       </div>
 
       {moveError && (
@@ -223,21 +224,10 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
         </div>
       )}
 
-      {note.bigThree.length > 0 && (
-        <div className="dn-focus-block" data-testid="dn-big-three">
-          <div className="dn-focus-heading-row">
-            <div className="dn-focus-heading">Today's Focus</div>
-            {!editingBigThree && (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm dn-focus-edit-button"
-                data-testid="dn-big-three-edit"
-                onClick={beginBigThreeEdit}
-              >
-                Edit
-              </button>
-            )}
-          </div>
+      <div
+        className={`dn-focus-block${editingBigThree ? ' is-editing' : ''}`}
+        data-testid="dn-big-three"
+      >
           {editingBigThree ? (
             <div className="dn-focus-editor">
               {bigThreeDraft.map((value, index) => (
@@ -280,43 +270,99 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
                 </button>
               </div>
             </div>
-          ) : (
-            <ul className="dn-focus-list">
+          ) : note.bigThree.length > 0 ? (
+            <ul className="dn-focus-list" data-testid="dn-big-three-list">
               {note.bigThree.map((item, idx) => (
-                <li key={idx} data-testid="dn-big-three-item">
+                <li
+                  key={idx}
+                  data-testid="dn-big-three-item"
+                  onContextMenu={(e) => { e.preventDefault(); beginBigThreeEdit() }}
+                >
                   {item}
                 </li>
               ))}
             </ul>
+          ) : (
+            <div className="dn-focus-empty">No priorities yet</div>
           )}
-        </div>
-      )}
-
-      <div ref={sectionsRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-      <div className="dn-section" style={{ flex: `${weights.timeline} 1 0px` }} data-testid="timeline-section">
-        <div className="dn-section-head">Timeline</div>
-        <Timeline
-          tasks={dayPlanTasks}
-          onToggle={toggleTask}
-          onCreate={(text, timeBlock) => addTask(text, 'day-plan', timeBlock)}
-          onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
-          onMoveToUnscheduled={(id) => moveTask(id, 'unscheduled', undefined)}
-          onDelete={deleteTask}
-          onUpdateText={updateTaskText}
-          onUpdateTask={updateTask}
-          moveDateOptions={moveDateOptions}
-          onMoveToDate={moveTaskToDate}
-          onCreateSessionFromTask={onCreateSessionFromTask}
-        />
       </div>
 
-      {unscheduledExpanded && (
+      <div
+        ref={sectionsRef}
+        className={`dn-sections-stack ${scheduleView ? 'dn-sections-stack--schedule' : 'dn-sections-stack--agenda scroll-y'}`}
+        data-testid={scheduleView ? 'daily-panel-schedule-view' : 'daily-panel-agenda-view'}
+      >
+      <div
+        className={`dn-section dn-timeline-section${scheduleView ? ' dn-timeline-section--schedule' : ''}`}
+        style={scheduleView ? { flex: `${weights.timeline} 1 0px` } : undefined}
+        data-testid="timeline-section"
+      >
+        <div className="dn-section-head dn-section-head-row dn-timeline-heading">
+          <button
+            type="button"
+            className="dn-timeline-heading-toggle"
+            data-testid={scheduleView ? 'timeline-back-to-agenda' : 'timeline-open-schedule'}
+            aria-label={scheduleView ? 'Show agenda' : 'Show schedule'}
+            onClick={() => setScheduleView((current) => !current)}
+          >
+            {scheduleView ? 'Schedule' : 'Today'}
+          </button>
+          {!scheduleView && !editingBigThree && (
+            <button
+              type="button"
+              className="btn btn-icon btn-sm dn-today-add-daily-three"
+              data-testid="dn-today-add-daily-three"
+              aria-label="Add to daily three"
+              title="Add to daily three"
+              onClick={beginBigThreeEdit}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M8 3v10M3 8h10" />
+              </svg>
+            </button>
+          )}
+        </div>
+        {scheduleView ? (
+          <Timeline
+            tasks={dayPlanTasks}
+            onToggle={toggleTask}
+            onCreate={(text, timeBlock) => addTask(text, 'day-plan', timeBlock)}
+            onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
+            onMoveToUnscheduled={(id) => moveTask(id, 'unscheduled', undefined)}
+            onDelete={deleteTask}
+            onUpdateText={updateTaskText}
+            onUpdateTask={updateTask}
+            moveDateOptions={moveDateOptions}
+            onMoveToDate={moveTaskToDate}
+            onCreateSessionFromTask={onCreateSessionFromTask}
+          />
+        ) : (
+          <AgendaTimeline
+            tasks={dayPlanTasks}
+            onToggle={toggleTask}
+            onMoveToUnscheduled={(id) => moveTask(id, 'unscheduled', undefined)}
+            onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
+            onDelete={deleteTask}
+            onUpdateText={updateTaskText}
+            onUpdateTask={updateTask}
+            moveDateOptions={moveDateOptions}
+            onMoveToDate={moveTaskToDate}
+            onCreateSessionFromTask={onCreateSessionFromTask}
+          />
+        )}
+      </div>
+
+      {scheduleView && unscheduledExpanded && (
         <div className="dn-resize-handle" onMouseDown={startResize('timeline', 'unscheduled')} />
       )}
 
       <div
-        className={`dn-section${unscheduledExpanded ? '' : ' dn-section-collapsed'}`}
-        style={unscheduledExpanded ? { flex: `${weights.unscheduled} 1 0px` } : { flex: '0 0 auto' }}
+        className={`dn-section dn-unscheduled-section${unscheduledExpanded ? '' : ' dn-section-collapsed'}`}
+        style={
+          scheduleView && unscheduledExpanded
+            ? { flex: `${weights.unscheduled} 1 0px` }
+            : { flex: '0 0 auto' }
+        }
         data-testid="unscheduled-section"
       >
         <div className="dn-section-head dn-section-head-row">
@@ -337,14 +383,14 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
           {unscheduledExpanded && (
             <button
               type="button"
-              className="btn btn-icon btn-sm"
+              className={`btn btn-sm${scheduleView ? ' btn-icon' : ' btn-ghost dn-unscheduled-add-action'}`}
               data-testid="add-unscheduled-task-btn"
               onClick={() => {
                 setUnscheduledDraft('')
                 setAddingUnscheduled(true)
               }}
             >
-              +
+              {scheduleView ? '+' : '+ Add'}
             </button>
           )}
         </div>
@@ -399,26 +445,34 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
                 moveDateOptions={moveDateOptions}
                 onMoveToDate={moveTaskToDate}
                 onCreateSessionFromTask={onCreateSessionFromTask}
+                showMenuButton={!scheduleView}
               />
             ))}
           </div>
         )}
       </div>
 
-      {unscheduledExpanded && showCarrySection ? (
+      {scheduleView && unscheduledExpanded && showCarrySection ? (
         <div className="dn-resize-handle" onMouseDown={startResize('unscheduled', 'carry')} />
-      ) : unscheduledExpanded && trackersExpanded ? (
+      ) : scheduleView && unscheduledExpanded && trackersExpanded && trackerTasks.length > 0 ? (
         <div className="dn-resize-handle" onMouseDown={startResize('unscheduled', 'trackers')} />
       ) : null}
 
       {showCarrySection && carry.sourceDate && (
         <>
           <div
-            className="dn-section"
-            style={{ flex: `${weights.carry} 1 0px` }}
+            className="dn-section dn-carry-review"
+            style={scheduleView ? { flex: `${weights.carry} 1 0px` } : undefined}
             data-testid="carry-section"
           >
-            <div className="dn-section-head" data-testid="carry-section-head">From {carry.sourceDate}</div>
+            <div className="dn-section-head dn-carry-heading" data-testid="carry-section-head">
+              <span>From yesterday</span>
+              <span className="dn-section-meta">
+                {scheduleView
+                  ? carry.sourceDate
+                  : `${carry.tasks.length} suggestion${carry.tasks.length === 1 ? '' : 's'}`}
+              </span>
+            </div>
             <div className="dn-section-body scroll-y" data-testid="carry-body">
               {carry.tasks.map((task) => (
                 <CarrySuggestionItem
@@ -438,19 +492,24 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
                     if (err) setCarryMoveError(err)
                   }}
                   onDismiss={() => carry.dismiss(carry.sourceDate!, task.gid)}
+                  compact={!scheduleView}
                 />
               ))}
             </div>
           </div>
-          {trackersExpanded && (
+          {scheduleView && trackersExpanded && trackerTasks.length > 0 && (
             <div className="dn-resize-handle" onMouseDown={startResize('carry', 'trackers')} />
           )}
         </>
       )}
 
-      <div
-        className={`dn-section${trackersExpanded ? '' : ' dn-section-collapsed'}`}
-        style={trackersExpanded ? { flex: `${weights.trackers} 1 0px` } : { flex: '0 0 auto' }}
+      {trackerTasks.length > 0 && <div
+        className={`dn-section dn-trackers-section${trackersExpanded ? '' : ' dn-section-collapsed'}`}
+        style={
+          scheduleView && trackersExpanded
+            ? { flex: `${weights.trackers} 1 0px` }
+            : { flex: '0 0 auto' }
+        }
         data-testid="trackers-section"
       >
         <div className="dn-section-head">
@@ -484,7 +543,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
             ))}
           </div>
         )}
-      </div>
+      </div>}
       </div>
     </div>
   )

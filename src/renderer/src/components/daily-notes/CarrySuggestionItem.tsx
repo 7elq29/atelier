@@ -11,7 +11,8 @@ export default function CarrySuggestionItem({
   onComplete,
   onMoveToToday,
   onMoveToDate,
-  onDismiss
+  onDismiss,
+  compact = false
 }: {
   task: DailyTask
   sourceDate: string
@@ -20,12 +21,15 @@ export default function CarrySuggestionItem({
   onMoveToToday: () => void
   onMoveToDate: (targetDate: string) => void
   onDismiss: () => void
+  compact?: boolean
 }): JSX.Element {
   const [moveMenu, setMoveMenu] = useState<{ x: number; y: number } | null>(null)
 
   return (
     <div
-      className={`dn-carry-item${task.status === 'done' ? ' done' : ''}`}
+      className={`dn-carry-item${compact ? ' dn-carry-item--compact' : ''}${
+        task.status === 'done' ? ' done' : ''
+      }`}
       data-testid="carry-suggestion-item"
       data-task-id={task.id}
       data-source-date={sourceDate}
@@ -34,28 +38,54 @@ export default function CarrySuggestionItem({
         setMoveMenu({ x: e.clientX, y: e.clientY })
       }}
     >
-      {!task.isNote && (
+      {compact ? (
+        <span className="dn-carry-suggestion-arrow" aria-hidden="true">↳</span>
+      ) : !task.isNote ? (
         <div
           className="dn-tbox"
           data-testid="carry-suggestion-toggle"
           onClick={() => onComplete()}
         />
-      )}
+      ) : null}
       <div className="dn-carry-item-main">
         <span className="dn-carry-item-text">
           <TaskTextDisplay task={task} />
         </span>
       </div>
       <div className="dn-carry-item-actions">
-        <button
-          type="button"
-          className="btn btn-icon btn-sm dn-carry-add"
-          data-testid="carry-add-today"
-          title="Add to today"
-          onClick={() => onMoveToToday()}
-        >
-          +
-        </button>
+        {compact && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm dn-carry-today"
+            data-testid="carry-add-today"
+            onClick={() => onMoveToToday()}
+          >
+            Today
+          </button>
+        )}
+        {compact && !task.isNote && (
+          <button
+            type="button"
+            className="btn btn-icon btn-sm dn-carry-complete"
+            data-testid="carry-suggestion-toggle"
+            title="Complete on source day"
+            aria-label="Complete on source day"
+            onClick={() => onComplete()}
+          >
+            ✓
+          </button>
+        )}
+        {!compact && (
+          <button
+            type="button"
+            className="btn btn-icon btn-sm dn-carry-add"
+            data-testid="carry-add-today"
+            title="Add to today"
+            onClick={() => onMoveToToday()}
+          >
+            +
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-icon btn-sm dn-carry-dismiss"

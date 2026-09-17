@@ -67,6 +67,7 @@ test('Daily Big Three can be edited, cancelled, saved, and reloaded', async () =
   let { app, page } = await launch()
   try {
     const focus = page.getByTestId('dn-big-three')
+    await expect(focus.getByTestId('dn-focus-summary')).toHaveText('Daily three')
     await expect(focus.getByTestId('dn-big-three-item')).toHaveText([
       'Existing first',
       'Existing second',
@@ -112,6 +113,7 @@ test('Daily Big Three can be edited, cancelled, saved, and reloaded', async () =
 
     await app.close()
     ;({ app, page } = await launch())
+    await expect(page.getByTestId('dn-focus-summary')).toHaveText('Daily three')
     await expect(page.getByTestId('dn-big-three-item')).toHaveText([
       'Ship the Atelier update',
       'Prepare the interview plan',

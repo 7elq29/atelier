@@ -2212,7 +2212,13 @@ export default function App(): JSX.Element {
   return (
     <div className="app-root">
       {showIntegratedTitleBar ? <TitleBar /> : null}
-      <div id="app" className={'app-body' + (resizing ? ' app-body--resizing-panels' : '')} ref={appBodyRef}>
+      <div
+        id="app"
+        className={`app-body${resizing ? ' app-body--resizing-panels' : ''}${
+          dailyNotesOpen ? ' app-body--daily-notes-open' : ''
+        }`}
+        ref={appBodyRef}
+      >
         <div
           className="sidebar-shell"
           data-testid="sidebar-shell"

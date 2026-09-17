@@ -30,6 +30,7 @@ interface TaskItemProps {
   moveDateOptions?: MoveDateOptions
   onMoveToDate?: (id: string, targetDate: string) => void
   onCreateSessionFromTask?: (task: DailyTask) => void
+  showMenuButton?: boolean
 }
 
 /** A single "chip" row used by the Unscheduled section (and, without the
@@ -46,7 +47,8 @@ export default function TaskItem({
   testId = 'unscheduled-task',
   moveDateOptions,
   onMoveToDate,
-  onCreateSessionFromTask
+  onCreateSessionFromTask,
+  showMenuButton = false
 }: TaskItemProps): JSX.Element {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(task.text)
@@ -95,13 +97,16 @@ export default function TaskItem({
 
   return (
     <div
-      className={`dn-task-chip${task.status === 'done' ? ' done' : ''}${task.isNote ? ' meeting' : ''}${
-        editing ? ' editing' : ''
-      }`}
+      className={`dn-task-chip${showMenuButton ? ' has-menu-button' : ''}${
+        task.status === 'done' ? ' done' : ''
+      }${task.isNote ? ' meeting' : ''}${editing ? ' editing' : ''}`}
       data-testid={testId}
       data-task-id={task.id}
       draggable={draggable}
-      onDragStart={(e) => e.dataTransfer.setData('text/task-id', task.id)}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/task-id', task.id)
+        e.dataTransfer.setData('text/task-label', task.text)
+      }}
       onContextMenu={(e) => {
         if (!moveDateOptions || !onMoveToDate) return
         e.preventDefault()
@@ -178,19 +183,39 @@ export default function TaskItem({
           ))}
         </div>
       ) : (
-        <button
-          type="button"
-          className="btn btn-icon btn-sm dn-task-tag-add"
-          data-testid="add-tag-button"
-          onClick={() => setTagPickerOpen(true)}
-        >
-          + tag
-        </button>
+        <div className="dn-task-actions">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm dn-task-tag-add"
+            data-testid="add-tag-button"
+            onClick={() => setTagPickerOpen(true)}
+          >
+            + tag
+          </button>
+          <button
+            className="btn btn-icon btn-sm dn-task-chip-remove"
+            aria-label="Delete task"
+            onClick={() => onDelete(task.id)}
+          >
+            ×
+          </button>
+          {showMenuButton && moveDateOptions && onMoveToDate && (
+            <button
+              type="button"
+              className="btn btn-icon btn-sm dn-task-more"
+              data-testid="task-more-button"
+              aria-label="Task actions"
+              onClick={(event) => {
+                event.stopPropagation()
+                const rect = event.currentTarget.getBoundingClientRect()
+                setMoveMenu({ x: Math.max(4, rect.right - 190), y: rect.bottom })
+              }}
+            >
+              ···
+            </button>
+          )}
+        </div>
       )}
-
-      <button className="btn btn-icon btn-sm dn-task-chip-remove" onClick={() => onDelete(task.id)}>
-        ✕
-      </button>
 
       {moveMenu && moveDateOptions && onMoveToDate && (
         <TaskMoveContextMenu

@@ -65,10 +65,11 @@ type: daily
     const geometry = await row.evaluate((element) => {
       const rowRect = element.getBoundingClientRect()
       const labelRect = element.querySelector('.dn-task-chip-text')!.getBoundingClientRect()
+      const actionsRect = element.querySelector('.dn-task-more')?.getBoundingClientRect()
       const body = element.closest('[data-testid="unscheduled-body"]') as HTMLElement
       return {
         rowWidth: rowRect.width,
-        unusedRightWidth: rowRect.right - labelRect.right,
+        unusedRightWidth: rowRect.right - Math.max(labelRect.right, actionsRect?.right ?? labelRect.right),
         bodyClientWidth: body.clientWidth,
         bodyScrollWidth: body.scrollWidth,
         bodyScrollLeft: body.scrollLeft
