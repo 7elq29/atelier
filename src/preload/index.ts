@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AtelierConfig } from '../shared/config'
+import type { CustomTheme, CustomThemeColors } from '../shared/theme-types'
 import type { DailyNote, ReadDailyNoteResult, DailyNoteNotesSliceResult, DailyNotePasteImagePayload, DailyNotePasteImageResult, DailyNoteCarrySuggestionsResult } from '../shared/daily-note-types'
 import type {
   WeeklyPlanCreatePayload,
@@ -594,7 +595,58 @@ const api = {
     ipcRenderer.invoke('app-bookmark:create', input),
   updateAppBookmark: (id: string, patch: AppBookmarkUpdate): Promise<AppBookmarkRecord> =>
     ipcRenderer.invoke('app-bookmark:update', id, patch),
-  deleteAppBookmark: (id: string): Promise<void> => ipcRenderer.invoke('app-bookmark:delete', id)
+  deleteAppBookmark: (id: string): Promise<void> => ipcRenderer.invoke('app-bookmark:delete', id),
+
+  // ── Theme editor detached window ──────────────────────────────────────────
+  /** True when this renderer is the standalone theme-editor sub-window. */
+  // NOTE: Evaluated in the renderer context (not Node), so globalThis.location is safe.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  isThemeEditorWindow: (): boolean => (globalThis as any).location?.hash === '#theme-editor',
+  /** Open (or focus) the detached theme-editor window. */
+  openThemeEditor: (theme: CustomTheme | null): Promise<void> =>
+    ipcRenderer.invoke('theme-editor:open', theme),
+  /** Theme-editor window: fetch the initial theme passed by the main window. */
+  getThemeEditorInitialTheme: (): Promise<CustomTheme | null> =>
+    ipcRenderer.invoke('theme-editor:get-initial'),
+  /** Theme-editor window: send a live-preview update to the main window. */
+  themeEditorPreview: (colors: CustomThemeColors, base: 'light' | 'dark'): void =>
+    ipcRenderer.send('theme-editor:preview', colors, base),
+  /** Theme-editor window: commit the edited theme and close the window. */
+  themeEditorSave: (theme: CustomTheme): void =>
+    ipcRenderer.send('theme-editor:save', theme),
+  /** Theme-editor window: cancel editing (main window reverts preview). */
+  themeEditorCancel: (): void =>
+    ipcRenderer.send('theme-editor:cancel'),
+  /** Theme-editor window: delete this theme and close the window. */
+  themeEditorDelete: (id: string): void =>
+    ipcRenderer.send('theme-editor:delete', id),
+  /** Main window: subscribe to live-preview updates from the editor window. */
+  onThemeEditorPreview: (
+    callback: (colors: CustomThemeColors, base: 'light' | 'dark') => void
+  ): (() => void) => {
+    const listener = (_e: unknown, colors: CustomThemeColors, base: 'light' | 'dark'): void =>
+      callback(colors, base)
+    ipcRenderer.on('theme-editor:preview', listener)
+    return () => ipcRenderer.removeListener('theme-editor:preview', listener)
+  },
+  /** Main window: subscribe to save events from the editor window. */
+  onThemeEditorSaved: (callback: (theme: CustomTheme) => void): (() => void) => {
+    const listener = (_e: unknown, theme: CustomTheme): void => callback(theme)
+    ipcRenderer.on('theme-editor:saved', listener)
+    return () => ipcRenderer.removeListener('theme-editor:saved', listener)
+  },
+  /** Main window: subscribe to cancel/close events from the editor window. */
+  onThemeEditorCancelled: (callback: () => void): (() => void) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('theme-editor:cancelled', listener)
+    return () => ipcRenderer.removeListener('theme-editor:cancelled', listener)
+  },
+  /** Main window: subscribe to delete events from the editor window. */
+  onThemeEditorDeleted: (callback: (id: string) => void): (() => void) => {
+    const listener = (_e: unknown, id: string): void => callback(id)
+    ipcRenderer.on('theme-editor:deleted', listener)
+    return () => ipcRenderer.removeListener('theme-editor:deleted', listener)
+  }
 }
 
 contextBridge.exposeInMainWorld('atelier', api)

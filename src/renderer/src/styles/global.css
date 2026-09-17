@@ -1034,6 +1034,218 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
 .profile-edit-dialog {
   width: 520px;
 }
+
+/* ===== Custom themes pane ===== */
+.pane-sep {
+  height: 1px;
+  background: var(--border-subtle);
+}
+.pane-section-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+.theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.theme-empty {
+  font-size: 13px;
+  color: var(--text-disabled);
+  padding: 6px 2px;
+  font-style: italic;
+}
+.theme-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.theme-row:hover {
+  background: var(--bg-hover);
+}
+.theme-row.selected {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-active));
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border-default));
+}
+.theme-radio {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.theme-row.selected .theme-radio {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.theme-radio-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: none;
+}
+.theme-row.selected .theme-radio-dot {
+  display: block;
+}
+.theme-row-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.theme-row-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-base-chip {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-disabled);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  flex-shrink: 0;
+}
+.theme-row-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.1s;
+  flex-shrink: 0;
+}
+.theme-row:hover .theme-row-actions {
+  opacity: 1;
+}
+
+/* ===== Theme edit — draggable floating panel (no backdrop) ===== */
+.theme-edit-panel {
+  position: fixed;
+  z-index: 110;
+  width: 560px;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-xl);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+.theme-edit-panel .modal-header {
+  cursor: move;
+  user-select: none;
+}
+.theme-edit-drag-handle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  margin-right: 8px;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.theme-live-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  padding: 7px 11px;
+  border-radius: var(--r-md);
+  background: var(--bg-tint);
+  border: 1px solid var(--border-subtle);
+  line-height: 1.35;
+}
+.theme-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--accent);
+  animation: pulse 1.6s infinite;
+}
+
+/* Color token groups */
+.token-group {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.token-group-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.token-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.token-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  /* tooltip provided by the parent's title attribute */
+  cursor: default;
+}
+.token-swatch {
+  width: 52px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-default);
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+.token-swatch:hover {
+  border-color: var(--border-strong);
+}
+/* Transparent overlay — clicking the visible swatch opens the native picker */
+.token-swatch input[type='color'] {
+  position: absolute;
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+}
+.token-name {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  line-height: 1.2;
+  max-width: 52px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .profile-list {
   display: flex;
   flex-direction: column;
@@ -3134,8 +3346,8 @@ body.dragging-workspace-tab .workspace-tool-button.workspace-tab-draggable { cur
    Active pane gets a slightly darker bg, making it visually distinct. */
 [data-split-active-panel='primary'] .workspace-split-pane--primary,
 [data-split-active-panel='secondary'] .workspace-split-pane--secondary {
-  --bg-app: #191714;
-  --bg-code: #141209;
+  --bg-app: var(--bg-app-active-panel);
+  --bg-code: var(--bg-code-active-panel);
 }
 /* Empty layout slot for the Terminal tab. The real terminal overlays it from the
    keep-alive layer, and in a split both take the same geometry — so the slot must

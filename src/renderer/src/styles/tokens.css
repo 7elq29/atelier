@@ -93,6 +93,11 @@
      avoiding "card soup". */
   --bg-tint: #332f27;
 
+  /* Active split-pane: slightly darker bg so the focused pane is visually distinct
+     from the inactive one at a glance without introducing a third surface color. */
+  --bg-app-active-panel: #191714;
+  --bg-code-active-panel: #141209;
+
   /* Daily note + app notes Atomic editor: full main-panel width (package default is 70ch). */
   --notes-editor-measure: 100%;
 }
@@ -134,6 +139,9 @@
   --elevation-shadow: var(--shadow-panel);
 
   --bg-tint: #ece7db;
+
+  --bg-app-active-panel: #f1ede3;
+  --bg-code-active-panel: #e4ddcc;
 }
 
 * { box-sizing: border-box; }

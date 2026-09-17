@@ -8,8 +8,10 @@ import type { EffortLevel, PermissionModeValue } from './session-types'
 import type { SessionProfile } from './session-profile-types'
 import type { TerminalToolboxConfig } from './terminal-toolbox-types'
 import { DEFAULT_TERMINAL_TOOLBOX_COMMANDS } from './terminal-toolbox-types'
+import type { CustomTheme } from './theme-types'
 
 export type { SessionProfile } from './session-profile-types'
+export type { CustomTheme } from './theme-types'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 
@@ -114,6 +116,14 @@ export interface AtelierConfig {
   terminalToolbox: TerminalToolboxConfig
   /** Named workspace + file-directory bundles for New Session and Files tab. */
   sessionProfiles: SessionProfile[]
+  /** User-defined color themes. */
+  customThemes: CustomTheme[]
+  /**
+   * ID of the currently active custom theme, or null when a built-in theme
+   * (config.theme) is active. Setting this immediately overrides the token
+   * values written to document.documentElement in App.tsx.
+   */
+  activeCustomThemeId: string | null
 }
 
 export const DEFAULT_CONFIG: AtelierConfig = {
@@ -144,5 +154,7 @@ export const DEFAULT_CONFIG: AtelierConfig = {
   terminalToolbox: {
     commands: [...DEFAULT_TERMINAL_TOOLBOX_COMMANDS]
   },
-  sessionProfiles: []
+  sessionProfiles: [],
+  customThemes: [],
+  activeCustomThemeId: null
 }
