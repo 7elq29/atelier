@@ -1058,12 +1058,6 @@
 .dn-create-card-input::placeholder {
   color: var(--text-tertiary);
 }
-/* Tag suggestions appear correctly inside the create card */
-.dn-create-card-input-wrap .dn-inline-tag-suggestions {
-  top: 100%;
-  left: 0;
-  right: 0;
-}
 
 /* ---- Precise schedule ----
    Absolute-positioned 06:00-22:00 hour grid (mirrors the mock's
@@ -1260,16 +1254,20 @@
   width: 100%;
 }
 .dn-inline-tag-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 6px;
+  margin-top: 4px;
   padding: 6px;
   background: var(--bg-panel-raised);
   border: 1px solid var(--border-default);
   border-radius: var(--r-sm);
   box-shadow: var(--shadow-popover);
-  z-index: 20;
+  z-index: 50;
 }
 .dn-inline-tag-suggestions .dn-tag-suggestion {
   font-size: 12px;

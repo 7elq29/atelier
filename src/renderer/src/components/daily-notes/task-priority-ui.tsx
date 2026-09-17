@@ -238,6 +238,7 @@ export function TaskEditInput({
         onMouseDown={onMouseDown}
         onBlur={() => {
           if (showPriorityMenu) return
+          if (showTagMenu) return
           if (blurPolicy === 'nonEmpty' && !parseTaskEditContent(editBufferRef.current).text.trim()) return
           commit()
         }}
