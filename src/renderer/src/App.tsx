@@ -883,6 +883,14 @@ export default function App(): JSX.Element {
     return blocked.length + ready.length > 0 ? { blocked, ready } : null
   }, [config.sidebarCollapsed, allSessions, activeSessionId, promptDotsBySession, waitingInputAlertIds])
 
+  const runningSessionCount = useMemo(() => {
+    if (!config.sidebarCollapsed) return 0
+    return sessions.activeSessions.filter(
+      (s) =>
+        sessionDotStatus(s, false, sessions.statuses, sessions.staleSessionIds, promptDotsBySession[s.id] ?? null) === 'working'
+    ).length
+  }, [config.sidebarCollapsed, sessions.activeSessions, sessions.statuses, sessions.staleSessionIds, promptDotsBySession])
+
   const evictSessionRendererState = useCallback(
     (id: string) => {
       sessionWorkspace.evictSession(id)
@@ -2527,15 +2535,39 @@ export default function App(): JSX.Element {
             <button
               type="button"
               className="topbar-sidebar-toggle"
-              title="Toggle sidebar"
+              title={
+                config.sidebarCollapsed && runningSessionCount > 0
+                  ? `Expand sidebar — ${runningSessionCount} session${runningSessionCount === 1 ? '' : 's'} running`
+                  : 'Toggle sidebar'
+              }
               data-testid="sidebar-collapse-toggle"
               onClick={() => updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })}
             >
-              <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="3" y="4" width="18" height="16" rx="2" />
-                <path d="M9 4v16" />
-                <path d={config.sidebarCollapsed ? 'm13 9 3 3-3 3' : 'm16 9-3 3 3 3'} />
-              </svg>
+              {config.sidebarCollapsed ? (
+                <span className="topbar-sidebar-toggle__dynamic" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="2.2" className="topbar-sidebar-toggle__track" />
+                    {runningSessionCount > 0 && (
+                      <circle
+                        cx="12" cy="12" r="8.5"
+                        stroke="currentColor" strokeWidth="2.2"
+                        strokeDasharray="39 14.4"
+                        strokeLinecap="round"
+                        className="topbar-sidebar-toggle__arc"
+                      />
+                    )}
+                  </svg>
+                  {runningSessionCount > 0 && (
+                    <span className="topbar-sidebar-toggle__count">{runningSessionCount}</span>
+                  )}
+                </span>
+              ) : (
+                <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M9 4v16" />
+                  <path d="m16 9-3 3 3 3" />
+                </svg>
+              )}
             </button>
             <div className="topbar-title-group">
               <span

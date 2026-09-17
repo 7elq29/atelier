@@ -15,57 +15,98 @@
         "src/renderer/src/App.tsx"
       ],
       "changedLines": "calendar|Calendar|activeDailyNoteDate|weeklyPlanViewDoc|activeWeeklyPlanOpen",
-      "targets": [{ "file": "e2e/calendar-day-refresh.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/calendar-day-refresh.spec.ts"
+        }
+      ]
     },
     {
       "id": "friendly-claude-exit-error-copy",
-      "paths": ["src/shared/harness-error-copy.ts"],
-      "targets": [{ "file": "e2e/bug-friendly-claude-exit-255.spec.ts" }]
+      "paths": [
+        "src/shared/harness-error-copy.ts"
+      ],
+      "targets": [
+        {
+          "file": "e2e/bug-friendly-claude-exit-255.spec.ts"
+        }
+      ]
     },
     {
       "id": "friendly-claude-exit-error-transcript",
-      "paths": ["src/renderer/src/components/chat/ChatTranscript.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/ChatTranscript.tsx"
+      ],
       "changedLines": "formatSystemTranscriptError|harness-error-copy",
-      "targets": [{ "file": "e2e/bug-friendly-claude-exit-255.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/bug-friendly-claude-exit-255.spec.ts"
+        }
+      ]
     },
     {
       "id": "friendly-claude-exit-error-manager",
-      "paths": ["src/main/sessions/manager.ts"],
+      "paths": [
+        "src/main/sessions/manager.ts"
+      ],
       "changedLines": "formatHarnessErrorForUser",
-      "targets": [{ "file": "e2e/bug-friendly-claude-exit-255.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/bug-friendly-claude-exit-255.spec.ts"
+        }
+      ]
     },
     {
       "id": "affected-test-tooling-package-script",
-      "paths": ["package.json"],
+      "paths": [
+        "package.json"
+      ],
       "changedLines": "test:e2e:affected",
       "targets": []
     },
     {
       "id": "daily-note-header-shared-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "daily-note-header|daily-date-nav|daily-sync-chip|daily-sync-dot|daily-note-editor-toolbar|topbar--daily-note",
       "targets": [
         {
           "file": "e2e/daily-note-notes-editor.spec.ts",
           "grep": "opens from sidebar, edits"
         },
-        { "file": "e2e/obsidian-app-notes.spec.ts" }
+        {
+          "file": "e2e/obsidian-app-notes.spec.ts"
+        }
       ]
     },
     {
       "id": "sidebar-refinement-shared-css",
-      "paths": ["src/renderer/src/styles/global.css"],
-      "changedLines": "sidebar-pane-label|sidebar-action-icon|session-name|terminal-session-icon|app-note-row--daily|new-group-row|sidebar-top|sidebar-utility|user-avatar|app-mark|font-smoothing|font-family",
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
+      "changedLines": "sidebar-pane-label|sidebar-action-icon|session-name|terminal-session-icon|app-note-row--daily|new-group-row|sidebar-top|sidebar-utility|user-avatar|app-mark|font-smoothing|font-family|topbar-sidebar-toggle__",
       "targets": [
-        { "file": "e2e/sidebar-refinement.spec.ts" },
-        { "file": "e2e/app-shell.spec.ts", "grep": "New Group" }
+        {
+          "file": "e2e/sidebar-refinement.spec.ts"
+        },
+        {
+          "file": "e2e/app-shell.spec.ts",
+          "grep": "New Group"
+        }
       ]
     },
     {
       "id": "sidebar-refinement-app",
-      "paths": ["src/renderer/src/App.tsx"],
-      "changedLines": "weeklyPlanWeekLabel",
-      "targets": [{ "file": "e2e/sidebar-refinement.spec.ts" }]
+      "paths": [
+        "src/renderer/src/App.tsx"
+      ],
+      "changedLines": "weeklyPlanWeekLabel|runningSessionCount|topbar-sidebar-toggle__dynamic",
+      "targets": [
+        {
+          "file": "e2e/sidebar-refinement.spec.ts"
+        }
+      ]
     },
     {
       "id": "sidebar-refinement-component",
@@ -75,49 +116,88 @@
       ],
       "changedLines": "TerminalSessionIcon|terminal-session-icon|weeklyPlanWeekLabel|Obsidian vault|session-meta|row-tag|new-group-row|sidebar-utility|user-avatar|app-mark",
       "targets": [
-        { "file": "e2e/sidebar-refinement.spec.ts" },
-        { "file": "e2e/app-shell.spec.ts", "grep": "sidebar starts with compact utilities" }
+        {
+          "file": "e2e/sidebar-refinement.spec.ts"
+        },
+        {
+          "file": "e2e/app-shell.spec.ts",
+          "grep": "sidebar starts with compact utilities"
+        }
       ]
     },
     {
       "id": "terminal-shared-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "term-body|term-shell|term-panel|terminal-cache|xterm",
-      "targets": [{ "file": "e2e/terminal-pty.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/terminal-pty.spec.ts"
+        }
+      ]
     },
     {
       "id": "files-panel-shared-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "files-tree-retry|files-tree-error|files-refresh-btn|files-location-bar",
-      "targets": [{ "file": "e2e/bug-files-walk-failure-visible.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/bug-files-walk-failure-visible.spec.ts"
+        }
+      ]
     },
     {
       "id": "tracker-shared-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "tracker-rail|tracker-body|tracker-card",
       "targets": [
-        { "file": "e2e/bug-tracker-rail-width.spec.ts" },
-        { "file": "e2e/bug-tracker-rail-collapse-toggle.spec.ts" }
+        {
+          "file": "e2e/bug-tracker-rail-width.spec.ts"
+        },
+        {
+          "file": "e2e/bug-tracker-rail-collapse-toggle.spec.ts"
+        }
       ]
     },
     {
       "id": "app-shell-files-list",
-      "paths": ["src/renderer/src/App.tsx"],
+      "paths": [
+        "src/renderer/src/App.tsx"
+      ],
       "changedLines": "filesList|mentionPaths|filePathCandidatesForSession",
       "targets": [
-        { "file": "e2e/composer-mentions-and-commands.spec.ts", "grep": "mention" },
-        { "file": "e2e/bug-files-walk-failure-visible.spec.ts" }
+        {
+          "file": "e2e/composer-mentions-and-commands.spec.ts",
+          "grep": "mention"
+        },
+        {
+          "file": "e2e/bug-files-walk-failure-visible.spec.ts"
+        }
       ]
     },
     {
       "id": "background-tasks-shared-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "background-tasks-conversation|background-item|background-type|background-desc|background-sub",
-      "targets": [{ "file": "e2e/harness-sdk-events.spec.ts", "grep": "background" }]
+      "targets": [
+        {
+          "file": "e2e/harness-sdk-events.spec.ts",
+          "grep": "background"
+        }
+      ]
     },
     {
       "id": "daily-note-header-app-shell",
-      "paths": ["src/renderer/src/App.tsx"],
+      "paths": [
+        "src/renderer/src/App.tsx"
+      ],
       "changedLines": "dailyNoteHeaderHost|daily-note-header-host|topbar--daily-note",
       "targets": [
         {
@@ -128,7 +208,9 @@
     },
     {
       "id": "daily-note-header-component",
-      "paths": ["src/renderer/src/components/panels/DailyNoteEditorPanel.tsx"],
+      "paths": [
+        "src/renderer/src/components/panels/DailyNoteEditorPanel.tsx"
+      ],
       "changedLines": "createPortal|headerHost|headerControls|daily-note-header|daily-date-nav|daily-sync",
       "targets": [
         {
@@ -146,9 +228,15 @@
         "src/renderer/src/editor/noteEditorExtensions.ts"
       ],
       "targets": [
-        { "file": "e2e/daily-note-notes-editor.spec.ts" },
-        { "file": "e2e/bug-terminal-blocks-daily-note.spec.ts" },
-        { "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts" }
+        {
+          "file": "e2e/daily-note-notes-editor.spec.ts"
+        },
+        {
+          "file": "e2e/bug-terminal-blocks-daily-note.spec.ts"
+        },
+        {
+          "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts"
+        }
       ]
     },
     {
@@ -160,7 +248,11 @@
         "src/renderer/src/components/daily-notes/daily-notes.css"
       ],
       "changedLines": "agenda|schedule|unified|carry|compact|dn-carry-review|dn-tracker-summary|timeline-open|timeline-back",
-      "targets": [{ "file": "e2e/daily-panel-unified-redesign.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/daily-panel-unified-redesign.spec.ts"
+        }
+      ]
     },
     {
       "id": "daily-timeline-editing",
@@ -173,11 +265,22 @@
         "src/renderer/src/components/daily-notes/timeline-scale.ts"
       ],
       "targets": [
-        { "file": "e2e/bug-daily-notes-time-editing.spec.ts" },
-        { "file": "e2e/bug-57-obsidian-external-edit-timeline-sync.spec.ts" },
-        { "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts" },
-        { "file": "e2e/audit-scroll-experience.spec.ts", "grep": "daily notes" },
-        { "file": "e2e/obsidian-integration.spec.ts" }
+        {
+          "file": "e2e/bug-daily-notes-time-editing.spec.ts"
+        },
+        {
+          "file": "e2e/bug-57-obsidian-external-edit-timeline-sync.spec.ts"
+        },
+        {
+          "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts"
+        },
+        {
+          "file": "e2e/audit-scroll-experience.spec.ts",
+          "grep": "daily notes"
+        },
+        {
+          "file": "e2e/obsidian-integration.spec.ts"
+        }
       ]
     },
     {
@@ -188,8 +291,12 @@
       ],
       "changedLines": "dn-task-chip|dn-task-tag-add|dn-task-chip-remove|dn-task-text-tags|dn-inline-tag|tagChips|clamp",
       "targets": [
-        { "file": "e2e/bug-unscheduled-task-full-width.spec.ts" },
-        { "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts" }
+        {
+          "file": "e2e/bug-unscheduled-task-full-width.spec.ts"
+        },
+        {
+          "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts"
+        }
       ]
     },
     {
@@ -199,9 +306,15 @@
         "src/renderer/src/components/daily-notes/move-date-options.ts"
       ],
       "targets": [
-        { "file": "e2e/task-move-to-date.spec.ts" },
-        { "file": "e2e/bug-move-task-not-found-in-source-note.spec.ts" },
-        { "file": "e2e/bug-move-task-not-found-gidless-task.spec.ts" }
+        {
+          "file": "e2e/task-move-to-date.spec.ts"
+        },
+        {
+          "file": "e2e/bug-move-task-not-found-in-source-note.spec.ts"
+        },
+        {
+          "file": "e2e/bug-move-task-not-found-gidless-task.spec.ts"
+        }
       ]
     },
     {
@@ -210,13 +323,23 @@
         "src/renderer/src/components/daily-notes/TaskSessionLinkDialogs.tsx",
         "src/main/daily-note-session-link.ts"
       ],
-      "targets": [{ "file": "e2e/todo-session-link.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/todo-session-link.spec.ts"
+        }
+      ]
     },
     {
       "id": "daily-notes-panel-date-title",
-      "paths": ["src/renderer/src/components/daily-notes/DailyNotesSidebar.tsx"],
-      "changedLines": "dtitle|Daily Notes —",
-      "targets": [{ "file": "e2e/calendar-day-refresh.spec.ts" }]
+      "paths": [
+        "src/renderer/src/components/daily-notes/DailyNotesSidebar.tsx"
+      ],
+      "changedLines": "dtitle|Daily Notes \u2014",
+      "targets": [
+        {
+          "file": "e2e/calendar-day-refresh.spec.ts"
+        }
+      ]
     },
     {
       "id": "daily-notes-section-folding",
@@ -225,7 +348,11 @@
         "src/renderer/src/components/daily-notes/daily-notes.css"
       ],
       "changedLines": "unscheduledExpanded|trackersExpanded|section-toggle|dn-section-collapsed|dn-chevron",
-      "targets": [{ "file": "e2e/daily-notes-section-folding.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/daily-notes-section-folding.spec.ts"
+        }
+      ]
     },
     {
       "id": "daily-sidebar",
@@ -235,34 +362,71 @@
       ],
       "changedLines": "AddTaskInput|beginBigThree|saveBigThree|showCarrySection|createNote|useCarrySuggestions|useDailyNote",
       "targets": [
-        { "file": "e2e/obsidian-integration.spec.ts" },
-        { "file": "e2e/daily-big-three-edit.spec.ts" },
-        { "file": "e2e/audit-scroll-experience.spec.ts", "grep": "daily notes" }
+        {
+          "file": "e2e/obsidian-integration.spec.ts"
+        },
+        {
+          "file": "e2e/daily-big-three-edit.spec.ts"
+        },
+        {
+          "file": "e2e/audit-scroll-experience.spec.ts",
+          "grep": "daily notes"
+        }
       ]
     },
     {
       "id": "daily-io",
-      "paths": ["src/main/daily-note-io.ts"],
+      "paths": [
+        "src/main/daily-note-io.ts"
+      ],
       "targets": [
-        { "file": "e2e/obsidian-integration.spec.ts" },
-        { "file": "e2e/bug-daily-note-template.spec.ts" },
-        { "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts" },
-        { "file": "e2e/daily-note-notes-editor.spec.ts" },
-        { "file": "e2e/daily-big-three-edit.spec.ts" },
-        { "file": "e2e/task-move-to-date.spec.ts" },
-        { "file": "e2e/bug-move-task-not-found-in-source-note.spec.ts" },
-        { "file": "e2e/bug-move-task-not-found-gidless-task.spec.ts" }
+        {
+          "file": "e2e/obsidian-integration.spec.ts"
+        },
+        {
+          "file": "e2e/bug-daily-note-template.spec.ts"
+        },
+        {
+          "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts"
+        },
+        {
+          "file": "e2e/daily-note-notes-editor.spec.ts"
+        },
+        {
+          "file": "e2e/daily-big-three-edit.spec.ts"
+        },
+        {
+          "file": "e2e/task-move-to-date.spec.ts"
+        },
+        {
+          "file": "e2e/bug-move-task-not-found-in-source-note.spec.ts"
+        },
+        {
+          "file": "e2e/bug-move-task-not-found-gidless-task.spec.ts"
+        }
       ]
     },
     {
       "id": "daily-handlers",
-      "paths": ["src/main/daily-notes-handlers.ts"],
+      "paths": [
+        "src/main/daily-notes-handlers.ts"
+      ],
       "targets": [
-        { "file": "e2e/obsidian-integration.spec.ts" },
-        { "file": "e2e/bug-57-obsidian-external-edit-timeline-sync.spec.ts" },
-        { "file": "e2e/bug-daily-notes-time-editing.spec.ts" },
-        { "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts" },
-        { "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts" }
+        {
+          "file": "e2e/obsidian-integration.spec.ts"
+        },
+        {
+          "file": "e2e/bug-57-obsidian-external-edit-timeline-sync.spec.ts"
+        },
+        {
+          "file": "e2e/bug-daily-notes-time-editing.spec.ts"
+        },
+        {
+          "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts"
+        },
+        {
+          "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts"
+        }
       ]
     },
     {
@@ -272,7 +436,11 @@
         "src/renderer/src/components/panels/TerminalPanel.tsx"
       ],
       "changedLines": "tmuxEnableMouse|mouse reporting|term\\.body|xterm|FitAddon|proposeDimensions",
-      "targets": [{ "file": "e2e/terminal-pty.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/terminal-pty.spec.ts"
+        }
+      ]
     },
     {
       "id": "terminal-pty",
@@ -281,8 +449,13 @@
         "src/renderer/src/components/panels/TerminalPanel.tsx"
       ],
       "targets": [
-        { "file": "e2e/terminal-pty.spec.ts" },
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|terminal|changing project path" }
+        {
+          "file": "e2e/terminal-pty.spec.ts"
+        },
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|terminal|changing project path"
+        }
       ]
     },
     {
@@ -301,23 +474,49 @@
     },
     {
       "id": "files-panel",
-      "paths": ["src/renderer/src/components/panels/FilesPanel.tsx"],
+      "paths": [
+        "src/renderer/src/components/panels/FilesPanel.tsx"
+      ],
       "targets": [
-        { "file": "e2e/bug-files-directory-ctrl-n.spec.ts" },
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|files panel:" },
-        { "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts" },
-        { "file": "e2e/bug-files-walk-failure-visible.spec.ts" }
+        {
+          "file": "e2e/bug-files-directory-ctrl-n.spec.ts"
+        },
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|files panel:"
+        },
+        {
+          "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts"
+        },
+        {
+          "file": "e2e/bug-files-walk-failure-visible.spec.ts"
+        }
       ]
     },
     {
       "id": "files-main",
-      "paths": ["src/main/panels/files.ts"],
+      "paths": [
+        "src/main/panels/files.ts"
+      ],
       "targets": [
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|files panel:" },
-        { "file": "e2e/packaged-app-local-tilde.spec.ts" },
-        { "file": "e2e/composer-mentions-and-commands.spec.ts", "grep": "mention" },
-        { "file": "e2e/chat-surface-core.spec.ts", "grep": "file.*Files tab" },
-        { "file": "e2e/bug-files-walk-failure-visible.spec.ts" }
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|files panel:"
+        },
+        {
+          "file": "e2e/packaged-app-local-tilde.spec.ts"
+        },
+        {
+          "file": "e2e/composer-mentions-and-commands.spec.ts",
+          "grep": "mention"
+        },
+        {
+          "file": "e2e/chat-surface-core.spec.ts",
+          "grep": "file.*Files tab"
+        },
+        {
+          "file": "e2e/bug-files-walk-failure-visible.spec.ts"
+        }
       ]
     },
     {
@@ -328,25 +527,49 @@
         "src/renderer/src/components/panels/FilesPanel.tsx"
       ],
       "changedLines": "filesTree|filesList|treeError|treeReloadSeq|reloadTree|walkErrorMessage|logFilesWalkFailure",
-      "targets": [{ "file": "e2e/bug-files-walk-failure-visible.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/bug-files-walk-failure-visible.spec.ts"
+        }
+      ]
     },
     {
       "id": "editor-buffers",
-      "paths": ["src/main/panels/editor-buffers.ts"],
+      "paths": [
+        "src/main/panels/editor-buffers.ts"
+      ],
       "targets": [
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|editor buffers:|unsaved edits" },
-        { "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts" }
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|editor buffers:|unsaved edits"
+        },
+        {
+          "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts"
+        }
       ]
     },
     {
       "id": "diff-panel",
-      "paths": ["src/renderer/src/components/panels/DiffPanel.tsx"],
+      "paths": [
+        "src/renderer/src/components/panels/DiffPanel.tsx"
+      ],
       "targets": [
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|diff panel:|chat:.*cap" },
-        { "file": "e2e/bug-diff-preload-limit.spec.ts" },
-        { "file": "e2e/bug-diff-refreshing-stuck-on-timeout.spec.ts" },
-        { "file": "e2e/diff-session-compare-trace.spec.ts" },
-        { "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts" }
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|diff panel:|chat:.*cap"
+        },
+        {
+          "file": "e2e/bug-diff-preload-limit.spec.ts"
+        },
+        {
+          "file": "e2e/bug-diff-refreshing-stuck-on-timeout.spec.ts"
+        },
+        {
+          "file": "e2e/diff-session-compare-trace.spec.ts"
+        },
+        {
+          "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts"
+        }
       ]
     },
     {
@@ -357,22 +580,37 @@
         "src/main/sessions/workspace-service.ts"
       ],
       "targets": [
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|diff panel:|worktree|chat:.*cap" },
-        { "file": "e2e/bug-diff-preload-limit.spec.ts" },
-        { "file": "e2e/bug-diff-refreshing-stuck-on-timeout.spec.ts" },
-        { "file": "e2e/diff-session-compare-trace.spec.ts" }
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|diff panel:|worktree|chat:.*cap"
+        },
+        {
+          "file": "e2e/bug-diff-preload-limit.spec.ts"
+        },
+        {
+          "file": "e2e/bug-diff-refreshing-stuck-on-timeout.spec.ts"
+        },
+        {
+          "file": "e2e/diff-session-compare-trace.spec.ts"
+        }
       ]
     },
     {
       "id": "tab-bar",
-      "paths": ["src/renderer/src/components/panels/TabBar.tsx"],
+      "paths": [
+        "src/renderer/src/components/panels/TabBar.tsx"
+      ],
       "targets": [
         {
           "file": "e2e/secondary-panels.spec.ts",
           "grep": "setup:|tab bar:|tab switch|workspace split:"
         },
-        { "file": "e2e/session-tab-memory.spec.ts" },
-        { "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts" }
+        {
+          "file": "e2e/session-tab-memory.spec.ts"
+        },
+        {
+          "file": "e2e/bug-workspace-buffer-lost-on-view-switch.spec.ts"
+        }
       ]
     },
     {
@@ -395,27 +633,38 @@
     },
     {
       "id": "secondary-tool-rail-app",
-      "paths": ["src/renderer/src/App.tsx"],
+      "paths": [
+        "src/renderer/src/App.tsx"
+      ],
       "changedLines": "WorkspaceTool|workspaceTool|workspaceSplit|WorkspaceSplit|workspace-shell|activeWorkspaceTool|selectTab|restoredTab|TabBar",
       "targets": [
         {
           "file": "e2e/secondary-panels.spec.ts",
           "grep": "setup:|tool rail:|tool switch|workspace split:|diff panel:|files panel:"
         },
-        { "file": "e2e/session-tab-memory.spec.ts" }
+        {
+          "file": "e2e/session-tab-memory.spec.ts"
+        }
       ]
     },
     {
       "id": "workspace-tool-hint-labels",
-      "paths": ["src/renderer/src/components/panels/WorkspaceToolRail.tsx"],
+      "paths": [
+        "src/renderer/src/components/panels/WorkspaceToolRail.tsx"
+      ],
       "changedLines": "data-session-tab-shortcut|data-hint-exclude|SESSION_TAB_SHORTCUT_LABELS",
       "targets": [
-        { "file": "e2e/command-palette-workspace-tools.spec.ts", "grep": "mapped workspace tool" }
+        {
+          "file": "e2e/command-palette-workspace-tools.spec.ts",
+          "grep": "mapped workspace tool"
+        }
       ]
     },
     {
       "id": "secondary-tool-rail-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "workspace-shell|workspace-tool|workspace-pane-head|workspace-split-pane-close|diff-files-toggle|diff-vertical-list|diff-stacked-file|files-path|files-directory|files-body-inner--directory|pointer-events",
       "targets": [
         {
@@ -430,14 +679,25 @@
         "src/renderer/src/components/panels/PortsPanel.tsx",
         "src/main/panels/ports.ts"
       ],
-      "targets": [{ "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|ports panel:" }]
+      "targets": [
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|ports panel:"
+        }
+      ]
     },
     {
       "id": "panel-ipc",
-      "paths": ["src/main/panels/ipc.ts"],
+      "paths": [
+        "src/main/panels/ipc.ts"
+      ],
       "targets": [
-        { "file": "e2e/secondary-panels.spec.ts" },
-        { "file": "e2e/terminal-pty.spec.ts" }
+        {
+          "file": "e2e/secondary-panels.spec.ts"
+        },
+        {
+          "file": "e2e/terminal-pty.spec.ts"
+        }
       ]
     },
     {
@@ -447,10 +707,18 @@
         "src/main/sessions/hosts.ts"
       ],
       "targets": [
-        { "file": "e2e/session-lifecycle.spec.ts" },
-        { "file": "e2e/session-ready-hint.spec.ts" },
-        { "file": "e2e/bug-new-session-path-history.spec.ts" },
-        { "file": "e2e/packaged-app-local-tilde.spec.ts" }
+        {
+          "file": "e2e/session-lifecycle.spec.ts"
+        },
+        {
+          "file": "e2e/session-ready-hint.spec.ts"
+        },
+        {
+          "file": "e2e/bug-new-session-path-history.spec.ts"
+        },
+        {
+          "file": "e2e/packaged-app-local-tilde.spec.ts"
+        }
       ]
     },
     {
@@ -459,23 +727,47 @@
         "src/renderer/src/components/chat/SessionReadyHint.tsx",
         "src/renderer/src/components/SessionDisconnectedPanel.tsx"
       ],
-      "targets": [{ "file": "e2e/session-ready-hint.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/session-ready-hint.spec.ts"
+        }
+      ]
     },
     {
       "id": "historical-session-cost",
-      "paths": ["src/main/sessions/historical-cost-recompute.ts"],
-      "targets": [{ "file": "e2e/bug-session-cost-historical-backfill.spec.ts" }]
+      "paths": [
+        "src/main/sessions/historical-cost-recompute.ts"
+      ],
+      "targets": [
+        {
+          "file": "e2e/bug-session-cost-historical-backfill.spec.ts"
+        }
+      ]
     },
     {
       "id": "session-store",
-      "paths": ["src/main/sessions/store.ts"],
+      "paths": [
+        "src/main/sessions/store.ts"
+      ],
       "targets": [
-        { "file": "e2e/session-lifecycle.spec.ts" },
-        { "file": "e2e/session-organization.spec.ts" },
-        { "file": "e2e/session-tab-memory.spec.ts" },
-        { "file": "e2e/session-cost-tracking.spec.ts" },
-        { "file": "e2e/bug-session-cost-historical-backfill.spec.ts" },
-        { "file": "e2e/todo-session-link.spec.ts" }
+        {
+          "file": "e2e/session-lifecycle.spec.ts"
+        },
+        {
+          "file": "e2e/session-organization.spec.ts"
+        },
+        {
+          "file": "e2e/session-tab-memory.spec.ts"
+        },
+        {
+          "file": "e2e/session-cost-tracking.spec.ts"
+        },
+        {
+          "file": "e2e/bug-session-cost-historical-backfill.spec.ts"
+        },
+        {
+          "file": "e2e/todo-session-link.spec.ts"
+        }
       ]
     },
     {
@@ -488,7 +780,9 @@
       ],
       "changedLines": "clearConversation|conversation_reset|conversation cleared|onClearConversation|Clear conversation|messagesCleared",
       "targets": [
-        { "file": "e2e/composer-mentions-and-commands.spec.ts" }
+        {
+          "file": "e2e/composer-mentions-and-commands.spec.ts"
+        }
       ]
     },
     {
@@ -498,42 +792,90 @@
         "src/main/sessions/ipc.ts"
       ],
       "targets": [
-        { "file": "e2e/session-lifecycle.spec.ts" },
-        { "file": "e2e/session-ready-hint.spec.ts" },
-        { "file": "e2e/chat-surface-core.spec.ts" },
-        { "file": "e2e/composer-core.spec.ts" },
-        { "file": "e2e/composer-mode-indicator.spec.ts" },
-        { "file": "e2e/interactive-prompts.spec.ts" },
-        { "file": "e2e/session-cost-tracking.spec.ts" },
-        { "file": "e2e/enrichment-cost-tracking.spec.ts" },
-        { "file": "e2e/todo-session-link.spec.ts" },
-        { "file": "e2e/chat-transcript-window.spec.ts" }
+        {
+          "file": "e2e/session-lifecycle.spec.ts"
+        },
+        {
+          "file": "e2e/session-ready-hint.spec.ts"
+        },
+        {
+          "file": "e2e/chat-surface-core.spec.ts"
+        },
+        {
+          "file": "e2e/composer-core.spec.ts"
+        },
+        {
+          "file": "e2e/composer-mode-indicator.spec.ts"
+        },
+        {
+          "file": "e2e/interactive-prompts.spec.ts"
+        },
+        {
+          "file": "e2e/session-cost-tracking.spec.ts"
+        },
+        {
+          "file": "e2e/enrichment-cost-tracking.spec.ts"
+        },
+        {
+          "file": "e2e/todo-session-link.spec.ts"
+        },
+        {
+          "file": "e2e/chat-transcript-window.spec.ts"
+        }
       ]
     },
     {
       "id": "session-harness-ui",
-      "paths": ["src/main/sessions/session-harness-ui.ts"],
-      "targets": [{ "file": "e2e/harness-sdk-events.spec.ts" }]
+      "paths": [
+        "src/main/sessions/session-harness-ui.ts"
+      ],
+      "targets": [
+        {
+          "file": "e2e/harness-sdk-events.spec.ts"
+        }
+      ]
     },
     {
       "id": "harness",
-      "paths": ["src/main/harness/**"],
+      "paths": [
+        "src/main/harness/**"
+      ],
       "targets": [
-        { "file": "e2e/harness-sdk-events.spec.ts" },
-        { "file": "e2e/interactive-prompts.spec.ts" },
-        { "file": "e2e/chat-surface-core.spec.ts" },
-        { "file": "e2e/session-lifecycle.spec.ts" },
-        { "file": "e2e/composer-core.spec.ts" },
-        { "file": "e2e/composer-mentions-and-commands.spec.ts", "grep": "commands" }
+        {
+          "file": "e2e/harness-sdk-events.spec.ts"
+        },
+        {
+          "file": "e2e/interactive-prompts.spec.ts"
+        },
+        {
+          "file": "e2e/chat-surface-core.spec.ts"
+        },
+        {
+          "file": "e2e/session-lifecycle.spec.ts"
+        },
+        {
+          "file": "e2e/composer-core.spec.ts"
+        },
+        {
+          "file": "e2e/composer-mentions-and-commands.spec.ts",
+          "grep": "commands"
+        }
       ]
     },
     {
       "id": "composer-prompt-suggestion-hint-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "composer-suggestion-hint",
       "targets": [
-        { "file": "e2e/bug-composer-tab-to-fill-hint.spec.ts" },
-        { "file": "e2e/composer-core.spec.ts", "grep": "UI-match" }
+        {
+          "file": "e2e/bug-composer-tab-to-fill-hint.spec.ts"
+        },
+        {
+          "file": "e2e/composer-core.spec.ts",
+          "grep": "UI-match"
+        }
       ]
     },
     {
@@ -543,58 +885,122 @@
         "src/renderer/src/components/chat/ComposerMarkdownInput.tsx"
       ],
       "targets": [
-        { "file": "e2e/composer-core.spec.ts" },
-        { "file": "e2e/composer-mentions-and-commands.spec.ts" },
-        { "file": "e2e/composer-mode-indicator.spec.ts" },
-        { "file": "e2e/model-effort-picker.spec.ts" },
-        { "file": "e2e/bug-slash-model-command-missing.spec.ts" },
-        { "file": "e2e/bug-model-picker-option-list.spec.ts" },
-        { "file": "e2e/enrichment-image-attachment.spec.ts" },
-        { "file": "e2e/harness-sdk-events.spec.ts" },
-        { "file": "e2e/bug-composer-tab-to-fill-hint.spec.ts" }
+        {
+          "file": "e2e/composer-core.spec.ts"
+        },
+        {
+          "file": "e2e/composer-mentions-and-commands.spec.ts"
+        },
+        {
+          "file": "e2e/composer-mode-indicator.spec.ts"
+        },
+        {
+          "file": "e2e/model-effort-picker.spec.ts"
+        },
+        {
+          "file": "e2e/bug-slash-model-command-missing.spec.ts"
+        },
+        {
+          "file": "e2e/bug-model-picker-option-list.spec.ts"
+        },
+        {
+          "file": "e2e/enrichment-image-attachment.spec.ts"
+        },
+        {
+          "file": "e2e/harness-sdk-events.spec.ts"
+        },
+        {
+          "file": "e2e/bug-composer-tab-to-fill-hint.spec.ts"
+        }
       ]
     },
     {
       "id": "composer-context-bookmarks-changes",
-      "paths": ["src/renderer/src/components/chat/ChatUncommittedChanges.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/ChatUncommittedChanges.tsx"
+      ],
       "targets": [
-        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
-        { "file": "e2e/bug-changes-popover-escape-running-chat.spec.ts" },
-        { "file": "e2e/chat-surface-core.spec.ts", "grep": "create session:|changed files and file bookmarks" },
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|chat:" }
+        {
+          "file": "e2e/bug-bookmark-file-right-panel.spec.ts"
+        },
+        {
+          "file": "e2e/bug-changes-popover-escape-running-chat.spec.ts"
+        },
+        {
+          "file": "e2e/chat-surface-core.spec.ts",
+          "grep": "create session:|changed files and file bookmarks"
+        },
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|chat:"
+        }
       ]
     },
     {
       "id": "composer-context-bookmarks-changes-host",
-      "paths": ["src/renderer/src/components/chat/Composer.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/Composer.tsx"
+      ],
       "changedLines": "ChatUncommittedChanges|composer-context|chat-changes|context-bar-spacer",
       "targets": [
-        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
-        { "file": "e2e/chat-surface-core.spec.ts", "grep": "assistant file paths open Files directly" },
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|chat:" }
+        {
+          "file": "e2e/bug-bookmark-file-right-panel.spec.ts"
+        },
+        {
+          "file": "e2e/chat-surface-core.spec.ts",
+          "grep": "assistant file paths open Files directly"
+        },
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|chat:"
+        }
       ]
     },
     {
       "id": "composer-context-bookmarks-changes-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "composer-context|chat-changes",
       "targets": [
-        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
-        { "file": "e2e/chat-surface-core.spec.ts", "grep": "assistant file paths open Files directly" },
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|chat:" }
+        {
+          "file": "e2e/bug-bookmark-file-right-panel.spec.ts"
+        },
+        {
+          "file": "e2e/chat-surface-core.spec.ts",
+          "grep": "assistant file paths open Files directly"
+        },
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|chat:"
+        }
       ]
     },
     {
       "id": "transcript",
-      "paths": ["src/renderer/src/components/chat/MarkdownMessage.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/MarkdownMessage.tsx"
+      ],
       "changedLines": "MarkdownLinkOptions|linkifyFilePathsInMarkdown|ATELIER_FILE_SCHEME|hrefToAtelierFilePath|looksLikeFilePath|resolveKnownSessionFilePath",
       "targets": [
-        { "file": "e2e/chat-surface-core.spec.ts" },
-        { "file": "e2e/chat-transcript-window.spec.ts" },
-        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
-        { "file": "e2e/message-actions.spec.ts" },
-        { "file": "e2e/enrichment-full-text-search.spec.ts" },
-        { "file": "e2e/enrichment-export-conversation.spec.ts" }
+        {
+          "file": "e2e/chat-surface-core.spec.ts"
+        },
+        {
+          "file": "e2e/chat-transcript-window.spec.ts"
+        },
+        {
+          "file": "e2e/bug-bookmark-file-right-panel.spec.ts"
+        },
+        {
+          "file": "e2e/message-actions.spec.ts"
+        },
+        {
+          "file": "e2e/enrichment-full-text-search.spec.ts"
+        },
+        {
+          "file": "e2e/enrichment-export-conversation.spec.ts"
+        }
       ]
     },
     {
@@ -605,15 +1011,24 @@
       ],
       "changedLines": "selectedMarkdown|rehypeMarkdownSourcePositions|markdownRootRef|handleCopy|addEventListener\\('copy'|rehypePlugins|data-md-source",
       "targets": [
-        { "file": "e2e/chat-selection-copy-markdown.spec.ts" }
+        {
+          "file": "e2e/chat-selection-copy-markdown.spec.ts"
+        }
       ]
     },
     {
       "id": "chat-file-path-links",
-      "paths": ["src/renderer/src/components/chat/file-path-links.ts"],
+      "paths": [
+        "src/renderer/src/components/chat/file-path-links.ts"
+      ],
       "targets": [
-        { "file": "e2e/chat-surface-core.spec.ts", "grep": "create session:|file paths open|home-relative file paths" },
-        { "file": "e2e/ui-chat-transcript-typography.spec.ts" }
+        {
+          "file": "e2e/chat-surface-core.spec.ts",
+          "grep": "create session:|file paths open|home-relative file paths"
+        },
+        {
+          "file": "e2e/ui-chat-transcript-typography.spec.ts"
+        }
       ]
     },
     {
@@ -623,35 +1038,66 @@
         "src/renderer/src/components/session/SessionChatSurface.tsx"
       ],
       "changedLines": "BackgroundTasksConversationCard|backgroundTasks",
-      "targets": [{ "file": "e2e/harness-sdk-events.spec.ts", "grep": "background" }]
+      "targets": [
+        {
+          "file": "e2e/harness-sdk-events.spec.ts",
+          "grep": "background"
+        }
+      ]
     },
     {
       "id": "chat-transcript",
-      "paths": ["src/renderer/src/components/chat/ChatTranscript.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/ChatTranscript.tsx"
+      ],
       "targets": [
-        { "file": "e2e/chat-surface-core.spec.ts" },
-        { "file": "e2e/chat-transcript-window.spec.ts" },
-        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
-        { "file": "e2e/message-actions.spec.ts" },
-        { "file": "e2e/enrichment-full-text-search.spec.ts" },
-        { "file": "e2e/enrichment-export-conversation.spec.ts" }
+        {
+          "file": "e2e/chat-surface-core.spec.ts"
+        },
+        {
+          "file": "e2e/chat-transcript-window.spec.ts"
+        },
+        {
+          "file": "e2e/bug-bookmark-file-right-panel.spec.ts"
+        },
+        {
+          "file": "e2e/message-actions.spec.ts"
+        },
+        {
+          "file": "e2e/enrichment-full-text-search.spec.ts"
+        },
+        {
+          "file": "e2e/enrichment-export-conversation.spec.ts"
+        }
       ]
     },
     {
       "id": "session-chat-surface",
-      "paths": ["src/renderer/src/components/session/SessionChatSurface.tsx"],
+      "paths": [
+        "src/renderer/src/components/session/SessionChatSurface.tsx"
+      ],
       "targets": [
-        { "file": "e2e/chat-surface-core.spec.ts" },
-        { "file": "e2e/harness-sdk-events.spec.ts" }
+        {
+          "file": "e2e/chat-surface-core.spec.ts"
+        },
+        {
+          "file": "e2e/harness-sdk-events.spec.ts"
+        }
       ]
     },
     {
       "id": "tracker-rail-surface",
-      "paths": ["src/renderer/src/components/session/SessionChatSurface.tsx"],
+      "paths": [
+        "src/renderer/src/components/session/SessionChatSurface.tsx"
+      ],
       "changedLines": "TrackerRail",
       "targets": [
-        { "file": "e2e/bug-tracker-rail-width.spec.ts" },
-        { "file": "e2e/bug-tracker-rail-collapse-toggle.spec.ts" }
+        {
+          "file": "e2e/bug-tracker-rail-width.spec.ts"
+        },
+        {
+          "file": "e2e/bug-tracker-rail-collapse-toggle.spec.ts"
+        }
       ]
     },
     {
@@ -661,7 +1107,12 @@
         "src/renderer/src/components/chat/BackgroundTaskRowView.tsx",
         "src/renderer/src/components/chat/BackgroundTasksConversationCard.tsx"
       ],
-      "targets": [{ "file": "e2e/harness-sdk-events.spec.ts", "grep": "background" }]
+      "targets": [
+        {
+          "file": "e2e/harness-sdk-events.spec.ts",
+          "grep": "background"
+        }
+      ]
     },
     {
       "id": "message-actions",
@@ -669,95 +1120,189 @@
         "src/renderer/src/components/chat/MessageActions.tsx",
         "src/renderer/src/components/chat/TranscriptInlineComments.tsx"
       ],
-      "targets": [{ "file": "e2e/message-actions.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/message-actions.spec.ts"
+        }
+      ]
     },
     {
       "id": "permission-card",
-      "paths": ["src/renderer/src/components/chat/PermissionRequestCard.tsx"],
-      "targets": [{ "file": "e2e/interactive-prompts.spec.ts", "grep": "permission" }]
+      "paths": [
+        "src/renderer/src/components/chat/PermissionRequestCard.tsx"
+      ],
+      "targets": [
+        {
+          "file": "e2e/interactive-prompts.spec.ts",
+          "grep": "permission"
+        }
+      ]
     },
     {
       "id": "plan-card",
-      "paths": ["src/renderer/src/components/chat/PlanProposedCard.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/PlanProposedCard.tsx"
+      ],
       "targets": [
-        { "file": "e2e/interactive-prompts.spec.ts", "grep": "plan" },
-        { "file": "e2e/bug-plan-card-expired-prompt.spec.ts" }
+        {
+          "file": "e2e/interactive-prompts.spec.ts",
+          "grep": "plan"
+        },
+        {
+          "file": "e2e/bug-plan-card-expired-prompt.spec.ts"
+        }
       ]
     },
     {
       "id": "ask-user-question",
-      "paths": ["src/renderer/src/components/chat/AskUserQuestionCard.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/AskUserQuestionCard.tsx"
+      ],
       "targets": [
-        { "file": "e2e/interactive-prompts.spec.ts", "grep": "AskUserQuestion" },
-        { "file": "e2e/bug-ask-user-question-explicit-submit.spec.ts" }
+        {
+          "file": "e2e/interactive-prompts.spec.ts",
+          "grep": "AskUserQuestion"
+        },
+        {
+          "file": "e2e/bug-ask-user-question-explicit-submit.spec.ts"
+        }
       ]
     },
     {
       "id": "interactive-card-ui",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "aq-option|aq-other-box|aq-submit|Interactive prompts",
-      "targets": [{ "file": "e2e/interactive-prompts.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/interactive-prompts.spec.ts"
+        }
+      ]
     },
     {
       "id": "tracker-rail-row-view",
-      "paths": ["src/renderer/src/components/chat/TrackerRail.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/TrackerRail.tsx"
+      ],
       "changedLines": "BackgroundTaskRowView|variant",
-      "targets": [{ "file": "e2e/harness-sdk-events.spec.ts", "grep": "background" }]
+      "targets": [
+        {
+          "file": "e2e/harness-sdk-events.spec.ts",
+          "grep": "background"
+        }
+      ]
     },
     {
       "id": "tracker-rail",
-      "paths": ["src/renderer/src/components/chat/TrackerRail.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/TrackerRail.tsx"
+      ],
       "targets": [
-        { "file": "e2e/chat-surface-core.spec.ts" },
-        { "file": "e2e/harness-sdk-events.spec.ts" },
-        { "file": "e2e/bug-tracker-rail-width.spec.ts" },
-        { "file": "e2e/bug-tracker-rail-collapse-toggle.spec.ts" },
-        { "file": "e2e/audit-window-resize-layout.spec.ts", "grep": "tracker" },
-        { "file": "e2e/audit-scroll-experience.spec.ts", "grep": "tracker rail" }
+        {
+          "file": "e2e/chat-surface-core.spec.ts"
+        },
+        {
+          "file": "e2e/harness-sdk-events.spec.ts"
+        },
+        {
+          "file": "e2e/bug-tracker-rail-width.spec.ts"
+        },
+        {
+          "file": "e2e/bug-tracker-rail-collapse-toggle.spec.ts"
+        },
+        {
+          "file": "e2e/audit-window-resize-layout.spec.ts",
+          "grep": "tracker"
+        },
+        {
+          "file": "e2e/audit-scroll-experience.spec.ts",
+          "grep": "tracker rail"
+        }
       ]
     },
     {
       "id": "sidebar",
-      "paths": ["src/renderer/src/components/Sidebar.tsx"],
+      "paths": [
+        "src/renderer/src/components/Sidebar.tsx"
+      ],
       "changedLines": "SessionRow|AppNoteRow|BookmarkRow|SessionDetailPopover|groupList|agentActive|terminalActive|bookmarks\\.map|appNotes\\.map|onNewSession|onOpenLocalTerminal|onCreateAppNote|onCreateBookmark|onDelete|onClose|onFork|onRestart|onReconnect|onAddTag|onRemoveTag|onSetNotes|onSetColor|onSetProjectPath|dragHandlers",
       "targets": [
-        { "file": "e2e/app-shell.spec.ts" },
-        { "file": "e2e/session-lifecycle.spec.ts" },
-        { "file": "e2e/session-organization.spec.ts" },
-        { "file": "e2e/global-nav-and-settings.spec.ts", "grep": "sidebar" },
-        { "file": "e2e/weekly-plan-wizard.spec.ts", "grep": "sidebar" },
-        { "file": "e2e/audit-scroll-experience.spec.ts", "grep": "sidebar session list" }
+        {
+          "file": "e2e/app-shell.spec.ts"
+        },
+        {
+          "file": "e2e/session-lifecycle.spec.ts"
+        },
+        {
+          "file": "e2e/session-organization.spec.ts"
+        },
+        {
+          "file": "e2e/global-nav-and-settings.spec.ts",
+          "grep": "sidebar"
+        },
+        {
+          "file": "e2e/weekly-plan-wizard.spec.ts",
+          "grep": "sidebar"
+        },
+        {
+          "file": "e2e/audit-scroll-experience.spec.ts",
+          "grep": "sidebar session list"
+        }
       ]
     },
     {
       "id": "command-palette-escape-running-chat",
-      "paths": ["src/renderer/src/components/CommandPalette.tsx"],
+      "paths": [
+        "src/renderer/src/components/CommandPalette.tsx"
+      ],
       "changedLines": "stopPropagation",
-      "targets": [{ "file": "e2e/bug-command-palette-escape-running-chat.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/bug-command-palette-escape-running-chat.spec.ts"
+        }
+      ]
     },
     {
       "id": "command-palette",
-      "paths": ["src/renderer/src/components/CommandPalette.tsx"],
+      "paths": [
+        "src/renderer/src/components/CommandPalette.tsx"
+      ],
       "changedLines": "searchContent|setQuery|setSelectedIndex|setContentItems|ArrowDown|ArrowUp|handleBackdropClick|command-palette-backdrop|command-palette-input|command-palette-results|command-palette-item|cp-dialog|cp-input|cp-empty",
       "targets": [
-        { "file": "e2e/global-nav-and-settings.spec.ts", "grep": "opens via keyboard|search/filter-as-you-type|typing a session name|fuzzy-matching a shared substring|theme toggle from the palette|Tab cannot escape the palette" },
-        { "file": "e2e/enrichment-full-text-search.spec.ts", "grep": "command palette" }
+        {
+          "file": "e2e/global-nav-and-settings.spec.ts",
+          "grep": "opens via keyboard|search/filter-as-you-type|typing a session name|fuzzy-matching a shared substring|theme toggle from the palette|Tab cannot escape the palette"
+        },
+        {
+          "file": "e2e/enrichment-full-text-search.spec.ts",
+          "grep": "command palette"
+        }
       ]
     },
     {
       "id": "command-palette-no-chat-search-app",
-      "paths": ["src/renderer/src/App.tsx"],
+      "paths": [
+        "src/renderer/src/App.tsx"
+      ],
       "changedLines": "searchContent|searchSessionContent|searchMessages|jumpToMessage|MessageSearchHit|FTS_SNIPPET",
       "targets": [
-        { "file": "e2e/enrichment-full-text-search.spec.ts", "grep": "command palette" }
+        {
+          "file": "e2e/enrichment-full-text-search.spec.ts",
+          "grep": "command palette"
+        }
       ]
     },
     {
       "id": "command-palette-workspace-tools",
-      "paths": ["src/renderer/src/App.tsx"],
+      "paths": [
+        "src/renderer/src/App.tsx"
+      ],
       "changedLines": "paletteItems|open-workspace-|Open Diff|Open Files|Open Terminal|Open Ports",
       "targets": [
-        { "file": "e2e/command-palette-workspace-tools.spec.ts" }
+        {
+          "file": "e2e/command-palette-workspace-tools.spec.ts"
+        }
       ]
     },
     {
@@ -771,7 +1316,9 @@
       ],
       "changedLines": "splitOpenPickerOpen|SplitOpenPicker|splitPickerItems|openNoteInSplit|WorkspaceSecondaryTab|secondaryAppNoteId|Digit2",
       "targets": [
-        { "file": "e2e/split-open-picker.spec.ts" }
+        {
+          "file": "e2e/split-open-picker.spec.ts"
+        }
       ]
     },
     {
@@ -782,25 +1329,40 @@
       ],
       "changedLines": "bufferSwitcherOpen|bufferSwitcherItems|KeyB|testIdPrefix|placeholder.*Switch",
       "targets": [
-        { "file": "e2e/buffer-switcher.spec.ts" }
+        {
+          "file": "e2e/buffer-switcher.spec.ts"
+        }
       ]
     },
     {
       "id": "split-picker-keyboard-navigation",
-      "paths": ["src/renderer/src/components/SplitOpenPicker.tsx"],
+      "paths": [
+        "src/renderer/src/components/SplitOpenPicker.tsx"
+      ],
       "changedLines": "selectedItemRef|scrollIntoView|KeyN|KeyP|ArrowDown|ArrowUp",
       "targets": [
-        { "file": "e2e/buffer-switcher.spec.ts" },
-        { "file": "e2e/split-open-picker.spec.ts" }
+        {
+          "file": "e2e/buffer-switcher.spec.ts"
+        },
+        {
+          "file": "e2e/split-open-picker.spec.ts"
+        }
       ]
     },
     {
       "id": "workspace-panel-shortcuts",
-      "paths": ["src/renderer/src/App.tsx"],
+      "paths": [
+        "src/renderer/src/App.tsx"
+      ],
       "changedLines": "toggleWorkspaceTool|handleWorkspacePanelShortcut|workspacePanelShortcutsEnabled|handleSessionTabHintShortcut|tabByCode|ArrowRight|ArrowLeft",
       "targets": [
-        { "file": "e2e/command-palette-workspace-tools.spec.ts" },
-        { "file": "e2e/app-shell.spec.ts", "grep": "keyboard hints: ⌘\\+f|keyboard hints: ⌘\\+c" }
+        {
+          "file": "e2e/command-palette-workspace-tools.spec.ts"
+        },
+        {
+          "file": "e2e/app-shell.spec.ts",
+          "grep": "keyboard hints: \u2318\\+f|keyboard hints: \u2318\\+c"
+        }
       ]
     },
     {
@@ -811,9 +1373,15 @@
       ],
       "changedLines": "pendingChatEscapeRef|handleChatEscape|Double-ESC|e\\.key === 'Escape' && busy",
       "targets": [
-        { "file": "e2e/chat-double-escape-interrupt.spec.ts" },
-        { "file": "e2e/bug-command-palette-escape-running-chat.spec.ts" },
-        { "file": "e2e/bug-changes-popover-escape-running-chat.spec.ts" }
+        {
+          "file": "e2e/chat-double-escape-interrupt.spec.ts"
+        },
+        {
+          "file": "e2e/bug-command-palette-escape-running-chat.spec.ts"
+        },
+        {
+          "file": "e2e/bug-changes-popover-escape-running-chat.spec.ts"
+        }
       ]
     },
     {
@@ -822,7 +1390,11 @@
         "src/renderer/src/components/SettingsPanel.tsx",
         "src/renderer/src/components/OnboardingWizard.tsx"
       ],
-      "targets": [{ "file": "e2e/global-nav-and-settings.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/global-nav-and-settings.spec.ts"
+        }
+      ]
     },
     {
       "id": "theme-customization",
@@ -834,7 +1406,11 @@
         "src/shared/config.ts",
         "src/main/config.ts"
       ],
-      "targets": [{ "file": "e2e/theme-customization.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/theme-customization.spec.ts"
+        }
+      ]
     },
     {
       "id": "keyboard-hints",
@@ -842,7 +1418,11 @@
         "src/renderer/src/components/KeyboardHintsOverlay.tsx",
         "src/renderer/src/keyboard-hints/**"
       ],
-      "targets": [{ "file": "e2e/bug-keyboard-hint-labels.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/bug-keyboard-hint-labels.spec.ts"
+        }
+      ]
     },
     {
       "id": "app-notes",
@@ -851,9 +1431,16 @@
         "src/main/app-notes/**"
       ],
       "targets": [
-        { "file": "e2e/obsidian-app-notes.spec.ts" },
-        { "file": "e2e/session-organization.spec.ts", "grep": "setup:|app notes:" },
-        { "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts" }
+        {
+          "file": "e2e/obsidian-app-notes.spec.ts"
+        },
+        {
+          "file": "e2e/session-organization.spec.ts",
+          "grep": "setup:|app notes:"
+        },
+        {
+          "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts"
+        }
       ]
     },
     {
@@ -868,8 +1455,13 @@
       ],
       "changedLines": "appNotesFolder|appNotesMigrated|DeleteAppNoteDialog|deleteAppNotePrompt|requestDeleteAppNote|createAppNote|appNotes.reload|deleteAppNote|vault-app-notes-folder-input|Atelier notes folder|appNoteSync|markAppNoteSaving|updateAppNoteWithSync|app-note-sync-chip",
       "targets": [
-        { "file": "e2e/obsidian-app-notes.spec.ts" },
-        { "file": "e2e/session-organization.spec.ts", "grep": "app notes:" }
+        {
+          "file": "e2e/obsidian-app-notes.spec.ts"
+        },
+        {
+          "file": "e2e/session-organization.spec.ts",
+          "grep": "app notes:"
+        }
       ]
     },
     {
@@ -880,8 +1472,13 @@
         "src/main/app-bookmarks/**"
       ],
       "targets": [
-        { "file": "e2e/session-organization.spec.ts", "grep": "bookmark" },
-        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" }
+        {
+          "file": "e2e/session-organization.spec.ts",
+          "grep": "bookmark"
+        },
+        {
+          "file": "e2e/bug-bookmark-file-right-panel.spec.ts"
+        }
       ]
     },
     {
@@ -892,10 +1489,18 @@
         "src/shared/weekly-plan-dedupe.ts"
       ],
       "targets": [
-        { "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts" },
-        { "file": "e2e/weekly-plan-wizard.spec.ts" },
-        { "file": "e2e/obsidian-integration.spec.ts" },
-        { "file": "e2e/bug-daily-notes-time-editing.spec.ts" }
+        {
+          "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts"
+        },
+        {
+          "file": "e2e/weekly-plan-wizard.spec.ts"
+        },
+        {
+          "file": "e2e/obsidian-integration.spec.ts"
+        },
+        {
+          "file": "e2e/bug-daily-notes-time-editing.spec.ts"
+        }
       ]
     },
     {
@@ -907,15 +1512,25 @@
         "src/main/weekly-notes-handlers.ts"
       ],
       "targets": [
-        { "file": "e2e/weekly-plan-wizard.spec.ts" },
-        { "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts" }
+        {
+          "file": "e2e/weekly-plan-wizard.spec.ts"
+        },
+        {
+          "file": "e2e/bug-meeting-tag-not-a-todo.spec.ts"
+        }
       ]
     },
     {
       "id": "logger-epipe",
-      "paths": ["src/main/logger.ts"],
+      "paths": [
+        "src/main/logger.ts"
+      ],
       "changedLines": "stdoutMirrorAvailable|isBrokenStdoutPipe|process\\.stdout",
-      "targets": [{ "file": "e2e/bug-logger-epipe.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/bug-logger-epipe.spec.ts"
+        }
+      ]
     },
     {
       "id": "shell-boot",
@@ -924,7 +1539,11 @@
         "src/main/logger.ts",
         "src/preload/**"
       ],
-      "targets": [{ "file": "e2e/app-shell.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/app-shell.spec.ts"
+        }
+      ]
     },
     {
       "id": "topbar-export-search-icons",
@@ -934,8 +1553,12 @@
       ],
       "changedLines": "ExportMenu|handleExport|toggle-transcript-search|toggleTranscriptSearch|KeyS",
       "targets": [
-        { "file": "e2e/enrichment-export-conversation.spec.ts" },
-        { "file": "e2e/enrichment-full-text-search.spec.ts" }
+        {
+          "file": "e2e/enrichment-export-conversation.spec.ts"
+        },
+        {
+          "file": "e2e/enrichment-full-text-search.spec.ts"
+        }
       ]
     },
     {
@@ -945,7 +1568,11 @@
         "src/renderer/src/styles/global.css"
       ],
       "changedLines": "topbar-cost|cost-chip|flex: 0 1 auto",
-      "targets": [{ "file": "e2e/enrichment-export-conversation.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/enrichment-export-conversation.spec.ts"
+        }
+      ]
     },
     {
       "id": "timeline-toggle-topbar",
@@ -955,35 +1582,63 @@
         "src/renderer/src/styles/global.css"
       ],
       "changedLines": "topbar-timeline-toggle|toggleDailyNotesPanel|dailyNotesPanelOpen|onToggleDailyNotesPanel",
-      "targets": [{ "file": "e2e/sidebar-refinement.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/sidebar-refinement.spec.ts"
+        }
+      ]
     },
     {
       "id": "fullscreen-titlebar",
-      "paths": ["src/renderer/src/components/TitleBar.tsx"],
+      "paths": [
+        "src/renderer/src/components/TitleBar.tsx"
+      ],
       "targets": [
-        { "file": "e2e/app-shell.spec.ts", "grep": "native fullscreen removes" }
+        {
+          "file": "e2e/app-shell.spec.ts",
+          "grep": "native fullscreen removes"
+        }
       ]
     },
     {
       "id": "config-settings",
-      "paths": ["src/main/config.ts"],
+      "paths": [
+        "src/main/config.ts"
+      ],
       "targets": [
-        { "file": "e2e/app-shell.spec.ts" },
-        { "file": "e2e/global-nav-and-settings.spec.ts" }
+        {
+          "file": "e2e/app-shell.spec.ts"
+        },
+        {
+          "file": "e2e/global-nav-and-settings.spec.ts"
+        }
       ]
     },
     {
       "id": "database-migrations",
-      "paths": ["src/main/db.ts"],
+      "paths": [
+        "src/main/db.ts"
+      ],
       "targets": [
-        { "file": "e2e/session-lifecycle.spec.ts", "grep": "migration" },
-        { "file": "e2e/bug-new-session-path-history.spec.ts" }
+        {
+          "file": "e2e/session-lifecycle.spec.ts",
+          "grep": "migration"
+        },
+        {
+          "file": "e2e/bug-new-session-path-history.spec.ts"
+        }
       ]
     },
     {
       "id": "full-text-search",
-      "paths": ["src/renderer/src/components/chat/TranscriptSearchBar.tsx"],
-      "targets": [{ "file": "e2e/enrichment-full-text-search.spec.ts" }]
+      "paths": [
+        "src/renderer/src/components/chat/TranscriptSearchBar.tsx"
+      ],
+      "targets": [
+        {
+          "file": "e2e/enrichment-full-text-search.spec.ts"
+        }
+      ]
     },
     {
       "id": "export",
@@ -991,12 +1646,22 @@
         "src/renderer/src/components/chat/ExportMenu.tsx",
         "src/main/sessions/export-format.ts"
       ],
-      "targets": [{ "file": "e2e/enrichment-export-conversation.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/enrichment-export-conversation.spec.ts"
+        }
+      ]
     },
     {
       "id": "chat-window",
-      "paths": ["src/shared/chat-transcript-window.ts"],
-      "targets": [{ "file": "e2e/chat-transcript-window.spec.ts" }]
+      "paths": [
+        "src/shared/chat-transcript-window.ts"
+      ],
+      "targets": [
+        {
+          "file": "e2e/chat-transcript-window.spec.ts"
+        }
+      ]
     },
     {
       "id": "chat-bookmark-remove",
@@ -1006,7 +1671,11 @@
         "src/renderer/src/components/chat/ChatUncommittedChanges.tsx"
       ],
       "changedLines": "onRemoveBookmark|bookmarkMenu|Remove bookmark|ChatBookmarkContextMenu",
-      "targets": [{ "file": "e2e/bug-bookmark-file-right-panel.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/bug-bookmark-file-right-panel.spec.ts"
+        }
+      ]
     },
     {
       "id": "review-pane",
@@ -1019,150 +1688,282 @@
         "src/renderer/src/components/chat/review-selection-anchor.ts"
       ],
       "targets": [
-        { "file": "e2e/ui-review-pane-chrome.spec.ts" },
-        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" },
-        { "file": "e2e/message-actions.spec.ts" },
-        { "file": "e2e/interactive-prompts.spec.ts", "grep": "plan" },
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|plan" }
+        {
+          "file": "e2e/ui-review-pane-chrome.spec.ts"
+        },
+        {
+          "file": "e2e/bug-bookmark-file-right-panel.spec.ts"
+        },
+        {
+          "file": "e2e/message-actions.spec.ts"
+        },
+        {
+          "file": "e2e/interactive-prompts.spec.ts",
+          "grep": "plan"
+        },
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|plan"
+        }
       ]
     },
     {
       "id": "review-pane-file-word-wrap",
-      "paths": ["src/renderer/src/components/chat/ReviewFileMonacoEditor.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/ReviewFileMonacoEditor.tsx"
+      ],
       "changedLines": "wordWrap|wrappingIndent",
-      "targets": [{ "file": "e2e/ui-review-pane-chrome.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/ui-review-pane-chrome.spec.ts"
+        }
+      ]
     },
     {
       "id": "chat-column-min-width",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "chat-body-row|composer-cache-entry.active|1080px|720px",
-      "targets": [{ "file": "e2e/ui-chat-transcript-typography.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/ui-chat-transcript-typography.spec.ts"
+        }
+      ]
     },
     {
       "id": "chat-scrollbar-hidden",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "chat-body-row|scrollbar-width|::-webkit-scrollbar",
       "targets": [
-        { "file": "e2e/chat-scrollbar-hidden.spec.ts" }
+        {
+          "file": "e2e/chat-scrollbar-hidden.spec.ts"
+        }
       ]
     },
     {
       "id": "chat-prose-shared-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "transcript|msg-user|msg-assistant|md-body|msg-wrap ",
       "targets": [
-        { "file": "e2e/ui-chat-transcript-typography.spec.ts" }
+        {
+          "file": "e2e/ui-chat-transcript-typography.spec.ts"
+        }
       ]
     },
     {
       "id": "composer-markdown-shared-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "composer-box|composer-input-stack|composer-markdown-input",
       "targets": [
-        { "file": "e2e/ui-chat-transcript-typography.spec.ts" },
-        { "file": "e2e/composer-core.spec.ts" }
+        {
+          "file": "e2e/ui-chat-transcript-typography.spec.ts"
+        },
+        {
+          "file": "e2e/composer-core.spec.ts"
+        }
       ]
     },
     {
       "id": "composer-responsive-actions-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "composer-primary-actions|composer-model-label|context-usage|context-bar|stop-btn|send-btn|28px",
       "targets": [
-        { "file": "e2e/composer-core.spec.ts" },
-        { "file": "e2e/model-effort-picker.spec.ts" }
+        {
+          "file": "e2e/composer-core.spec.ts"
+        },
+        {
+          "file": "e2e/model-effort-picker.spec.ts"
+        }
       ]
     },
     {
       "id": "review-pane-shared-css",
-      "paths": ["src/renderer/src/styles/global.css"],
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
       "changedLines": "response-review",
       "targets": [
-        { "file": "e2e/ui-review-pane-chrome.spec.ts" },
-        { "file": "e2e/bug-bookmark-file-right-panel.spec.ts" }
+        {
+          "file": "e2e/ui-review-pane-chrome.spec.ts"
+        },
+        {
+          "file": "e2e/bug-bookmark-file-right-panel.spec.ts"
+        }
       ]
     },
     {
       "id": "review-pane-types",
-      "paths": ["src/shared/review-pane-types.ts"],
+      "paths": [
+        "src/shared/review-pane-types.ts"
+      ],
       "targets": [
-        { "file": "e2e/message-actions.spec.ts" },
-        { "file": "e2e/interactive-prompts.spec.ts" },
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "setup:|plan" },
-        { "file": "e2e/ui-review-pane-chrome.spec.ts" }
+        {
+          "file": "e2e/message-actions.spec.ts"
+        },
+        {
+          "file": "e2e/interactive-prompts.spec.ts"
+        },
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "setup:|plan"
+        },
+        {
+          "file": "e2e/ui-review-pane-chrome.spec.ts"
+        }
       ]
     },
     {
       "id": "harness-ui-types",
-      "paths": ["src/shared/harness-ui-types.ts"],
-      "targets": [{ "file": "e2e/harness-sdk-events.spec.ts" }]
+      "paths": [
+        "src/shared/harness-ui-types.ts"
+      ],
+      "targets": [
+        {
+          "file": "e2e/harness-sdk-events.spec.ts"
+        }
+      ]
     },
     {
       "id": "session-types",
-      "paths": ["src/shared/session-types.ts"],
-      "targets": [{ "file": "e2e/session-lifecycle.spec.ts" }]
+      "paths": [
+        "src/shared/session-types.ts"
+      ],
+      "targets": [
+        {
+          "file": "e2e/session-lifecycle.spec.ts"
+        }
+      ]
     },
     {
       "id": "worktree-prompt",
-      "paths": ["src/shared/worktree-prompt.ts"],
-      "targets": [{ "file": "e2e/session-lifecycle.spec.ts", "grep": "worktree" }]
+      "paths": [
+        "src/shared/worktree-prompt.ts"
+      ],
+      "targets": [
+        {
+          "file": "e2e/session-lifecycle.spec.ts",
+          "grep": "worktree"
+        }
+      ]
     }
   ],
   "fallbacks": [
     {
       "id": "shared-css-fallback",
-      "paths": ["src/renderer/src/styles/**"],
+      "paths": [
+        "src/renderer/src/styles/**"
+      ],
       "targets": [
-        { "file": "e2e/audit-window-resize-layout.spec.ts" },
-        { "file": "e2e/audit-scroll-experience.spec.ts" },
-        { "file": "e2e/app-shell.spec.ts" }
+        {
+          "file": "e2e/audit-window-resize-layout.spec.ts"
+        },
+        {
+          "file": "e2e/audit-scroll-experience.spec.ts"
+        },
+        {
+          "file": "e2e/app-shell.spec.ts"
+        }
       ]
     },
     {
       "id": "app-shell-fallback",
-      "paths": ["src/renderer/src/App.tsx"],
+      "paths": [
+        "src/renderer/src/App.tsx"
+      ],
       "targets": [
-        { "file": "e2e/app-shell.spec.ts" },
-        { "file": "e2e/bug-remove-version-corner.spec.ts" },
-        { "file": "e2e/chat-surface-core.spec.ts" },
-        { "file": "e2e/session-organization.spec.ts" },
-        { "file": "e2e/bug-terminal-blocks-daily-note.spec.ts" }
+        {
+          "file": "e2e/app-shell.spec.ts"
+        },
+        {
+          "file": "e2e/bug-remove-version-corner.spec.ts"
+        },
+        {
+          "file": "e2e/chat-surface-core.spec.ts"
+        },
+        {
+          "file": "e2e/session-organization.spec.ts"
+        },
+        {
+          "file": "e2e/bug-terminal-blocks-daily-note.spec.ts"
+        }
       ]
     },
     {
       "id": "shared-types-fallback",
-      "paths": ["src/shared/**"],
+      "paths": [
+        "src/shared/**"
+      ],
       "targets": [
-        { "file": "e2e/app-shell.spec.ts" },
-        { "file": "e2e/session-lifecycle.spec.ts" }
+        {
+          "file": "e2e/app-shell.spec.ts"
+        },
+        {
+          "file": "e2e/session-lifecycle.spec.ts"
+        }
       ]
     },
     {
       "id": "runtime-build-config-fallback",
-      "paths": ["package.json", "electron.vite.config.*", "electron-builder.yml"],
-      "targets": [{ "file": "e2e/app-shell.spec.ts" }]
+      "paths": [
+        "package.json",
+        "electron.vite.config.*",
+        "electron-builder.yml"
+      ],
+      "targets": [
+        {
+          "file": "e2e/app-shell.spec.ts"
+        }
+      ]
     },
     {
       "id": "sidebar-pane-label-icons",
-      "paths": ["src/renderer/src/components/Sidebar.tsx"],
+      "paths": [
+        "src/renderer/src/components/Sidebar.tsx"
+      ],
       "changedLines": "sidebar-pane-label",
       "targets": [
-        { "file": "e2e/sidebar-refinement.spec.ts" },
-        { "file": "e2e/app-shell.spec.ts", "grep": "sidebar" }
+        {
+          "file": "e2e/sidebar-refinement.spec.ts"
+        },
+        {
+          "file": "e2e/app-shell.spec.ts",
+          "grep": "sidebar"
+        }
       ]
     },
     {
       "id": "tool-card-error-class",
-      "paths": ["src/renderer/src/components/chat/ToolCallCard.tsx"],
+      "paths": [
+        "src/renderer/src/components/chat/ToolCallCard.tsx"
+      ],
       "changedLines": "tool-error",
       "targets": [
-        { "file": "e2e/secondary-panels.spec.ts", "grep": "tool" }
+        {
+          "file": "e2e/secondary-panels.spec.ts",
+          "grep": "tool"
+        }
       ]
     },
     {
       "id": "daily-notes-section-css",
-      "paths": ["src/renderer/src/components/daily-notes/daily-notes.css"],
+      "paths": [
+        "src/renderer/src/components/daily-notes/daily-notes.css"
+      ],
       "changedLines": "dn-section",
-      "targets": [{ "file": "e2e/daily-panel-unified-redesign.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/daily-panel-unified-redesign.spec.ts"
+        }
+      ]
     }
   ]
 }
