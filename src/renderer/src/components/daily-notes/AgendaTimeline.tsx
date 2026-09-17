@@ -12,6 +12,7 @@ const NOW_POLL_MS = 30_000
 const MEANINGFUL_GAP_MINUTES = 60
 
 const AGENDA_HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+const AGENDA_SLOT_H_PX = 36 // px per hour slot in the drag overlay grid
 const DUR_STEPS_MIN = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240]
 const DUR_MAX_MIN = DUR_STEPS_MIN[DUR_STEPS_MIN.length - 1]
 const DEFAULT_DUR_IDX = 1 // 30 min
@@ -307,10 +308,7 @@ export default function AgendaTimeline({
     setRenamingTaskId(null)
   }
 
-  // Insertion line: position as % of agenda container height
-  const ghostTopPct = ghostHour !== null
-    ? ((ghostHour - AGENDA_HOURS[0]!) / AGENDA_HOURS.length) * 100
-    : 0
+  // Ghost label for the drag overlay
   const ghostH12 = ghostHour !== null ? (ghostHour % 12 || 12) : 0
   const ghostSuf = ghostHour !== null ? (ghostHour < 12 ? 'am' : 'pm') : ''
 
@@ -355,15 +353,35 @@ export default function AgendaTimeline({
       onDrop={onDropExisting ? handleDrop : undefined}
     >
       {/* ── Drop insertion line (shown while dragging) ── */}
-      {isDragOver && ghostHour !== null && (
-        <div
-          className="dn-agenda-drop-line"
-          style={{ top: `${ghostTopPct}%` }}
-          aria-hidden="true"
-        >
-          <span className="dn-agenda-drop-line-label">
-            {`${ghostH12}:00 ${ghostSuf}`}
-          </span>
+      {/* ── Time grid overlay (shown while dragging) ── */}
+      {isDragOver && (
+        <div className="dn-agenda-overlay" aria-hidden="true">
+          {AGENDA_HOURS.map((h) => (
+            <div key={h} className="dn-agenda-overlay-slot">
+              <span className="dn-agenda-overlay-label">
+                {h === 12 ? '12p' : h < 12 ? `${h}a` : `${h - 12}p`}
+              </span>
+              <span className="dn-agenda-overlay-line" />
+            </div>
+          ))}
+          {ghostHour !== null && (
+            <div
+              className="dn-agenda-ghost"
+              style={{ top: AGENDA_HOURS.indexOf(ghostHour) * AGENDA_SLOT_H_PX }}
+              data-testid="agenda-drag-ghost"
+            >
+              <span className="dn-agenda-ghost-label">
+                {`${ghostH12}:00 ${ghostSuf}`}
+                {' — '}
+                {(() => {
+                  const nextH = ghostHour + 1
+                  const h12 = nextH % 12 || 12
+                  const suf = nextH < 12 ? 'am' : 'pm'
+                  return `${h12}:00 ${suf}`
+                })()}
+              </span>
+            </div>
+          )}
         </div>
       )}
 

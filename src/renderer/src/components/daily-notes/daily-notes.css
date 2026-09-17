@@ -866,31 +866,58 @@
   border-radius: var(--r-sm, 4px);
 }
 
-/* Single insertion line that follows the cursor */
-.dn-agenda-drop-line {
+/* ── Time grid overlay (appears while dragging into the agenda) ── */
+.dn-agenda-overlay {
   position: absolute;
   left: 0;
   right: 0;
-  height: 2px;
-  background: var(--accent);
-  border-radius: 1px;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
   pointer-events: none;
-  z-index: 20;
+  background: color-mix(in srgb, var(--bg-sidebar) 88%, transparent);
+}
+.dn-agenda-overlay-slot {
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--border-subtle, rgba(255,255,255,.06));
+}
+.dn-agenda-overlay-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  width: 28px;
+  flex-shrink: 0;
+  padding-left: 4px;
+}
+.dn-agenda-overlay-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle, rgba(255,255,255,.06));
+}
+.dn-agenda-ghost {
+  position: absolute;
+  left: 32px;
+  right: 4px;
+  height: 36px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1.5px dashed var(--accent);
+  border-radius: 4px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
   transition: top 70ms ease;
 }
-
-.dn-agenda-drop-line-label {
-  position: absolute;
-  left: 0;
-  top: -18px;
+.dn-agenda-ghost-label {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--accent);
-  background: var(--bg-panel, var(--bg));
-  padding: 1px 5px;
-  border-radius: 3px;
   white-space: nowrap;
-  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---- Pending drop row ---- */
