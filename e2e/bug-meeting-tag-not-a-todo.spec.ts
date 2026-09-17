@@ -144,7 +144,8 @@ test.afterAll(async () => {
 test('daily carry suggestions from the prior note exclude #meeting lines', async () => {
   await expect(page.getByTestId('daily-notes-panel')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByTestId('carry-section')).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByTestId('carry-section-head')).toHaveText(`From ${PRIOR_DATE}`)
+  await expect(page.getByTestId('carry-section-head')).toContainText('From yesterday')
+  await expect(page.getByTestId('carry-section-head')).toContainText('1 suggestion')
 
   await expect(page.getByTestId('carry-suggestion-item').filter({ hasText: CARRY_TODO })).toBeVisible()
   await page.screenshot({ path: join(artifactsDir, 'bug-meeting-tag-daily-carry.png') })

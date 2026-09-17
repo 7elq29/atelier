@@ -53,16 +53,6 @@ export default function CarrySuggestionItem({
         </span>
       </div>
       <div className="dn-carry-item-actions">
-        {compact && (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm dn-carry-today"
-            data-testid="carry-add-today"
-            onClick={() => onMoveToToday()}
-          >
-            Today
-          </button>
-        )}
         {compact && !task.isNote && (
           <button
             type="button"
@@ -95,6 +85,20 @@ export default function CarrySuggestionItem({
         >
           ✕
         </button>
+        {compact && (
+          <button
+            type="button"
+            className="btn btn-icon btn-sm dn-carry-today"
+            data-testid="carry-add-today"
+            title="Move to today"
+            aria-label="Move to today"
+            onClick={() => onMoveToToday()}
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 8h9M8 4l4 4-4 4" />
+            </svg>
+          </button>
+        )}
       </div>
       {moveMenu && (
         <TaskMoveContextMenu

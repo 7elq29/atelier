@@ -1438,41 +1438,46 @@
 }
 
 .dn-carry-item--compact .dn-carry-item-actions {
-  position: relative;
-  width: 38px;
-  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* In compact mode all three actions are always visible */
+.dn-carry-item--compact .dn-carry-add,
+.dn-carry-item--compact .dn-carry-dismiss,
+.dn-carry-item--compact .dn-carry-complete,
+.dn-carry-item--compact .dn-carry-today {
+  opacity: 1;
 }
 
 .dn-carry-today {
-  position: absolute;
-  inset: 0;
-  min-height: 22px;
-  padding: 2px 3px;
-  color: var(--text-tertiary);
-  font-size: 10px;
-  font-weight: 450;
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  padding: 2px;
+  color: var(--accent);
+}
+
+.dn-carry-today svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+
+.dn-carry-today:hover {
+  color: var(--accent);
+  background: rgba(91,142,240,.12);
 }
 
 .dn-carry-item--compact .dn-carry-complete,
 .dn-carry-item--compact .dn-carry-dismiss {
-  position: absolute;
-  top: 0;
   width: 20px;
   height: 20px;
   min-height: 20px;
   padding: 0;
-}
-
-.dn-carry-item--compact .dn-carry-complete {
-  left: -3px;
-}
-
-.dn-carry-item--compact .dn-carry-dismiss {
-  right: -3px;
-}
-
-.dn-carry-item--compact:hover .dn-carry-today {
-  opacity: 0;
+  font-size: 12px;
 }
 
 /* ---- Trackers ---- */

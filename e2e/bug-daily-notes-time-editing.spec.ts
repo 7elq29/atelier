@@ -62,6 +62,8 @@ test.describe('fix-confirmed: daily-notes timeline right-click creates a task at
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     await expect(page.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+    await page.getByTestId('timeline-open-schedule').click()
+    await expect(page.getByTestId('timeline-body')).toBeVisible()
   })
 
   test.afterAll(async () => {

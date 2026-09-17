@@ -80,6 +80,12 @@ test.describe('fix-confirmed: newly-created note survives an immediate task add 
     await createButton.click()
 
     await expect(page.locator('[data-testid="daily-notes-panel"]')).toBeVisible()
+    await expect(page.getByTestId('dn-focus-summary')).toHaveText('Daily three')
+    await expect(page.getByText('No priorities yet')).toBeVisible()
+    await expect(page.getByTestId('dn-big-three-edit')).toHaveAttribute('aria-label', "Add today's priorities")
+    await expect(page.getByTestId('trackers-section')).toHaveCount(0)
+    await page.getByTestId('timeline-open-schedule').click()
+    await expect(page.getByTestId('timeline-body')).toBeVisible()
 
     // No artificial delay here — this is the whole point of the repro: the
     // edit must land while the watcher's self-triggered creation echo is

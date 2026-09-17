@@ -96,7 +96,10 @@ test.describe('audit: real scroll-experience verification (not just overflow met
     const vaultRoot = join(vaultParent, 'vault')
     const noteDir = join(vaultRoot, '01.dailynotes', '2026', 'Jul', '31')
     mkdirSync(noteDir, { recursive: true })
-    const timedTasks = Array.from({ length: 14 }, (_, i) => {
+    // Fill through 21:30 so scrolling the fixed 06:00–22:00 schedule to its
+    // bottom actually surfaces the last real block instead of only trailing
+    // empty hours.
+    const timedTasks = Array.from({ length: 16 }, (_, i) => {
       const hour = 6 + i
       return `- [ ] ${String(hour).padStart(2, '0')}:00–${String(hour).padStart(2, '0')}:30 Timed task #${i + 1} [gid:: ${String(i).padStart(8, 'a')}-aaaa-4aaa-8aaa-aaaaaaaaaaaa]`
     }).join('\n')
@@ -121,6 +124,9 @@ test.describe('audit: real scroll-experience verification (not just overflow met
     page = await electronApp.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     await expect(page.locator('[data-testid="daily-notes-panel"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('timeline-open-schedule')).toBeVisible()
+    await page.getByTestId('timeline-open-schedule').click()
+    await expect(page.getByTestId('daily-panel-schedule-view')).toBeVisible()
     // Shrink to the short-small size so the seeded content is guaranteed to
     // overflow the (now vertically constrained) daily-notes sections.
     await setWindowSize(electronApp, 1024, 640)
@@ -140,7 +146,7 @@ test.describe('audit: real scroll-experience verification (not just overflow met
       unscheduled: await page.getByTestId('unscheduled-task').count(),
       tracker: await page.getByTestId('tracker-task').count()
     }
-    expect(counts.timeline).toBe(14)
+    expect(counts.timeline).toBe(16)
     expect(counts.unscheduled).toBe(12)
     expect(counts.tracker).toBe(10)
     await page.screenshot({ path: join(artifactsDir, 'scroll-audit-daily-notes-seeded-content.png') })
