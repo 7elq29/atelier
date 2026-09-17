@@ -225,6 +225,14 @@
 
 .dn-sections-stack--agenda .dn-timeline-section {
   order: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.dn-sections-stack--agenda .dn-timeline-section .dn-section-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .dn-sections-stack--agenda .dn-trackers-section {
@@ -679,6 +687,8 @@
 
 .dn-agenda {
   padding: 2px 8px 16px;
+  flex: 1;
+  min-height: 0;
 }
 
 .dn-agenda-entry {
