@@ -17,6 +17,8 @@ export interface DailyNotesSidebarProps {
   onClose: () => void
   vaultRoot?: string
   onCreateSessionFromTask?: (task: DailyTask) => void
+  /** Increment to open the create card via command palette. */
+  newTaskRequest?: number
 }
 
 interface AddTaskInputProps {
@@ -73,7 +75,7 @@ function AddTaskInput({ testId, buttonLabel = '+ New task', onAdd }: AddTaskInpu
  * "Open schedule" restores the proportional timeline and the persisted,
  * independently resizable section layout for precise time-block editing.
  */
-export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSessionFromTask }: DailyNotesSidebarProps): JSX.Element {
+export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSessionFromTask, newTaskRequest }: DailyNotesSidebarProps): JSX.Element {
   const {
     note,
     loading,
@@ -326,7 +328,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
           <Timeline
             tasks={dayPlanTasks}
             onToggle={toggleTask}
-            onCreate={(text, timeBlock) => addTask(text, 'day-plan', timeBlock)}
+            onCreate={(text, timeBlock) => timeBlock ? addTask(text, 'day-plan', timeBlock) : addTask(text, 'unscheduled')}
             onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
             onMoveToUnscheduled={(id) => moveTask(id, 'unscheduled', undefined)}
             onDelete={deleteTask}
@@ -342,12 +344,14 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
             onToggle={toggleTask}
             onMoveToUnscheduled={(id) => moveTask(id, 'unscheduled', undefined)}
             onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
+            onCreate={(text, timeBlock) => timeBlock ? addTask(text, 'day-plan', timeBlock) : addTask(text, 'unscheduled')}
             onDelete={deleteTask}
             onUpdateText={updateTaskText}
             onUpdateTask={updateTask}
             moveDateOptions={moveDateOptions}
             onMoveToDate={moveTaskToDate}
             onCreateSessionFromTask={onCreateSessionFromTask}
+            requestCreate={newTaskRequest}
           />
         )}
       </div>

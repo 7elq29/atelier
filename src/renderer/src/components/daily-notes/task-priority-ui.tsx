@@ -11,7 +11,13 @@ import {
   type TaskPriorityOption
 } from '../../../../shared/task-priority'
 import type { DailyTask, ExternalLink } from '../../../../shared/daily-note-types'
-import { isDailyNoteBulletFromTags, parseInlineTagsFromTaskText } from '../../../../shared/daily-note-tags'
+import {
+  extractInlineTagsFromText,
+  filterDailyNoteTagSuggestions,
+  inlineTagQueryAtCursor,
+  isDailyNoteBulletFromTags,
+  parseInlineTagsFromTaskText
+} from '../../../../shared/daily-note-tags'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
 
 export function TaskPriorityBadge({ priority }: { priority: string }): JSX.Element {
@@ -75,6 +81,8 @@ interface TaskEditInputProps {
   /** Blur commits immediately, or only when task text is non-empty (timeline draft). */
   blurPolicy?: 'always' | 'nonEmpty'
   onMouseDown?: (e: React.MouseEvent<HTMLTextAreaElement>) => void
+  /** Called when Tab is pressed and no autocomplete menu is active. */
+  onTab?: () => void
 }
 
 /** Task rename input with `[` → priority autocomplete (Obsidian Dataview-style). */
@@ -89,7 +97,8 @@ export function TaskEditInput({
   autoFocus,
   deferFocus,
   blurPolicy = 'always',
-  onMouseDown
+  onMouseDown,
+  onTab
 }: TaskEditInputProps): JSX.Element {
   const [cursor, setCursor] = useState(value.length)
   const [pickerSuppressed, setPickerSuppressed] = useState(false)
@@ -97,6 +106,8 @@ export function TaskEditInput({
   const menuRef = useRef<HTMLDivElement>(null)
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([])
   const editBufferRef = useRef(value)
+  // Suppresses the blur-commit that fires when Tab+onTab moves focus away
+  const suppressNextBlurRef = useRef(false)
 
   useEffect(() => {
     editBufferRef.current = value
@@ -104,6 +115,30 @@ export function TaskEditInput({
 
   const draft = getPriorityFieldDraft(value, cursor)
   const showPriorityMenu = Boolean(draft?.open) && !pickerSuppressed
+
+  // ── # tag autocomplete (same logic as DailyNoteTaskInput) ──
+  const tagCtx = inlineTagQueryAtCursor(value, cursor)
+  const tagSuggestions = tagCtx
+    ? filterDailyNoteTagSuggestions(tagCtx.query, extractInlineTagsFromText(value)).slice(0, 5)
+    : []
+  const showTagMenu = tagCtx !== null && tagSuggestions.length > 0 && !showPriorityMenu
+
+  const applyTagSuggestion = useCallback((tag: string): void => {
+    if (!tagCtx) return
+    const before = value.slice(0, tagCtx.start)
+    const after = value.slice(cursor)
+    const next = `${before}${tag} ${after}`
+    onChange(next)
+    editBufferRef.current = next
+    const nextCaret = before.length + tag.length + 1
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(nextCaret, nextCaret)
+      setCursor(nextCaret)
+    })
+  }, [tagCtx, value, cursor, onChange, inputRef])
 
   const syncCursor = useCallback((): void => {
     setCursor(inputRef.current?.selectionStart ?? value.length)
@@ -207,18 +242,20 @@ export function TaskEditInput({
         onKeyUp={syncCursor}
         onMouseDown={onMouseDown}
         onBlur={() => {
+          if (suppressNextBlurRef.current) { suppressNextBlurRef.current = false; return }
           if (showPriorityMenu) return
+          if (showTagMenu) return
           if (blurPolicy === 'nonEmpty' && !parseTaskEditContent(editBufferRef.current).text.trim()) return
           commit()
         }}
         onKeyDown={(e) => {
           if (showPriorityMenu) {
-            if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) {
+            if (e.ctrlKey && e.key === 'n') {
               e.preventDefault()
               moveHighlight(1)
               return
             }
-            if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) {
+            if (e.ctrlKey && e.key === 'p') {
               e.preventDefault()
               moveHighlight(-1)
               return
@@ -240,6 +277,21 @@ export function TaskEditInput({
               if (opt) applyPriorityOption(opt)
               return
             }
+          }
+
+          // # tag autocomplete: Tab applies first suggestion
+          if (showTagMenu && e.key === 'Tab') {
+            e.preventDefault()
+            if (tagSuggestions[0]) applyTagSuggestion(tagSuggestions[0])
+            return
+          }
+
+          // Caller-supplied Tab handler (e.g. jump to start-time input)
+          if (e.key === 'Tab' && onTab) {
+            e.preventDefault()
+            suppressNextBlurRef.current = true
+            onTab()
+            return
           }
 
           if (handleEmacsTextareaKeyDown(e, value, onChange)) return
@@ -277,6 +329,24 @@ export function TaskEditInput({
               }}
             >
               priority:: {opt.menuLabel}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {showTagMenu ? (
+        <div className="dn-inline-tag-suggestions" data-testid="inline-tag-suggestions" onMouseDown={(e) => e.preventDefault()}>
+          {tagSuggestions.map((tag) => (
+            <button
+              type="button"
+              key={tag}
+              className="dn-tag-suggestion"
+              data-testid="inline-tag-suggestion"
+              onMouseDown={(e) => {
+                e.preventDefault()
+                applyTagSuggestion(tag)
+              }}
+            >
+              {tag}
             </button>
           ))}
         </div>

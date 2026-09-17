@@ -216,6 +216,7 @@ function modelSelectionForSession(
 export default function App(): JSX.Element {
   const [date, setDate] = useState<string | null>(null)
   const [todayNoteExists, setTodayNoteExists] = useState<boolean | null>(null)
+  const [newTaskRequest, setNewTaskRequest] = useState(0)
   const calendarDateRef = useRef<string | null>(null)
   const { config, loaded, updateConfig } = useConfig()
   // Keep a ref to the latest config so IPC callbacks (which close over the
@@ -1644,6 +1645,27 @@ export default function App(): JSX.Element {
         label: 'Toggle daily notes tracker panel',
         category: 'Action',
         run: () => void toggleDailyNotesPanel()
+      },
+      {
+        id: 'new-task',
+        label: 'New Task',
+        category: 'Action',
+        run: () => {
+          // Open the panel first if it's closed, then trigger the create card
+          if (!date) {
+            void (async () => {
+              const d = await window.atelier.getDefaultDate()
+              if (todayNoteExists === false) {
+                await window.atelier.createDailyNote(d)
+                setTodayNoteExists(true)
+              }
+              setDate(d)
+              setNewTaskRequest((n) => n + 1)
+            })()
+          } else {
+            setNewTaskRequest((n) => n + 1)
+          }
+        }
       },
       {
         id: 'new-session',
@@ -3137,6 +3159,7 @@ export default function App(): JSX.Element {
                 onClose={() => void toggleDailyNotesPanel()}
                 vaultRoot={config.vault.root || undefined}
                 onCreateSessionFromTask={handleCreateSessionFromTask}
+                newTaskRequest={newTaskRequest}
               />
             </div>
           </>

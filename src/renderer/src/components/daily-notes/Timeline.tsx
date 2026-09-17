@@ -286,14 +286,22 @@ export default function Timeline({
   const handleDragOver = (e: React.DragEvent): void => {
     e.preventDefault()
     const id = htmlDragTaskIdRef.current
-    if (!id) return
-    const task = tasks.find((t) => t.id === id)
-    if (!task) return
-    const parsed = parseTimeBlock(task.timeBlock)
+    // Also handle drags from external sources (unscheduled tasks) — we can't
+    // read getData during dragover, but types are always exposed.
+    const isExternal = !id && e.dataTransfer.types.includes('text/task-id')
+    if (!id && !isExternal) return
+    const task = id ? tasks.find((t) => t.id === id) : null
+    const parsed = task ? parseTimeBlock(task.timeBlock) : null
     const duration = parsed ? parsed.end - parsed.start : DEFAULT_DURATION_MIN
     const start = clampedStartForDefaultDuration(e.clientY)
     const end = Math.min(start + duration, GRID_END_MIN)
-    setLiveBlock({ taskId: id, startMin: start, endMin: end })
+    setLiveBlock({ taskId: id ?? '__external__', startMin: start, endMin: end })
+  }
+
+  const handleDragLeave = (e: React.DragEvent): void => {
+    if (!containerRef.current?.contains(e.relatedTarget as Node)) {
+      setLiveBlock(null)
+    }
   }
 
   const handleDragEnd = (): void => {
@@ -384,6 +392,7 @@ export default function Timeline({
       data-testid="timeline-body"
       onContextMenu={handleContextMenu}
       onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       <div className="dn-timeline-grid" data-testid="timeline-grid" style={{ height: `${GRID_HEIGHT_PX}px` }}>
@@ -509,6 +518,25 @@ export default function Timeline({
             </div>
           )
         })}
+
+        {/* Ghost block for external drags (e.g. from Unscheduled) */}
+        {liveBlock && liveBlock.taskId === '__external__' && (
+          <div
+            className="dn-tblock dn-tblock-external-ghost"
+            data-testid="timeline-external-ghost"
+            style={{
+              top: `${minutesToPx(liveBlock.startMin - GRID_START_MIN)}px`,
+              height: `${Math.max(minutesToPx(liveBlock.endMin - liveBlock.startMin), 8)}px`,
+              left: `${LABEL_WIDTH}px`,
+              width: `calc(100% - ${LABEL_WIDTH}px - 4px)`,
+              pointerEvents: 'none',
+            }}
+          >
+            <span className="dn-tblock-range">
+              {minutesToTime(liveBlock.startMin)}–{minutesToTime(liveBlock.endMin)}
+            </span>
+          </div>
+        )}
 
         {draft && draftBlock && (
           <div

@@ -12,10 +12,19 @@ const NOW_POLL_MS = 30_000
 const MEANINGFUL_GAP_MINUTES = 60
 
 const AGENDA_HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
-const DUR_STEP_MIN  = 5
-const DUR_MIN_MIN   = 5
-const DUR_MAX_MIN   = 240
-const DEFAULT_DUR_MIN = 30
+const AGENDA_SLOT_H_PX = 36 // px per hour slot in the drag overlay grid
+
+interface TimeEditState {
+  taskId: string
+  taskLabel: string
+  startMin: number  // total minutes from midnight, snapped to 15
+  durIdx: number
+  x: number
+  y: number
+}
+const DUR_STEPS_MIN = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240]
+const DUR_MAX_MIN = DUR_STEPS_MIN[DUR_STEPS_MIN.length - 1]
+const DEFAULT_DUR_IDX = 1 // 30 min
 
 interface AgendaTimelineProps {
   tasks: DailyTask[]
@@ -29,15 +38,28 @@ interface AgendaTimelineProps {
   onCreateSessionFromTask?: (task: DailyTask) => void
   /** Drop an unscheduled task onto the agenda; receives a computed timeBlock. */
   onDropExisting?: (id: string, timeBlock: string) => void
+  /** Right-click create: receives task text and computed timeBlock. */
+  onCreate?: (text: string, timeBlock: string) => void
+  /** Increment to imperatively open the create card (e.g. from command palette). */
+  requestCreate?: number
 }
 
 interface PendingDrop {
   taskId: string
   taskLabel: string
   hour: number
-  durMin: number
+  durIdx: number
   cardX: number
   cardY: number
+}
+
+interface PendingCreate {
+  startMin: number  // minutes from midnight, 15-min resolution
+  durIdx: number
+  text: string
+  cardX: number
+  cardY: number
+  noTime?: boolean  // if true, create as unscheduled task (no timeBlock)
 }
 
 function minutesNow(): number {
@@ -65,6 +87,39 @@ function durDisplayParts(min: number): { num: string; unit: string } {
   return { num: m ? `${h}:${String(m).padStart(2, '0')}` : String(h), unit: 'hr' }
 }
 
+/** Parse a human-typed time string into total minutes from midnight, or null on failure. */
+function parseTimeInput(raw: string): number | null {
+  const s = raw.trim().toLowerCase().replace(/\s+/g, ' ')
+  // "3:30 pm" / "3:30pm"
+  const m12 = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/)
+  if (m12) {
+    let h = parseInt(m12[1]!, 10)
+    const min = parseInt(m12[2]!, 10)
+    if (m12[3] === 'pm' && h < 12) h += 12
+    if (m12[3] === 'am' && h === 12) h = 0
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null
+    return h * 60 + min
+  }
+  // "15:30" (24-hour)
+  const m24 = s.match(/^(\d{1,2}):(\d{2})$/)
+  if (m24) {
+    const h = parseInt(m24[1]!, 10)
+    const min = parseInt(m24[2]!, 10)
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null
+    return h * 60 + min
+  }
+  // "3 pm" / "3pm"
+  const mHour = s.match(/^(\d{1,2})\s*(am|pm)$/)
+  if (mHour) {
+    let h = parseInt(mHour[1]!, 10)
+    if (mHour[2] === 'pm' && h < 12) h += 12
+    if (mHour[2] === 'am' && h === 12) h = 0
+    if (h < 0 || h > 23) return null
+    return h * 60
+  }
+  return null
+}
+
 function hourLabel(h: number): string {
   if (h === 12) return '12p'
   if (h === 0)  return '12a'
@@ -81,7 +136,9 @@ export default function AgendaTimeline({
   moveDateOptions,
   onMoveToDate,
   onCreateSessionFromTask,
-  onDropExisting
+  onDropExisting,
+  onCreate,
+  requestCreate
 }: AgendaTimelineProps): JSX.Element {
   const [nowMinutes, setNowMinutes] = useState(minutesNow)
   const [moveMenu, setMoveMenu] = useState<{ x: number; y: number; taskId: string } | null>(null)
@@ -93,8 +150,23 @@ export default function AgendaTimeline({
   const [isDragOver, setIsDragOver] = useState(false)
   const [ghostHour, setGhostHour] = useState<number | null>(null)
 
-  // Duration confirm card
+  // Duration confirm card (for drops)
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null)
+
+  // Right-click create draft
+  const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null)
+  const [createStartText, setCreateStartText] = useState<string | null>(null)
+  const createCardRef       = useRef<HTMLDivElement>(null)
+  const createInputRef      = useRef<HTMLTextAreaElement | null>(null)
+  const createStartInputRef = useRef<HTMLInputElement>(null)
+  const createStartRef      = useRef<HTMLDivElement>(null)
+
+  // Time-edit popover (click on time label)
+  const [timeEdit, setTimeEdit] = useState<TimeEditState | null>(null)
+  const [timeEditStartText, setTimeEditStartText] = useState<string | null>(null)
+  const timeEditRef = useRef<HTMLDivElement>(null)
+  const timeEditStartRef = useRef<HTMLDivElement>(null)
+  const timeEditStartInputRef = useRef<HTMLInputElement>(null)
 
   const agendaRef = useRef<HTMLDivElement>(null)
   const cardRef   = useRef<HTMLDivElement>(null)
@@ -119,10 +191,10 @@ export default function AgendaTimeline({
       setPendingDrop((prev) => {
         if (!prev) return null
         const next = Math.max(
-          DUR_MIN_MIN,
-          Math.min(DUR_MAX_MIN, prev.durMin + (e.deltaY < 0 ? DUR_STEP_MIN : -DUR_STEP_MIN))
+          0,
+          Math.min(DUR_STEPS_MIN.length - 1, prev.durIdx + (e.deltaY < 0 ? 1 : -1))
         )
-        return { ...prev, durMin: next }
+        return { ...prev, durIdx: next }
       })
     }
     window.addEventListener('wheel', onWheel, { passive: false, capture: true })
@@ -146,6 +218,64 @@ export default function AgendaTimeline({
       document.removeEventListener('click', onClick, { capture: true })
     }
   }, [pendingOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Wheel + click-outside for create draft card
+  const createOpen = pendingCreate !== null
+  useEffect(() => {
+    if (!createOpen) return
+    function onWheel(e: WheelEvent): void {
+      e.preventDefault()
+      if (createStartRef.current?.contains(e.target as Node)) {
+        // Scroll on "starting" → adjust start time ±15 min
+        setPendingCreate((prev) => {
+          if (!prev) return null
+          const next = Math.max(0, Math.min(23 * 60 + 45, prev.startMin + (e.deltaY < 0 ? 15 : -15)))
+          return { ...prev, startMin: next }
+        })
+      } else {
+        setPendingCreate((prev) => {
+          if (!prev) return null
+          const next = Math.max(0, Math.min(DUR_STEPS_MIN.length - 1, prev.durIdx + (e.deltaY < 0 ? 1 : -1)))
+          return { ...prev, durIdx: next }
+        })
+      }
+    }
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => window.removeEventListener('wheel', onWheel, { capture: true })
+  }, [createOpen])
+
+  useEffect(() => {
+    if (!createOpen) return
+    function onClick(e: MouseEvent): void {
+      if (createCardRef.current?.contains(e.target as Node)) return
+      setPendingCreate(null)
+      setCreateStartText(null)
+    }
+    const t = setTimeout(
+      () => document.addEventListener('click', onClick, { capture: true }),
+      80
+    )
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('click', onClick, { capture: true })
+    }
+  }, [createOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Open create card when triggered from command palette
+  useEffect(() => {
+    if (!requestCreate || !onCreate) return
+    const currentHour: number = new Date().getHours()
+    const nowH = Math.max(6, Math.min(21, currentHour))
+    setPendingDrop(null)
+    setPendingCreate({
+      startMin: nowH * 60,
+      durIdx: DEFAULT_DUR_IDX,
+      text: '',
+      cardX: Math.max(8, window.innerWidth / 2 - 110),
+      cardY: Math.max(8, window.innerHeight / 2 - 140),
+    })
+    requestAnimationFrame(() => createInputRef.current?.focus())
+  }, [requestCreate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function hourFromClientY(clientY: number): number {
     const el = agendaRef.current
@@ -187,7 +317,7 @@ export default function AgendaTimeline({
       taskId: id,
       taskLabel: label || 'Task',
       hour,
-      durMin: DEFAULT_DUR_MIN,
+      durIdx: DEFAULT_DUR_IDX,
       cardX: e.clientX,
       cardY: e.clientY,
     })
@@ -196,7 +326,8 @@ export default function AgendaTimeline({
   function confirmDrop(): void {
     if (!pendingDrop || !onDropExisting) return
     const startMin  = pendingDrop.hour * 60
-    const endMin    = startMin + pendingDrop.durMin
+    const durMin    = DUR_STEPS_MIN[pendingDrop.durIdx]!
+    const endMin    = startMin + durMin
     const timeBlock = `${minutesToTime(startMin)}-${minutesToTime(endMin)}`
     onDropExisting(pendingDrop.taskId, timeBlock)
     setPendingDrop(null)
@@ -204,6 +335,100 @@ export default function AgendaTimeline({
 
   function cancelDrop(): void {
     setPendingDrop(null)
+  }
+
+  // ── Time-edit popover ────────────────────────────────────────────────────
+
+  const timeEditOpen = timeEdit !== null
+  useEffect(() => {
+    if (!timeEditOpen) return
+    function onClick(e: MouseEvent): void {
+      if (timeEditRef.current?.contains(e.target as Node)) return
+      setTimeEdit(null)
+      setTimeEditStartText(null)
+    }
+    const t = setTimeout(() => document.addEventListener('click', onClick, { capture: true }), 80)
+    return () => { clearTimeout(t); document.removeEventListener('click', onClick, { capture: true }) }
+  }, [timeEditOpen])
+
+  useEffect(() => {
+    if (!timeEditOpen) return
+    function onWheel(e: WheelEvent): void {
+      e.preventDefault()
+      if (timeEditStartRef.current?.contains(e.target as Node)) {
+        // Scroll on "starting" text → adjust start time ±15 min
+        setTimeEdit((t) => {
+          if (!t) return t
+          const next = Math.max(0, Math.min(23 * 60 + 45, t.startMin + (e.deltaY < 0 ? 15 : -15)))
+          return { ...t, startMin: next }
+        })
+      } else {
+        // Scroll elsewhere in card → adjust duration
+        setTimeEdit((t) =>
+          t ? { ...t, durIdx: Math.max(0, Math.min(DUR_STEPS_MIN.length - 1, t.durIdx + (e.deltaY < 0 ? 1 : -1))) } : t
+        )
+      }
+    }
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => window.removeEventListener('wheel', onWheel, { capture: true })
+  }, [timeEditOpen])
+
+  function openTimeEdit(event: React.MouseEvent, task: DailyTask, start: number, end: number): void {
+    event.stopPropagation()
+    const snappedStart = Math.round(start / 15) * 15
+    const durMin = end - start
+    const durIdx = DUR_STEPS_MIN.reduce(
+      (best, v, i) => Math.abs(v - durMin) < Math.abs(DUR_STEPS_MIN[best]! - durMin) ? i : best,
+      DEFAULT_DUR_IDX
+    )
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    setTimeEditStartText(null)
+    setTimeEdit({ taskId: task.id, taskLabel: task.text, startMin: snappedStart, durIdx, x: rect.left, y: rect.bottom + 6 })
+    setPendingDrop(null)
+    setPendingCreate(null)
+  }
+
+  function commitTimeEdit(): void {
+    if (!timeEdit) return
+    const durMin = DUR_STEPS_MIN[timeEdit.durIdx]!
+    const endMin = timeEdit.startMin + durMin
+    onUpdateTask(timeEdit.taskId, { timeBlock: `${minutesToTime(timeEdit.startMin)}-${minutesToTime(endMin)}` })
+    setTimeEdit(null)
+    setTimeEditStartText(null)
+  }
+
+  function commitStartText(): void {
+    if (timeEditStartText === null) return
+    const parsed = parseTimeInput(timeEditStartText)
+    if (parsed !== null) {
+      setTimeEdit((t) => t ? { ...t, startMin: parsed } : t)
+    }
+    setTimeEditStartText(null)
+  }
+
+  function commitCreate(parsed?: { text: string }): void {
+    if (!pendingCreate || !onCreate) return
+    const text = (parsed?.text ?? pendingCreate.text).trim()
+    if (text) {
+      if (pendingCreate.noTime) {
+        onCreate(text, '')
+      } else {
+        const durMin = DUR_STEPS_MIN[pendingCreate.durIdx]!
+        const endMin = pendingCreate.startMin + durMin
+        onCreate(text, `${minutesToTime(pendingCreate.startMin)}-${minutesToTime(endMin)}`)
+      }
+    }
+    setPendingCreate(null)
+    setCreateStartText(null)
+  }
+
+  function handleContextMenu(e: React.MouseEvent): void {
+    if (!onCreate) return
+    e.preventDefault()
+    if ((e.target as Element).closest('.dn-agenda-entry')) return
+    setPendingDrop(null)
+    const startMin = hourFromClientY(e.clientY) * 60
+    setPendingCreate({ startMin, durIdx: DEFAULT_DUR_IDX, text: '', cardX: e.clientX, cardY: e.clientY })
   }
 
   // ── Render helpers ────────────────────────────────────────────────────────
@@ -238,15 +463,12 @@ export default function AgendaTimeline({
     setRenamingTaskId(null)
   }
 
-  // Insertion line: position as % of agenda container height
-  const ghostTopPct = ghostHour !== null
-    ? ((ghostHour - AGENDA_HOURS[0]!) / AGENDA_HOURS.length) * 100
-    : 0
+  // Ghost label for the drag overlay
   const ghostH12 = ghostHour !== null ? (ghostHour % 12 || 12) : 0
   const ghostSuf = ghostHour !== null ? (ghostHour < 12 ? 'am' : 'pm') : ''
 
   // Duration card derived values
-  const durMin      = pendingDrop ? pendingDrop.durMin : DEFAULT_DUR_MIN
+  const durMin      = pendingDrop ? DUR_STEPS_MIN[pendingDrop.durIdx]! : 30
   const { num: durNum, unit: durUnit } = durDisplayParts(durMin)
   const pct         = durMin / DUR_MAX_MIN
   const R           = 28
@@ -254,12 +476,58 @@ export default function AgendaTimeline({
   const dashOffset  = CIRC * (1 - pct)
   const isLong      = pct > 0.75
 
-  // Card clamped position
+  // Drop card clamped position
   let cardLeft = 0, cardTop = 0
   if (pendingDrop) {
     cardLeft = Math.min(pendingDrop.cardX + 16, window.innerWidth  - 188)
     cardTop  = Math.max(8, Math.min(pendingDrop.cardY - 80,  window.innerHeight - 300))
   }
+
+  // Create card derived values (separate durIdx from drop)
+  const createDurMin = pendingCreate ? DUR_STEPS_MIN[pendingCreate.durIdx]! : 30
+  const { num: createDurNum, unit: createDurUnit } = durDisplayParts(createDurMin)
+  const createPct        = createDurMin / DUR_MAX_MIN
+  const createDashOffset = CIRC * (1 - createPct)
+  const createIsLong     = createPct > 0.75
+  let createCardLeft = 0, createCardTop = 0
+  if (pendingCreate) {
+    createCardLeft = Math.min(pendingCreate.cardX + 16, window.innerWidth  - 220)
+    createCardTop  = Math.max(8, Math.min(pendingCreate.cardY - 80,  window.innerHeight - 340))
+  }
+  // Create card start time display
+  const createSM     = pendingCreate?.startMin ?? 0
+  const createHour   = Math.floor(createSM / 60)
+  const createHour12 = (createHour % 12) || 12
+  const createMinute = createSM % 60
+  const createSuffix = createHour < 12 ? 'am' : 'pm'
+
+  function commitCreateStartText(): void {
+    if (createStartText === null) return
+    const trimmed = createStartText.trim()
+    if (trimmed === '') {
+      // User cleared the time → create as unscheduled
+      setPendingCreate((p) => p ? { ...p, noTime: true } : p)
+    } else {
+      const parsed = parseTimeInput(trimmed)
+      if (parsed !== null) {
+        setPendingCreate((p) => p ? { ...p, startMin: parsed, noTime: false } : p)
+      }
+    }
+    setCreateStartText(null)
+    // Return focus to the task name input
+    requestAnimationFrame(() => createInputRef.current?.focus())
+  }
+
+  // Time-edit card derived values
+  const teDurMin      = timeEdit ? DUR_STEPS_MIN[timeEdit.durIdx]! : 30
+  const { num: teDurNum, unit: teDurUnit } = durDisplayParts(teDurMin)
+  const tePct         = teDurMin / DUR_MAX_MIN
+  const teDashOffset  = CIRC * (1 - tePct)
+  const teIsLong      = tePct > 0.75
+  const teHour        = timeEdit ? Math.floor(timeEdit.startMin / 60) : 0
+  const teHour12      = (teHour % 12) || 12
+  const teMinute      = timeEdit ? timeEdit.startMin % 60 : 0
+  const teSuffix      = teHour < 12 ? 'am' : 'pm'
 
   let nowPlaced = false
 
@@ -268,20 +536,64 @@ export default function AgendaTimeline({
       ref={agendaRef}
       className={`dn-agenda${isDragOver ? ' dn-agenda--drag-over' : ''}`}
       data-testid="timeline-agenda"
+      onContextMenu={onCreate ? handleContextMenu : undefined}
       onDragOver={onDropExisting ? handleDragOver : undefined}
       onDragLeave={onDropExisting ? handleDragLeave : undefined}
       onDrop={onDropExisting ? handleDrop : undefined}
     >
       {/* ── Drop insertion line (shown while dragging) ── */}
-      {isDragOver && ghostHour !== null && (
+      {/* ── Time grid overlay (shown while dragging) ── */}
+      {isDragOver && (
         <div
-          className="dn-agenda-drop-line"
-          style={{ top: `${ghostTopPct}%` }}
+          className="dn-agenda-overlay"
+          style={{ height: AGENDA_HOURS.length * AGENDA_SLOT_H_PX }}
           aria-hidden="true"
         >
-          <span className="dn-agenda-drop-line-label">
-            {`${ghostH12}:00 ${ghostSuf}`}
-          </span>
+          {/* Hour grid lines */}
+          {AGENDA_HOURS.map((h) => (
+            <div key={h} className="dn-agenda-overlay-slot">
+              <span className="dn-agenda-overlay-label">
+                {h === 12 ? '12p' : h < 12 ? `${h}a` : `${h - 12}p`}
+              </span>
+              <span className="dn-agenda-overlay-line" />
+            </div>
+          ))}
+          {/* Existing tasks rendered at their correct time positions */}
+          {entries.map(({ task, start, end }) => {
+            const topH = start / 60
+            const durH = (end - start) / 60
+            const topPx = (topH - AGENDA_HOURS[0]!) * AGENDA_SLOT_H_PX
+            const heightPx = Math.max(durH * AGENDA_SLOT_H_PX, 8)
+            if (topPx < 0 || topPx > AGENDA_HOURS.length * AGENDA_SLOT_H_PX) return null
+            return (
+              <div
+                key={task.id}
+                className="dn-agenda-overlay-task"
+                style={{ top: topPx, height: heightPx }}
+              >
+                {task.text}
+              </div>
+            )
+          })}
+          {/* Ghost block for the task being dropped */}
+          {ghostHour !== null && (
+            <div
+              className="dn-agenda-ghost"
+              style={{ top: AGENDA_HOURS.indexOf(ghostHour) * AGENDA_SLOT_H_PX }}
+              data-testid="agenda-drag-ghost"
+            >
+              <span className="dn-agenda-ghost-label">
+                {`${ghostH12}:00 ${ghostSuf}`}
+                {' — '}
+                {(() => {
+                  const nextH = ghostHour + 1
+                  const h12 = nextH % 12 || 12
+                  const suf = nextH < 12 ? 'am' : 'pm'
+                  return `${h12}:00 ${suf}`
+                })()}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -317,7 +629,11 @@ export default function AgendaTimeline({
                 setMoveMenu({ x: event.clientX, y: event.clientY, taskId: task.id })
               }}
             >
-              <span className="dn-agenda-time">{formatClock(start)}</span>
+              <span
+                className="dn-agenda-time dn-agenda-time--editable"
+                title="Click to edit time"
+                onClick={(e) => openTimeEdit(e, task, start, end)}
+              >{formatClock(start)}</span>
               {!task.isNote ? (
                 <button
                   type="button"
@@ -383,7 +699,7 @@ export default function AgendaTimeline({
             <div className="dn-agenda-task-main">
               <span className="dn-agenda-label">{pendingDrop.taskLabel}</span>
             </div>
-            <span className="dn-agenda-duration">{formatDuration(pendingDrop.durMin)}</span>
+            <span className="dn-agenda-duration">{formatDuration(DUR_STEPS_MIN[pendingDrop.durIdx]!)}</span>
           </div>
         </div>
       )}
@@ -433,8 +749,8 @@ export default function AgendaTimeline({
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); confirmDrop() }
             if (e.key === 'Escape') { e.preventDefault(); cancelDrop() }
-            if (e.key === 'ArrowUp')   { e.preventDefault(); setPendingDrop(p => p ? { ...p, durMin: Math.min(DUR_MAX_MIN, p.durMin + DUR_STEP_MIN) } : p) }
-            if (e.key === 'ArrowDown') { e.preventDefault(); setPendingDrop(p => p ? { ...p, durMin: Math.max(DUR_MIN_MIN, p.durMin - DUR_STEP_MIN) } : p) }
+            if (e.key === 'ArrowUp')   { e.preventDefault(); setPendingDrop(p => p ? { ...p, durIdx: Math.min(DUR_STEPS_MIN.length - 1, p.durIdx + 1) } : p) }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setPendingDrop(p => p ? { ...p, durIdx: Math.max(0, p.durIdx - 1) } : p) }
           }}
         >
           <div className="dn-dur-card-task">{pendingDrop.taskLabel}</div>
@@ -473,17 +789,195 @@ export default function AgendaTimeline({
             <span className="dn-dur-card-unit">{durUnit}</span>
           </div>
 
-          {/* Scroll / arrow hint */}
-          <div className="dn-dur-card-hint">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
-              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-              <rect x="5" y="2" width="6" height="10" rx="3"/>
-              <line x1="8" y1="5" x2="8" y2="7"/>
-            </svg>
-            scroll or ↑↓ to adjust
+        </div>
+      )}
+
+      {/* ── Right-click create card ── */}
+      {pendingCreate && (
+        <div
+          ref={createCardRef}
+          className="dn-dur-card dn-create-card"
+          style={{ left: createCardLeft, top: createCardTop }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { e.preventDefault(); setPendingCreate(null) }
+            if (e.key === 'ArrowUp')   { e.preventDefault(); setPendingCreate(p => p ? { ...p, durIdx: Math.min(DUR_STEPS_MIN.length - 1, p.durIdx + 1) } : p) }
+            if (e.key === 'ArrowDown') { e.preventDefault(); setPendingCreate(p => p ? { ...p, durIdx: Math.max(0, p.durIdx - 1) } : p) }
+          }}
+        >
+          <div className="dn-create-card-input-wrap">
+            <TaskEditInput
+              autoFocus
+              deferFocus
+              inputRef={createInputRef}
+              className="dn-create-card-input"
+              testId="agenda-create-input"
+              value={pendingCreate.text}
+              onChange={(text) => setPendingCreate(p => p ? { ...p, text } : p)}
+              onCommit={commitCreate}
+              onCancel={() => { setPendingCreate(null); setCreateStartText(null) }}
+              blurPolicy="nonEmpty"
+              onTab={() => {
+                const h12 = createHour12
+                const m   = String(createMinute).padStart(2, '0')
+                setCreateStartText(`${h12}:${m} ${createSuffix}`)
+                requestAnimationFrame(() => {
+                  createStartInputRef.current?.select()
+                  createStartInputRef.current?.focus()
+                })
+              }}
+            />
+          </div>
+          {/* "starting X:XX pm" — Tab from task input jumps here; click or scroll to adjust */}
+          {createStartText !== null ? (
+            <input
+              ref={createStartInputRef}
+              className="dn-dur-card-start-input"
+              value={createStartText}
+              onChange={(e) => setCreateStartText(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); commitCreateStartText() }
+                if (e.key === 'Escape') { e.preventDefault(); setCreateStartText(null); requestAnimationFrame(() => createInputRef.current?.focus()) }
+              }}
+              onBlur={commitCreateStartText}
+              onFocus={(e) => e.currentTarget.select()}
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+            />
+          ) : pendingCreate.noTime ? (
+            <div
+              className="dn-dur-card-at dn-dur-card-at--editable dn-dur-card-at--no-time"
+              title="Click to add a start time"
+              onClick={() => setCreateStartText('')}
+            >
+              no start time
+            </div>
+          ) : (
+            <div
+              ref={createStartRef}
+              className="dn-dur-card-at dn-dur-card-at--editable"
+              title="Click to type or scroll to nudge ±15 min"
+              onClick={() => {
+                setCreateStartText(`${createHour12}:${String(createMinute).padStart(2, '0')} ${createSuffix}`)
+              }}
+            >
+              {`starting ${createHour12}:${String(createMinute).padStart(2, '0')} ${createSuffix}`}
+            </div>
+          )}
+
+          {!pendingCreate.noTime && (<>
+          <svg
+            className="dn-dur-card-ring"
+            width="68" height="68" viewBox="0 0 68 68"
+            aria-hidden="true"
+          >
+            <circle cx="34" cy="34" r={R} className="dn-dur-ring-bg" />
+            <circle
+              cx="34" cy="34" r={R}
+              className="dn-dur-ring-fill"
+              style={{
+                stroke: createIsLong ? 'var(--warning, #f0a05b)' : 'var(--accent)',
+                strokeDasharray: CIRC,
+                strokeDashoffset: createDashOffset,
+                transform: 'rotate(-90deg)',
+                transformOrigin: '34px 34px',
+              }}
+            />
+          </svg>
+
+          <div className="dn-dur-card-value">
+            <span
+              className="dn-dur-card-num"
+              style={{ color: createIsLong ? 'var(--warning, #f0a05b)' : undefined }}
+            >
+              {createDurNum}
+            </span>
+            <span className="dn-dur-card-unit">{createDurUnit}</span>
+          </div>
+          </>)}
+
+        </div>
+      )}
+
+      {/* ── Time-edit card (same visual as drop/create cards) ── */}
+      {timeEdit && (
+        <div
+          ref={timeEditRef}
+          className="dn-dur-card"
+          style={{
+            left: Math.min(timeEdit.x, window.innerWidth - 220),
+            top: Math.min(timeEdit.y, window.innerHeight - 320),
+          }}
+          tabIndex={-1}
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { e.preventDefault(); setTimeEdit(null) }
+            if (e.key === 'Enter')  { e.preventDefault(); commitTimeEdit() }
+          }}
+        >
+          <div className="dn-dur-card-task">{timeEdit.taskLabel}</div>
+
+          {/* "starting X:XX pm" — click to type, scroll to nudge ±15 min */}
+          {timeEditStartText !== null ? (
+            <input
+              ref={timeEditStartInputRef}
+              className="dn-dur-card-start-input"
+              value={timeEditStartText}
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+              onChange={(e) => setTimeEditStartText(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter')  { e.preventDefault(); commitStartText() }
+                if (e.key === 'Escape') { e.preventDefault(); setTimeEditStartText(null) }
+              }}
+              onBlur={commitStartText}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+          ) : (
+            <div
+              ref={timeEditStartRef}
+              className="dn-dur-card-at dn-dur-card-at--editable"
+              title="Click to type or scroll to nudge ±15 min"
+              onClick={() =>
+                setTimeEditStartText(`${teHour12}:${String(teMinute).padStart(2, '0')} ${teSuffix}`)
+              }
+            >
+              {`starting ${teHour12}:${String(teMinute).padStart(2, '0')} ${teSuffix}`}
+            </div>
+          )}
+
+          {/* Arc ring (duration) */}
+          <svg
+            className="dn-dur-card-ring"
+            width="68" height="68" viewBox="0 0 68 68"
+            aria-hidden="true"
+          >
+            <circle cx="34" cy="34" r={R} className="dn-dur-ring-bg" />
+            <circle
+              cx="34" cy="34" r={R}
+              className="dn-dur-ring-fill"
+              style={{
+                stroke: teIsLong ? 'var(--warning, #f0a05b)' : 'var(--accent)',
+                strokeDasharray: CIRC,
+                strokeDashoffset: teDashOffset,
+                transform: 'rotate(-90deg)',
+                transformOrigin: '34px 34px',
+              }}
+            />
+          </svg>
+
+          <div className="dn-dur-card-value">
+            <span
+              className="dn-dur-card-num"
+              style={{ color: teIsLong ? 'var(--warning, #f0a05b)' : undefined }}
+            >
+              {teDurNum}
+            </span>
+            <span className="dn-dur-card-unit">{teDurUnit}</span>
           </div>
 
-          <div className="dn-dur-card-confirm">click anywhere to confirm</div>
         </div>
       )}
     </div>
