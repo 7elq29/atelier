@@ -3132,6 +3132,7 @@ input[type='range'] {
 .context-bar-item--icon-only:hover { background: var(--bg-hover); color: var(--text-secondary); }
 .context-bar-item--copyable { cursor: pointer; border-radius: 4px; padding: 1px 4px; }
 .context-bar-item--copyable:hover { background: var(--bg-hover); color: var(--text-secondary); }
+.context-bar-item--copied { color: var(--text-primary) !important; background: var(--bg-active) !important; cursor: default; }
 .context-bar-sep { color: var(--border-strong); font-size: 10px; flex-shrink: 0; }
 .context-bar-mode { flex-shrink: 0; }
 .context-bar-spacer { flex: 1; min-width: 8px; }
