@@ -1,7 +1,7 @@
 import { startTransition, useCallback, useEffect, useState } from 'react'
 import type {
   CreateSessionOptions,
-  ImageAttachment,
+  FileAttachment,
   MessageRecord,
   ModelSelection,
   ModelValidationResult,
@@ -61,7 +61,7 @@ export interface UseSessionsResult {
   /** Loads transcript from SQLite without reconnecting the harness (session-startup-idle). */
   loadSessionMessages: (sessionId: string, opts?: { includeMessageId?: number }) => Promise<void>
   reconnectSession: (sessionId: string) => Promise<void>
-  sendMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment) => Promise<void>
+  sendMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, attachments?: FileAttachment[]) => Promise<void>
   interrupt: (sessionId: string) => Promise<SessionInterruptResult>
   /** Validates a `/model <id>` against the SDK's live acceptance logic, on demand (not cached) — see `ModelValidationResult`'s doc comment. */
   validateModel: (sessionId: string, model: string) => Promise<ModelValidationResult>
@@ -363,8 +363,8 @@ export function useSessions(): UseSessionsResult {
     await window.atelier.reconnectSession(sessionId)
   }, [])
 
-  const sendMessage = useCallback(async (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment): Promise<void> => {
-    await window.atelier.sendSessionMessage(sessionId, text, modelSelection, image)
+  const sendMessage = useCallback(async (sessionId: string, text: string, modelSelection?: ModelSelection, attachments?: FileAttachment[]): Promise<void> => {
+    await window.atelier.sendSessionMessage(sessionId, text, modelSelection, attachments)
   }, [])
 
   const interrupt = useCallback(async (sessionId: string): Promise<SessionInterruptResult> => {

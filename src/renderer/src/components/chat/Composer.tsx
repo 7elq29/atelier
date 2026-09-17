@@ -6,7 +6,7 @@ import { buildComposerSendText, type ReviewComposerComment } from '../../../../s
 import type { SessionChangesCap } from '../../../../shared/session-changes-cap'
 import type { SessionBookmark } from '../../../../shared/session-bookmarks'
 import { sessionWorktreeBranch } from '../../../../shared/worktree-path'
-import type { ImageAttachment, ModelInfo, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
+import type { FileAttachment, FileAttachmentMimeType, ModelInfo, ModelSelection, ModelValidationResult, PermissionModeValue, SlashCommandInfo } from '../../../../shared/session-types'
 import { modelLabelForSelection, resolveModelPickerOptions } from './model-picker-options'
 import type { SessionRateLimitEvent, SessionSdkChromeEvent } from '../../../../shared/harness-ui-types'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
@@ -245,12 +245,16 @@ function ModelPicker({
   )
 }
 
-/** The only mime types the Anthropic Messages API's image content block accepts — see `ImageAttachment` in shared/session-types.ts. */
-const ACCEPTED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+const ACCEPTED_IMAGE_MIME_TYPES = new Set<string>(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+const ACCEPTED_PDF_MIME_TYPES = new Set<string>(['application/pdf'])
+/** Extensions whose files are sent as plain-text document blocks regardless of the browser-reported MIME. */
+const TEXT_EXTENSIONS = new Set(['.md', '.ts', '.tsx', '.js', '.jsx', '.py', '.json', '.sh', '.bash', '.yaml', '.yml', '.css', '.html', '.xml', '.txt', '.toml', '.go', '.rs', '.rb', '.java', '.c', '.cpp', '.h', '.swift', '.kt', '.php', '.r', '.sql'])
+/** Max bytes per individual file (20 MB). */
+const MAX_FILE_BYTES = 20 * 1024 * 1024
 
-interface AttachedImage extends ImageAttachment {
-  /** `data:<mime>;base64,<data>` — the same bytes as `data`, kept around only so the thumbnail's `<img src>` doesn't need to re-derive it. */
-  previewUrl: string
+type AttachedFile = FileAttachment & {
+  /** `data:<mime>;base64,<data>` — only set for images, for the thumbnail `<img src>`. */
+  previewUrl?: string
 }
 
 type PendingAppNoteAttach = {
@@ -265,7 +269,7 @@ export interface ComposerHandle {
 }
 
 interface ComposerProps {
-  onSend: (text: string, image?: ImageAttachment) => void
+  onSend: (text: string, attachments?: FileAttachment[]) => void
   onInterrupt: () => void
   /** True while a turn is in flight for the active session — shows Stop alongside Send, per e2e-test-plan.md/spec.md. */
   busy: boolean
@@ -367,12 +371,6 @@ interface SlashCommand {
 
 type PopoverState = { kind: 'mention' | 'slash'; query: string; tokenStart: number } | null
 
-/**
- * Reads a File/Blob into a `data:` URL via FileReader (10g-enrichment-image-attachment)
- * — simpler than `arrayBuffer()` + manual base64 encoding, and the result
- * already carries the mime type in the `data:<mime>;base64,` prefix, which
- * `readAttachedImage` below splits back apart.
- */
 function readAsDataUrl(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -382,17 +380,41 @@ function readAsDataUrl(file: File | Blob): Promise<string> {
   })
 }
 
-/** Returns null for anything that isn't an image the SDK's image content block actually accepts (see ACCEPTED_IMAGE_MIME_TYPES). */
-async function readAttachedImage(file: File | Blob): Promise<AttachedImage | null> {
-  if (!ACCEPTED_IMAGE_MIME_TYPES.has(file.type)) return null
-  const previewUrl = await readAsDataUrl(file)
-  const commaIndex = previewUrl.indexOf(',')
-  if (commaIndex === -1) return null
-  return {
-    mimeType: file.type as AttachedImage['mimeType'],
-    data: previewUrl.slice(commaIndex + 1),
-    previewUrl,
+function readAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'))
+    reader.readAsText(file, 'utf-8')
+  })
+}
+
+function fileExtension(name: string): string {
+  const dot = name.lastIndexOf('.')
+  return dot === -1 ? '' : name.slice(dot).toLowerCase()
+}
+
+/** Returns null for unsupported/oversized files. Error string for size violations (to show to user). */
+async function readAttachedFile(file: File): Promise<AttachedFile | 'too_large' | null> {
+  if (file.size > MAX_FILE_BYTES) return 'too_large'
+  const ext = fileExtension(file.name)
+  if (ACCEPTED_IMAGE_MIME_TYPES.has(file.type)) {
+    const previewUrl = await readAsDataUrl(file)
+    const commaIndex = previewUrl.indexOf(',')
+    if (commaIndex === -1) return null
+    return { mimeType: file.type as FileAttachmentMimeType, data: previewUrl.slice(commaIndex + 1), name: file.name, previewUrl }
   }
+  if (ACCEPTED_PDF_MIME_TYPES.has(file.type)) {
+    const dataUrl = await readAsDataUrl(file)
+    const commaIndex = dataUrl.indexOf(',')
+    if (commaIndex === -1) return null
+    return { mimeType: 'application/pdf', data: dataUrl.slice(commaIndex + 1), name: file.name }
+  }
+  if (TEXT_EXTENSIONS.has(ext) || file.type.startsWith('text/')) {
+    const text = await readAsText(file)
+    return { mimeType: 'text/plain', data: text, name: file.name }
+  }
+  return null
 }
 
 /**
@@ -547,8 +569,9 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [branch, setBranch] = useState<string | null>(null)
   const [fileList, setFileList] = useState<string[]>([])
-  const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null)
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
   const [pendingAppNotes, setPendingAppNotes] = useState<PendingAppNoteAttach[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [inputMultiline, setInputMultiline] = useState(false)
   // `/model`'s target — lifted out of ModelPicker itself (bug #56) so typing
@@ -829,7 +852,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     const mentionPrefix = mentionPaths.length > 0 ? mentionPaths.map((p) => `@${p}`).join(' ') + ' ' : ''
     const mergedText = (mentionPrefix + text).trim()
     const sendText = buildComposerSendText(mergedText, reviewComments)
-    if (!sendText && !attachedImage) return
+    if (!sendText && !attachedFiles.length) return
     // `/model <model-id>` validates against the SDK's own live acceptance
     // logic (calls `Query.setModel()` on the connected session and checks
     // whether it threw) rather than any static/curated list — verified for
@@ -852,17 +875,25 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         return
       }
     }
-    onSend(mergedText, attachedImage ? { mimeType: attachedImage.mimeType, data: attachedImage.data } : undefined)
+    const outAttachments: FileAttachment[] = attachedFiles.map(({ previewUrl: _, ...f }) => f)
+    onSend(mergedText, outAttachments.length ? outAttachments : undefined)
     setValue('')
     largePastesRef.current = []
-    setAttachedImage(null)
+    setAttachedFiles([])
     setPendingAppNotes([])
   }
 
-  async function attachFile(file: File | null | undefined): Promise<void> {
-    if (!file) return
-    const image = await readAttachedImage(file)
-    if (image) setAttachedImage(image)
+  async function attachFiles(files: File[]): Promise<void> {
+    const results = await Promise.all(files.map((f) => readAttachedFile(f)))
+    const valid: AttachedFile[] = []
+    for (const r of results) {
+      if (r === 'too_large') {
+        // TODO: surface a proper toast; for now just skip
+        continue
+      }
+      if (r) valid.push(r)
+    }
+    if (valid.length > 0) setAttachedFiles((prev) => [...prev, ...valid])
   }
 
   function acceptsComposerDrop(types: readonly string[]): boolean {
@@ -891,7 +922,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       return
     }
     if (e.dataTransfer.files.length === 0) return
-    void attachFile(e.dataTransfer.files[0])
+    void attachFiles(Array.from(e.dataTransfer.files))
   }
 
   function applyTextPaste(pasted: string, selectionStart: number, selectionEnd: number): void {
@@ -913,10 +944,13 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
 
   function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>): void {
     const items = Array.from(e.clipboardData.items)
-    const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
-    if (imageItem) {
+    const imageFiles = items
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((f): f is File => f !== null)
+    if (imageFiles.length > 0) {
       e.preventDefault()
-      void attachFile(imageItem.getAsFile())
+      void attachFiles(imageFiles)
       return
     }
 
@@ -1066,7 +1100,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       : worktreePath ?? undefined
   const hasSendableContent = Boolean(
     buildComposerSendText(value, reviewComments).trim() ||
-    attachedImage ||
+    attachedFiles.length > 0 ||
     pendingAppNotes.length > 0
   )
 
@@ -1238,20 +1272,26 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             ))}
           </div>
         )}
-        {(attachedImage || pendingAppNotes.length > 0) && (
+        {(attachedFiles.length > 0 || pendingAppNotes.length > 0) && (
           <div className="attach-row" data-testid="composer-attach-row">
-            {attachedImage ? (
-              <div className="attach-thumb" data-testid="composer-attach-thumb">
-                <img src={attachedImage.previewUrl} alt="Attached" data-testid="composer-attach-image" />
-                <span
-                  className="remove"
-                  data-testid="composer-attach-remove"
-                  onClick={() => setAttachedImage(null)}
-                >
-                  ✕
-                </span>
-              </div>
-            ) : null}
+            {attachedFiles.map((file, i) => (
+              file.previewUrl ? (
+                <div key={i} className="attach-thumb" data-testid="composer-attach-thumb">
+                  <img src={file.previewUrl} alt={file.name ?? 'Attached image'} data-testid="composer-attach-image" />
+                  <span className="remove" data-testid="composer-attach-remove" onClick={() => setAttachedFiles((prev) => prev.filter((_, j) => j !== i))}>✕</span>
+                </div>
+              ) : (
+                <div key={i} className="attach-thumb attach-thumb--file" data-testid="composer-attach-file" title={file.name}>
+                  <span className="attach-file-icon" aria-hidden="true">
+                    <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M6 2h8l4 4v16H6z" /><path d="M14 2v4h4" />
+                    </svg>
+                  </span>
+                  <span className="attach-file-label">{file.name ?? file.mimeType}</span>
+                  <span className="remove" data-testid="composer-attach-remove" onClick={() => setAttachedFiles((prev) => prev.filter((_, j) => j !== i))}>✕</span>
+                </div>
+              )
+            ))}
             {pendingAppNotes.map((note) => (
               <div
                 key={note.id}
@@ -1360,6 +1400,30 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
               Send blocked
             </span>
           )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/*,.ts,.tsx,.js,.jsx,.py,.json,.sh,.bash,.yaml,.yml,.go,.rs,.rb,.java,.c,.cpp,.h,.swift,.kt,.php,.r,.sql,.md,.toml,.xml,.css,.html"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              if (e.target.files?.length) {
+                void attachFiles(Array.from(e.target.files))
+                e.target.value = ''
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn-icon composer-attach-btn"
+            data-testid="composer-attach-btn"
+            title="Attach files"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
           <div className="spacer" />
           {inputMultiline && renderPrimaryActions('footer')}
         </div>

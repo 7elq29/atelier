@@ -5,7 +5,7 @@
  */
 import { ipcMain, dialog, app, type BrowserWindow } from 'electron'
 import { writeFile } from 'node:fs/promises'
-import type { CreateSessionOptions, ImageAttachment, ModelSelection, PromptDecision, SessionTab } from '../../shared/session-types'
+import type { CreateSessionOptions, FileAttachment, ModelSelection, PromptDecision, SessionTab } from '../../shared/session-types'
 import type { CreateSessionBookmarkInput, SessionBookmarkKind } from '../../shared/session-bookmarks'
 import { logger } from '../logger'
 import { openDatabase } from '../db'
@@ -84,9 +84,9 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
 
   ipcMain.handle('session:isStartupIdle', (_event, sessionId: string) => manager.isSessionStartupIdle(sessionId))
 
-  ipcMain.handle('session:sendMessage', (_event, sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment) => {
-    logger.info('session:sendMessage invoked', { sessionId, textLength: text.length, modelSelection, hasImage: Boolean(image) })
-    return manager.sendUserMessage(sessionId, text, modelSelection, image)
+  ipcMain.handle('session:sendMessage', (_event, sessionId: string, text: string, modelSelection?: ModelSelection, attachments?: FileAttachment[]) => {
+    logger.info('session:sendMessage invoked', { sessionId, textLength: text.length, modelSelection, attachmentCount: attachments?.length ?? 0 })
+    return manager.sendUserMessage(sessionId, text, modelSelection, attachments)
   })
 
   ipcMain.handle('session:interrupt', (_event, sessionId: string) => manager.interrupt(sessionId))

@@ -13,7 +13,7 @@ import type {
 } from '../shared/weekly-plan-types'
 import type {
   CreateSessionOptions,
-  ImageAttachment,
+  FileAttachment,
   MessageRecord,
   ModelSelection,
   MessageSearchHit,
@@ -254,8 +254,8 @@ const api = {
     ipcRenderer.invoke('session:capGitFileDiff', sessionId, workspacePath, capPath),
   touchSessionActive: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:touchActive', sessionId),
   isSessionStartupIdle: (sessionId: string): Promise<boolean> => ipcRenderer.invoke('session:isStartupIdle', sessionId),
-  sendSessionMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, image?: ImageAttachment): Promise<void> =>
-    ipcRenderer.invoke('session:sendMessage', sessionId, text, modelSelection, image),
+  sendSessionMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, attachments?: FileAttachment[]): Promise<void> =>
+    ipcRenderer.invoke('session:sendMessage', sessionId, text, modelSelection, attachments),
   interruptSession: (sessionId: string): Promise<SessionInterruptResult> => ipcRenderer.invoke('session:interrupt', sessionId),
   clearConversation: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:clearConversation', sessionId),
   validateModel: (sessionId: string, model: string): Promise<ModelValidationResult> =>

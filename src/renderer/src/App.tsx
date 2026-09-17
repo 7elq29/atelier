@@ -73,7 +73,7 @@ import type {
   WeeklyPlanWizardData
 } from '../../shared/weekly-plan-types'
 import type {
-  ImageAttachment,
+  FileAttachment,
   ModelSelection,
   SessionRecord,
   SessionTab,
@@ -733,13 +733,20 @@ export default function App(): JSX.Element {
             const session = activeSessionRef.current
             if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
               const split = activeWorkspaceSplitRef.current
-              if (split && !split.fullscreenTab) {
-                const focusedPanel = (document.activeElement as HTMLElement | null)
-                  ?.closest<HTMLElement>('[data-panel]')
-                  ?.dataset.panel as string | undefined
-                if (focusedPanel === split.secondaryTab) {
+              if (split) {
+                if (split.fullscreenTab === split.secondaryTab) {
+                  // Secondary pane is fullscreened — close directly, no focus check needed.
                   e.preventDefault()
                   handleWorkspaceSplitPaneCloseRef.current(split.secondaryTab as SessionTab)
+                } else if (!split.fullscreenTab) {
+                  // Split is visible — only close if focus is in the secondary pane.
+                  const focusedPanel = (document.activeElement as HTMLElement | null)
+                    ?.closest<HTMLElement>('[data-panel]')
+                    ?.dataset.panel as string | undefined
+                  if (focusedPanel === split.secondaryTab) {
+                    e.preventDefault()
+                    handleWorkspaceSplitPaneCloseRef.current(split.secondaryTab as SessionTab)
+                  }
                 }
               }
             }
@@ -1763,15 +1770,15 @@ export default function App(): JSX.Element {
     updateConfig({ onboardingCompleted: true })
   }
 
-  async function handleSend(sessionId: string, text: string, image?: ImageAttachment): Promise<void> {
+  async function handleSend(sessionId: string, text: string, attachments?: FileAttachment[]): Promise<void> {
     const reviewComments = reviewCommentsBySession[sessionId] ?? []
     const mergedText = buildComposerSendText(text, reviewComments)
-    if (!mergedText && !image) return
+    if (!mergedText && !attachments?.length) return
     if (sessions.rateLimitBySession[sessionId]?.sendBlocked) return
     const busy = sessions.busyBySession[sessionId] ?? false
-    if (busy && !image) {
+    if (busy && !attachments?.length) {
       // Session is in flight — queue for automatic dispatch when busy → idle.
-      // Image attachments can't be queued (queued-strip only shows text).
+      // Attachment sends bypass the queue (they need to go immediately).
       setQueuedMessagesBySession((prev) => ({
         ...prev,
         [sessionId]: [...(prev[sessionId] ?? []), mergedText]
@@ -1783,7 +1790,7 @@ export default function App(): JSX.Element {
     }
     const session = allSessions.find((s) => s.id === sessionId)
     const model = modelSelectionForSession(sessionId, session, modelSelectionBySession, config)
-    await sessions.sendMessage(sessionId, mergedText, model, image)
+    await sessions.sendMessage(sessionId, mergedText, model, attachments)
     if (reviewComments.length > 0) {
       setReviewCommentsBySession((prev) => ({ ...prev, [sessionId]: [] }))
     }
@@ -2894,7 +2901,7 @@ export default function App(): JSX.Element {
                         else composerRefs.current.delete(sessionId)
                       }}
                       active={composerActive}
-                      onSend={(text, image) => void handleSend(sessionId, text, image)}
+                      onSend={(text, attachments) => void handleSend(sessionId, text, attachments)}
                       onInterrupt={() => void handleInterrupt(sessionId)}
                       busy={sessions.busyBySession[sessionId] ?? false}
                       sessionId={sessionId}
