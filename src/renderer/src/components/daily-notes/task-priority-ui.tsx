@@ -11,7 +11,13 @@ import {
   type TaskPriorityOption
 } from '../../../../shared/task-priority'
 import type { DailyTask, ExternalLink } from '../../../../shared/daily-note-types'
-import { isDailyNoteBulletFromTags, parseInlineTagsFromTaskText } from '../../../../shared/daily-note-tags'
+import {
+  extractInlineTagsFromText,
+  filterDailyNoteTagSuggestions,
+  inlineTagQueryAtCursor,
+  isDailyNoteBulletFromTags,
+  parseInlineTagsFromTaskText
+} from '../../../../shared/daily-note-tags'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
 
 export function TaskPriorityBadge({ priority }: { priority: string }): JSX.Element {
@@ -104,6 +110,30 @@ export function TaskEditInput({
 
   const draft = getPriorityFieldDraft(value, cursor)
   const showPriorityMenu = Boolean(draft?.open) && !pickerSuppressed
+
+  // ── # tag autocomplete (same logic as DailyNoteTaskInput) ──
+  const tagCtx = inlineTagQueryAtCursor(value, cursor)
+  const tagSuggestions = tagCtx
+    ? filterDailyNoteTagSuggestions(tagCtx.query, extractInlineTagsFromText(value)).slice(0, 5)
+    : []
+  const showTagMenu = tagCtx !== null && tagSuggestions.length > 0 && !showPriorityMenu
+
+  const applyTagSuggestion = useCallback((tag: string): void => {
+    if (!tagCtx) return
+    const before = value.slice(0, tagCtx.start)
+    const after = value.slice(cursor)
+    const next = `${before}${tag} ${after}`
+    onChange(next)
+    editBufferRef.current = next
+    const nextCaret = before.length + tag.length + 1
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(nextCaret, nextCaret)
+      setCursor(nextCaret)
+    })
+  }, [tagCtx, value, cursor, onChange, inputRef])
 
   const syncCursor = useCallback((): void => {
     setCursor(inputRef.current?.selectionStart ?? value.length)
@@ -242,6 +272,13 @@ export function TaskEditInput({
             }
           }
 
+          // # tag autocomplete: Tab applies first suggestion
+          if (showTagMenu && e.key === 'Tab') {
+            e.preventDefault()
+            if (tagSuggestions[0]) applyTagSuggestion(tagSuggestions[0])
+            return
+          }
+
           if (handleEmacsTextareaKeyDown(e, value, onChange)) return
 
           if (e.key === 'Enter' && !e.shiftKey) {
@@ -277,6 +314,24 @@ export function TaskEditInput({
               }}
             >
               priority:: {opt.menuLabel}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {showTagMenu ? (
+        <div className="dn-inline-tag-suggestions" data-testid="inline-tag-suggestions" onMouseDown={(e) => e.preventDefault()}>
+          {tagSuggestions.map((tag) => (
+            <button
+              type="button"
+              key={tag}
+              className="dn-tag-suggestion"
+              data-testid="inline-tag-suggestion"
+              onMouseDown={(e) => {
+                e.preventDefault()
+                applyTagSuggestion(tag)
+              }}
+            >
+              {tag}
             </button>
           ))}
         </div>

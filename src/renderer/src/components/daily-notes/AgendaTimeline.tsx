@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { DailyTask } from '../../../../shared/daily-note-types'
 import { formatTaskEditBuffer } from '../../../../shared/task-priority'
 import { priorityTimelineAccentClass } from '../../../../shared/task-priority'
-import DailyNoteTaskInput from './DailyNoteTaskInput'
 import TaskMoveContextMenu from './TaskMoveContextMenu'
 import type { MoveDateOptions } from './move-date-options'
 import { buildTaskEditPatch, TaskEditInput } from './task-priority-ui'
@@ -109,7 +108,8 @@ export default function AgendaTimeline({
 
   // Right-click create draft
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null)
-  const createCardRef = useRef<HTMLDivElement>(null)
+  const createCardRef  = useRef<HTMLDivElement>(null)
+  const createInputRef = useRef<HTMLTextAreaElement | null>(null)
 
   const agendaRef = useRef<HTMLDivElement>(null)
   const cardRef   = useRef<HTMLDivElement>(null)
@@ -254,9 +254,9 @@ export default function AgendaTimeline({
     setPendingDrop(null)
   }
 
-  function commitCreate(): void {
+  function commitCreate(parsed?: { text: string }): void {
     if (!pendingCreate || !onCreate) return
-    const text = pendingCreate.text.trim()
+    const text = (parsed?.text ?? pendingCreate.text).trim()
     if (text) {
       const startMin  = pendingCreate.hour * 60
       const durMin    = DUR_STEPS_MIN[pendingCreate.durIdx]!
@@ -581,18 +581,20 @@ export default function AgendaTimeline({
             if (e.key === 'ArrowDown') { e.preventDefault(); setPendingCreate(p => p ? { ...p, durIdx: Math.max(0, p.durIdx - 1) } : p) }
           }}
         >
-          <DailyNoteTaskInput
-            autoFocus
-            className="dn-create-card-input-wrap"
-            inputClassName="dn-create-card-input"
-            placeholder="New task…"
-            testId="agenda-create-input"
-            value={pendingCreate.text}
-            onChange={(text) => setPendingCreate(p => p ? { ...p, text } : p)}
-            onSubmit={commitCreate}
-            onCancel={() => setPendingCreate(null)}
-            onBlur={commitCreate}
-          />
+          <div className="dn-create-card-input-wrap">
+            <TaskEditInput
+              autoFocus
+              deferFocus
+              inputRef={createInputRef}
+              className="dn-create-card-input"
+              testId="agenda-create-input"
+              value={pendingCreate.text}
+              onChange={(text) => setPendingCreate(p => p ? { ...p, text } : p)}
+              onCommit={commitCreate}
+              onCancel={() => setPendingCreate(null)}
+              blurPolicy="nonEmpty"
+            />
+          </div>
           <div className="dn-dur-card-at">
             {`starting ${formatClock(pendingCreate.hour * 60)} ${pendingCreate.hour < 12 ? 'am' : 'pm'}`}
           </div>
