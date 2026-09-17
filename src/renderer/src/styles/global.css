@@ -2080,6 +2080,59 @@ input[type='range'] {
 }
 .tool-edit-summary { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); flex-shrink: 0; }
 
+/* ── Structured tool body: Read / Write — line-numbered grid ── */
+.tool-read-body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  padding: 6px 12px 10px;
+  max-height: 220px;
+  overflow: auto;
+}
+.tool-read-gutter {
+  color: var(--text-disabled);
+  text-align: right;
+  padding-right: 12px;
+  user-select: none;
+  min-width: 28px;
+}
+.tool-read-line {
+  color: var(--text-secondary);
+  white-space: pre;
+  overflow-x: visible;
+}
+
+/* ── Structured tool body: Edit / MultiEdit — inline diff ── */
+.tool-diff {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  padding: 6px 12px 10px;
+  max-height: 220px;
+  overflow: auto;
+}
+.tool-diff-line {
+  display: flex;
+  gap: 8px;
+  white-space: pre;
+}
+.tool-diff-prefix {
+  flex-shrink: 0;
+  width: 10px;
+  text-align: center;
+}
+.tool-diff-content { flex: 1; overflow-x: hidden; text-overflow: ellipsis; }
+.tool-diff-removed {
+  color: var(--danger);
+  background: rgba(210, 70, 70, 0.06);
+}
+.tool-diff-added {
+  color: var(--success);
+  background: rgba(74, 170, 116, 0.06);
+}
+
 /* Aggregate row a finished tool-call sequence collapses into
    (14-tool-call-sequence-collapse). Plain expandable text — not a card. */
 .tool-sequence-summary { max-width: 84%; cursor: pointer; flex-shrink: 0; user-select: none; }
