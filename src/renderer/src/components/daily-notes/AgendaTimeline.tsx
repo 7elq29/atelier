@@ -13,13 +13,12 @@ const MEANINGFUL_GAP_MINUTES = 60
 
 const AGENDA_HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
 const AGENDA_SLOT_H_PX = 36 // px per hour slot in the drag overlay grid
-const MINUTE_STEPS = [0, 15, 30, 45]
 
 interface TimeEditState {
   taskId: string
-  hour: number
-  minuteIdx: number // index into MINUTE_STEPS
-  durIdx: number    // index into DUR_STEPS_MIN
+  taskLabel: string
+  startMin: number  // total minutes from midnight, snapped to 15
+  durIdx: number
   x: number
   y: number
 }
@@ -125,6 +124,7 @@ export default function AgendaTimeline({
   // Time-edit popover (click on time label)
   const [timeEdit, setTimeEdit] = useState<TimeEditState | null>(null)
   const timeEditRef = useRef<HTMLDivElement>(null)
+  const timeEditStartRef = useRef<HTMLDivElement>(null)
 
   const agendaRef = useRef<HTMLDivElement>(null)
   const cardRef   = useRef<HTMLDivElement>(null)
@@ -282,28 +282,47 @@ export default function AgendaTimeline({
     return () => { clearTimeout(t); document.removeEventListener('click', onClick, { capture: true }) }
   }, [timeEditOpen])
 
+  useEffect(() => {
+    if (!timeEditOpen) return
+    function onWheel(e: WheelEvent): void {
+      e.preventDefault()
+      if (timeEditStartRef.current?.contains(e.target as Node)) {
+        // Scroll on "starting" text → adjust start time ±15 min
+        setTimeEdit((t) => {
+          if (!t) return t
+          const next = Math.max(0, Math.min(23 * 60 + 45, t.startMin + (e.deltaY < 0 ? 15 : -15)))
+          return { ...t, startMin: next }
+        })
+      } else {
+        // Scroll elsewhere in card → adjust duration
+        setTimeEdit((t) =>
+          t ? { ...t, durIdx: Math.max(0, Math.min(DUR_STEPS_MIN.length - 1, t.durIdx + (e.deltaY < 0 ? 1 : -1))) } : t
+        )
+      }
+    }
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => window.removeEventListener('wheel', onWheel, { capture: true })
+  }, [timeEditOpen])
+
   function openTimeEdit(event: React.MouseEvent, task: DailyTask, start: number, end: number): void {
     event.stopPropagation()
-    const hour = Math.floor(start / 60)
-    const minute = start % 60
-    const mIdx = MINUTE_STEPS.indexOf(minute) >= 0 ? MINUTE_STEPS.indexOf(minute) : 0
+    const snappedStart = Math.round(start / 15) * 15
     const durMin = end - start
     const durIdx = DUR_STEPS_MIN.reduce(
       (best, v, i) => Math.abs(v - durMin) < Math.abs(DUR_STEPS_MIN[best]! - durMin) ? i : best,
       DEFAULT_DUR_IDX
     )
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    setTimeEdit({ taskId: task.id, hour, minuteIdx: mIdx, durIdx, x: rect.left, y: rect.bottom + 6 })
+    setTimeEdit({ taskId: task.id, taskLabel: task.text, startMin: snappedStart, durIdx, x: rect.left, y: rect.bottom + 6 })
     setPendingDrop(null)
     setPendingCreate(null)
   }
 
   function commitTimeEdit(): void {
     if (!timeEdit) return
-    const startMin = timeEdit.hour * 60 + MINUTE_STEPS[timeEdit.minuteIdx]!
-    const durMin   = DUR_STEPS_MIN[timeEdit.durIdx]!
-    const endMin   = startMin + durMin
-    onUpdateTask(timeEdit.taskId, { timeBlock: `${minutesToTime(startMin)}-${minutesToTime(endMin)}` })
+    const durMin = DUR_STEPS_MIN[timeEdit.durIdx]!
+    const endMin = timeEdit.startMin + durMin
+    onUpdateTask(timeEdit.taskId, { timeBlock: `${minutesToTime(timeEdit.startMin)}-${minutesToTime(endMin)}` })
     setTimeEdit(null)
   }
 
@@ -391,6 +410,17 @@ export default function AgendaTimeline({
     createCardLeft = Math.min(pendingCreate.cardX + 16, window.innerWidth  - 220)
     createCardTop  = Math.max(8, Math.min(pendingCreate.cardY - 80,  window.innerHeight - 340))
   }
+
+  // Time-edit card derived values
+  const teDurMin      = timeEdit ? DUR_STEPS_MIN[timeEdit.durIdx]! : 30
+  const { num: teDurNum, unit: teDurUnit } = durDisplayParts(teDurMin)
+  const tePct         = teDurMin / DUR_MAX_MIN
+  const teDashOffset  = CIRC * (1 - tePct)
+  const teIsLong      = tePct > 0.75
+  const teHour        = timeEdit ? Math.floor(timeEdit.startMin / 60) : 0
+  const teHour12      = (teHour % 12) || 12
+  const teMinute      = timeEdit ? timeEdit.startMin % 60 : 0
+  const teSuffix      = teHour < 12 ? 'am' : 'pm'
 
   let nowPlaced = false
 
@@ -738,65 +768,74 @@ export default function AgendaTimeline({
         </div>
       )}
 
-      {/* ── Time-edit popover ── */}
+      {/* ── Time-edit card (same visual as drop/create cards) ── */}
       {timeEdit && (
         <div
           ref={timeEditRef}
-          className="dn-time-popover"
-          style={{ left: Math.min(timeEdit.x, window.innerWidth - 230), top: Math.min(timeEdit.y, window.innerHeight - 140) }}
+          className="dn-dur-card"
+          style={{
+            left: Math.min(timeEdit.x, window.innerWidth - 220),
+            top: Math.min(timeEdit.y, window.innerHeight - 320),
+          }}
+          tabIndex={-1}
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
           onKeyDown={(e) => {
             if (e.key === 'Escape') { e.preventDefault(); setTimeEdit(null) }
-            if (e.key === 'Enter') { e.preventDefault(); commitTimeEdit() }
+            if (e.key === 'Enter')  { e.preventDefault(); commitTimeEdit() }
           }}
         >
-          {/* Start time row */}
-          <div className="dn-tp-row">
-            <span className="dn-tp-label">Start</span>
-            <div className="dn-tp-spin">
-              {/* Hour part */}
-              <button
-                type="button"
-                className="dn-tp-part"
-                title="Scroll or click ±1h"
-                onWheel={(e) => { e.preventDefault(); setTimeEdit(t => t ? { ...t, hour: (t.hour + (e.deltaY < 0 ? 1 : -1) + 24) % 24 } : t) }}
-                onClick={() => setTimeEdit(t => t ? { ...t, hour: (t.hour + 1) % 24 } : t)}
-              >
-                {timeEdit.hour % 12 || 12}
-              </button>
-              <span className="dn-tp-sep">:</span>
-              {/* Minute part */}
-              <button
-                type="button"
-                className="dn-tp-part"
-                title="Scroll or click +15m"
-                onWheel={(e) => { e.preventDefault(); setTimeEdit(t => t ? { ...t, minuteIdx: (t.minuteIdx + (e.deltaY < 0 ? 1 : -1) + MINUTE_STEPS.length) % MINUTE_STEPS.length } : t) }}
-                onClick={() => setTimeEdit(t => t ? { ...t, minuteIdx: (t.minuteIdx + 1) % MINUTE_STEPS.length } : t)}
-              >
-                {String(MINUTE_STEPS[timeEdit.minuteIdx]).padStart(2, '0')}
-              </button>
-              <span className="dn-tp-sep dn-tp-ampm">{timeEdit.hour < 12 ? 'am' : 'pm'}</span>
-            </div>
+          <div className="dn-dur-card-task">{timeEdit.taskLabel}</div>
+
+          {/* "starting X:XX pm" — scroll to adjust start time */}
+          <div
+            ref={timeEditStartRef}
+            className="dn-dur-card-at dn-dur-card-at--editable"
+            title="Scroll to adjust start time"
+          >
+            {`starting ${teHour12}:${String(teMinute).padStart(2, '0')} ${teSuffix}`}
           </div>
-          {/* Duration row */}
-          <div className="dn-tp-row">
-            <span className="dn-tp-label">Duration</span>
-            <div className="dn-tp-spin">
-              <button
-                type="button"
-                className="dn-tp-part dn-tp-part--wide"
-                title="Scroll to adjust duration"
-                onWheel={(e) => { e.preventDefault(); setTimeEdit(t => t ? { ...t, durIdx: Math.max(0, Math.min(DUR_STEPS_MIN.length - 1, t.durIdx + (e.deltaY < 0 ? 1 : -1))) } : t) }}
-                onClick={() => setTimeEdit(t => t ? { ...t, durIdx: Math.min(DUR_STEPS_MIN.length - 1, t.durIdx + 1) } : t)}
-              >
-                {formatDuration(DUR_STEPS_MIN[timeEdit.durIdx]!)}
-              </button>
-            </div>
+
+          {/* Arc ring (duration) */}
+          <svg
+            className="dn-dur-card-ring"
+            width="68" height="68" viewBox="0 0 68 68"
+            aria-hidden="true"
+          >
+            <circle cx="34" cy="34" r={R} className="dn-dur-ring-bg" />
+            <circle
+              cx="34" cy="34" r={R}
+              className="dn-dur-ring-fill"
+              style={{
+                stroke: teIsLong ? 'var(--warning, #f0a05b)' : 'var(--accent)',
+                strokeDasharray: CIRC,
+                strokeDashoffset: teDashOffset,
+                transform: 'rotate(-90deg)',
+                transformOrigin: '34px 34px',
+              }}
+            />
+          </svg>
+
+          <div className="dn-dur-card-value">
+            <span
+              className="dn-dur-card-num"
+              style={{ color: teIsLong ? 'var(--warning, #f0a05b)' : undefined }}
+            >
+              {teDurNum}
+            </span>
+            <span className="dn-dur-card-unit">{teDurUnit}</span>
           </div>
-          {/* Actions */}
-          <div className="dn-tp-actions">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setTimeEdit(null)}>Cancel</button>
-            <button type="button" className="btn btn-primary btn-sm" onClick={commitTimeEdit}>Save</button>
+
+          <div className="dn-dur-card-hint">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"
+              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+              <rect x="5" y="2" width="6" height="10" rx="3"/>
+              <line x1="8" y1="5" x2="8" y2="7"/>
+            </svg>
+            scroll to adjust
           </div>
+
+          <div className="dn-dur-card-confirm">Enter to save · Esc to cancel</div>
         </div>
       )}
     </div>
