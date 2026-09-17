@@ -574,6 +574,13 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
     return { note, raw, exists: true }
   })
 
+  ipcMain.handle('daily-note:exists', async (_event, date: string) => {
+    const settings = resolveVaultSettings()
+    if (!settings) return { exists: false }
+    const path = resolveNotePath(date, settings.root, settings.dailyNotesFolder, settings.notePathPattern)
+    return { exists: existsSync(path) }
+  })
+
   ipcMain.handle('daily-note:read-notes-slice', async (_event, date: string, createIfMissing?: boolean) => {
     const settings = resolveVaultSettings()
     if (!settings) throw new Error('no vault root configured (ATELIER_VAULT_ROOT / Settings → Vault)')

@@ -417,6 +417,7 @@
   flex-shrink: 0;
 }
 .topbar-timeline-toggle {
+  position: relative;
   width: 24px;
   height: 24px;
   flex: 0 0 24px;
@@ -440,6 +441,16 @@
   width: 14px;
   height: 14px;
   display: block;
+}
+.topbar-timeline-dot {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: none;
 }
 /* The tab row is the other genuinely flexible child: it shrinks along with
    the title, and once its buttons no longer fit it scrolls horizontally

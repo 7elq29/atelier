@@ -133,6 +133,8 @@ const api = {
   debugSetCalendarDate: (date: string): Promise<{ date: string }> =>
     ipcRenderer.invoke('debug:setCalendarDate', date),
   readDailyNote: (date: string): Promise<ReadDailyNoteResult> => ipcRenderer.invoke('daily-note:read', date),
+  checkDailyNoteExists: (date: string): Promise<{ exists: boolean }> =>
+    ipcRenderer.invoke('daily-note:exists', date),
   readDailyNoteNotesSlice: (date: string, createIfMissing?: boolean): Promise<DailyNoteNotesSliceResult> =>
     ipcRenderer.invoke('daily-note:read-notes-slice', date, createIfMissing),
   writeDailyNoteNotesSlice: (date: string, notesBody: string): Promise<{ ok: true }> =>

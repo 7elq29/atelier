@@ -211,6 +211,7 @@ function modelSelectionForSession(
  */
 export default function App(): JSX.Element {
   const [date, setDate] = useState<string | null>(null)
+  const [todayNoteExists, setTodayNoteExists] = useState<boolean | null>(null)
   const calendarDateRef = useRef<string | null>(null)
   const { config, loaded, updateConfig } = useConfig()
   const sessions = useSessions()
@@ -365,10 +366,13 @@ export default function App(): JSX.Element {
   }, [reviewTarget])
 
   useEffect(() => {
-    window.atelier.getDefaultDate().then((initialDate) => {
+    void (async () => {
+      const initialDate = await window.atelier.getDefaultDate()
       calendarDateRef.current = initialDate
-      setDate(initialDate)
-    })
+      const { exists } = await window.atelier.checkDailyNoteExists(initialDate)
+      setTodayNoteExists(exists)
+      if (exists) setDate(initialDate)
+    })()
   }, [])
 
   const refreshWeeklyPlanStatus = useCallback(async () => {
@@ -388,6 +392,12 @@ export default function App(): JSX.Element {
 
       void (async () => {
         try {
+          // Re-check whether the new day's note exists so the badge updates.
+          const { exists: noteExists } = await window.atelier.checkDailyNoteExists(nextDate)
+          setTodayNoteExists(noteExists)
+          // If the panel was open and the new day has no note, close it to avoid the empty state.
+          if (!noteExists) setDate(null)
+
           const status = await window.atelier.getWeeklyPlanStatus()
           setWeeklyPlanStatus(status)
 
@@ -927,14 +937,25 @@ export default function App(): JSX.Element {
     }
   }, [activeDailyNoteDate, date])
 
+  const checkTodayNoteExists = useCallback(async () => {
+    const d = await window.atelier.getDefaultDate()
+    const { exists } = await window.atelier.checkDailyNoteExists(d)
+    setTodayNoteExists(exists)
+  }, [])
+
   const toggleDailyNotesPanel = useCallback(async () => {
     if (date) {
       setDate(null)
+      void checkTodayNoteExists()
       return
     }
     const d = await window.atelier.getDefaultDate()
+    if (todayNoteExists === false) {
+      await window.atelier.createDailyNote(d)
+      setTodayNoteExists(true)
+    }
     setDate(d)
-  }, [date])
+  }, [date, todayNoteExists, checkTodayNoteExists])
 
   const startWeeklyPlanWizard = useCallback(async () => {
     if (weeklyPlanStatus?.fileExists) return
@@ -2390,12 +2411,15 @@ export default function App(): JSX.Element {
             <button
               type="button"
               className={`topbar-timeline-toggle${dailyNotesOpen ? ' active' : ''}`}
-              title="Timeline"
+              title={todayNoteExists === false ? 'Create today\'s note' : 'Timeline'}
               aria-label="Toggle timeline panel"
               aria-pressed={dailyNotesOpen}
               data-testid="toggle-daily-notes-panel"
               onClick={() => void toggleDailyNotesPanel()}
             >
+              {todayNoteExists === false ? (
+                <span className="topbar-timeline-dot" aria-hidden="true" />
+              ) : null}
               <svg
                 className="icon"
                 viewBox="0 0 24 24"
