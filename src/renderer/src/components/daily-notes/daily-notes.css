@@ -1097,6 +1097,10 @@
 .dn-dur-card-at--editable:hover {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
+.dn-dur-card-at--no-time {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
 .dn-dur-card-start-input {
   display: block;
   width: 100%;

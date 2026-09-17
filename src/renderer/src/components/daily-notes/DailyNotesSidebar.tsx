@@ -326,7 +326,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
           <Timeline
             tasks={dayPlanTasks}
             onToggle={toggleTask}
-            onCreate={(text, timeBlock) => addTask(text, 'day-plan', timeBlock)}
+            onCreate={(text, timeBlock) => timeBlock ? addTask(text, 'day-plan', timeBlock) : addTask(text, 'unscheduled')}
             onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
             onMoveToUnscheduled={(id) => moveTask(id, 'unscheduled', undefined)}
             onDelete={deleteTask}
@@ -342,7 +342,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
             onToggle={toggleTask}
             onMoveToUnscheduled={(id) => moveTask(id, 'unscheduled', undefined)}
             onDropExisting={(id, timeBlock) => moveTask(id, 'day-plan', timeBlock)}
-            onCreate={(text, timeBlock) => addTask(text, 'day-plan', timeBlock)}
+            onCreate={(text, timeBlock) => timeBlock ? addTask(text, 'day-plan', timeBlock) : addTask(text, 'unscheduled')}
             onDelete={deleteTask}
             onUpdateText={updateTaskText}
             onUpdateTask={updateTask}

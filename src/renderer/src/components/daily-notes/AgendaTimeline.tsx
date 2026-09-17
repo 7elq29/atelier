@@ -57,6 +57,7 @@ interface PendingCreate {
   text: string
   cardX: number
   cardY: number
+  noTime?: boolean  // if true, create as unscheduled task (no timeBlock)
 }
 
 function minutesNow(): number {
@@ -390,9 +391,13 @@ export default function AgendaTimeline({
     if (!pendingCreate || !onCreate) return
     const text = (parsed?.text ?? pendingCreate.text).trim()
     if (text) {
-      const durMin = DUR_STEPS_MIN[pendingCreate.durIdx]!
-      const endMin = pendingCreate.startMin + durMin
-      onCreate(text, `${minutesToTime(pendingCreate.startMin)}-${minutesToTime(endMin)}`)
+      if (pendingCreate.noTime) {
+        onCreate(text, '')
+      } else {
+        const durMin = DUR_STEPS_MIN[pendingCreate.durIdx]!
+        const endMin = pendingCreate.startMin + durMin
+        onCreate(text, `${minutesToTime(pendingCreate.startMin)}-${minutesToTime(endMin)}`)
+      }
     }
     setPendingCreate(null)
     setCreateStartText(null)
@@ -479,9 +484,15 @@ export default function AgendaTimeline({
 
   function commitCreateStartText(): void {
     if (createStartText === null) return
-    const parsed = parseTimeInput(createStartText)
-    if (parsed !== null) {
-      setPendingCreate((p) => p ? { ...p, startMin: parsed } : p)
+    const trimmed = createStartText.trim()
+    if (trimmed === '') {
+      // User cleared the time → create as unscheduled
+      setPendingCreate((p) => p ? { ...p, noTime: true } : p)
+    } else {
+      const parsed = parseTimeInput(trimmed)
+      if (parsed !== null) {
+        setPendingCreate((p) => p ? { ...p, startMin: parsed, noTime: false } : p)
+      }
     }
     setCreateStartText(null)
     // Return focus to the task name input
@@ -814,6 +825,14 @@ export default function AgendaTimeline({
               // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
             />
+          ) : pendingCreate.noTime ? (
+            <div
+              className="dn-dur-card-at dn-dur-card-at--editable dn-dur-card-at--no-time"
+              title="Click to add a start time"
+              onClick={() => setCreateStartText('')}
+            >
+              no start time
+            </div>
           ) : (
             <div
               ref={createStartRef}
@@ -827,6 +846,7 @@ export default function AgendaTimeline({
             </div>
           )}
 
+          {!pendingCreate.noTime && (<>
           <svg
             className="dn-dur-card-ring"
             width="68" height="68" viewBox="0 0 68 68"
@@ -855,6 +875,7 @@ export default function AgendaTimeline({
             </span>
             <span className="dn-dur-card-unit">{createDurUnit}</span>
           </div>
+          </>)}
 
         </div>
       )}
