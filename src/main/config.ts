@@ -57,18 +57,29 @@ export function loadConfig(): AtelierConfig {
   if (cached) return cached
 
   const path = getConfigPath()
+  let needsWrite = false
   if (existsSync(path)) {
     try {
       const raw = JSON.parse(readFileSync(path, 'utf-8')) as Partial<AtelierConfig>
+      // If any built-in themes are missing from disk, seeding will add them —
+      // write back immediately so partial saves later don't drop them.
+      const rawThemeIds = new Set((raw.customThemes ?? []).map((t: { id: string }) => t.id))
+      needsWrite = BUILTIN_THEMES.some((t) => !rawThemeIds.has(t.id))
       cached = mergeConfig(DEFAULT_CONFIG, raw)
     } catch (err) {
       logger.warn('failed to parse config.json, falling back to defaults', {
         error: err instanceof Error ? err.message : String(err)
       })
       cached = { ...DEFAULT_CONFIG }
+      needsWrite = true
     }
   } else {
     cached = { ...DEFAULT_CONFIG }
+    needsWrite = true
+  }
+  if (needsWrite) {
+    writeFileSync(path, JSON.stringify(cached, null, 2))
+    logger.info('config seeded with built-in themes')
   }
   return cached
 }
