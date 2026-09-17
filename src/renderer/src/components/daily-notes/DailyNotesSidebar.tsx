@@ -17,6 +17,8 @@ export interface DailyNotesSidebarProps {
   onClose: () => void
   vaultRoot?: string
   onCreateSessionFromTask?: (task: DailyTask) => void
+  /** Increment to open the create card via command palette. */
+  newTaskRequest?: number
 }
 
 interface AddTaskInputProps {
@@ -73,7 +75,7 @@ function AddTaskInput({ testId, buttonLabel = '+ New task', onAdd }: AddTaskInpu
  * "Open schedule" restores the proportional timeline and the persisted,
  * independently resizable section layout for precise time-block editing.
  */
-export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSessionFromTask }: DailyNotesSidebarProps): JSX.Element {
+export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSessionFromTask, newTaskRequest }: DailyNotesSidebarProps): JSX.Element {
   const {
     note,
     loading,
@@ -349,6 +351,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
             moveDateOptions={moveDateOptions}
             onMoveToDate={moveTaskToDate}
             onCreateSessionFromTask={onCreateSessionFromTask}
+            requestCreate={newTaskRequest}
           />
         )}
       </div>

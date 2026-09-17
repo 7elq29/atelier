@@ -40,6 +40,8 @@ interface AgendaTimelineProps {
   onDropExisting?: (id: string, timeBlock: string) => void
   /** Right-click create: receives task text and computed timeBlock. */
   onCreate?: (text: string, timeBlock: string) => void
+  /** Increment to imperatively open the create card (e.g. from command palette). */
+  requestCreate?: number
 }
 
 interface PendingDrop {
@@ -135,7 +137,8 @@ export default function AgendaTimeline({
   onMoveToDate,
   onCreateSessionFromTask,
   onDropExisting,
-  onCreate
+  onCreate,
+  requestCreate
 }: AgendaTimelineProps): JSX.Element {
   const [nowMinutes, setNowMinutes] = useState(minutesNow)
   const [moveMenu, setMoveMenu] = useState<{ x: number; y: number; taskId: string } | null>(null)
@@ -257,6 +260,22 @@ export default function AgendaTimeline({
       document.removeEventListener('click', onClick, { capture: true })
     }
   }, [createOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Open create card when triggered from command palette
+  useEffect(() => {
+    if (!requestCreate || !onCreate) return
+    const currentHour: number = new Date().getHours()
+    const nowH = Math.max(6, Math.min(21, currentHour))
+    setPendingDrop(null)
+    setPendingCreate({
+      startMin: nowH * 60,
+      durIdx: DEFAULT_DUR_IDX,
+      text: '',
+      cardX: Math.max(8, window.innerWidth / 2 - 110),
+      cardY: Math.max(8, window.innerHeight / 2 - 140),
+    })
+    requestAnimationFrame(() => createInputRef.current?.focus())
+  }, [requestCreate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function hourFromClientY(clientY: number): number {
     const el = agendaRef.current
