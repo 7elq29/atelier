@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <title>Collapsed Sidebar Alerts — Atelier Mock</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    body { margin: 0; display: flex; height: 100vh; overflow: hidden; }
+
+    /* ── Full-width app — no sidebar rail ── */
+    .app-shell {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: var(--bg-app);
+    }
+
+    /* ── Simulated app content ── */
+    .app-content {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-disabled);
+      font-size: 13.5px;
+      font-style: italic;
+    }
+
+    /* ─────────────────────────────────────────────────────────
+       ALERT CHIPS — floating on the left edge, no bar behind them
+       ───────────────────────────────────────────────────────── */
+    .sidebar-alerts {
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 0;
+      z-index: 40;
+      /* Hidden when no alerts */
+    }
+
+    .alert-chip {
+      position: relative;
+      width: 32px;
+      height: 32px;
+      border-radius: 0 var(--r-md) var(--r-md) 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: width 0.15s ease, background 0.1s;
+      /* Flush against the left edge */
+      box-shadow: 2px 2px 8px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.25);
+    }
+
+    /* Needs approval — amber, more prominent */
+    .alert-chip.approval {
+      background: color-mix(in srgb, var(--warning) 22%, var(--bg-panel-raised));
+      border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+      border-left: none;
+    }
+    .alert-chip.approval:hover {
+      background: color-mix(in srgb, var(--warning) 32%, var(--bg-panel-raised));
+      width: 36px;
+    }
+
+    /* Agent ready — amber, softer */
+    .alert-chip.comeback {
+      background: color-mix(in srgb, var(--warning) 12%, var(--bg-panel-raised));
+      border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent);
+      border-left: none;
+    }
+    .alert-chip.comeback:hover {
+      background: color-mix(in srgb, var(--warning) 20%, var(--bg-panel-raised));
+      width: 36px;
+    }
+
+    /* Icons */
+    .chip-icon {
+      width: 14px; height: 14px;
+      color: var(--warning);
+      flex-shrink: 0;
+    }
+    .approval .chip-icon {
+      animation: chip-pulse 2s ease-in-out infinite;
+    }
+    @keyframes chip-pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.45; }
+    }
+
+    .comeback-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--warning);
+      animation: chip-pulse 2.5s ease-in-out infinite;
+    }
+
+    /* ── Tooltip ── */
+    .chip-tooltip {
+      pointer-events: none;
+      position: absolute;
+      left: calc(100% + 10px);
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--bg-panel-raised);
+      border: 1px solid var(--border-default);
+      border-radius: var(--r-md);
+      box-shadow: var(--shadow-popover);
+      padding: 9px 13px;
+      min-width: 156px;
+      white-space: nowrap;
+      z-index: 50;
+      opacity: 0;
+      transition: opacity 0.12s;
+    }
+    .alert-chip:hover .chip-tooltip { opacity: 1; }
+
+    /* Arrow */
+    .chip-tooltip::before {
+      content: '';
+      position: absolute;
+      right: 100%; top: 50%; transform: translateY(-50%);
+      border: 5px solid transparent;
+      border-right-color: var(--border-default);
+    }
+    .chip-tooltip::after {
+      content: '';
+      position: absolute;
+      right: calc(100% - 1px); top: 50%; transform: translateY(-50%);
+      border: 5px solid transparent;
+      border-right-color: var(--bg-panel-raised);
+    }
+
+    .tooltip-name {
+      font-size: 13px; font-weight: 600;
+      color: var(--text-primary); margin-bottom: 3px;
+    }
+    .tooltip-status {
+      font-size: 11.5px; font-weight: 500;
+      color: var(--warning);
+      display: flex; align-items: center; gap: 5px;
+    }
+    .tooltip-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--warning); flex-shrink: 0;
+    }
+    .tooltip-hint {
+      font-size: 10.5px; color: var(--text-disabled); margin-top: 5px;
+    }
+
+    /* ── Mock controls ── */
+    .mock-controls {
+      position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 6px; align-items: center;
+      background: var(--bg-panel-raised); border: 1px solid var(--border-default);
+      border-radius: var(--r-xl); padding: 5px 10px;
+      box-shadow: var(--shadow-popover); z-index: 200;
+    }
+    .mock-controls span { font-size: 11.5px; color: var(--text-tertiary); padding: 0 4px; }
+    .mock-controls .btn-sm.active { border-color: var(--accent); color: var(--accent); }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- Full-width content — no sidebar -->
+  <div class="app-content" id="contentLabel">
+    sidebar hidden — full width
+  </div>
+
+  <!-- Alert chips: only visible when sessions need attention -->
+  <div class="sidebar-alerts" id="alerts">
+
+    <!-- Needs approval -->
+    <div class="alert-chip approval" id="chip1">
+      <svg class="chip-icon" viewBox="0 0 16 16" fill="none"
+        stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <circle cx="8" cy="8" r="6.2"/>
+        <line x1="8" y1="5.5" x2="8" y2="8.5"/>
+        <circle cx="8" cy="10.5" r="0.5" fill="currentColor" stroke="none"/>
+      </svg>
+      <div class="chip-tooltip">
+        <div class="tooltip-name">theme</div>
+        <div class="tooltip-status"><span class="tooltip-dot"></span>Needs approval</div>
+        <div class="tooltip-hint">Click to open</div>
+      </div>
+    </div>
+
+    <!-- Agent ready / comeback -->
+    <div class="alert-chip comeback" id="chip2">
+      <span class="comeback-dot"></span>
+      <div class="chip-tooltip">
+        <div class="tooltip-name">multi-image</div>
+        <div class="tooltip-status"><span class="tooltip-dot"></span>Agent ready</div>
+        <div class="tooltip-hint">Click to open</div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Controls -->
+<div class="mock-controls">
+  <span>Alerts:</span>
+  <button class="btn btn-sm active" id="ctrl-2" onclick="setCount(2)">2</button>
+  <button class="btn btn-sm" id="ctrl-1" onclick="setCount(1)">1</button>
+  <button class="btn btn-sm" id="ctrl-0" onclick="setCount(0)">0 (hidden)</button>
+  <span>|</span>
+  <button class="btn btn-sm" onclick="toggleTheme()">Light / Dark</button>
+</div>
+
+<script>
+  function setCount(n) {
+    document.getElementById('alerts').style.display = n === 0 ? 'none' : ''
+    document.getElementById('chip1').style.display = n >= 1 ? '' : 'none'
+    document.getElementById('chip2').style.display = n >= 2 ? '' : 'none'
+    document.getElementById('contentLabel').textContent =
+      n === 0 ? 'sidebar hidden — nothing needs attention, no indicator shown'
+              : 'sidebar hidden — full width'
+    ;['ctrl-0','ctrl-1','ctrl-2'].forEach(id =>
+      document.getElementById(id).classList.remove('active'))
+    document.getElementById('ctrl-' + n).classList.add('active')
+  }
+
+  let dark = true
+  function toggleTheme() {
+    dark = !dark
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
+  }
+</script>
+</body>
+</html>

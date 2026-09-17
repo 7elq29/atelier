@@ -9,6 +9,7 @@ import type { SessionProfile } from './session-profile-types'
 import type { TerminalToolboxConfig } from './terminal-toolbox-types'
 import { DEFAULT_TERMINAL_TOOLBOX_COMMANDS } from './terminal-toolbox-types'
 import type { CustomTheme } from './theme-types'
+import { BUILTIN_THEMES } from './theme-types'
 
 export type { SessionProfile } from './session-profile-types'
 export type { CustomTheme } from './theme-types'
@@ -155,6 +156,6 @@ export const DEFAULT_CONFIG: AtelierConfig = {
     commands: [...DEFAULT_TERMINAL_TOOLBOX_COMMANDS]
   },
   sessionProfiles: [],
-  customThemes: [],
+  customThemes: [...BUILTIN_THEMES],
   activeCustomThemeId: null
 }

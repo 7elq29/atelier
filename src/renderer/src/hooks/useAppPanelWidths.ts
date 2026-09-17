@@ -5,7 +5,7 @@ const DAILY_NOTES_WIDTH_KEY = 'atelier.app.dailyNotesWidth'
 
 export const DEFAULT_SIDEBAR_WIDTH = 260
 export const DEFAULT_DAILY_NOTES_WIDTH = 350
-export const COLLAPSED_SIDEBAR_WIDTH = 56
+export const COLLAPSED_SIDEBAR_WIDTH = 0
 
 const MIN_SIDEBAR_WIDTH = 200
 const MIN_DAILY_NOTES_WIDTH = 280

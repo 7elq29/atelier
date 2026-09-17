@@ -127,3 +127,78 @@ export const TOKEN_GROUPS: TokenGroup[] = [
     ]
   }
 ]
+
+/**
+ * Built-in curated dark themes — shipped with the app and pre-seeded into every
+ * user's customThemes list on first launch (or the first launch after a new theme
+ * is added).  Fixed IDs guarantee idempotent seeding: mergeConfig only injects
+ * themes whose IDs are absent from the persisted list.
+ */
+export const BUILTIN_THEMES: CustomTheme[] = [
+  {
+    id: 'builtin-dusk',
+    name: 'Dusk',
+    base: 'dark',
+    colors: {
+      // Surfaces — warm dark graphite, like embers cooling
+      bgApp: '#1c1915', bgSidebar: '#201d19', bgPanel: '#28241f',
+      bgPanelRaised: '#302b25', bgHover: '#34302a', bgActive: '#3e382f',
+      bgInput: '#302b25', bgCode: '#171410',
+      bgAppActivePanel: '#181510', bgCodeActivePanel: '#131008',
+      // Text — warm cream
+      textPrimary: '#ede8de', textSecondary: '#b0a998',
+      textTertiary: '#7a7367', textDisabled: '#524c43',
+      // Accent — muted amber-gold
+      accent: '#c49a6a', accentStrong: '#d4aa7a',
+      accentDim: '#2e2218', accentTextOn: '#1a0e00',
+      // Semantic
+      danger: '#c87060', dangerDim: '#2c1a14',
+      warning: '#c8a860', success: '#7ab870', info: '#7898c0'
+    }
+  },
+  {
+    id: 'builtin-abyss',
+    name: 'Abyss',
+    base: 'dark',
+    colors: {
+      // Surfaces — cool deep blue-gray
+      bgApp: '#14191f', bgSidebar: '#121720', bgPanel: '#1b2230',
+      bgPanelRaised: '#22293a', bgHover: '#272f42', bgActive: '#2d3750',
+      bgInput: '#1b2230', bgCode: '#0e131a',
+      bgAppActivePanel: '#10151c', bgCodeActivePanel: '#0a0e14',
+      // Text — cool blue-white
+      textPrimary: '#ccd8e8', textSecondary: '#8090a8',
+      textTertiary: '#526070', textDisabled: '#364050',
+      // Accent — muted steel blue
+      accent: '#5d8fc2', accentStrong: '#6d9fd2',
+      accentDim: '#182338', accentTextOn: '#f0f8ff',
+      // Semantic
+      danger: '#c07070', dangerDim: '#281818',
+      warning: '#c0a050', success: '#68a878', info: '#5888b8'
+    }
+  },
+  {
+    id: 'builtin-graphite',
+    name: 'Graphite',
+    base: 'dark',
+    colors: {
+      // Surfaces — pure neutral gray, no color cast
+      bgApp: '#191919', bgSidebar: '#1c1c1c', bgPanel: '#242424',
+      bgPanelRaised: '#2c2c2c', bgHover: '#303030', bgActive: '#3a3a3a',
+      bgInput: '#2c2c2c', bgCode: '#141414',
+      bgAppActivePanel: '#151515', bgCodeActivePanel: '#101010',
+      // Text — neutral
+      textPrimary: '#e0e0e0', textSecondary: '#a0a0a0',
+      textTertiary: '#686868', textDisabled: '#484848',
+      // Accent — muted sage
+      accent: '#7ab87a', accentStrong: '#8ac88a',
+      accentDim: '#1e301e', accentTextOn: '#0a1a0a',
+      // Semantic
+      danger: '#c07070', dangerDim: '#281818',
+      warning: '#c0a050', success: '#78b878', info: '#7898c0'
+    }
+  }
+]
+
+/** IDs of all built-in themes — used by mergeConfig to detect missing seeds. */
+export const BUILTIN_THEME_IDS = new Set(BUILTIN_THEMES.map((t) => t.id))
