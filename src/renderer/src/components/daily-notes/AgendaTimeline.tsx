@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { DailyTask } from '../../../../shared/daily-note-types'
 import { formatTaskEditBuffer } from '../../../../shared/task-priority'
 import { priorityTimelineAccentClass } from '../../../../shared/task-priority'
+import DailyNoteTaskInput from './DailyNoteTaskInput'
 import TaskMoveContextMenu from './TaskMoveContextMenu'
 import type { MoveDateOptions } from './move-date-options'
 import { buildTaskEditPatch, TaskEditInput } from './task-priority-ui'
@@ -108,8 +109,7 @@ export default function AgendaTimeline({
 
   // Right-click create draft
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null)
-  const createCardRef  = useRef<HTMLDivElement>(null)
-  const createInputRef = useRef<HTMLInputElement>(null)
+  const createCardRef = useRef<HTMLDivElement>(null)
 
   const agendaRef = useRef<HTMLDivElement>(null)
   const cardRef   = useRef<HTMLDivElement>(null)
@@ -193,10 +193,6 @@ export default function AgendaTimeline({
       document.removeEventListener('click', onClick, { capture: true })
     }
   }, [createOpen]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (createOpen) createInputRef.current?.focus()
-  }, [createOpen])
 
   function hourFromClientY(clientY: number): number {
     const el = agendaRef.current
@@ -585,16 +581,17 @@ export default function AgendaTimeline({
             if (e.key === 'ArrowDown') { e.preventDefault(); setPendingCreate(p => p ? { ...p, durIdx: Math.max(0, p.durIdx - 1) } : p) }
           }}
         >
-          <input
-            ref={createInputRef}
-            className="dn-create-card-input"
-            placeholder="Task name…"
+          <DailyNoteTaskInput
+            autoFocus
+            className="dn-create-card-input-wrap"
+            inputClassName="dn-create-card-input"
+            placeholder="New task…"
+            testId="agenda-create-input"
             value={pendingCreate.text}
-            onChange={(e) => setPendingCreate(p => p ? { ...p, text: e.target.value } : p)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); commitCreate() }
-            }}
-            data-testid="agenda-create-input"
+            onChange={(text) => setPendingCreate(p => p ? { ...p, text } : p)}
+            onSubmit={commitCreate}
+            onCancel={() => setPendingCreate(null)}
+            onBlur={commitCreate}
           />
           <div className="dn-dur-card-at">
             {`starting ${formatClock(pendingCreate.hour * 60)} ${pendingCreate.hour < 12 ? 'am' : 'pm'}`}

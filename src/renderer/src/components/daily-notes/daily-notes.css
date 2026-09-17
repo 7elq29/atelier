@@ -1035,7 +1035,12 @@
 
 /* Create card — wider to fit the input, otherwise inherits .dn-dur-card */
 .dn-create-card {
-  width: 200px;
+  width: 220px;
+}
+.dn-create-card-input-wrap {
+  width: 100%;
+  margin-bottom: 8px;
+  position: relative;
 }
 .dn-create-card-input {
   width: 100%;
@@ -1045,7 +1050,6 @@
   color: var(--text-primary);
   font-size: 13px;
   padding: 5px 8px;
-  margin-bottom: 8px;
   outline: none;
 }
 .dn-create-card-input:focus {
@@ -1053,6 +1057,12 @@
 }
 .dn-create-card-input::placeholder {
   color: var(--text-tertiary);
+}
+/* Tag suggestions appear correctly inside the create card */
+.dn-create-card-input-wrap .dn-inline-tag-suggestions {
+  top: 100%;
+  left: 0;
+  right: 0;
 }
 
 /* ---- Precise schedule ----
