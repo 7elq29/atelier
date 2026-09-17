@@ -1619,60 +1619,66 @@ export default function App(): JSX.Element {
   ])
 
   const bufferSwitcherItems = useMemo<SplitPickerItem[]>(() => {
-    const items: SplitPickerItem[] = []
+    const entries: Array<SplitPickerItem & { _t: string }> = []
 
-    // Active claude-code sessions
+    // Active claude-code sessions — sorted by lastActiveAt
     for (const s of sessions.activeSessions) {
       if (s.mode !== 'claude-code') continue
-      items.push({
+      entries.push({
         id: `buf-session-${s.id}`,
         label: s.name,
         category: 'Sessions',
-        run: () => void selectSession(s)
+        run: () => void selectSession(s),
+        _t: s.lastActiveAt
       })
     }
 
-    // Active terminal sessions
+    // Active terminal sessions — sorted by lastActiveAt
     for (const s of sessions.activeSessions) {
       if (s.mode !== 'terminal') continue
-      items.push({
+      entries.push({
         id: `buf-terminal-${s.id}`,
         label: s.name,
         category: 'Terminals',
-        run: () => void selectSession(s)
+        run: () => void selectSession(s),
+        _t: s.lastActiveAt
       })
     }
 
-    // App notes
+    // App notes — sorted by updatedAt (best available proxy for recency)
     for (const note of appNotes.notes) {
-      items.push({
+      entries.push({
         id: `buf-note-${note.id}`,
         label: note.title || 'Untitled',
         category: 'Notes',
-        run: () => selectAppNote(note.id)
+        run: () => selectAppNote(note.id),
+        _t: note.updatedAt
       })
     }
 
-    // Daily note (always shown)
-    items.push({
+    // Daily note and weekly plan — no timestamp tracking, float to the bottom
+    entries.push({
       id: 'buf-daily-note',
       label: 'Daily Note',
       category: 'Daily Note',
-      run: () => selectDailyNote()
+      run: () => selectDailyNote(),
+      _t: ''
     })
-
-    // Weekly plan (always shown — dispatch depends on whether a plan file exists)
-    items.push({
+    entries.push({
       id: 'buf-weekly-plan',
       label: 'Weekly Plan',
       category: 'Weekly Plan',
       run: () => {
         if (weeklyPlanStatus?.fileExists) void onWeeklyPlanRowClick()
         else void startWeeklyPlanWizard()
-      }
+      },
+      _t: ''
     })
 
-    return items
+    // Sort all items globally by most recently used, descending
+    entries.sort((a, b) => (b._t > a._t ? 1 : b._t < a._t ? -1 : 0))
+
+    return entries.map(({ _t: _, ...item }) => item)
   }, [
     sessions.activeSessions,
     appNotes.notes,
