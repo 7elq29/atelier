@@ -6,7 +6,7 @@ import type { HarnessDriver, HarnessEvent, HarnessSession, HarnessStartOptions, 
 import { logger } from '../logger'
 import type {
   CreateSessionOptions,
-  ImageAttachment,
+  FileAttachment,
   MessageRecord,
   ModelInfo,
   ModelSelection,
@@ -43,7 +43,7 @@ import { SSH_MUX_OPTS } from '../ssh-exec'
 import type {
   AskUserQuestionContent,
   CompactionContent,
-  ImageAttachmentContent,
+  FilesAttachmentContent,
   PermissionRequestContent,
   PlanProposedContent,
   ToolCallContent,
@@ -1550,21 +1550,15 @@ export class SessionManager {
    * preserved across a `resume()` reconnect — it only resets on session
    * close or a real app relaunch.
    */
-  async sendUserMessage(sessionId: string, text: string, override?: ModelSelection, image?: ImageAttachment): Promise<void> {
+  async sendUserMessage(sessionId: string, text: string, override?: ModelSelection, attachments?: FileAttachment[]): Promise<void> {
     const session = this.store.getSession(sessionId)
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
-    if (!image && text.trim() === '/clear') {
+    if (!attachments?.length && text.trim() === '/clear') {
       await this.clearConversation(sessionId)
       return
     }
-    // Persisted content is the plain-text string in the common (no image)
-    // case, unchanged from before this task. With an image attached, it's
-    // JSON-encoded as an ImageAttachmentContent instead — same
-    // "one row, tagged with `kind`" pattern every other StructuredContent
-    // kind already uses — purely so the transcript can render a thumbnail;
-    // the SDK call itself (below) carries the real image bytes separately.
-    const content: string = image
-      ? JSON.stringify({ kind: 'image_attachment', mimeType: image.mimeType, data: image.data, text } satisfies ImageAttachmentContent)
+    const content: string = attachments?.length
+      ? JSON.stringify({ kind: 'files_attachment', files: attachments.map(({ mimeType, data, name }) => ({ mimeType, data, name })), text } satisfies FilesAttachmentContent)
       : text
     const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
     this.touchLastActive(sessionId)
@@ -1618,7 +1612,7 @@ export class SessionManager {
       // path below, regardless of what `isActive()` reports afterward.
       if (!selectionChanged && this.harness.isActive(sessionId)) {
         logger.info('sendUserMessage: live injection (streamInput, no resume)', { sessionId })
-        await this.harness.streamInput(sessionId, text, image)
+        await this.harness.streamInput(sessionId, text, attachments)
         // This reuses the EXISTING `consume()` loop/live entry from whenever
         // the session last started/reconnected — no new `live.busy = true`
         // assignment happens anywhere else on this path (unlike the
@@ -1641,7 +1635,7 @@ export class SessionManager {
         await this.waitUntilNotConnecting(sessionId)
         if (!selectionChanged && this.harness.isActive(sessionId)) {
           logger.info('sendUserMessage: live injection after reconnect wait (streamInput)', { sessionId })
-          await this.harness.streamInput(sessionId, text, image)
+          await this.harness.streamInput(sessionId, text, attachments)
           const liveEntry = this.live.get(sessionId)
           if (liveEntry) {
             liveEntry.busy = true
@@ -1669,7 +1663,7 @@ export class SessionManager {
         ...(needsInitialPrompt ? { initialPrompt: text } : {})
       })
       if (!needsInitialPrompt) {
-        await this.harness.streamInput(sessionId, text, image)
+        await this.harness.streamInput(sessionId, text, attachments)
       }
       const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
       const previousLive = this.live.get(sessionId)

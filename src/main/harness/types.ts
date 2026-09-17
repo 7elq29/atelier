@@ -113,19 +113,21 @@ export interface HarnessStartOptions {
 }
 
 /**
- * An image to attach to a user message (10g-enrichment-image-attachment).
- * `mimeType` is restricted to the Anthropic Messages API's own supported set
- * (verified against the installed `@anthropic-ai/sdk`'s `Base64ImageSource`
- * type, re-exported through `@anthropic-ai/claude-agent-sdk`'s
- * `SDKUserMessage.message: MessageParam`) — anything else the SDK would
- * reject outright, so composer-side capture should normalize to one of
- * these before ever reaching the harness. `data` is raw base64 (no
- * `data:...;base64,` prefix).
+ * A file attached to a user message — image, PDF, or plain text.
+ * - Images (image/*): `data` is raw base64, sent as an image content block.
+ * - PDFs (application/pdf): `data` is raw base64, sent as a document block with Base64PDFSource.
+ * - Plain text (text/plain): `data` is raw UTF-8 text (not base64), sent as a document block
+ *   with PlainTextSource.
+ * All MIME types verified against the installed SDK's ContentBlockParam union.
  */
-export interface HarnessImageInput {
-  mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+export interface HarnessFileInput {
+  mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' | 'application/pdf' | 'text/plain'
   data: string
+  name?: string
 }
+
+/** @deprecated Use HarnessFileInput. Kept for any call sites not yet migrated. */
+export type HarnessImageInput = HarnessFileInput
 
 /** A single todo item as reported by the agent's planning tool. */
 export interface HarnessTodoItem {
@@ -642,7 +644,7 @@ export interface HarnessDriver {
    * `ClaudeAgentSdkHarness`'s `userMessage()` for the exact block shapes,
    * verified against the installed SDK's types.
    */
-  streamInput(sessionId: string, message: string, image?: HarnessImageInput): Promise<void>
+  streamInput(sessionId: string, message: string, attachments?: HarnessFileInput[]): Promise<void>
 
   /**
    * True while `sessionId` still has a live, streaming-input query open

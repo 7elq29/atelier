@@ -147,6 +147,13 @@ export interface ImageAttachmentContent {
   text?: string
 }
 
+/** Multi-file attachment (images, PDFs, text files). Used for new messages; legacy single-image messages use ImageAttachmentContent. */
+export interface FilesAttachmentContent {
+  kind: 'files_attachment'
+  files: Array<{ mimeType: string; data: string; name?: string }>
+  text?: string
+}
+
 export type StructuredContent =
   | ToolCallContent
   | TodoUpdateContent
@@ -155,6 +162,7 @@ export type StructuredContent =
   | AskUserQuestionContent
   | PlanProposedContent
   | ImageAttachmentContent
+  | FilesAttachmentContent
   | ThinkingBlockContent
   | LocalCommandOutputContent
   | TranscriptNoticeContent
@@ -168,6 +176,7 @@ const STRUCTURED_KINDS = new Set<string>([
   'ask_user_question',
   'plan_proposed',
   'image_attachment',
+  'files_attachment',
   'local_command_output',
   'transcript_notice',
 ])
@@ -201,7 +210,7 @@ export function parseStructuredContent(content: string): StructuredContent | nul
 export function extractSearchableText(role: string, content: string): string | null {
   if (role !== 'user' && role !== 'assistant') return null
   const parsed = parseStructuredContent(content)
-  if (parsed?.kind === 'image_attachment') {
+  if (parsed?.kind === 'image_attachment' || parsed?.kind === 'files_attachment') {
     const caption = parsed.text?.trim()
     return caption ? caption : null
   }

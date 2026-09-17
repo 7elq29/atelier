@@ -206,13 +206,31 @@ export interface SessionStaleEvent {
 export type MessageRole = 'user' | 'assistant' | 'system'
 
 /**
- * An image dropped/pasted into the composer (10g-enrichment-image-attachment),
- * passed over IPC alongside the typed text on `session:sendMessage`.
- * `mimeType` is restricted to what the Anthropic Messages API's image content
- * block actually accepts (see `HarnessImageInput` in
- * `main/harness/types.ts`, verified against the installed SDK's types) —
- * anything else read off a dropped/pasted file is rejected before it ever
- * reaches IPC (see Composer's file-handling).
+ * MIME types accepted for file attachments in the composer.
+ * Images are sent as image content blocks; PDFs as base64 document blocks;
+ * text/plain as plain-text document blocks (data = raw UTF-8, not base64).
+ */
+export type FileAttachmentMimeType =
+  | 'image/jpeg'
+  | 'image/png'
+  | 'image/gif'
+  | 'image/webp'
+  | 'application/pdf'
+  | 'text/plain'
+
+/** A file (image, PDF, or text) attached to a user message. */
+export interface FileAttachment {
+  mimeType: FileAttachmentMimeType
+  /** Base64 for images/PDFs; raw UTF-8 text for text/plain. */
+  data: string
+  /** Original filename, used for display only. */
+  name?: string
+}
+
+/**
+ * Kept for backward-compat: existing transcript rows store single-image
+ * messages as `{ kind: 'image_attachment', ... }`. New messages with any
+ * attachments use `FilesAttachmentContent` instead.
  */
 export interface ImageAttachment {
   mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
