@@ -8,7 +8,7 @@ function readTheme(): ITheme {
   const style = getComputedStyle(document.documentElement)
   const v = (name: string): string => style.getPropertyValue(name).trim()
   return {
-    background: v('--bg-code'),
+    background: v('--bg-app'),
     foreground: v('--text-primary'),
     cursor: v('--text-primary'),
     selectionBackground: v('--accent-dim'),
