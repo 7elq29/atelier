@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DEFAULT_CONFIG, type AtelierConfig } from '../shared/config'
+import { BUILTIN_THEMES, BUILTIN_THEME_IDS } from '../shared/theme-types'
 import { logger } from './logger'
 
 let cached: AtelierConfig | undefined
@@ -16,6 +17,21 @@ function getConfigPath(): string {
   return configPath
 }
 
+/**
+ * Ensures all built-in themes are present in the list, prepended before any
+ * user-created themes.  Idempotent: themes whose IDs already exist are not
+ * duplicated.  Existing user themes that happen to share a built-in ID (from
+ * a prior manual injection) are kept as-is and not overwritten.
+ */
+function seedBuiltinThemes(themes: AtelierConfig['customThemes']): AtelierConfig['customThemes'] {
+  const existingIds = new Set(themes.map((t) => t.id))
+  const missing = BUILTIN_THEMES.filter((t) => !existingIds.has(t.id))
+  if (missing.length === 0) return themes
+  // Prepend built-in themes; user themes follow.
+  const userThemes = themes.filter((t) => !BUILTIN_THEME_IDS.has(t.id))
+  return [...missing, ...themes.filter((t) => BUILTIN_THEME_IDS.has(t.id)), ...userThemes]
+}
+
 function mergeConfig(base: AtelierConfig, partial: Partial<AtelierConfig>): AtelierConfig {
   return {
     ...base,
@@ -27,7 +43,7 @@ function mergeConfig(base: AtelierConfig, partial: Partial<AtelierConfig>): Atel
       ? { commands: partial.terminalToolbox.commands ?? base.terminalToolbox.commands }
       : base.terminalToolbox,
     sessionProfiles: partial.sessionProfiles ?? base.sessionProfiles,
-    customThemes: partial.customThemes ?? base.customThemes,
+    customThemes: seedBuiltinThemes(partial.customThemes ?? base.customThemes),
     activeCustomThemeId: 'activeCustomThemeId' in partial ? partial.activeCustomThemeId! : base.activeCustomThemeId
   }
 }
