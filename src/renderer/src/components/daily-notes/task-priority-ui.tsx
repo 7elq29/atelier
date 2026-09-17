@@ -81,6 +81,8 @@ interface TaskEditInputProps {
   /** Blur commits immediately, or only when task text is non-empty (timeline draft). */
   blurPolicy?: 'always' | 'nonEmpty'
   onMouseDown?: (e: React.MouseEvent<HTMLTextAreaElement>) => void
+  /** Called when Tab is pressed and no autocomplete menu is active. */
+  onTab?: () => void
 }
 
 /** Task rename input with `[` → priority autocomplete (Obsidian Dataview-style). */
@@ -95,7 +97,8 @@ export function TaskEditInput({
   autoFocus,
   deferFocus,
   blurPolicy = 'always',
-  onMouseDown
+  onMouseDown,
+  onTab
 }: TaskEditInputProps): JSX.Element {
   const [cursor, setCursor] = useState(value.length)
   const [pickerSuppressed, setPickerSuppressed] = useState(false)
@@ -277,6 +280,13 @@ export function TaskEditInput({
           if (showTagMenu && e.key === 'Tab') {
             e.preventDefault()
             if (tagSuggestions[0]) applyTagSuggestion(tagSuggestions[0])
+            return
+          }
+
+          // Caller-supplied Tab handler (e.g. jump to start-time input)
+          if (e.key === 'Tab' && onTab) {
+            e.preventDefault()
+            onTab()
             return
           }
 

@@ -52,7 +52,7 @@ interface PendingDrop {
 }
 
 interface PendingCreate {
-  hour: number
+  startMin: number  // minutes from midnight, 15-min resolution
   durIdx: number
   text: string
   cardX: number
@@ -151,8 +151,11 @@ export default function AgendaTimeline({
 
   // Right-click create draft
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null)
-  const createCardRef  = useRef<HTMLDivElement>(null)
-  const createInputRef = useRef<HTMLTextAreaElement | null>(null)
+  const [createStartText, setCreateStartText] = useState<string | null>(null)
+  const createCardRef       = useRef<HTMLDivElement>(null)
+  const createInputRef      = useRef<HTMLTextAreaElement | null>(null)
+  const createStartInputRef = useRef<HTMLInputElement>(null)
+  const createStartRef      = useRef<HTMLDivElement>(null)
 
   // Time-edit popover (click on time label)
   const [timeEdit, setTimeEdit] = useState<TimeEditState | null>(null)
@@ -218,11 +221,20 @@ export default function AgendaTimeline({
     if (!createOpen) return
     function onWheel(e: WheelEvent): void {
       e.preventDefault()
-      setPendingCreate((prev) => {
-        if (!prev) return null
-        const next = Math.max(0, Math.min(DUR_STEPS_MIN.length - 1, prev.durIdx + (e.deltaY < 0 ? 1 : -1)))
-        return { ...prev, durIdx: next }
-      })
+      if (createStartRef.current?.contains(e.target as Node)) {
+        // Scroll on "starting" → adjust start time ±15 min
+        setPendingCreate((prev) => {
+          if (!prev) return null
+          const next = Math.max(0, Math.min(23 * 60 + 45, prev.startMin + (e.deltaY < 0 ? 15 : -15)))
+          return { ...prev, startMin: next }
+        })
+      } else {
+        setPendingCreate((prev) => {
+          if (!prev) return null
+          const next = Math.max(0, Math.min(DUR_STEPS_MIN.length - 1, prev.durIdx + (e.deltaY < 0 ? 1 : -1)))
+          return { ...prev, durIdx: next }
+        })
+      }
     }
     window.addEventListener('wheel', onWheel, { passive: false, capture: true })
     return () => window.removeEventListener('wheel', onWheel, { capture: true })
@@ -233,6 +245,7 @@ export default function AgendaTimeline({
     function onClick(e: MouseEvent): void {
       if (createCardRef.current?.contains(e.target as Node)) return
       setPendingCreate(null)
+      setCreateStartText(null)
     }
     const t = setTimeout(
       () => document.addEventListener('click', onClick, { capture: true }),
@@ -377,12 +390,12 @@ export default function AgendaTimeline({
     if (!pendingCreate || !onCreate) return
     const text = (parsed?.text ?? pendingCreate.text).trim()
     if (text) {
-      const startMin  = pendingCreate.hour * 60
-      const durMin    = DUR_STEPS_MIN[pendingCreate.durIdx]!
-      const endMin    = startMin + durMin
-      onCreate(text, `${minutesToTime(startMin)}-${minutesToTime(endMin)}`)
+      const durMin = DUR_STEPS_MIN[pendingCreate.durIdx]!
+      const endMin = pendingCreate.startMin + durMin
+      onCreate(text, `${minutesToTime(pendingCreate.startMin)}-${minutesToTime(endMin)}`)
     }
     setPendingCreate(null)
+    setCreateStartText(null)
   }
 
   function handleContextMenu(e: React.MouseEvent): void {
@@ -390,8 +403,8 @@ export default function AgendaTimeline({
     e.preventDefault()
     if ((e.target as Element).closest('.dn-agenda-entry')) return
     setPendingDrop(null)
-    const hour = hourFromClientY(e.clientY)
-    setPendingCreate({ hour, durIdx: DEFAULT_DUR_IDX, text: '', cardX: e.clientX, cardY: e.clientY })
+    const startMin = hourFromClientY(e.clientY) * 60
+    setPendingCreate({ startMin, durIdx: DEFAULT_DUR_IDX, text: '', cardX: e.clientX, cardY: e.clientY })
   }
 
   // ── Render helpers ────────────────────────────────────────────────────────
@@ -456,6 +469,23 @@ export default function AgendaTimeline({
   if (pendingCreate) {
     createCardLeft = Math.min(pendingCreate.cardX + 16, window.innerWidth  - 220)
     createCardTop  = Math.max(8, Math.min(pendingCreate.cardY - 80,  window.innerHeight - 340))
+  }
+  // Create card start time display
+  const createSM     = pendingCreate?.startMin ?? 0
+  const createHour   = Math.floor(createSM / 60)
+  const createHour12 = (createHour % 12) || 12
+  const createMinute = createSM % 60
+  const createSuffix = createHour < 12 ? 'am' : 'pm'
+
+  function commitCreateStartText(): void {
+    if (createStartText === null) return
+    const parsed = parseTimeInput(createStartText)
+    if (parsed !== null) {
+      setPendingCreate((p) => p ? { ...p, startMin: parsed } : p)
+    }
+    setCreateStartText(null)
+    // Return focus to the task name input
+    requestAnimationFrame(() => createInputRef.current?.focus())
   }
 
   // Time-edit card derived values
@@ -765,13 +795,48 @@ export default function AgendaTimeline({
               value={pendingCreate.text}
               onChange={(text) => setPendingCreate(p => p ? { ...p, text } : p)}
               onCommit={commitCreate}
-              onCancel={() => setPendingCreate(null)}
+              onCancel={() => { setPendingCreate(null); setCreateStartText(null) }}
               blurPolicy="nonEmpty"
+              onTab={() => {
+                const h12 = createHour12
+                const m   = String(createMinute).padStart(2, '0')
+                setCreateStartText(`${h12}:${m} ${createSuffix}`)
+                requestAnimationFrame(() => {
+                  createStartInputRef.current?.select()
+                  createStartInputRef.current?.focus()
+                })
+              }}
             />
           </div>
-          <div className="dn-dur-card-at">
-            {`starting ${formatClock(pendingCreate.hour * 60)} ${pendingCreate.hour < 12 ? 'am' : 'pm'}`}
-          </div>
+          {/* "starting X:XX pm" — Tab from task input jumps here; click or scroll to adjust */}
+          {createStartText !== null ? (
+            <input
+              ref={createStartInputRef}
+              className="dn-dur-card-start-input"
+              value={createStartText}
+              onChange={(e) => setCreateStartText(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); commitCreateStartText() }
+                if (e.key === 'Escape') { e.preventDefault(); setCreateStartText(null); requestAnimationFrame(() => createInputRef.current?.focus()) }
+              }}
+              onBlur={commitCreateStartText}
+              onFocus={(e) => e.currentTarget.select()}
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+            />
+          ) : (
+            <div
+              ref={createStartRef}
+              className="dn-dur-card-at dn-dur-card-at--editable"
+              title="Click to type or scroll to nudge ±15 min"
+              onClick={() => {
+                setCreateStartText(`${createHour12}:${String(createMinute).padStart(2, '0')} ${createSuffix}`)
+              }}
+            >
+              {`starting ${createHour12}:${String(createMinute).padStart(2, '0')} ${createSuffix}`}
+            </div>
+          )}
 
           <svg
             className="dn-dur-card-ring"
