@@ -2404,7 +2404,6 @@ export default function App(): JSX.Element {
         >
           <Sidebar
           collapsed={config.sidebarCollapsed}
-          onToggleCollapse={() => updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })}
           activeSessions={sessions.activeSessions}
           historySessions={sessions.historySessions}
           activeSessionId={activeSessionId}
@@ -2508,6 +2507,19 @@ export default function App(): JSX.Element {
           <div
             className={`topbar${activeAppNote || activeDailyNoteDate ? ' topbar--note-editor' : ''}${activeDailyNoteDate ? ' topbar--daily-note' : ''}`}
           >
+            <button
+              type="button"
+              className="topbar-sidebar-toggle"
+              title="Toggle sidebar"
+              data-testid="sidebar-collapse-toggle"
+              onClick={() => updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })}
+            >
+              <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M9 4v16" />
+                <path d={config.sidebarCollapsed ? 'm13 9 3 3-3 3' : 'm16 9-3 3 3 3'} />
+              </svg>
+            </button>
             <div className="topbar-title-group">
               <span
                 className="title"

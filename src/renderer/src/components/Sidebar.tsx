@@ -23,7 +23,6 @@ import { useSessionPromptDotsMap } from '../hooks/useSessionMessages'
 
 interface SidebarProps {
   collapsed: boolean
-  onToggleCollapse: () => void
   activeSessions: SessionRecord[]
   historySessions: SessionRecord[]
   activeSessionId: string | null
@@ -944,7 +943,6 @@ function SessionRow({
  */
 export default function Sidebar({
   collapsed,
-  onToggleCollapse,
   activeSessions,
   historySessions,
   activeSessionId,
@@ -1161,18 +1159,6 @@ export default function Sidebar({
     <div className={'sidebar' + (collapsed ? ' collapsed' : '')} data-testid="sidebar">
       <div className="sidebar-top-row" data-testid="sidebar-top-row">
         <div className="sidebar-utility-row" data-testid="sidebar-utility-row">
-        <button
-          className="sidebar-utility-button"
-          title="Toggle sidebar collapse"
-          data-testid="sidebar-collapse-toggle"
-          onClick={onToggleCollapse}
-        >
-          <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="16" rx="2" />
-            <path d="M9 4v16" />
-            <path d={collapsed ? 'm13 9 3 3-3 3' : 'm16 9-3 3 3 3'} />
-          </svg>
-        </button>
         <button
           className="sidebar-utility-button"
           title="Settings"
