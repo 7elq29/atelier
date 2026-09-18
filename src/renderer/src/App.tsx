@@ -236,6 +236,9 @@ export default function App(): JSX.Element {
   const appBookmarks = useAppBookmarks()
 
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [paletteSessionsOnly, setPaletteSessionsOnly] = useState(false)
+  const [renameSessionModalOpen, setRenameSessionModalOpen] = useState(false)
+  const [renameSessionDraft, setRenameSessionDraft] = useState('')
   const [splitOpenPickerOpen, setSplitOpenPickerOpen] = useState(false)
   const [bufferSwitcherOpen, setBufferSwitcherOpen] = useState(false)
   const [fileQuickOpenOpen, setFileQuickOpenOpen] = useState(false)
@@ -1688,6 +1691,28 @@ export default function App(): JSX.Element {
         category: 'Action',
         run: () => setNewSessionOpen(true)
       },
+      {
+        id: 'list-sessions',
+        label: 'List Sessions',
+        category: 'Action',
+        run: () => {
+          setPaletteSessionsOnly(true)
+          setTimeout(() => setPaletteOpen(true), 0)
+        }
+      },
+      ...(activeSession
+        ? [
+            {
+              id: 'rename-session',
+              label: 'Rename Current Session',
+              category: 'Action',
+              run: () => {
+                setRenameSessionDraft(activeSession.name)
+                setRenameSessionModalOpen(true)
+              }
+            }
+          ]
+        : []),
       ...(activeWorkspacePath &&
       activeSession?.mode === 'claude-code' &&
       !claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)
@@ -3185,9 +3210,66 @@ export default function App(): JSX.Element {
 
       <CommandPalette
         isOpen={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        items={paletteItems}
+        onClose={() => { setPaletteOpen(false); setPaletteSessionsOnly(false) }}
+        items={paletteSessionsOnly ? paletteItems.filter((i) => i.category === 'Session') : paletteItems}
+        placeholder={paletteSessionsOnly ? 'Search sessions…' : undefined}
       />
+
+      {renameSessionModalOpen && activeSessionId && (
+        <div
+          className="modal-backdrop"
+          data-testid="rename-session-modal-backdrop"
+          onClick={(e) => { if (e.target === e.currentTarget) setRenameSessionModalOpen(false) }}
+        >
+          <div className="modal-dialog confirm-dialog" data-testid="rename-session-modal">
+            <div className="modal-header">
+              <div className="confirm-dialog-header-text">
+                <div className="confirm-dialog-step">Session</div>
+                <h2>Rename Session</h2>
+              </div>
+            </div>
+            <div className="modal-body">
+              <input
+                className="input"
+                data-testid="rename-session-input"
+                type="text"
+                value={renameSessionDraft}
+                autoFocus
+                onChange={(e) => setRenameSessionDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && renameSessionDraft.trim()) {
+                    void sessions.renameSession(activeSessionId, renameSessionDraft.trim())
+                    setRenameSessionModalOpen(false)
+                  } else if (e.key === 'Escape') {
+                    setRenameSessionModalOpen(false)
+                  }
+                }}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setRenameSessionModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!renameSessionDraft.trim()}
+                onClick={() => {
+                  void sessions.renameSession(activeSessionId, renameSessionDraft.trim())
+                  setRenameSessionModalOpen(false)
+                }}
+              >
+                Rename
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SplitOpenPicker
         isOpen={splitOpenPickerOpen}
