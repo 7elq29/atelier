@@ -48,10 +48,12 @@ export default function CommandPalette({ isOpen, onClose, items, placeholder }: 
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>): void {
-    if (e.key === 'ArrowDown') {
+    const isDown = e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')
+    const isUp = e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')
+    if (isDown) {
       e.preventDefault()
       setSelectedIndex((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)))
-    } else if (e.key === 'ArrowUp') {
+    } else if (isUp) {
       e.preventDefault()
       setSelectedIndex((i) => Math.max(i - 1, 0))
     } else if (e.key === 'Enter') {
