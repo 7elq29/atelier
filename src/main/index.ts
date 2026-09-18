@@ -29,6 +29,8 @@ import { registerSpendStatusHandlers } from './spend-status-ipc'
 import type { PtyManager } from './panels/pty'
 import type { PortForwardManager } from './panels/ports'
 import { startCalendarDayMonitor } from './calendar-day'
+import { NotificationScheduler } from './notification-scheduler'
+import type { ScheduleNotificationPayload } from '../shared/notification-types'
 
 /** Dev worktree runs via a copied .app bundle, so `app.isPackaged` alone is unreliable. */
 const isDev =
@@ -43,6 +45,7 @@ let portManager: PortForwardManager | null = null
 let sessionManager: SessionManager | null = null
 let workspaceService: WorkspaceService | null = null
 let stopCalendarDayMonitor: (() => void) | null = null
+let notificationScheduler: NotificationScheduler | null = null
 /** Prevents a second `before-quit` from re-entering async harness teardown. */
 let appQuitHarnessShutdownDone = false
 
@@ -233,6 +236,14 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
   portManager = panelManagers.portManager
   workspaceService?.setPtyManager(panelManagers.ptyManager)
   sessionManager.setPortForwardManager(panelManagers.portManager)
+
+  notificationScheduler = new NotificationScheduler(() => mainWindow)
+  ipcMain.handle('notification:schedule', (_event, payload: ScheduleNotificationPayload) => {
+    return notificationScheduler!.schedule(payload)
+  })
+  ipcMain.handle('notification:cancel', (_event, id: string) => {
+    notificationScheduler!.cancel(id)
+  })
 }
 
 app.whenReady().then(() => {

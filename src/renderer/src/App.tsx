@@ -93,6 +93,8 @@ import type {
   CreateSessionBookmarkInput,
   SessionBookmark
 } from '../../shared/session-bookmarks'
+import NotificationStack from './components/NotificationStack'
+import { useNotifications } from './hooks/useNotifications'
 
 function filePathCandidatesForSession(ws: SessionWorkspacePayload | undefined): string[] {
   if (!ws) return []
@@ -234,6 +236,7 @@ export default function App(): JSX.Element {
   const sessionBookmarks = useSessionBookmarks()
   const appNotes = useAppNotes()
   const appBookmarks = useAppBookmarks()
+  const { notifications, dismiss: dismissNotification } = useNotifications()
 
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [splitOpenPickerOpen, setSplitOpenPickerOpen] = useState(false)
@@ -3413,6 +3416,7 @@ export default function App(): JSX.Element {
           {appToast}
         </div>
       )}
+      <NotificationStack notifications={notifications} onDismiss={dismissNotification} />
     </div>
   )
 }
