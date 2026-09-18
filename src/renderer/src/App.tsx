@@ -213,9 +213,6 @@ function modelSelectionForSession(
  * plus the Daily Notes / Obsidian-integration sidebar (09) docked to the
  * right of the main area.
  */
-/** Key codes that the keyboard-hints overlay must never consume as hint chars. */
-const CMD_L_CODES: ReadonlySet<string> = new Set(['KeyL'])
-
 export default function App(): JSX.Element {
   const [date, setDate] = useState<string | null>(null)
   const [todayNoteExists, setTodayNoteExists] = useState<boolean | null>(null)
@@ -817,23 +814,7 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true })
   }, [])
 
-  // Cmd+L — focus the composer. Registered in capture phase so it fires before the
-  // keyboard-hints overlay, which would otherwise consume 'l' when hint mode is active.
-  useEffect(() => {
-    function handleCmdL(e: KeyboardEvent): void {
-      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat) return
-      if (e.code !== 'KeyL') return
-      const session = activeSessionRef.current
-      if (!session || activeAppNoteIdRef.current || anyModalOpenRef.current) return
-      e.preventDefault()
-      e.stopPropagation()
-      composerRefs.current.get(session.id)?.focus()
-    }
-    window.addEventListener('keydown', handleCmdL, { capture: true })
-    return () => window.removeEventListener('keydown', handleCmdL, { capture: true })
-  }, [])
-
-  const allSessions = useMemo(
+const allSessions = useMemo(
     () => [...sessions.activeSessions, ...sessions.historySessions],
     [sessions.activeSessions, sessions.historySessions]
   )
@@ -1510,7 +1491,12 @@ export default function App(): JSX.Element {
   )
 
   const handleSessionTabHintShortcut = useCallback(
-    (tab: SessionTab) => {
+    (tab: SessionTab | 'composer') => {
+      if (tab === 'composer') {
+        const session = activeSessionRef.current
+        if (session) composerRefs.current.get(session.id)?.focus()
+        return
+      }
       if (tab === 'chat') {
         selectTab(tab)
         return
@@ -3302,7 +3288,6 @@ export default function App(): JSX.Element {
         disabled={anyModalOpen}
         scanRootId="app"
         onSessionTabShortcut={handleSessionTabHintShortcut}
-        reservedMetaCodes={CMD_L_CODES}
       />
 
       <NewSessionModal

@@ -1357,6 +1357,8 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
           <textarea
             ref={textareaRef}
             data-testid="composer-input"
+            data-session-tab-shortcut="l"
+            data-hint-exclude=""
             placeholder={
               harnessDisconnected
                 ? 'Reconnect to continue chatting…'
