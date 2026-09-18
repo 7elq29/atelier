@@ -1689,6 +1689,28 @@ export default function App(): JSX.Element {
         category: 'Action',
         run: () => setNewSessionOpen(true)
       },
+      {
+        id: 'new-note',
+        label: 'New Note',
+        category: 'Action',
+        run: () => void createAppNote()
+      },
+      {
+        id: 'new-terminal',
+        label: 'New Terminal',
+        category: 'Action',
+        run: () => void openLocalTerminal()
+      },
+      ...(activeSessionId
+        ? [
+            {
+              id: 'delete-session',
+              label: 'Delete',
+              category: 'Action',
+              run: () => handleDeleteSession(activeSessionId)
+            }
+          ]
+        : []),
       ...(activeWorkspacePath &&
       activeSession?.mode === 'claude-code' &&
       !claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)
@@ -1739,7 +1761,10 @@ export default function App(): JSX.Element {
       sessions.statuses,
       selectTab,
       allSessions,
-      toggleDailyNotesPanel
+      toggleDailyNotesPanel,
+      createAppNote,
+      openLocalTerminal,
+      handleDeleteSession
     ]
   )
 
