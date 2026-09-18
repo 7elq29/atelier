@@ -1696,8 +1696,10 @@ export default function App(): JSX.Element {
         label: 'List Sessions',
         category: 'Action',
         run: () => {
-          setPaletteSessionsOnly(true)
-          setTimeout(() => setPaletteOpen(true), 0)
+          setTimeout(() => {
+            setPaletteSessionsOnly(true)
+            setPaletteOpen(true)
+          }, 0)
         }
       },
       ...(activeSession
@@ -3221,14 +3223,21 @@ export default function App(): JSX.Element {
           data-testid="rename-session-modal-backdrop"
           onClick={(e) => { if (e.target === e.currentTarget) setRenameSessionModalOpen(false) }}
         >
-          <div className="modal-dialog confirm-dialog" data-testid="rename-session-modal">
-            <div className="modal-header">
-              <div className="confirm-dialog-header-text">
-                <div className="confirm-dialog-step">Session</div>
-                <h2>Rename Session</h2>
-              </div>
+          <div className="rename-session-dialog" data-testid="rename-session-modal">
+            <div className="rename-session-header">
+              <span className="rename-session-label">Rename Session</span>
+              <button
+                type="button"
+                className="btn btn-icon"
+                title="Cancel"
+                onClick={() => setRenameSessionModalOpen(false)}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
             </div>
-            <div className="modal-body">
+            <div className="rename-session-body">
               <input
                 className="input"
                 data-testid="rename-session-input"
@@ -3244,27 +3253,32 @@ export default function App(): JSX.Element {
                     setRenameSessionModalOpen(false)
                   }
                 }}
-                style={{ width: '100%' }}
               />
             </div>
-            <div className="modal-footer">
+            <div className="rename-session-footer">
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="btn btn-icon"
+                title="Cancel"
                 onClick={() => setRenameSessionModalOpen(false)}
               >
-                Cancel
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
               </button>
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn btn-icon rename-session-confirm"
+                title="Rename"
                 disabled={!renameSessionDraft.trim()}
                 onClick={() => {
                   void sessions.renameSession(activeSessionId, renameSessionDraft.trim())
                   setRenameSessionModalOpen(false)
                 }}
               >
-                Rename
+                <svg width="13" height="10" viewBox="0 0 13 10" fill="none" aria-hidden="true">
+                  <path d="M1 5l4 4L12 1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
               </button>
             </div>
           </div>

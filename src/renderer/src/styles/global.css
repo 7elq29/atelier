@@ -974,6 +974,41 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   font-size: 12.5px;
 }
 
+/* Rename session dialog — compact, icon-button actions */
+.rename-session-dialog {
+  background: var(--bg-panel);
+  border: 1px solid var(--elevation-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-popover);
+  width: min(360px, calc(100vw - 48px));
+  overflow: hidden;
+}
+.rename-session-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.rename-session-label {
+  flex: 1;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.rename-session-body { padding: 12px 14px; }
+.rename-session-body .input { width: 100%; }
+.rename-session-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 10px 10px;
+}
+.rename-session-confirm { color: var(--accent); }
+.rename-session-confirm:disabled { opacity: 0.35; pointer-events: none; }
+
 /* File quick open (split dir + search) */
 .fqo-dialog .fqo-head {
   display: flex;
