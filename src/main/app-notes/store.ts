@@ -16,6 +16,7 @@ function rowToRecord(row: AppNoteRow): AppNoteRecord {
     id: row.id,
     title: row.title,
     content: row.content,
+    path: '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     sortOrder: row.sort_order
