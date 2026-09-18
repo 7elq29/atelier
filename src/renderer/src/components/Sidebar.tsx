@@ -468,6 +468,17 @@ function AppNoteRow({
           >
             Rename
           </div>
+          <div
+            className="smi"
+            data-testid="app-note-menu-copy-path"
+            onClick={(e) => {
+              e.stopPropagation()
+              setMenuOpen(false)
+              void navigator.clipboard.writeText(note.path)
+            }}
+          >
+            Copy path
+          </div>
           <div className="sm-sep" />
           <div
             className="smi danger"

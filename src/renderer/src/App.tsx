@@ -254,6 +254,7 @@ export default function App(): JSX.Element {
   const [deleteAppNotePrompt, setDeleteAppNotePrompt] = useState<{ id: string; title: string } | null>(null)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [activeAppNoteId, setActiveAppNoteId] = useState<string | null>(null)
+  const [noteTitleDraft, setNoteTitleDraft] = useState<string | null>(null)
   const [appNoteSyncById, setAppNoteSyncById] = useState<
     Record<string, 'synced' | 'saving' | 'error'>
   >({})
@@ -1562,6 +1563,8 @@ export default function App(): JSX.Element {
     ]
   )
 
+  useEffect(() => { setNoteTitleDraft(null) }, [activeAppNoteId])
+
   useEffect(() => {
     if (!activeSession || activeSession.mode !== 'terminal') return
     setAliveTerminals((prev) => {
@@ -2593,11 +2596,16 @@ export default function App(): JSX.Element {
                   <input
                     className="app-note-title-input"
                     data-testid="app-note-title-input"
-                    value={activeAppNote.title}
+                    value={noteTitleDraft ?? activeAppNote.title}
                     placeholder="Untitled note"
-                    onChange={(e) =>
-                      void updateAppNoteWithSync(activeAppNote.id, { title: e.target.value })
-                    }
+                    onChange={(e) => setNoteTitleDraft(e.target.value)}
+                    onBlur={() => {
+                      if (noteTitleDraft !== null) {
+                        void updateAppNoteWithSync(activeAppNote.id, { title: noteTitleDraft.trim() || 'Untitled note' })
+                        setNoteTitleDraft(null)
+                      }
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
                   />
                 ) : activeSession ? (
                   activeSession.name
