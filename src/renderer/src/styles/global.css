@@ -1005,7 +1005,6 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   justify-content: flex-end;
   gap: 4px;
 }
-.rename-session-confirm { color: var(--accent); }
 .rename-session-confirm:disabled { opacity: 0.3; pointer-events: none; }
 
 /* File quick open (split dir + search) */

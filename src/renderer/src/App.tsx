@@ -1696,8 +1696,10 @@ export default function App(): JSX.Element {
         label: 'List Sessions',
         category: 'Action',
         run: () => {
-          paletteSessionsOnlyRef.current = true
-          setTimeout(() => setPaletteOpen(true), 0)
+          setTimeout(() => {
+            paletteSessionsOnlyRef.current = true
+            setPaletteOpen(true)
+          }, 0)
         }
       },
       ...(activeSession
