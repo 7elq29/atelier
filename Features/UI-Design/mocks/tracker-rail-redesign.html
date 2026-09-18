@@ -1,0 +1,820 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<title>Tracker Rail — Redesign</title>
+<link rel="stylesheet" href="shared.css" />
+<style>
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    min-height: 100vh;
+  }
+
+  /* ── Header (spans both cols) ── */
+  .page-head {
+    grid-column: 1 / -1;
+    padding: 20px 32px 18px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+  .page-head h1 { margin: 0; font-size: var(--text-base); font-weight: 600; }
+  .page-head p { margin: 0; font-size: 13px; color: var(--text-tertiary); line-height: 1.5; }
+
+  /* ── Columns ── */
+  .col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px 28px 40px;
+    overflow-y: auto;
+  }
+  .col + .col { border-left: 1px solid var(--border-subtle); }
+
+  .col-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .col-label.is-new { color: var(--accent); }
+
+  /* ── Simulated chat surface ── */
+  .surface {
+    position: relative;
+    height: 460px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Thin fake tab-strip above the chat area */
+  .surface-tabstrip {
+    height: 32px;
+    background: var(--bg-app);
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: flex-end;
+    padding: 0 16px;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  .stab {
+    padding: 5px 14px 0;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    border-radius: var(--r-sm) var(--r-sm) 0 0;
+    cursor: default;
+  }
+  .stab.active {
+    color: var(--text-primary);
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
+    border-bottom-color: var(--bg-panel);
+    font-weight: 500;
+  }
+  /* Chat body (scrollable transcript area) */
+  .surface-body {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .transcript {
+    padding: 20px 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .msg-user {
+    align-self: flex-end;
+    max-width: 62%;
+    background: var(--bg-panel-raised);
+    border: 1px solid var(--border-default);
+    border-radius: var(--r-lg);
+    padding: 9px 13px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--text-primary);
+  }
+  .msg-tool {
+    align-self: flex-start;
+    max-width: 62%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    background: var(--bg-tint);
+    border-left: 2.5px solid var(--accent);
+    border-radius: 3px var(--r-md) var(--r-md) 3px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+  }
+  .tool-name { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; color: var(--warning); }
+  .msg-reply { font-size: 14px; line-height: 1.55; color: var(--text-primary); }
+
+  /* Composer stub */
+  .surface-composer {
+    padding: 8px 18px 12px;
+    border-top: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+  }
+  .composer-stub {
+    background: var(--bg-input);
+    border: 1px solid var(--border-default);
+    border-radius: var(--r-lg);
+    padding: 9px 14px;
+    font-size: 13px;
+    color: var(--text-disabled);
+  }
+
+  /* ═══════════════════════════════════════════
+     CURRENT tracker rail — exactly as seen in
+     the mock screenshot taken today
+     ═══════════════════════════════════════════ */
+  .cur-rail {
+    position: absolute;
+    top: 12px;
+    right: 8px;
+    z-index: 4;
+    width: 210px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* Full-width collapse pill */
+  .cur-collapse {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    background: var(--bg-panel-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-md);
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  /* Section card — each has its own box */
+  .cur-card {
+    background: var(--bg-tint);
+    border-radius: var(--r-md);
+    overflow: hidden;
+  }
+  .cur-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 13px 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+  /* SVG icon placeholder */
+  .cur-icon-sq {
+    width: 13px; height: 13px;
+    border: 1.5px solid var(--text-tertiary);
+    border-radius: 3px;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cur-icon-sq::after { content: '✓'; font-size: 8px; color: var(--text-tertiary); }
+  .cur-icon-fan {
+    width: 13px; height: 13px;
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+    font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cur-head-label { flex: 1; }
+  .cur-count { font-size: 12px; font-weight: 500; color: var(--text-tertiary); }
+  .cur-body {
+    padding: 4px 11px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  /* Todo item — current */
+  .cur-todo {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 5px;
+    border-radius: 5px;
+    font-size: 13px;
+    line-height: 1.38;
+  }
+  .cur-box {
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    border: 1.5px solid var(--border-strong);
+    flex-shrink: 0;
+    margin-top: 1px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px;
+  }
+  /* PROBLEM: done state — green filled, very loud */
+  .cur-todo.done .cur-box {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text-on);
+    font-weight: 700;
+  }
+  .cur-label { color: var(--text-primary); overflow-wrap: anywhere; }
+  /* PROBLEM: done text is green strikethrough — done items louder than active */
+  .cur-todo.done .cur-label {
+    color: var(--accent);
+    text-decoration: line-through;
+    opacity: 0.8;
+  }
+  /* PROBLEM: active looks exactly like pending — empty box, no difference */
+  .cur-todo.active .cur-label { font-weight: 500; }
+
+  /* Background task — current */
+  .cur-bg {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px 5px;
+    font-size: 13px;
+    line-height: 1.38;
+  }
+  .cur-ring {
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border-strong);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .cur-spinner {
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--accent);
+    animation: spin .7s linear infinite;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .cur-bg-label { color: var(--text-primary); overflow-wrap: anywhere; }
+
+  /* Problem callout bubbles */
+  .problem {
+    position: absolute;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--danger);
+    letter-spacing: 0.03em;
+    background: color-mix(in srgb, var(--danger) 12%, var(--bg-panel));
+    border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+    border-radius: 100px;
+    padding: 2px 7px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* ═══════════════════════════════════════════
+     REDESIGNED tracker rail
+     ═══════════════════════════════════════════ */
+  .new-rail {
+    position: absolute;
+    top: 12px;
+    right: 8px;
+    z-index: 4;
+    width: 206px;
+  }
+
+  /*
+    Single surface: bg-panel-raised, border-default (dark-mode elevation rule:
+    hairline border in dark, no shadow). No nested cards. Sections are groups
+    divided by a border-subtle hairline.
+  */
+  .new-panel {
+    background: var(--bg-panel-raised);
+    border: 1px solid var(--border-default);
+    border-radius: var(--r-md);
+    overflow: hidden;
+  }
+
+  /* Topbar: panel descriptor + icon-only collapse button */
+  .new-topbar {
+    display: flex;
+    align-items: center;
+    padding: 9px 9px 0 12px;
+  }
+  .new-descriptor {
+    flex: 1;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-disabled);
+  }
+  .new-btn-collapse {
+    width: 20px; height: 20px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer; border-radius: 5px;
+    font-size: 15px; padding: 0; line-height: 1;
+    font-family: inherit;
+  }
+  .new-btn-collapse:hover { background: var(--bg-hover); }
+
+  /* Section */
+  .new-section { padding: 8px 11px 10px; }
+  .new-section + .new-section { border-top: 1px solid var(--border-subtle); }
+
+  /* Section header */
+  .new-sh {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .new-sh-label {
+    flex: 1;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .new-sh-count {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-disabled);
+  }
+  .new-sh-count.live { color: var(--accent); }
+
+  /* Items */
+  .new-items { display: flex; flex-direction: column; gap: 1px; }
+
+  /* Status dot — shared vocabulary for todos & background tasks */
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 5px;
+  }
+  .dot.pending { border: 1.5px solid var(--border-strong); }
+  .dot.active {
+    background: var(--accent);
+    box-shadow: 0 0 0 2.5px var(--accent-dim);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  /* FIXED: done is quiet — muted neutral dot, not accent green */
+  .dot.done { background: var(--text-disabled); }
+  .dot.failed { background: var(--danger); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  /* Spinner — slightly smaller than current for proportional fit */
+  .new-spinner {
+    width: 11px; height: 11px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border-strong);
+    border-top-color: var(--accent);
+    animation: spin .7s linear infinite;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+
+  /* Todo item */
+  .new-todo {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 3px 0;
+    min-width: 0;
+  }
+  .new-todo-label {
+    flex: 1; font-size: 13px; line-height: 1.4;
+    color: var(--text-tertiary);
+    overflow-wrap: anywhere; word-break: break-word;
+  }
+  /* FIXED: active is TEXT-PRIMARY + 500 weight — clearly more important */
+  .new-todo.active .new-todo-label { color: var(--text-primary); font-weight: 500; }
+  /* FIXED: done is text-disabled + strikethrough — recedes */
+  .new-todo.done .new-todo-label { color: var(--text-disabled); text-decoration: line-through; }
+
+  /* Done toggle */
+  .new-done-toggle {
+    background: none; border: none;
+    padding: 2px 0; margin-top: 2px;
+    font-size: 11.5px; color: var(--text-disabled);
+    cursor: pointer; text-align: left; font-family: inherit;
+  }
+  .new-done-toggle:hover { color: var(--text-tertiary); }
+
+  /* Background task item */
+  .new-bg {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 3px 0;
+    min-width: 0;
+  }
+  .new-bg-body { flex: 1; min-width: 0; }
+  .new-bg-title {
+    font-size: 13px; line-height: 1.4;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere; word-break: break-word;
+  }
+  .new-bg-title.running { color: var(--text-primary); }
+  .new-bg-title.done { color: var(--text-disabled); }
+  .new-bg-detail {
+    font-size: 10.5px; color: var(--text-disabled);
+    font-family: var(--font-mono); line-height: 1.3;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    margin-top: 1px;
+  }
+
+  /* Bottom spacing */
+  .new-panel-end { height: 6px; }
+
+  /* ── Callout annotations (right col) ── */
+  .fix-note {
+    display: flex;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    padding: 10px 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .fix-note:first-of-type { border-top: none; padding-top: 0; }
+  .fix-chip {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+    padding: 2px 7px; border-radius: 100px; flex-shrink: 0;
+    margin-top: 2px; height: fit-content;
+  }
+  .fix-chip.fix { background: var(--accent-dim); color: var(--accent); }
+  .fix-chip.was { background: var(--danger-dim); color: var(--danger); }
+  .fix-note strong { color: var(--text-primary); font-weight: 600; }
+
+  /* ── States showcase below each column ── */
+  .states-row {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .state-block { display: flex; flex-direction: column; gap: 6px; }
+  .state-block-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-disabled);
+  }
+
+  /* Current collapsed */
+  .cur-collapsed {
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    width: 34px; padding: 9px 0 10px;
+  }
+  .cur-coll-btn {
+    width: 26px; height: 26px;
+    background: var(--bg-panel-raised); border: 1px solid var(--border-subtle);
+    border-radius: var(--r-md); font-size: 12px; color: var(--text-tertiary);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cur-coll-badge {
+    min-width: 26px; padding: 3px 4px;
+    background: var(--bg-panel-raised); border: 1px solid var(--border-subtle);
+    border-radius: var(--r-sm);
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    font-size: 10.5px; color: var(--text-secondary); font-weight: 600;
+  }
+
+  /* New collapsed */
+  .new-collapsed {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    background: var(--bg-panel-raised); border: 1px solid var(--border-default);
+    border-radius: var(--r-md);
+    width: 34px; padding: 9px 0 11px;
+  }
+  .new-coll-btn {
+    width: 20px; height: 20px;
+    background: transparent; border: none;
+    font-size: 14px; color: var(--text-tertiary);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; border-radius: 4px;
+  }
+  .new-coll-badge {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-tertiary); font-weight: 600; text-align: center;
+  }
+  .new-coll-badge.live { color: var(--accent); }
+
+  /* Section inside a static (non-absolute) panel for the snippet demos */
+  .snippet-panel {
+    background: var(--bg-panel-raised);
+    border: 1px solid var(--border-default);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    flex: 1;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="page-head">
+  <h1>Tracker Rail — Redesign</h1>
+  <p>Based on a live screenshot of the current mock (index.html, Sep 17 2026). Five concrete problems identified and fixed.</p>
+</header>
+
+<!-- LEFT: current -->
+<div class="col">
+  <div class="col-label">Current — index.html mock (live screenshot today)</div>
+
+  <div class="surface">
+    <div class="surface-tabstrip">
+      <div class="stab active">Chat</div>
+      <div class="stab">Diff</div>
+      <div class="stab">Files</div>
+    </div>
+    <div class="surface-body">
+      <div class="transcript">
+        <div class="msg-user">Can you figure out why the token refresh fails?</div>
+        <div class="msg-tool"><span class="tool-name">BASH</span> grep -rn "refresh" src/auth/token-manager.ts</div>
+        <div class="msg-reply">I'll look at the token refresh scheduling logic and reproduce this first.</div>
+      </div>
+
+      <!-- CURRENT RAIL -->
+      <div class="cur-rail">
+        <!-- Problem 1: full-width collapse button, disconnected from cards -->
+        <button class="cur-collapse">← Collapse</button>
+
+        <!-- Todos card — own box -->
+        <div class="cur-card">
+          <button class="cur-head">
+            <div class="cur-icon-sq"></div>
+            <span class="cur-head-label">Todos</span>
+            <span class="cur-count">2/4</span>
+          </button>
+          <div class="cur-body">
+            <!-- Problem 2: done items are LOUDER than active — green fills + green strikethrough -->
+            <div class="cur-todo done">
+              <div class="cur-box">✓</div>
+              <span class="cur-label">Reproduce token expiry bug</span>
+            </div>
+            <div class="cur-todo done">
+              <div class="cur-box">✓</div>
+              <span class="cur-label">Read apiKeyHelper implementation</span>
+            </div>
+            <!-- Problem 3: active and pending are visually identical — both empty boxes -->
+            <div class="cur-todo active">
+              <div class="cur-box"></div>
+              <span class="cur-label">Patch refresh-scheduling race</span>
+            </div>
+            <div class="cur-todo">
+              <div class="cur-box"></div>
+              <span class="cur-label">Add regression test</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subagents card — second separate box -->
+        <div class="cur-card">
+          <button class="cur-head">
+            <div class="cur-icon-fan">▷</div>
+            <span class="cur-head-label">Subagents</span>
+            <span class="cur-count">1 running</span>
+          </button>
+          <div class="cur-body">
+            <div class="cur-bg">
+              <div class="cur-spinner"></div>
+              <span class="cur-bg-label">Explore: token refresh call sites</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /surface-body -->
+    <div class="surface-composer">
+      <div class="composer-stub">Message Atelier…</div>
+    </div>
+  </div><!-- /surface -->
+
+  <!-- Collapsed state -->
+  <div class="states-row">
+    <div class="state-block">
+      <div class="state-block-label">Collapsed</div>
+      <div class="cur-collapsed">
+        <div class="cur-coll-btn">▸</div>
+        <div class="cur-coll-badge">2/4</div>
+        <div class="cur-coll-badge">1</div>
+      </div>
+    </div>
+
+    <!-- Problem callouts -->
+    <div style="flex:1; display:flex; flex-direction:column; gap:0;">
+      <div class="fix-note">
+        <span class="fix-chip was">P1</span>
+        <div><strong>Collapse is a full-width separate button.</strong> Takes an entire row. Visually disconnected from the cards it controls.</div>
+      </div>
+      <div class="fix-note">
+        <span class="fix-chip was">P2</span>
+        <div><strong>Done items dominate.</strong> Green filled checkbox + green strikethrough draws more eye than the active item — hierarchy is inverted.</div>
+      </div>
+      <div class="fix-note">
+        <span class="fix-chip was">P3</span>
+        <div><strong>Active = pending visually.</strong> "Patch refresh-scheduling race" (active) and "Add regression test" (pending) look identical — both empty boxes.</div>
+      </div>
+      <div class="fix-note">
+        <span class="fix-chip was">P4</span>
+        <div><strong>Two separate boxes.</strong> Todos and Subagents each have their own `bg-tint` card — card soup.</div>
+      </div>
+      <div class="fix-note">
+        <span class="fix-chip was">P5</span>
+        <div><strong>Decorative icons in headers.</strong> The ☑ and ▷ icons before "Todos"/"Subagents" add noise without communicating anything the label doesn't already say.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- RIGHT: redesign -->
+<div class="col">
+  <div class="col-label is-new">Proposed</div>
+
+  <div class="surface">
+    <div class="surface-tabstrip">
+      <div class="stab active">Chat</div>
+      <div class="stab">Diff</div>
+      <div class="stab">Files</div>
+    </div>
+    <div class="surface-body">
+      <div class="transcript">
+        <div class="msg-user">Can you figure out why the token refresh fails?</div>
+        <div class="msg-tool"><span class="tool-name">BASH</span> grep -rn "refresh" src/auth/token-manager.ts</div>
+        <div class="msg-reply">I'll look at the token refresh scheduling logic and reproduce this first.</div>
+      </div>
+
+      <!-- REDESIGNED RAIL -->
+      <div class="new-rail">
+        <div class="new-panel">
+
+          <!-- Topbar: descriptor + icon-only collapse (Fix P1, P5) -->
+          <div class="new-topbar">
+            <span class="new-descriptor">Tracking</span>
+            <button class="new-btn-collapse" title="Collapse">‹</button>
+          </div>
+
+          <!-- Todos section (Fix P2, P3, P4) -->
+          <div class="new-section">
+            <div class="new-sh">
+              <span class="new-sh-label">Todos</span>
+              <span class="new-sh-count">2 / 4</span>
+            </div>
+            <div class="new-items">
+              <!-- Fix P2: done is quiet — neutral muted dot + text-disabled + strikethrough -->
+              <div class="new-todo done">
+                <div class="dot done"></div>
+                <span class="new-todo-label">Reproduce token expiry bug</span>
+              </div>
+              <div class="new-todo done">
+                <div class="dot done"></div>
+                <span class="new-todo-label">Read apiKeyHelper implementation</span>
+              </div>
+              <!-- Fix P3: active is clearly distinct — pulsing accent dot + text-primary -->
+              <div class="new-todo active">
+                <div class="dot active"></div>
+                <span class="new-todo-label">Patch refresh-scheduling race</span>
+              </div>
+              <!-- Pending: muted ring, text-tertiary -->
+              <div class="new-todo">
+                <div class="dot pending"></div>
+                <span class="new-todo-label">Add regression test</span>
+              </div>
+              <button class="new-done-toggle">2 done</button>
+            </div>
+          </div>
+
+          <!-- Subagents section (Fix P4: no separate card, just a labeled section) -->
+          <div class="new-section">
+            <div class="new-sh">
+              <span class="new-sh-label">Subagents</span>
+              <span class="new-sh-count live">1 active</span>
+            </div>
+            <div class="new-items">
+              <div class="new-bg">
+                <div class="new-spinner"></div>
+                <div class="new-bg-body">
+                  <div class="new-bg-title running">Explore: token refresh call sites</div>
+                  <div class="new-bg-detail">Read · 6 tool uses · 1m42s</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="new-panel-end"></div>
+        </div>
+      </div>
+
+    </div><!-- /surface-body -->
+    <div class="surface-composer">
+      <div class="composer-stub">Message Atelier…</div>
+    </div>
+  </div><!-- /surface -->
+
+  <!-- Collapsed + fix notes -->
+  <div class="states-row">
+    <div class="state-block">
+      <div class="state-block-label">Collapsed</div>
+      <div class="new-collapsed">
+        <button class="new-coll-btn">›</button>
+        <div class="new-coll-badge">2/4</div>
+        <div class="new-coll-badge live">1</div>
+      </div>
+    </div>
+
+    <!-- More states: multiple sections, failed task -->
+    <div class="state-block" style="flex:1;">
+      <div class="state-block-label">Failed + multi-section</div>
+      <div class="snippet-panel">
+        <div class="new-section">
+          <div class="new-sh">
+            <span class="new-sh-label">Subagents</span>
+            <span class="new-sh-count">1 failed</span>
+          </div>
+          <div class="new-items">
+            <div class="new-bg">
+              <div class="dot failed" style="margin-top:4px;"></div>
+              <div class="new-bg-body">
+                <div class="new-bg-title" style="color:var(--danger);">Competitor A research</div>
+                <div class="new-bg-detail" style="color:color-mix(in srgb,var(--danger) 60%,transparent);">timeout after 120s</div>
+              </div>
+            </div>
+            <div class="new-bg">
+              <div class="dot done" style="margin-top:4px;"></div>
+              <div class="new-bg-body">
+                <div class="new-bg-title done">Competitor B research</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="new-section">
+          <div class="new-sh">
+            <span class="new-sh-label">Monitors</span>
+            <span class="new-sh-count live">1 active</span>
+          </div>
+          <div class="new-items">
+            <div class="new-bg">
+              <div class="new-spinner"></div>
+              <div class="new-bg-body">
+                <div class="new-bg-title running">Watch deploy log</div>
+                <div class="new-bg-detail">grep ERROR | tail -f</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="new-panel-end"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fix notes -->
+  <div style="display:flex; flex-direction:column; gap:0;">
+    <div class="fix-note">
+      <span class="fix-chip fix">F1</span>
+      <div><strong>Collapse = 20×20 icon button</strong> in the topbar corner. Zero extra height. "Tracking" descriptor identifies the panel without a separate label row.</div>
+    </div>
+    <div class="fix-note">
+      <span class="fix-chip fix">F2</span>
+      <div><strong>Done is quiet</strong> — 7px neutral dot (`text-disabled`) + strikethrough + `text-disabled` text. Done recedes; only active things draw the eye.</div>
+    </div>
+    <div class="fix-note">
+      <span class="fix-chip fix">F3</span>
+      <div><strong>Active is distinct</strong> — pulsing accent dot + `text-primary` + 500 weight. Immediately separable from pending (muted ring, `text-tertiary`).</div>
+    </div>
+    <div class="fix-note">
+      <span class="fix-chip fix">F4</span>
+      <div><strong>One surface</strong> — `bg-panel-raised` + `border-default` (dark-mode elevation rule). Sections are hairline-separated groups, not nested cards.</div>
+    </div>
+    <div class="fix-note">
+      <span class="fix-chip fix">F5</span>
+      <div><strong>No decorative icons</strong> in section headers. `label-caps` text alone is sufficient; removing the icon also reclaims 20px of width in a 210px panel.</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

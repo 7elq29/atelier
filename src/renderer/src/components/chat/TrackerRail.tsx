@@ -21,28 +21,17 @@ function splitTodoContent(content: string): { label: string; detail?: string } {
 function TrackerCardHead({
   title,
   count,
-  collapsed,
-  onToggle,
+  isLive,
 }: {
   title: string
   count: string
-  collapsed: boolean
-  onToggle: () => void
+  isLive?: boolean
 }): JSX.Element {
-  const longLabel = title.includes(' ')
   return (
-    <button
-      type="button"
-      className={`tracker-head${longLabel ? ' tracker-head--long-label' : ''}`}
-      aria-expanded={!collapsed}
-      onClick={onToggle}
-    >
+    <div className="tracker-head">
       <span className="tracker-head-title">{title}</span>
-      <span className="tracker-head-chevron" aria-hidden="true">
-        {collapsed ? '▸' : '▾'}
-      </span>
-      <span className="count">{count}</span>
-    </button>
+      <span className={`count${isLive ? ' live' : ''}`}>{count}</span>
+    </div>
   )
 }
 
@@ -59,7 +48,6 @@ export default function TrackerRail({
   backgroundTasks?: BackgroundTaskRow[]
 }): JSX.Element | null {
   const [collapsed, setCollapsed] = useState(false)
-  const [collapsedCards, setCollapsedCards] = useState<Set<string>>(() => new Set())
   const [showCompleted, setShowCompleted] = useState(false)
   let todos: { content: string; status: string }[] = []
 
@@ -75,12 +63,7 @@ export default function TrackerRail({
 
   useEffect(() => {
     if (todos.length > 0 && doneCount === todos.length) {
-      setCollapsedCards((prev) => {
-        if (prev.has('todos')) return prev
-        const next = new Set(prev)
-        next.add('todos')
-        return next
-      })
+      setShowCompleted(false)
     }
   }, [todos.length, doneCount])
 
@@ -119,156 +102,157 @@ export default function TrackerRail({
     countActiveBackgroundTasks(sortedJobs) +
     countActiveBackgroundTasks(sortedShell)
 
-  function toggleCard(cardId: string): void {
-    setCollapsedCards((prev) => {
-      const next = new Set(prev)
-      if (next.has(cardId)) next.delete(cardId)
-      else next.add(cardId)
-      return next
-    })
-  }
-
-  function isCardCollapsed(cardId: string): boolean {
-    return collapsedCards.has(cardId)
-  }
-
   return (
     <div className={`tracker-rail${collapsed ? ' collapsed' : ''}`} data-testid="tracker-rail">
-      <button
-        type="button"
-        className="tracker-rail-toggle"
-        data-testid="tracker-rail-toggle"
-        title={collapsed ? 'Expand Todos/Subagents' : 'Collapse Todos/Subagents'}
-        onClick={() => setCollapsed((c) => !c)}
-      >
-        <span>{collapsed ? '▸' : '◂'}</span>
-        <span className="rail-label">Collapse</span>
-      </button>
-      {todos.length > 0 && (
-        <div className="tracker-card" data-testid="todo-tracker-card">
-          <TrackerCardHead
-            title="Todos"
-            count={`${doneCount}/${todos.length}`}
-            collapsed={isCardCollapsed('todos')}
-            onToggle={() => toggleCard('todos')}
-          />
-          <div className={`tracker-body${isCardCollapsed('todos') ? ' collapsed' : ''}`}>
-            {todos.filter((t) => showCompleted || t.status !== 'completed').map((t, i) => {
-              const { label, detail } = splitTodoContent(t.content)
-              return (
-                <div
-                  key={i}
-                  className={`todo-item${t.status === 'completed' ? ' done' : t.status === 'in_progress' ? ' active' : ''}`}
-                  data-testid="todo-item"
-                  data-status={t.status}
+      {/* Topbar is always visible — outside the panel so it stays clickable when collapsed */}
+      <div className="tracker-topbar">
+        <span className="tracker-descriptor">Tracking</span>
+        <button
+          type="button"
+          className="tracker-collapse-btn"
+          data-testid="tracker-rail-toggle"
+          title={collapsed ? 'Expand' : 'Collapse'}
+          onClick={() => setCollapsed((c) => !c)}
+        >
+          {collapsed ? '›' : '‹'}
+        </button>
+      </div>
+
+      {/* Single unified panel surface */}
+      <div className="tracker-panel">
+
+        {todos.length > 0 && (
+          <div className="tracker-card" data-testid="todo-tracker-card">
+            <TrackerCardHead
+              title="Todos"
+              count={`${doneCount}/${todos.length}`}
+            />
+            <div className="tracker-body">
+              {todos
+                .filter((t) => showCompleted || t.status !== 'completed')
+                .map((t, i) => {
+                  const { label, detail } = splitTodoContent(t.content)
+                  const dotClass =
+                    t.status === 'completed'
+                      ? 'done'
+                      : t.status === 'in_progress'
+                        ? 'active'
+                        : 'pending'
+                  return (
+                    <div
+                      key={i}
+                      className={`todo-item${t.status === 'completed' ? ' done' : t.status === 'in_progress' ? ' active' : ''}`}
+                      data-testid="todo-item"
+                      data-status={t.status}
+                    >
+                      <div className={`todo-dot ${dotClass}`} aria-hidden="true" />
+                      <div className="todo-item-body">
+                        <span className="todo-item-label">{label}</span>
+                        {detail ? <span className="todo-item-detail">{detail}</span> : null}
+                      </div>
+                    </div>
+                  )
+                })}
+              {doneCount > 0 && (
+                <button
+                  type="button"
+                  className="todo-completed-toggle"
+                  onClick={() => setShowCompleted((s) => !s)}
                 >
-                  <div className="box" aria-hidden="true" />
-                  <div className="todo-item-body">
-                    <span className="todo-item-label">{label}</span>
-                    {detail ? <span className="todo-item-detail">{detail}</span> : null}
-                  </div>
-                </div>
-              )
-            })}
-            {doneCount > 0 && (
-              <button
-                type="button"
-                className="todo-completed-toggle"
-                onClick={() => setShowCompleted((s) => !s)}
-              >
-                {showCompleted ? 'Hide completed' : `${doneCount} completed`}
-              </button>
-            )}
+                  {showCompleted ? 'Hide completed' : `${doneCount} completed`}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-      {sortedSubagents.length > 0 && (
-        <div className="tracker-card" data-testid="subagent-tracker-card">
-          <TrackerCardHead
-            title="Subagents"
-            count={subagentActive > 0 ? `${subagentActive} running` : `${sortedSubagents.length}`}
-            collapsed={isCardCollapsed('subagents')}
-            onToggle={() => toggleCard('subagents')}
-          />
-          <div className={`tracker-body${isCardCollapsed('subagents') ? ' collapsed' : ''}`}>
-            {sortedSubagents.map((t) => (
-              <BackgroundTaskRowView key={t.taskId} task={t} />
-            ))}
+        )}
+
+        {sortedSubagents.length > 0 && (
+          <div className="tracker-card" data-testid="subagent-tracker-card">
+            <TrackerCardHead
+              title="Subagents"
+              count={subagentActive > 0 ? `${subagentActive} active` : `${sortedSubagents.length}`}
+              isLive={subagentActive > 0}
+            />
+            <div className="tracker-body">
+              {sortedSubagents.map((t) => (
+                <BackgroundTaskRowView key={t.taskId} task={t} />
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-      {sortedMonitors.length > 0 && (
-        <div className="tracker-card" data-testid="background-monitors-card">
-          <TrackerCardHead
-            title="Monitors"
-            count={
-              countActiveBackgroundTasks(sortedMonitors) > 0
-                ? `${countActiveBackgroundTasks(sortedMonitors)} running`
-                : `${sortedMonitors.length}`
-            }
-            collapsed={isCardCollapsed('monitors')}
-            onToggle={() => toggleCard('monitors')}
-          />
-          <div className={`tracker-body${isCardCollapsed('monitors') ? ' collapsed' : ''}`}>
-            {sortedMonitors.map((t) => (
-              <BackgroundTaskRowView key={t.taskId} task={t} />
-            ))}
+        )}
+
+        {sortedMonitors.length > 0 && (
+          <div className="tracker-card" data-testid="background-monitors-card">
+            <TrackerCardHead
+              title="Monitors"
+              count={
+                countActiveBackgroundTasks(sortedMonitors) > 0
+                  ? `${countActiveBackgroundTasks(sortedMonitors)} active`
+                  : `${sortedMonitors.length}`
+              }
+              isLive={countActiveBackgroundTasks(sortedMonitors) > 0}
+            />
+            <div className="tracker-body">
+              {sortedMonitors.map((t) => (
+                <BackgroundTaskRowView key={t.taskId} task={t} />
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-      {sortedJobs.length > 0 && (
-        <div className="tracker-card" data-testid="background-jobs-card">
-          <TrackerCardHead
-            title="Background jobs"
-            count={
-              countActiveBackgroundTasks(sortedJobs) > 0
-                ? `${countActiveBackgroundTasks(sortedJobs)} running`
-                : `${sortedJobs.length}`
-            }
-            collapsed={isCardCollapsed('jobs')}
-            onToggle={() => toggleCard('jobs')}
-          />
-          <div className={`tracker-body${isCardCollapsed('jobs') ? ' collapsed' : ''}`}>
-            {sortedJobs.map((t) => (
-              <BackgroundTaskRowView key={t.taskId} task={t} />
-            ))}
+        )}
+
+        {sortedJobs.length > 0 && (
+          <div className="tracker-card" data-testid="background-jobs-card">
+            <TrackerCardHead
+              title="Background jobs"
+              count={
+                countActiveBackgroundTasks(sortedJobs) > 0
+                  ? `${countActiveBackgroundTasks(sortedJobs)} active`
+                  : `${sortedJobs.length}`
+              }
+              isLive={countActiveBackgroundTasks(sortedJobs) > 0}
+            />
+            <div className="tracker-body">
+              {sortedJobs.map((t) => (
+                <BackgroundTaskRowView key={t.taskId} task={t} />
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-      {sortedShell.length > 0 && (
-        <div className="tracker-card" data-testid="background-shell-card">
-          <TrackerCardHead
-            title="Shell"
-            count={
-              countActiveBackgroundTasks(sortedShell) > 0
-                ? `${countActiveBackgroundTasks(sortedShell)} running`
-                : `${sortedShell.length}`
-            }
-            collapsed={isCardCollapsed('shell')}
-            onToggle={() => toggleCard('shell')}
-          />
-          <div className={`tracker-body${isCardCollapsed('shell') ? ' collapsed' : ''}`}>
-            {sortedShell.map((t) => (
-              <BackgroundTaskRowView key={t.taskId} task={t} />
-            ))}
+        )}
+
+        {sortedShell.length > 0 && (
+          <div className="tracker-card" data-testid="background-shell-card">
+            <TrackerCardHead
+              title="Shell"
+              count={
+                countActiveBackgroundTasks(sortedShell) > 0
+                  ? `${countActiveBackgroundTasks(sortedShell)} active`
+                  : `${sortedShell.length}`
+              }
+              isLive={countActiveBackgroundTasks(sortedShell) > 0}
+            />
+            <div className="tracker-body">
+              {sortedShell.map((t) => (
+                <BackgroundTaskRowView key={t.taskId} task={t} />
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Collapsed strip — shown only when collapsed */}
       <div className="rail-mini-badges" data-testid="tracker-rail-mini-badges">
         {todos.length > 0 && (
           <div className="rail-mini-badge" title={`Todos ${doneCount}/${todos.length}`}>
-            <b>
-              {doneCount}/{todos.length}
-            </b>
+            <b>{doneCount}/{todos.length}</b>
           </div>
         )}
         {subagentActive > 0 && (
-          <div className="rail-mini-badge" title={`Subagents: ${subagentActive} running`}>
+          <div className="rail-mini-badge" title={`Subagents: ${subagentActive} active`}>
             <b>{subagentActive}</b>
           </div>
         )}
         {bgActiveTotal > 0 && (
-          <div className="rail-mini-badge" title="Background tasks running">
+          <div className="rail-mini-badge" title="Background tasks active">
             <b>{bgActiveTotal}</b>
           </div>
         )}

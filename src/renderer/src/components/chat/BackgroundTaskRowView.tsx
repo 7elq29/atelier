@@ -17,26 +17,21 @@ export default function BackgroundTaskRowView({ task }: { task: BackgroundTaskRo
     (running ? null : statusLabel !== 'done' ? statusLabel : null)
   const detailWithError = task.error ? `${detail ?? statusLabel} · ${task.error}` : detail
 
+  const dotClass = failed ? 'failed' : done ? 'done' : 'idle'
+
   return (
     <div
-      className={`background-rail-entry${failed ? ' background-rail-failed' : ''}${done ? ' background-rail-done' : ''}${running ? ' background-rail-running' : ''}`}
+      className={`background-rail-entry${failed ? ' background-rail-failed' : ''}${done ? ' background-rail-done' : ''}`}
       data-testid="background-rail-item"
       data-task-id={task.taskId}
       data-task-status={statusLabel}
     >
       <div className="background-rail-head">
-        {running && <span className="spinner" aria-hidden="true" />}
-        {!running && done && !failed && (
-          <span className="background-rail-icon done" aria-hidden="true">
-            ✓
-          </span>
+        {running ? (
+          <span className="spinner" aria-hidden="true" />
+        ) : (
+          <div className={`bg-dot ${dotClass}`} aria-hidden="true" />
         )}
-        {!running && failed && (
-          <span className="background-rail-icon failed" aria-hidden="true">
-            !
-          </span>
-        )}
-        {!running && !done && !failed && <span className="background-rail-icon idle" aria-hidden="true" />}
         <div className="background-rail-body">
           <span className="background-rail-title" title={fullTitle}>
             {displayTitle}
