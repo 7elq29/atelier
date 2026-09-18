@@ -796,6 +796,7 @@ export default function App(): JSX.Element {
         // Modal-close always takes priority — if any overlay is open, close it.
         if (anyModalOpenRef.current) {
           setPaletteOpen(false)
+          paletteSessionsOnlyRef.current = false
           setSplitOpenPickerOpen(false)
           setBufferSwitcherOpen(false)
           setSettingsOpen(false)
@@ -806,6 +807,7 @@ export default function App(): JSX.Element {
         // Idle session or no session: still close any modals that happen to
         // be open (redundant when anyModalOpen is false, but harmless).
         setPaletteOpen(false)
+        paletteSessionsOnlyRef.current = false
         setSplitOpenPickerOpen(false)
         setBufferSwitcherOpen(false)
         setSettingsOpen(false)
