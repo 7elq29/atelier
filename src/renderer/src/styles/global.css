@@ -2545,7 +2545,8 @@ input[type='range'] {
 .aq-option .num { width: 15px; height: 15px; border-radius: 50%; background: transparent; border: 1.5px solid var(--text-tertiary); font-size: 0; flex-shrink: 0; margin-top: 2px; }
 .aq-option .desc { color: var(--text-tertiary); font-size: 12.5px; line-height: 1.4; margin-top: 2px; }
 .aq-card.answered .aq-option { pointer-events: none; opacity: .45; }
-.aq-card .aq-option.selected { opacity: 1; border-color: var(--border-strong); background: var(--bg-tint); }
+.aq-card .aq-option.selected { opacity: 1; border-color: var(--accent); background: var(--accent-dim); }
+.aq-card .aq-option.selected .num { background: var(--accent); border-color: var(--accent); }
 .aq-card .aq-option.aq-other.selected { border-style: solid; background: transparent; }
 .aq-option.aq-other { border: 1px dashed var(--border-strong); background: transparent; color: var(--text-secondary); }
 .aq-other-box { display: none; gap: 6px; }
