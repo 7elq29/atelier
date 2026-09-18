@@ -285,7 +285,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
               ))}
             </ul>
           ) : (
-            <div className="dn-focus-empty">No priorities yet</div>
+            <div className="dn-focus-empty" />
           )}
       </div>
 

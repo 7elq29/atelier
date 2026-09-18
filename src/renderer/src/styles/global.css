@@ -4546,6 +4546,11 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   box-sizing: border-box;
   padding: 20px 24px 0;
 }
+/* Hide the native scrollbar track on the CodeMirror scroller — wheel/keyboard scrolling still works. */
+.daily-note-editor-panel .cm-scroller {
+  scrollbar-width: none;
+}
+.daily-note-editor-panel .cm-scroller::-webkit-scrollbar { display: none; }
 .daily-note-editor-panel .atomic-cm-editor .cm-content {
   max-width: var(--notes-editor-measure);
   margin-inline: 0;
