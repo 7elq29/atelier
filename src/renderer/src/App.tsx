@@ -236,6 +236,9 @@ export default function App(): JSX.Element {
   const appBookmarks = useAppBookmarks()
 
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const paletteSessionsOnlyRef = useRef(false)
+  const [renameSessionModalOpen, setRenameSessionModalOpen] = useState(false)
+  const [renameSessionDraft, setRenameSessionDraft] = useState('')
   const [splitOpenPickerOpen, setSplitOpenPickerOpen] = useState(false)
   const [bufferSwitcherOpen, setBufferSwitcherOpen] = useState(false)
   // Tracks when each buffer was last shown, keyed by the buffer-switcher item id.
@@ -1729,13 +1732,33 @@ const allSessions = useMemo(
         category: 'Action',
         run: () => void openLocalTerminal()
       },
-      ...(activeSessionId
+      {
+        id: 'list-sessions',
+        label: 'List Sessions',
+        category: 'Action',
+        run: () => {
+          setTimeout(() => {
+            paletteSessionsOnlyRef.current = true
+            setPaletteOpen(true)
+          }, 0)
+        }
+      },
+      ...(activeSession
         ? [
+            {
+              id: 'rename-session',
+              label: 'Rename Current Session',
+              category: 'Action',
+              run: () => {
+                setRenameSessionDraft(activeSession.name)
+                setRenameSessionModalOpen(true)
+              }
+            },
             {
               id: 'delete-session',
               label: 'Delete',
               category: 'Action',
-              run: () => handleDeleteSession(activeSessionId)
+              run: () => handleDeleteSession(activeSessionId!)
             }
           ]
         : []),
@@ -1773,12 +1796,14 @@ const allSessions = useMemo(
               : [])
           ]
         : []),
-      ...allSessions.map((session) => ({
-        id: `session-${session.id}`,
-        label: session.name,
-        category: 'Session',
-        run: () => void selectSession(session)
-      }))
+      ...allSessions
+        .filter((session) => !session.closedAt && session.mode !== 'terminal')
+        .map((session) => ({
+          id: `session-${session.id}`,
+          label: session.name,
+          category: 'Session',
+          run: () => void selectSession(session)
+        }))
     ],
     [
       config.theme,
@@ -3284,9 +3309,63 @@ const allSessions = useMemo(
 
       <CommandPalette
         isOpen={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        items={paletteItems}
+        onClose={() => { setPaletteOpen(false); paletteSessionsOnlyRef.current = false }}
+        items={paletteSessionsOnlyRef.current ? paletteItems.filter((i) => i.category === 'Session') : paletteItems}
+        placeholder={paletteSessionsOnlyRef.current ? 'Search sessions…' : undefined}
       />
+
+      {renameSessionModalOpen && activeSessionId && (
+        <div
+          className="modal-backdrop"
+          data-testid="rename-session-modal-backdrop"
+          onClick={(e) => { if (e.target === e.currentTarget) setRenameSessionModalOpen(false) }}
+        >
+          <div className="rename-session-dialog" data-testid="rename-session-modal">
+            <input
+              className="rename-session-input"
+              data-testid="rename-session-input"
+              type="text"
+              value={renameSessionDraft}
+              autoFocus
+              onChange={(e) => setRenameSessionDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && renameSessionDraft.trim()) {
+                  void sessions.renameSession(activeSessionId, renameSessionDraft.trim())
+                  setRenameSessionModalOpen(false)
+                } else if (e.key === 'Escape') {
+                  setRenameSessionModalOpen(false)
+                }
+              }}
+            />
+            <div className="rename-session-actions">
+              <button
+                type="button"
+                className="btn btn-icon"
+                title="Cancel (Esc)"
+                onClick={() => setRenameSessionModalOpen(false)}
+              >
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true">
+                  <path d="M1 1l9 9M10 1L1 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="btn btn-icon rename-session-confirm"
+                title="Rename (Enter)"
+                disabled={!renameSessionDraft.trim()}
+                onClick={() => {
+                  void sessions.renameSession(activeSessionId, renameSessionDraft.trim())
+                  setRenameSessionModalOpen(false)
+                }}
+              >
+                <svg width="13" height="10" viewBox="0 0 13 10" fill="none" aria-hidden="true">
+                  <path d="M1 5l4 4L12 1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SplitOpenPicker
         isOpen={splitOpenPickerOpen}

@@ -1012,6 +1012,39 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   font-size: 12.5px;
 }
 
+/* Rename session dialog — minimal inline-edit style */
+.rename-session-dialog {
+  background: var(--bg-panel);
+  border: 1px solid var(--elevation-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-popover);
+  width: min(340px, calc(100vw - 48px));
+  padding: 16px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* Frameless input — just the text directly on the panel surface */
+.rename-session-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-default);
+  outline: none;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  width: 100%;
+  padding: 2px 0 6px;
+  transition: border-color .12s;
+}
+.rename-session-input:focus { border-bottom-color: var(--accent); }
+.rename-session-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.rename-session-confirm:disabled { opacity: 0.3; pointer-events: none; }
+
 /* File quick open (split dir + search) */
 .fqo-dialog .fqo-head {
   display: flex;
@@ -2595,7 +2628,8 @@ input[type='range'] {
 .aq-option .num { width: 15px; height: 15px; border-radius: 50%; background: transparent; border: 1.5px solid var(--text-tertiary); font-size: 0; flex-shrink: 0; margin-top: 2px; }
 .aq-option .desc { color: var(--text-tertiary); font-size: 12.5px; line-height: 1.4; margin-top: 2px; }
 .aq-card.answered .aq-option { pointer-events: none; opacity: .45; }
-.aq-card .aq-option.selected { opacity: 1; border-color: var(--border-strong); background: var(--bg-tint); }
+.aq-card .aq-option.selected { opacity: 1; border-color: var(--accent); background: var(--accent-dim); }
+.aq-card .aq-option.selected .num { background: var(--accent); border-color: var(--accent); }
 .aq-card .aq-option.aq-other.selected { border-style: solid; background: transparent; }
 .aq-option.aq-other { border: 1px dashed var(--border-strong); background: transparent; color: var(--text-secondary); }
 .aq-other-box { display: none; gap: 6px; }

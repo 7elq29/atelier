@@ -11,6 +11,7 @@ interface CommandPaletteProps {
   isOpen: boolean
   onClose: () => void
   items: PaletteItem[]
+  placeholder?: string
 }
 
 /**
@@ -18,7 +19,7 @@ interface CommandPaletteProps {
  * as-you-type (command labels and session names). Arrow keys move selection,
  * Enter runs the selected item and closes, Escape closes without running.
  */
-export default function CommandPalette({ isOpen, onClose, items }: CommandPaletteProps): JSX.Element | null {
+export default function CommandPalette({ isOpen, onClose, items, placeholder }: CommandPaletteProps): JSX.Element | null {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -74,7 +75,7 @@ export default function CommandPalette({ isOpen, onClose, items }: CommandPalett
           <input
             ref={inputRef}
             data-testid="command-palette-input"
-            placeholder="Type a command or search…"
+            placeholder={placeholder ?? 'Type a command or search…'}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
