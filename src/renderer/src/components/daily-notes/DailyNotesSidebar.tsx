@@ -144,7 +144,7 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
         notification: {
           id,
           title: task.text.replace(/#\S+/g, '').trim(),
-          sub: date,
+          sub: task.timeBlock?.replace(/-.*/, '') ?? undefined,
           startsAtMs: startMs,
           autoMs: 30000,
         },
