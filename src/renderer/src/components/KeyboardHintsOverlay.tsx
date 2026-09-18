@@ -179,10 +179,12 @@ export default function KeyboardHintsOverlay({
 
       const partial = matchHintEntries(entriesRef.current, nextBuffer)
       if (partial.length === 0) {
+        // No hint starts with this char — reset buffer but don't consume the event
+        // so reserved shortcuts (e.g. ⌘L) can still be handled by their own listeners.
         bufferRef.current = ''
         setBuffer('')
         refreshBadges()
-        return true
+        return false
       }
 
       bufferRef.current = nextBuffer

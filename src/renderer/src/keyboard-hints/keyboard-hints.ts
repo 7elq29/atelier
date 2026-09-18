@@ -2,7 +2,7 @@
 export const HINT_CHARS = 'asdfghjklqwertyuiopzxcvbnm'
 
 /** Never assign these as chrome hint badges — reserved for ⌘+edit chords or ⌘+tab shortcuts. */
-export const RESERVED_HINT_LETTERS = new Set(['a', 'c', 'v', 'x', 'h', 'd', 'f', 't', 'p'])
+export const RESERVED_HINT_LETTERS = new Set(['a', 'c', 'v', 'x', 'h', 'd', 'f', 't', 'p', 'l'])
 
 const HINT_LABEL_CHARS = [...HINT_CHARS].filter((c) => !RESERVED_HINT_LETTERS.has(c)).join('')
 
