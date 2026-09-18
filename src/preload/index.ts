@@ -83,6 +83,10 @@ import type {
   SessionSdkChromeEvent,
   SessionToastEvent
 } from '../shared/harness-ui-types'
+import type {
+  NotificationPushEvent,
+  ScheduleNotificationPayload,
+} from '../shared/notification-types'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -654,7 +658,22 @@ const api = {
     const listener = (_e: unknown, id: string): void => callback(id)
     ipcRenderer.on('theme-editor:deleted', listener)
     return () => ipcRenderer.removeListener('theme-editor:deleted', listener)
-  }
+  },
+
+  /** Subscribe to in-app notifications pushed from the main process. */
+  onNotification: (callback: (event: NotificationPushEvent) => void): (() => void) => {
+    const listener = (_e: unknown, payload: NotificationPushEvent): void => callback(payload)
+    ipcRenderer.on('notification:push', listener)
+    return () => ipcRenderer.removeListener('notification:push', listener)
+  },
+
+  /** Schedule a notification to fire at a future timestamp (or immediately). Returns the notification id. */
+  scheduleNotification: (payload: ScheduleNotificationPayload): Promise<string> =>
+    ipcRenderer.invoke('notification:schedule', payload),
+
+  /** Cancel a pending scheduled notification by id. */
+  cancelNotification: (id: string): Promise<void> =>
+    ipcRenderer.invoke('notification:cancel', id),
 }
 
 contextBridge.exposeInMainWorld('atelier', api)

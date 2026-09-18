@@ -93,6 +93,8 @@ import type {
   CreateSessionBookmarkInput,
   SessionBookmark
 } from '../../shared/session-bookmarks'
+import NotificationStack from './components/NotificationStack'
+import { useNotifications } from './hooks/useNotifications'
 
 function filePathCandidatesForSession(ws: SessionWorkspacePayload | undefined): string[] {
   if (!ws) return []
@@ -234,6 +236,7 @@ export default function App(): JSX.Element {
   const sessionBookmarks = useSessionBookmarks()
   const appNotes = useAppNotes()
   const appBookmarks = useAppBookmarks()
+  const { notifications, dismiss: dismissNotification } = useNotifications()
 
   const [paletteOpen, setPaletteOpen] = useState(false)
   const paletteSessionsOnlyRef = useRef(false)
@@ -1756,14 +1759,35 @@ const allSessions = useMemo(
                 setRenameSessionModalOpen(true)
               }
             },
+          ]
+        : []),
+      ...(activeSessionId || activeAppNoteId
+        ? [
             {
-              id: 'delete-session',
-              label: 'Delete',
+              id: 'delete-current',
+              label: 'Delete Current',
               category: 'Action',
-              run: () => handleDeleteSession(activeSessionId!)
+              run: () => {
+                if (activeAppNoteId) requestDeleteAppNote(activeAppNoteId)
+                else if (activeSessionId) handleDeleteSession(activeSessionId)
+              }
             }
           ]
         : []),
+      ...allSessions
+        .filter((s) => s.mode === 'terminal')
+        .map((s) => ({
+          id: `delete-terminal-${s.id}`,
+          label: `Delete Terminal: ${s.name}`,
+          category: 'Delete',
+          run: () => handleDeleteSession(s.id)
+        })),
+      ...appNotes.notes.map((n) => ({
+        id: `delete-note-${n.id}`,
+        label: `Delete Note: ${n.title || 'Untitled note'}`,
+        category: 'Delete',
+        run: () => requestDeleteAppNote(n.id)
+      })),
       ...(activeWorkspacePath &&
       activeSession?.mode === 'claude-code' &&
       !claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)
@@ -1819,7 +1843,10 @@ const allSessions = useMemo(
       toggleDailyNotesPanel,
       createAppNote,
       openLocalTerminal,
-      handleDeleteSession
+      handleDeleteSession,
+      activeAppNoteId,
+      requestDeleteAppNote,
+      appNotes.notes
     ]
   )
 
@@ -3514,6 +3541,7 @@ const allSessions = useMemo(
           {appToast}
         </div>
       )}
+      <NotificationStack notifications={notifications} onDismiss={dismissNotification} />
     </div>
   )
 }
