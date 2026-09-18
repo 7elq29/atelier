@@ -33,8 +33,45 @@ import { readDailyNoteAttachmentDataUrl, saveDailyNotePastedImage } from './dail
 import { logger } from './logger'
 import { loadConfig } from './config'
 import { resolveDefaultDate } from './calendar-day'
+import type { NotificationScheduler } from './notification-scheduler'
 
 const WATCH_DEBOUNCE_MS = 300
+
+function parseTimeBlockStart(timeBlock: string): number | null {
+  const [start] = timeBlock.split(/[–-]/)
+  if (!start) return null
+  const [h, m] = start.split(':').map(Number)
+  if (isNaN(h!) || isNaN(m!)) return null
+  return (h ?? 0) * 60 + (m ?? 0)
+}
+
+function scheduleMeetingReminders(note: DailyNote, date: string, scheduler: NotificationScheduler): void {
+  const [year, month, day] = date.split('-').map(Number)
+  if (!year || !month || !day) return
+
+  for (const task of note.tasks) {
+    if (!task.isNote || !task.timeBlock) continue
+    const startMinutes = parseTimeBlockStart(task.timeBlock)
+    if (startMinutes === null) continue
+    const startMs = new Date(year, month - 1, day, 0, startMinutes).getTime()
+    const fireAtMs = startMs - 10 * 60 * 1000
+    const id = `meeting-reminder-${task.id}`
+    if (fireAtMs <= Date.now()) {
+      scheduler.cancel(id)
+      continue
+    }
+    scheduler.schedule({
+      notification: {
+        id,
+        title: task.text.replace(/#\S+/g, '').trim(),
+        sub: task.timeBlock.split(/[–-]/)[0],
+        startsAtMs: startMs,
+        autoMs: 30000,
+      },
+      fireAtMs,
+    })
+  }
+}
 
 /** How many days back to scan for the most recent existing prior note (UC-2 carry-over). */
 const CARRY_OVER_LOOKBACK_DAYS = 14
@@ -297,6 +334,8 @@ const watchRefCounts = new Map<string, number>()
 const dirWatchers = new Map<string, DirWatchState>()
 let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
+let _getScheduler: (() => NotificationScheduler | null) | null = null
+
 function notifyDailyNoteFileChanged(
   getMainWindow: () => BrowserWindow | null,
   path: string,
@@ -321,6 +360,8 @@ function notifyDailyNoteFileChanged(
         persistMintedGids(path, note, raw, mintedIds)
         recordKnownIds(path, getTaskIds(note))
         logger.info('daily-note watcher: reparsed after change', { path, taskCount: note.tasks.length })
+        const sched = _getScheduler?.()
+        if (sched) scheduleMeetingReminders(note, date, sched)
         notifyDailyNoteChanged(getMainWindow, note)
       } catch {
         // File may be mid-write; next fs event will retry.
@@ -542,7 +583,11 @@ async function readNotesSliceForDate(
   }
 }
 
-export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | null): void {
+export function registerDailyNoteHandlers(
+  getMainWindow: () => BrowserWindow | null,
+  getScheduler: () => NotificationScheduler | null
+): void {
+  _getScheduler = getScheduler
   const isTestMode = process.env.ATELIER_TEST_VAULT_ROOT !== undefined
 
   ipcMain.handle('daily-note:getVaultRoot', () => resolveVaultRoot())
@@ -571,6 +616,8 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
     persistMintedGids(path, note, raw, mintedIds)
     recordKnownIds(path, getTaskIds(note))
     logger.info('daily-note read', { path, taskCount: note.tasks.length })
+    const schedR = _getScheduler?.()
+    if (schedR) scheduleMeetingReminders(note, date, schedR)
     return { note, raw, exists: true }
   })
 
@@ -848,6 +895,8 @@ export function registerDailyNoteHandlers(getMainWindow: () => BrowserWindow | n
     for (const id of tombstoned) everKnown.delete(id)
     recordKnownIds(path, getTaskIds(toWrite))
     logger.info('daily-note write committed', { path, taskCount: toWrite.tasks.length })
+    const schedW = _getScheduler?.()
+    if (schedW) scheduleMeetingReminders(toWrite, date, schedW)
 
     return { note: toWrite }
   })

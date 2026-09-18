@@ -11,7 +11,6 @@ import CarrySuggestionItem from './CarrySuggestionItem'
 import DailyNoteTaskInput from './DailyNoteTaskInput'
 import { isDailyNoteBulletFromTags } from '../../../../shared/daily-note-tags'
 import { computeMoveDateOptions } from './move-date-options'
-import { parseTimeBlock } from './timeline-scale'
 
 export interface DailyNotesSidebarProps {
   date: string
@@ -117,47 +116,6 @@ export default function DailyNotesSidebar({ date, onClose, vaultRoot, onCreateSe
   useEffect(() => {
     if (vaultConfigured && note) void carry.refresh()
   }, [vaultConfigured, taskSignature, date])
-
-  // Schedule 10-min-before reminders for every meeting (isNote + timeBlock) on
-  // the viewed date. Re-runs whenever the task list or viewed date changes;
-  // NotificationScheduler deduplicates by id so rescheduling is idempotent.
-  useEffect(() => {
-    if (!note || !date) return
-    const meetings = note.tasks.filter((t) => t.isNote && t.timeBlock)
-    const scheduledIds: string[] = []
-
-    for (const task of meetings) {
-      const block = parseTimeBlock(task.timeBlock)
-      if (!block) continue
-
-      // Convert minutes-from-midnight → absolute ms for the viewed date.
-      const [year, month, day] = date.split('-').map(Number)
-      const startMs = new Date(year, month - 1, day, 0, block.start).getTime()
-      const fireAtMs = startMs - 10 * 60 * 1000
-
-      // Skip if the reminder is already in the past.
-      if (fireAtMs <= Date.now()) continue
-
-      const id = `meeting-reminder-${task.id}`
-      scheduledIds.push(id)
-      void window.atelier.scheduleNotification({
-        notification: {
-          id,
-          title: task.text.replace(/#\S+/g, '').trim(),
-          sub: task.timeBlock?.replace(/-.*/, '') ?? undefined,
-          startsAtMs: startMs,
-          autoMs: 30000,
-        },
-        fireAtMs,
-      })
-    }
-
-    return () => {
-      for (const id of scheduledIds) {
-        void window.atelier.cancelNotification(id)
-      }
-    }
-  }, [date, taskSignature])
 
   const showCarrySection = Boolean(carry.sourceDate && !carry.loading && carry.tasks.length > 0)
 

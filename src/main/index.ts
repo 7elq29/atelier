@@ -225,7 +225,7 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
     return true
   })
 
-  registerDailyNoteHandlers(() => mainWindow)
+  registerDailyNoteHandlers(() => mainWindow, () => notificationScheduler)
   registerWeeklyPlanHandlers()
   registerAppNotesHandlers()
   registerAppBookmarksHandlers()
