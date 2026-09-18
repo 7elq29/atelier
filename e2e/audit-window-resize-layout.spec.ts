@@ -451,7 +451,7 @@ test.describe('audit: pass-2 per-card assertions (isolated app)', () => {
       const cs = getComputedStyle(el)
       return { padding: cs.padding, fontSize: cs.fontSize }
     })
-    expect(trackerHeadStyle.padding).toBe('10px 12px 8px')
+    expect(trackerHeadStyle.padding).toBe('8px 12px 6px')
     const trackerBodyStyle = await page.locator('.tracker-rail .tracker-body').first().evaluate((el) => {
       const cs = getComputedStyle(el)
       return { padding: cs.padding }
