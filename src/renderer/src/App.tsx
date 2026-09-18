@@ -1701,16 +1701,33 @@ export default function App(): JSX.Element {
         category: 'Action',
         run: () => void openLocalTerminal()
       },
-      ...(activeSessionId
+      ...(activeSessionId || activeAppNoteId
         ? [
             {
-              id: 'delete-session',
-              label: 'Delete',
+              id: 'delete-current',
+              label: 'Delete Current',
               category: 'Action',
-              run: () => handleDeleteSession(activeSessionId)
+              run: () => {
+                if (activeAppNoteId) requestDeleteAppNote(activeAppNoteId)
+                else if (activeSessionId) handleDeleteSession(activeSessionId)
+              }
             }
           ]
         : []),
+      ...allSessions
+        .filter((s) => s.mode === 'terminal')
+        .map((s) => ({
+          id: `delete-terminal-${s.id}`,
+          label: `Delete Terminal: ${s.name}`,
+          category: 'Delete',
+          run: () => handleDeleteSession(s.id)
+        })),
+      ...appNotes.notes.map((n) => ({
+        id: `delete-note-${n.id}`,
+        label: `Delete Note: ${n.title || 'Untitled note'}`,
+        category: 'Delete',
+        run: () => requestDeleteAppNote(n.id)
+      })),
       ...(activeWorkspacePath &&
       activeSession?.mode === 'claude-code' &&
       !claudeCodeSessionDisconnected(activeSession, activeSessionId, sessions.statuses)
@@ -1764,7 +1781,10 @@ export default function App(): JSX.Element {
       toggleDailyNotesPanel,
       createAppNote,
       openLocalTerminal,
-      handleDeleteSession
+      handleDeleteSession,
+      activeAppNoteId,
+      requestDeleteAppNote,
+      appNotes.notes
     ]
   )
 
