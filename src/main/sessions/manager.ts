@@ -122,6 +122,15 @@ interface PendingPrompt {
 }
 
 /** In-memory bookkeeping for a session's live harness stream, keyed by our session id. */
+/** Full payload for one item in a per-session turn queue. */
+interface QueueEntry {
+  id: string
+  text: string
+  attachments?: FileAttachment[]
+  modelOverride?: ModelSelection
+  userMessageId: number | null
+}
+
 interface LiveStream {
   /** Assembled text for the assistant turn currently in progress (flushed on tool-call or result). */
   buffer: string
@@ -309,7 +318,7 @@ export class SessionManager {
    * for dispatch (text, attachments, model override). `inflightId` is the id
    * of the item currently dispatched to the harness — null when idle.
    */
-  private readonly turnQueues = new Map<string, { items: PendingQueuedMessage[]; inflightId: string | null }>()
+  private readonly turnQueues = new Map<string, { items: QueueEntry[]; inflightId: string | null }>()
 
   /** Debounced cap + workspace refresh after file edits / mutating git Bash — coalesces multi-tool turns. */
   private readonly capRefreshDebounce = new Map<string, ReturnType<typeof setTimeout>>()
@@ -1534,13 +1543,7 @@ export class SessionManager {
   // ── Send message into a live (or reconnected) session ──────────────
 
   /** Full message payload kept in the main-process turn queue (superset of the IPC-visible PendingQueuedMessage). */
-  private makeQueuedEntry(text: string, attachments?: FileAttachment[], modelOverride?: ModelSelection, userMessageId?: number): {
-    id: string
-    text: string
-    attachments?: FileAttachment[]
-    modelOverride?: ModelSelection
-    userMessageId: number | null
-  } {
+  private makeQueuedEntry(text: string, attachments?: FileAttachment[], modelOverride?: ModelSelection, userMessageId?: number): QueueEntry {
     return {
       id: randomUUID(),
       text,
@@ -1550,13 +1553,13 @@ export class SessionManager {
     }
   }
 
-  private getOrCreateTurnQueue(sessionId: string): { items: ReturnType<typeof this.makeQueuedEntry>[]; inflightId: string | null } {
+  private getOrCreateTurnQueue(sessionId: string): { items: QueueEntry[]; inflightId: string | null } {
     let q = this.turnQueues.get(sessionId)
     if (!q) {
       q = { items: [], inflightId: null }
       this.turnQueues.set(sessionId, q)
     }
-    return q as { items: ReturnType<typeof this.makeQueuedEntry>[]; inflightId: string | null }
+    return q as { items: QueueEntry[]; inflightId: string | null }
   }
 
   private sendQueueState(sessionId: string): void {
@@ -1611,7 +1614,7 @@ export class SessionManager {
    */
   private async dispatchTurnToHarness(
     sessionId: string,
-    item: ReturnType<typeof this.makeQueuedEntry>,
+    item: QueueEntry,
   ): Promise<void> {
     const session = this.store.getSession(sessionId)
     if (!session) return
