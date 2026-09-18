@@ -5,6 +5,7 @@ import DiffFullFileEditor from './DiffFullFileEditor'
 import { IconFile, IconFolder } from './tree-icons'
 import { registerEmacsMonacoKeybindings } from '../../editor/emacs-monaco-keybindings'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
+import InlineCommentActions from '../chat/InlineCommentActions'
 import { ensureAtelierMonacoThemes, monacoThemeId } from '../../editor/atelier-monaco-theme'
 import { detectLanguage } from '../../editor/monaco-language'
 import { expandTildePath, REMOTE_SESSION_HOME } from '../../../../shared/project-path-autocomplete'
@@ -1558,24 +1559,22 @@ const FilesPanel = forwardRef(function FilesPanel(
                         value={commentText}
                         onChange={(e) => setCommentText(e.target.value)}
                         onKeyDown={(e) => {
-                          handleEmacsTextareaKeyDown(e, commentText, setCommentText)
+                          if (handleEmacsTextareaKeyDown(e, commentText, setCommentText)) return
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            submitFileComment(commentingLine)
+                            return
+                          }
+                          if (e.key === 'Escape') { e.preventDefault(); setCommentingLine(null) }
                         }}
                         data-testid="files-comment-input"
                         autoFocus
                       />
-                      <div className="inline-comment-actions">
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          data-testid="files-comment-submit"
-                          onClick={() => submitFileComment(commentingLine)}
-                        >
-                          Add to next message
-                        </button>
-                        <button type="button" className="btn btn-sm" onClick={() => setCommentingLine(null)}>
-                          Cancel
-                        </button>
-                      </div>
+                      <InlineCommentActions
+                        onSubmit={() => submitFileComment(commentingLine)}
+                        onCancel={() => setCommentingLine(null)}
+                        submitTestId="files-comment-submit"
+                      />
                     </div>
                   )
                 })()}

@@ -4,6 +4,7 @@ import Linkify, { openExternalLink } from './Linkify'
 import DiffFullFileEditor from './DiffFullFileEditor'
 import { IconChevron, IconFile, IconFolder } from './tree-icons'
 import { handleEmacsTextareaKeyDown } from '../../palette-input-keys'
+import InlineCommentActions from '../chat/InlineCommentActions'
 import { buildDiffFileTree, type DiffTreeNode } from '../../utils/diffFileTree'
 
 type DiffSubTab = 'changes' | 'commits' | 'worktrees'
@@ -139,22 +140,22 @@ function DiffFileCard({
                       value={commentText}
                       onChange={(e) => onCommentTextChange(e.target.value)}
                       onKeyDown={(e) => {
-                        handleEmacsTextareaKeyDown(e, commentText, onCommentTextChange)
+                        if (handleEmacsTextareaKeyDown(e, commentText, onCommentTextChange)) return
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          onSubmitComment(activeFile.path, lineKey, line.content)
+                          return
+                        }
+                        if (e.key === 'Escape') { e.preventDefault(); onCancelComment() }
                       }}
                       data-testid="diff-comment-input"
+                      autoFocus
                     />
-                    <div className="inline-comment-actions">
-                      <button
-                        className="btn btn-primary btn-sm"
-                        data-testid="diff-comment-submit"
-                        onClick={() => onSubmitComment(activeFile.path, lineKey, line.content)}
-                      >
-                        Add to next message
-                      </button>
-                      <button className="btn btn-sm" onClick={onCancelComment}>
-                        Cancel
-                      </button>
-                    </div>
+                    <InlineCommentActions
+                      onSubmit={() => onSubmitComment(activeFile.path, lineKey, line.content)}
+                      onCancel={onCancelComment}
+                      submitTestId="diff-comment-submit"
+                    />
                   </div>
                 )}
               </div>
