@@ -79,6 +79,15 @@ import type { LocalCommandOutputContent, TranscriptNoticeContent } from '../../s
 import { completeLinkedDailyTask, linkDailyTaskToSession } from '../daily-note-session-link'
 import type { PortForwardManager } from '../panels/ports'
 
+/** Full payload stored per queued turn in the main-process queue (superset of the IPC-visible PendingQueuedMessage). */
+interface QueuedTurnEntry {
+  id: string
+  text: string
+  attachments?: FileAttachment[]
+  modelOverride?: ModelSelection
+  userMessageId: number | null
+}
+
 const AUTO_NAME_STARTING_FROM_TURN = 2
 const AUTO_NAME_MAX_WORDS = 3
 const AUTO_NAME_MAX_LEN = 25
@@ -309,7 +318,7 @@ export class SessionManager {
    * for dispatch (text, attachments, model override). `inflightId` is the id
    * of the item currently dispatched to the harness — null when idle.
    */
-  private readonly turnQueues = new Map<string, { items: PendingQueuedMessage[]; inflightId: string | null }>()
+  private readonly turnQueues = new Map<string, { items: QueuedTurnEntry[]; inflightId: string | null }>()
 
   /** Debounced cap + workspace refresh after file edits / mutating git Bash — coalesces multi-tool turns. */
   private readonly capRefreshDebounce = new Map<string, ReturnType<typeof setTimeout>>()
@@ -1534,13 +1543,7 @@ export class SessionManager {
   // ── Send message into a live (or reconnected) session ──────────────
 
   /** Full message payload kept in the main-process turn queue (superset of the IPC-visible PendingQueuedMessage). */
-  private makeQueuedEntry(text: string, attachments?: FileAttachment[], modelOverride?: ModelSelection, userMessageId?: number): {
-    id: string
-    text: string
-    attachments?: FileAttachment[]
-    modelOverride?: ModelSelection
-    userMessageId: number | null
-  } {
+  private makeQueuedEntry(text: string, attachments?: FileAttachment[], modelOverride?: ModelSelection, userMessageId?: number): QueuedTurnEntry {
     return {
       id: randomUUID(),
       text,
@@ -1550,13 +1553,13 @@ export class SessionManager {
     }
   }
 
-  private getOrCreateTurnQueue(sessionId: string): { items: ReturnType<typeof this.makeQueuedEntry>[]; inflightId: string | null } {
+  private getOrCreateTurnQueue(sessionId: string): { items: QueuedTurnEntry[]; inflightId: string | null } {
     let q = this.turnQueues.get(sessionId)
     if (!q) {
       q = { items: [], inflightId: null }
       this.turnQueues.set(sessionId, q)
     }
-    return q as { items: ReturnType<typeof this.makeQueuedEntry>[]; inflightId: string | null }
+    return q
   }
 
   private sendQueueState(sessionId: string): void {
@@ -1611,7 +1614,7 @@ export class SessionManager {
    */
   private async dispatchTurnToHarness(
     sessionId: string,
-    item: ReturnType<typeof this.makeQueuedEntry>,
+    item: QueuedTurnEntry,
   ): Promise<void> {
     const session = this.store.getSession(sessionId)
     if (!session) return
