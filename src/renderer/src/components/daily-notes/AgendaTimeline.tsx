@@ -608,7 +608,7 @@ export default function AgendaTimeline({
           <div className="dn-agenda-entry-wrap" key={task.id}>
             {showNowBefore && (
               <div className="dn-agenda-now" data-testid="agenda-current-time">
-                <span>Now</span>
+                <span>Now · {formatClock(nowMinutes)}</span>
                 <i />
               </div>
             )}
@@ -706,7 +706,7 @@ export default function AgendaTimeline({
 
       {!nowPlaced && entries.length > 0 && nowMinutes > entries[entries.length - 1]!.end && (
         <div className="dn-agenda-now dn-agenda-now--after" data-testid="agenda-current-time">
-          <span>Now</span>
+          <span>Now · {formatClock(nowMinutes)}</span>
           <i />
         </div>
       )}
