@@ -238,6 +238,8 @@ export default function App(): JSX.Element {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [splitOpenPickerOpen, setSplitOpenPickerOpen] = useState(false)
   const [bufferSwitcherOpen, setBufferSwitcherOpen] = useState(false)
+  // Tracks when each buffer was last shown, keyed by the buffer-switcher item id.
+  const bufferLastShownRef = useRef<Record<string, number>>({})
   const [fileQuickOpenOpen, setFileQuickOpenOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsInitialPane, setSettingsInitialPane] = useState<
@@ -824,6 +826,24 @@ export default function App(): JSX.Element {
     () => [...sessions.activeSessions, ...sessions.historySessions],
     [sessions.activeSessions, sessions.historySessions]
   )
+
+  // Record view time whenever the active buffer becomes the visible surface.
+  // Session view is active when no note surface is overlaid on top of it.
+  useEffect(() => {
+    if (!activeSessionId || activeDailyNoteDate || activeAppNoteId || activeWeeklyPlanOpen) return
+    const session = sessions.activeSessions.find((s) => s.id === activeSessionId)
+    const prefix = session?.mode === 'terminal' ? 'buf-terminal-' : 'buf-session-'
+    bufferLastShownRef.current[`${prefix}${activeSessionId}`] = Date.now()
+  }, [activeSessionId, activeDailyNoteDate, activeAppNoteId, activeWeeklyPlanOpen, sessions.activeSessions])
+  useEffect(() => {
+    if (activeAppNoteId) bufferLastShownRef.current[`buf-note-${activeAppNoteId}`] = Date.now()
+  }, [activeAppNoteId])
+  useEffect(() => {
+    if (activeDailyNoteDate) bufferLastShownRef.current['buf-daily-note'] = Date.now()
+  }, [activeDailyNoteDate])
+  useEffect(() => {
+    if (activeWeeklyPlanOpen) bufferLastShownRef.current['buf-weekly-plan'] = Date.now()
+  }, [activeWeeklyPlanOpen])
 
   // Tracks sessions that transitioned into waiting-input while not active and
   // have not yet been dismissed. This is the same signal as the orange corner
@@ -1886,14 +1906,21 @@ export default function App(): JSX.Element {
       _t: ''
     })
 
-    // Sort all items globally by most recently used, descending
-    entries.sort((a, b) => (b._t > a._t ? 1 : b._t < a._t ? -1 : 0))
+    // Sort by last shown time (tracked as the user navigates), falling back to
+    // the server-side timestamp for items not yet visited this session.
+    const shownAt = bufferLastShownRef.current
+    entries.sort((a, b) => {
+      const ta = shownAt[a.id] ?? (a._t ? new Date(a._t).getTime() : 0)
+      const tb = shownAt[b.id] ?? (b._t ? new Date(b._t).getTime() : 0)
+      return tb - ta
+    })
 
     return entries.map(({ _t: _, ...item }) => item)
   }, [
     sessions.activeSessions,
     appNotes.notes,
     weeklyPlanStatus,
+    bufferSwitcherOpen, // re-sort with fresh tracking data each time the switcher opens
     selectAppNote,
     selectDailyNote,
     onWeeklyPlanRowClick,

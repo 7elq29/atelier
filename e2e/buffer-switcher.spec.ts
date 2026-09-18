@@ -66,7 +66,7 @@ test.describe('buffer switcher (Ctrl+X B)', () => {
 
   test('Sessions category shows the current session', async () => {
     await openSwitcher(page)
-    await expect(page.getByTestId('buffer-switcher-category').filter({ hasText: 'Sessions' })).toBeVisible()
+    // Category headers are not shown (showCategoryHeaders=false) — verify the session item is present.
     await expect(page.getByTestId('buffer-switcher-item').filter({ hasText: 'Reply with exactly' })).toBeVisible()
     await page.keyboard.press('Escape')
   })
@@ -126,6 +126,28 @@ test.describe('buffer switcher (Ctrl+X B)', () => {
     await page.getByTestId('buffer-switcher-input').fill('Reply with exactly')
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('daily-note-editor')).toHaveCount(0)
+  })
+
+  test('items are ordered by last shown time', async () => {
+    // Navigate to daily note (records daily note as most recently shown)
+    await page.getByTestId('daily-note-row').click()
+    await expect(page.getByTestId('daily-note-editor')).toBeVisible({ timeout: 5_000 })
+
+    // Navigate to session (now session is most recently shown)
+    await openSwitcher(page)
+    await page.getByTestId('buffer-switcher-input').fill('Reply with exactly')
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('workspace-tool-rail')).toBeVisible()
+
+    // Open switcher — session should be first, daily note second
+    await openSwitcher(page)
+    const items = page.getByTestId('buffer-switcher-item')
+    const firstLabel = await items.nth(0).textContent()
+    const secondLabel = await items.nth(1).textContent()
+    await page.keyboard.press('Escape')
+
+    expect(firstLabel).toContain('Reply with exactly')
+    expect(secondLabel).toContain('Daily Note')
   })
 
   test('Ctrl+N/Ctrl+P navigate and keyboard selection stays visible while results scroll', async () => {
