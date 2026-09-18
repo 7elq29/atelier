@@ -655,14 +655,6 @@ export default function App(): JSX.Element {
           }
           return
         }
-        if (e.code === 'KeyL') {
-          const session = activeSessionRef.current
-          if (session && !activeAppNoteIdRef.current) {
-            e.preventDefault()
-            composerRefs.current.get(session.id)?.focus()
-          }
-          return
-        }
       }
       // Ctrl+X chords: O / 1 / 0 / K (bare second key, Emacs style)
       if (!e.ctrlKey && !e.metaKey && !e.altKey && fileQuickOpenChordAtRef.current != null) {
@@ -823,7 +815,7 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true })
   }, [])
 
-  const allSessions = useMemo(
+const allSessions = useMemo(
     () => [...sessions.activeSessions, ...sessions.historySessions],
     [sessions.activeSessions, sessions.historySessions]
   )
@@ -1500,7 +1492,12 @@ export default function App(): JSX.Element {
   )
 
   const handleSessionTabHintShortcut = useCallback(
-    (tab: SessionTab) => {
+    (tab: SessionTab | 'composer') => {
+      if (tab === 'composer') {
+        const session = activeSessionRef.current
+        if (session) composerRefs.current.get(session.id)?.focus()
+        return
+      }
       if (tab === 'chat') {
         selectTab(tab)
         return

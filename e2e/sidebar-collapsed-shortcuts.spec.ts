@@ -108,18 +108,25 @@ test.describe('sidebar collapsed shortcuts + session-ready toast', () => {
     expect(toastText).toMatch(/Session ready.*⌘\d+/)
   })
 
-  test('Ctrl+L focuses the composer input when a session is active', async () => {
-    // Ensure session is active (not a note view)
+  test('Cmd+L focuses the composer (quick press and after holding Meta)', async () => {
+    // Ensure session is active
     const sessionRows = page.getByTestId('session-row')
     await sessionRows.nth(0).click()
     await expect(sessionRows.nth(0)).toHaveAttribute('data-active', 'true')
 
-    // Click somewhere else to move focus away from the composer
-    await page.locator('.topbar').click()
-
-    // Ctrl+L should bring focus back to the composer
-    await page.keyboard.press('Control+l')
     const composer = page.getByTestId('composer-input').first()
+
+    // Quick press (Meta not held long — hint mode never activates)
+    await page.locator('.topbar').click()
+    await page.keyboard.press('Meta+l')
+    await expect(composer).toBeFocused()
+
+    // Hold Meta for 300ms (hint mode activates at 200ms), then press L
+    await page.locator('.topbar').click()
+    await page.keyboard.down('Meta')
+    await page.waitForTimeout(300)
+    await page.keyboard.press('l')
+    await page.keyboard.up('Meta')
     await expect(composer).toBeFocused()
   })
 })
