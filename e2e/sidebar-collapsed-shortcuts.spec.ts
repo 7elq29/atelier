@@ -107,4 +107,19 @@ test.describe('sidebar collapsed shortcuts + session-ready toast', () => {
     // Should contain the shortcut number (⌘1 since session 1 is first)
     expect(toastText).toMatch(/Session ready.*⌘\d+/)
   })
+
+  test('Ctrl+L focuses the composer input when a session is active', async () => {
+    // Ensure session is active (not a note view)
+    const sessionRows = page.getByTestId('session-row')
+    await sessionRows.nth(0).click()
+    await expect(sessionRows.nth(0)).toHaveAttribute('data-active', 'true')
+
+    // Click somewhere else to move focus away from the composer
+    await page.locator('.topbar').click()
+
+    // Ctrl+L should bring focus back to the composer
+    await page.keyboard.press('Control+l')
+    const composer = page.getByTestId('composer-input').first()
+    await expect(composer).toBeFocused()
+  })
 })

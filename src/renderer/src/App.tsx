@@ -652,6 +652,14 @@ export default function App(): JSX.Element {
           }
           return
         }
+        if (e.code === 'KeyL') {
+          const session = activeSessionRef.current
+          if (session && !activeAppNoteIdRef.current) {
+            e.preventDefault()
+            composerRefs.current.get(session.id)?.focus()
+          }
+          return
+        }
       }
       // Ctrl+X chords: O / 1 / 0 / K (bare second key, Emacs style)
       if (!e.ctrlKey && !e.metaKey && !e.altKey && fileQuickOpenChordAtRef.current != null) {
