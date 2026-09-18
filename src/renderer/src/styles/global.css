@@ -2483,6 +2483,8 @@ input[type='range'] {
 .tool-status.error { color: var(--danger); }
 .tool-chev { font-size: 10.5px; color: var(--text-tertiary); transition: transform .12s; }
 .tool-card.open .tool-chev { transform: rotate(90deg); }
+.tool-card.open .tool-head { align-items: flex-start; }
+.tool-card.open .tool-headline { white-space: pre-wrap; overflow: visible; text-overflow: clip; word-break: break-all; }
 .tool-body { display: none; }
 .tool-card.open .tool-body { display: block; }
 .tool-body pre,

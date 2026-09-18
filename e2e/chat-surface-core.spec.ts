@@ -215,6 +215,12 @@ test.describe('03-chat-surface-core', () => {
     expect(outputText?.trim().length ?? 0).toBeGreaterThan(0)
     expect(outputText).toContain('done')
 
+    // Expanded card shows the full command — headline must not be truncated.
+    const headlineWhiteSpace = await toolCard.locator('.tool-headline').evaluate(
+      (el) => getComputedStyle(el).whiteSpace
+    )
+    expect(headlineWhiteSpace).toBe('pre-wrap')
+
     // Progressive streaming proof: capture the assistant reply's DOM content
     // at two points ~300ms apart while it's still streaming in, and assert
     // they differ (token-level rendering, not a single final paint). The
