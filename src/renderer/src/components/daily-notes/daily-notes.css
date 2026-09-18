@@ -817,6 +817,19 @@
   font-size: 13.5px;
   line-height: 1.4;
 }
+/* Agenda: title + tags inline so they share a line when space allows */
+.dn-agenda-label .dn-task-text-clamp {
+  display: inline;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.dn-agenda-label .dn-task-text-tags {
+  display: inline;
+  margin-top: 0;
+  margin-left: 6px;
+}
 
 .dn-agenda-entry.done .dn-task-text-clamp {
   color: var(--text-tertiary);
@@ -1354,6 +1367,20 @@
   align-items: flex-start;
   gap: 9px;
   font-size: 13.5px;
+}
+/* In timeline blocks: title and tags flow inline so they share a line
+   when space allows; the block's overflow:hidden clips any excess. */
+.dn-tblock .dn-task-text-clamp {
+  display: inline;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.dn-tblock .dn-task-text-tags {
+  display: inline;
+  margin-top: 0;
+  margin-left: 6px;
 }
 .dn-tblock.done .dn-task-text-clamp {
   text-decoration: line-through;
