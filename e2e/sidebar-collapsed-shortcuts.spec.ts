@@ -117,8 +117,8 @@ test.describe('sidebar collapsed shortcuts + session-ready toast', () => {
     // Click somewhere else to move focus away from the composer
     await page.locator('.topbar').click()
 
-    // Ctrl+L should bring focus back to the composer
-    await page.keyboard.press('Control+l')
+    // Cmd+L should bring focus back to the composer
+    await page.keyboard.press('Meta+l')
     const composer = page.getByTestId('composer-input').first()
     await expect(composer).toBeFocused()
   })
