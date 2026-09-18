@@ -213,6 +213,9 @@ function modelSelectionForSession(
  * plus the Daily Notes / Obsidian-integration sidebar (09) docked to the
  * right of the main area.
  */
+/** Key codes that the keyboard-hints overlay must never consume as hint chars. */
+const CMD_L_CODES: ReadonlySet<string> = new Set(['KeyL'])
+
 export default function App(): JSX.Element {
   const [date, setDate] = useState<string | null>(null)
   const [todayNoteExists, setTodayNoteExists] = useState<boolean | null>(null)
@@ -3299,6 +3302,7 @@ export default function App(): JSX.Element {
         disabled={anyModalOpen}
         scanRootId="app"
         onSessionTabShortcut={handleSessionTabHintShortcut}
+        reservedMetaCodes={CMD_L_CODES}
       />
 
       <NewSessionModal

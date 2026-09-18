@@ -38,6 +38,9 @@ type Props = {
   scanRootId?: string
   /** ⌘+h/d/f/t/p while hints are active — reserved session tab shortcuts (not c/v/a). */
   onSessionTabShortcut?: (tab: SessionTabShortcut) => void
+  /** Key codes (e.g. 'KeyL') that must never be consumed as hint chars, even when hint mode
+   *  is active, so that global ⌘+key shortcuts can still be handled by their own listeners. */
+  reservedMetaCodes?: ReadonlySet<string>
 }
 
 /**
@@ -47,7 +50,8 @@ type Props = {
 export default function KeyboardHintsOverlay({
   disabled,
   scanRootId = 'app',
-  onSessionTabShortcut
+  onSessionTabShortcut,
+  reservedMetaCodes
 }: Props): JSX.Element | null {
   const [active, setActive] = useState(false)
   const [buffer, setBuffer] = useState('')
@@ -236,6 +240,9 @@ export default function KeyboardHintsOverlay({
       const isDigit = /^[0-9]$/.test(e.key)
       const hasNumberedRows = entriesRef.current.some((entry) => /^[0-9]/.test(entry.label))
       if (isDigit && !hasNumberedRows) return
+
+      // Don't consume keys that are globally reserved as ⌘+key shortcuts.
+      if (e.metaKey && reservedMetaCodes?.has(e.code)) return
 
       if (tryConsumeHintKey(e.key)) {
         e.preventDefault()
