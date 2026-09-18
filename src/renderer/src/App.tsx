@@ -1749,12 +1749,14 @@ export default function App(): JSX.Element {
               : [])
           ]
         : []),
-      ...allSessions.map((session) => ({
-        id: `session-${session.id}`,
-        label: session.name,
-        category: 'Session',
-        run: () => void selectSession(session)
-      }))
+      ...allSessions
+        .filter((session) => !session.closedAt && session.mode !== 'terminal')
+        .map((session) => ({
+          id: `session-${session.id}`,
+          label: session.name,
+          category: 'Session',
+          run: () => void selectSession(session)
+        }))
     ],
     [
       config.theme,
