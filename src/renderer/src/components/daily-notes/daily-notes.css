@@ -883,7 +883,7 @@
 
 .dn-agenda-now {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   column-gap: 7px;
   min-height: 15px;
