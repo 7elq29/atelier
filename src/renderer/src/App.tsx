@@ -236,7 +236,7 @@ export default function App(): JSX.Element {
   const appBookmarks = useAppBookmarks()
 
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [paletteSessionsOnly, setPaletteSessionsOnly] = useState(false)
+  const paletteSessionsOnlyRef = useRef(false)
   const [renameSessionModalOpen, setRenameSessionModalOpen] = useState(false)
   const [renameSessionDraft, setRenameSessionDraft] = useState('')
   const [splitOpenPickerOpen, setSplitOpenPickerOpen] = useState(false)
@@ -1696,10 +1696,8 @@ export default function App(): JSX.Element {
         label: 'List Sessions',
         category: 'Action',
         run: () => {
-          setTimeout(() => {
-            setPaletteSessionsOnly(true)
-            setPaletteOpen(true)
-          }, 0)
+          paletteSessionsOnlyRef.current = true
+          setTimeout(() => setPaletteOpen(true), 0)
         }
       },
       ...(activeSession
@@ -3212,9 +3210,9 @@ export default function App(): JSX.Element {
 
       <CommandPalette
         isOpen={paletteOpen}
-        onClose={() => { setPaletteOpen(false); setPaletteSessionsOnly(false) }}
-        items={paletteSessionsOnly ? paletteItems.filter((i) => i.category === 'Session') : paletteItems}
-        placeholder={paletteSessionsOnly ? 'Search sessions…' : undefined}
+        onClose={() => { setPaletteOpen(false); paletteSessionsOnlyRef.current = false }}
+        items={paletteSessionsOnlyRef.current ? paletteItems.filter((i) => i.category === 'Session') : paletteItems}
+        placeholder={paletteSessionsOnlyRef.current ? 'Search sessions…' : undefined}
       />
 
       {renameSessionModalOpen && activeSessionId && (
@@ -3224,52 +3222,37 @@ export default function App(): JSX.Element {
           onClick={(e) => { if (e.target === e.currentTarget) setRenameSessionModalOpen(false) }}
         >
           <div className="rename-session-dialog" data-testid="rename-session-modal">
-            <div className="rename-session-header">
-              <span className="rename-session-label">Rename Session</span>
+            <input
+              className="rename-session-input"
+              data-testid="rename-session-input"
+              type="text"
+              value={renameSessionDraft}
+              autoFocus
+              onChange={(e) => setRenameSessionDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && renameSessionDraft.trim()) {
+                  void sessions.renameSession(activeSessionId, renameSessionDraft.trim())
+                  setRenameSessionModalOpen(false)
+                } else if (e.key === 'Escape') {
+                  setRenameSessionModalOpen(false)
+                }
+              }}
+            />
+            <div className="rename-session-actions">
               <button
                 type="button"
                 className="btn btn-icon"
-                title="Cancel"
+                title="Cancel (Esc)"
                 onClick={() => setRenameSessionModalOpen(false)}
               >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </button>
-            </div>
-            <div className="rename-session-body">
-              <input
-                className="input"
-                data-testid="rename-session-input"
-                type="text"
-                value={renameSessionDraft}
-                autoFocus
-                onChange={(e) => setRenameSessionDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && renameSessionDraft.trim()) {
-                    void sessions.renameSession(activeSessionId, renameSessionDraft.trim())
-                    setRenameSessionModalOpen(false)
-                  } else if (e.key === 'Escape') {
-                    setRenameSessionModalOpen(false)
-                  }
-                }}
-              />
-            </div>
-            <div className="rename-session-footer">
-              <button
-                type="button"
-                className="btn btn-icon"
-                title="Cancel"
-                onClick={() => setRenameSessionModalOpen(false)}
-              >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true">
+                  <path d="M1 1l9 9M10 1L1 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
               </button>
               <button
                 type="button"
                 className="btn btn-icon rename-session-confirm"
-                title="Rename"
+                title="Rename (Enter)"
                 disabled={!renameSessionDraft.trim()}
                 onClick={() => {
                   void sessions.renameSession(activeSessionId, renameSessionDraft.trim())
