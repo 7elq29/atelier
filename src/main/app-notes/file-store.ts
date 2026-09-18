@@ -109,6 +109,7 @@ export class AppNoteFileStore {
       id: document.id || stablePathId(relative(this.noteRoot(), path)),
       title: basename(path, '.md'),
       content: document.content,
+      path,
       createdAt: stats.birthtime.toISOString(),
       updatedAt: stats.mtime.toISOString(),
       sortOrder: 0
