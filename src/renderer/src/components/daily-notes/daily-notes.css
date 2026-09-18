@@ -817,6 +817,18 @@
   font-size: 13.5px;
   line-height: 1.4;
 }
+.dn-agenda-label .dn-task-text-clamp {
+  display: inline;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.dn-agenda-label .dn-task-text-tags {
+  display: inline;
+  margin-top: 0;
+  margin-left: 6px;
+}
 
 .dn-agenda-entry.done .dn-task-text-clamp {
   color: var(--text-tertiary);
@@ -1358,6 +1370,18 @@
 .dn-tblock.done .dn-task-text-clamp {
   text-decoration: line-through;
   color: var(--text-tertiary);
+}
+.dn-tblock .dn-task-text-clamp {
+  display: inline;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+.dn-tblock .dn-task-text-tags {
+  display: inline;
+  margin-top: 0;
+  margin-left: 6px;
 }
 .dn-task-external-link {
   margin-left: 6px;
