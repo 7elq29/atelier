@@ -67,6 +67,8 @@ import {
   useAppPanelWidths
 } from './hooks/useAppPanelWidths'
 import type { DailyTask } from '../../shared/daily-note-types'
+import { useScheduledTasksForPill } from './hooks/useScheduledTasksForPill'
+import { TimelinePill } from './components/TimelinePill'
 import { buildComposerSendText, formatReviewComposerNote, parseReviewComposerNote } from '../../shared/review-pane-types'
 import type { ReviewComposerComment, ReviewPaneTarget } from '../../shared/review-pane-types'
 import type {
@@ -2353,6 +2355,7 @@ const allSessions = useMemo(
   const appBodyRef = useRef<HTMLDivElement>(null)
   const sidebarExpanded = !config.sidebarCollapsed
   const dailyNotesOpen = date !== null
+  const scheduledTasksForPill = useScheduledTasksForPill(date)
   const { sidebarWidth, dailyNotesWidth, resizing, startSidebarResize, startDailyNotesResize } =
     useAppPanelWidths(appBodyRef, { dailyNotesOpen, sidebarExpanded })
 
@@ -2834,32 +2837,41 @@ const allSessions = useMemo(
                 />
               </>
             )}
-            <button
-              type="button"
-              className={`topbar-timeline-toggle${dailyNotesOpen ? ' active' : ''}`}
-              title={todayNoteExists === false ? 'Create today\'s note' : 'Timeline'}
-              aria-label="Toggle timeline panel"
-              aria-pressed={dailyNotesOpen}
-              data-testid="toggle-daily-notes-panel"
-              onClick={() => void toggleDailyNotesPanel()}
-            >
-              {todayNoteExists === false ? (
-                <span className="topbar-timeline-dot" aria-hidden="true" />
-              ) : null}
-              <svg
-                className="icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
+            {dailyNotesOpen || scheduledTasksForPill.length === 0 ? (
+              /* Plain toggle: panel is open (shows active state) OR no scheduled tasks yet */
+              <button
+                type="button"
+                className={`topbar-timeline-toggle${dailyNotesOpen ? ' active' : ''}`}
+                title={todayNoteExists === false ? 'Create today\'s note' : 'Timeline'}
+                aria-label="Toggle timeline panel"
+                aria-pressed={dailyNotesOpen}
+                data-testid="toggle-daily-notes-panel"
+                onClick={() => void toggleDailyNotesPanel()}
               >
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-              </svg>
-            </button>
+                {todayNoteExists === false ? (
+                  <span className="topbar-timeline-dot" aria-hidden="true" />
+                ) : null}
+                <svg
+                  className="icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+              </button>
+            ) : (
+              /* Enriched pill: panel is hidden and there are scheduled tasks to show */
+              <TimelinePill
+                tasks={scheduledTasksForPill}
+                onClick={() => void toggleDailyNotesPanel()}
+              />
+            )}
           </div>
 
           <div className="workspace-shell">
