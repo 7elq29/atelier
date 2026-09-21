@@ -7,6 +7,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CustomTheme, CustomThemeColors } from '../../../shared/theme-types'
 import { TOKEN_GROUPS, TOKEN_CSS_VARS } from '../../../shared/theme-types'
+import KeyboardHintsOverlay from './KeyboardHintsOverlay'
+
+const THEME_EDITOR_ROOT_ID = 'theme-editor-root'
+const THEME_EDITOR_RESERVED = new Set(['KeyS'])
 
 function getBaseTokenValue(cssVar: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim() || '#000000'
@@ -104,11 +108,16 @@ export default function ThemeEditorWindow(): JSX.Element {
   }
 
   return (
-    <div style={{
+    <div id={THEME_EDITOR_ROOT_ID} style={{
       display: 'flex', flexDirection: 'column', height: '100vh',
       background: 'var(--bg-panel)', color: 'var(--text-primary)',
       fontFamily: 'var(--font-ui)', fontSize: 'var(--text-sm)'
     }}>
+      <KeyboardHintsOverlay
+        disabled={false}
+        scanRootId={THEME_EDITOR_ROOT_ID}
+        reservedMetaCodes={THEME_EDITOR_RESERVED}
+      />
       {/* Header */}
       <div style={{
         padding: '14px 20px', borderBottom: '1px solid var(--border-subtle)',
