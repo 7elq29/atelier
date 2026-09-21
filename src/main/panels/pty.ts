@@ -118,6 +118,8 @@ interface PtyEntry {
 export class PtyManager {
   private readonly ptys = new Map<string, PtyEntry>()
   private genCounter = 0
+  /** Tracks in-flight spawn promises so concurrent calls for the same id are deduplicated. */
+  private readonly spawnInFlight = new Map<string, Promise<void>>()
 
   constructor(private readonly getWindow: () => BrowserWindow | null) {}
 
@@ -166,6 +168,23 @@ export class PtyManager {
   }
 
   async spawn(id: string, opts: { cwd: string; hostname?: string | null; cols: number; rows: number }): Promise<void> {
+    // Deduplicate concurrent spawn calls for the same id. Without this guard
+    // two near-simultaneous IPC messages (e.g. from React StrictMode double-mount
+    // or a session open that triggers multiple renderer effects) both complete the
+    // full async SSH/tmux handshake independently, leaving two SSH connections
+    // attached to the same remote tmux pane and one immediately orphaned.
+    const existing = this.spawnInFlight.get(id)
+    if (existing) return existing
+
+    const promise = this._doSpawn(id, opts)
+    this.spawnInFlight.set(id, promise)
+    void promise.finally(() => {
+      if (this.spawnInFlight.get(id) === promise) this.spawnInFlight.delete(id)
+    })
+    return promise
+  }
+
+  private async _doSpawn(id: string, opts: { cwd: string; hostname?: string | null; cols: number; rows: number }): Promise<void> {
     this.kill(id)
     const t0 = Date.now()
     const elapsed = (): number => Date.now() - t0
