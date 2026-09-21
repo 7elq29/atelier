@@ -2679,57 +2679,7 @@ const allSessions = useMemo(
           <div className="sidebar-alert-chips" data-testid="sidebar-alert-chips">
             {collapsedSessionList ? (
               <>
-                {collapsedSessionList.blocked.map((session) => (
-                  <CollapsedAlertChip
-                    key={session.id}
-                    session={session}
-                    kind="blocked"
-                    cmdHeld
-                    onClick={() => {
-                      void updateConfig({ sidebarCollapsed: false })
-                      void selectSession(session)
-                    }}
-                  />
-                ))}
-                {collapsedSessionList.ready.map((session) => (
-                  <CollapsedAlertChip
-                    key={session.id}
-                    session={session}
-                    kind="ready"
-                    cmdHeld
-                    onClick={() => {
-                      clearWaitingInputAlert(session.id)
-                      void updateConfig({ sidebarCollapsed: false })
-                      void selectSession(session)
-                    }}
-                  />
-                ))}
-                {collapsedSessionList.working.map((session) => (
-                  <CollapsedSessionChip
-                    key={session.id}
-                    session={session}
-                    dotStatus="working"
-                    onClick={() => {
-                      void updateConfig({ sidebarCollapsed: false })
-                      void selectSession(session)
-                    }}
-                  />
-                ))}
-                {collapsedSessionList.other.map((session) => (
-                  <CollapsedSessionChip
-                    key={session.id}
-                    session={session}
-                    dotStatus="idle"
-                    onClick={() => {
-                      void updateConfig({ sidebarCollapsed: false })
-                      void selectSession(session)
-                    }}
-                  />
-                ))}
-              </>
-            ) : (
-              <>
-                {collapsedAlerts!.blocked.map((session) => {
+                {collapsedSessionList.blocked.map((session) => {
                   const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
                   const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
                   return (
@@ -2737,6 +2687,7 @@ const allSessions = useMemo(
                       key={session.id}
                       session={session}
                       kind="blocked"
+                      cmdHeld
                       shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
                       onClick={() => {
                         void updateConfig({ sidebarCollapsed: false })
@@ -2745,7 +2696,7 @@ const allSessions = useMemo(
                     />
                   )
                 })}
-                {collapsedAlerts!.ready.map((session) => {
+                {collapsedSessionList.ready.map((session) => {
                   const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
                   const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
                   return (
@@ -2753,6 +2704,7 @@ const allSessions = useMemo(
                       key={session.id}
                       session={session}
                       kind="ready"
+                      cmdHeld
                       shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
                       onClick={() => {
                         clearWaitingInputAlert(session.id)
@@ -2762,6 +2714,64 @@ const allSessions = useMemo(
                     />
                   )
                 })}
+                {collapsedSessionList.working.map((session) => {
+                  const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
+                  const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
+                  return (
+                    <CollapsedSessionChip
+                      key={session.id}
+                      session={session}
+                      dotStatus="working"
+                      shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
+                      onClick={() => {
+                        void updateConfig({ sidebarCollapsed: false })
+                        void selectSession(session)
+                      }}
+                    />
+                  )
+                })}
+                {collapsedSessionList.other.map((session) => {
+                  const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
+                  const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
+                  return (
+                    <CollapsedSessionChip
+                      key={session.id}
+                      session={session}
+                      dotStatus="idle"
+                      shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
+                      onClick={() => {
+                        void updateConfig({ sidebarCollapsed: false })
+                        void selectSession(session)
+                      }}
+                    />
+                  )
+                })}
+              </>
+            ) : (
+              <>
+                {collapsedAlerts!.blocked.map((session) => (
+                  <CollapsedAlertChip
+                    key={session.id}
+                    session={session}
+                    kind="blocked"
+                    onClick={() => {
+                      void updateConfig({ sidebarCollapsed: false })
+                      void selectSession(session)
+                    }}
+                  />
+                ))}
+                {collapsedAlerts!.ready.map((session) => (
+                  <CollapsedAlertChip
+                    key={session.id}
+                    session={session}
+                    kind="ready"
+                    onClick={() => {
+                      clearWaitingInputAlert(session.id)
+                      void updateConfig({ sidebarCollapsed: false })
+                      void selectSession(session)
+                    }}
+                  />
+                ))}
               </>
             )}
           </div>

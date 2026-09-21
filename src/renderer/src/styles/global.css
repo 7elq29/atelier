@@ -1753,6 +1753,9 @@ input[type='range'] {
 .chip-session-dot--working {
   animation: collapsed-chip-pulse 2.2s ease-in-out infinite;
 }
+.chip-shortcut-label--session {
+  color: var(--text-secondary);
+}
 
 /* ===== Session sidebar: New Session button / groups / row menu / history ===== */
 .new-session-btn {

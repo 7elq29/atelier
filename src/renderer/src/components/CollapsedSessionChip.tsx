@@ -9,10 +9,12 @@ interface CollapsedSessionChipProps {
   session: SessionRecord
   /** 'working' = agent is active, anything else = idle/disconnected */
   dotStatus: string
+  /** 1-based shortcut index shown as ⌘N label (replaces the dot when provided) */
+  shortcutNumber?: number
   onClick: () => void
 }
 
-export default function CollapsedSessionChip({ session, dotStatus, onClick }: CollapsedSessionChipProps): JSX.Element {
+export default function CollapsedSessionChip({ session, dotStatus, shortcutNumber, onClick }: CollapsedSessionChipProps): JSX.Element {
   const label = session.name || session.projectPath.split('/').filter(Boolean).pop() || 'Session'
   const isWorking = dotStatus === 'working'
   const dotColor = session.color ?? 'var(--text-tertiary)'
@@ -28,10 +30,14 @@ export default function CollapsedSessionChip({ session, dotStatus, onClick }: Co
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       data-testid={`collapsed-session-chip-${session.id}`}
     >
-      <span
-        className={`chip-session-dot${isWorking ? ' chip-session-dot--working' : ''}`}
-        style={{ background: dotColor }}
-      />
+      {shortcutNumber != null ? (
+        <span className="chip-shortcut-label chip-shortcut-label--session">⌘{shortcutNumber}</span>
+      ) : (
+        <span
+          className={`chip-session-dot${isWorking ? ' chip-session-dot--working' : ''}`}
+          style={{ background: dotColor }}
+        />
+      )}
       <span className="chip-name-label">{label}</span>
 
       <div className="chip-tooltip" role="tooltip">
