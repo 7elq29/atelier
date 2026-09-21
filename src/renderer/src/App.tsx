@@ -2676,7 +2676,7 @@ const allSessions = useMemo(
 
         {/* Left-edge chips: alert chips always, full session list when ⌘ held */}
         {config.sidebarCollapsed && (collapsedSessionList || collapsedAlerts) && (
-          <div className="sidebar-alert-chips" data-testid="sidebar-alert-chips">
+          <div className="sidebar-alert-chips" data-testid="sidebar-alert-chips" data-hint-exclude-root>
             {collapsedSessionList ? (
               <>
                 {collapsedSessionList.blocked.map((session) => {
