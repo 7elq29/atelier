@@ -76,6 +76,29 @@ export default function ThemeEditorWindow(): JSX.Element {
     window.atelier.themeEditorCancel()
   }
 
+  // Keyboard shortcuts for the popup window. Because this is a separate
+  // BrowserWindow from the main app, none of the main window's global
+  // shortcut listeners (App.tsx) receive events while this window has focus.
+  // We wire them locally so the popup isn't keyboard-dead.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      // Escape — cancel / close (mirrors the main window's modal-close behaviour)
+      if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault()
+        handleCancel()
+        return
+      }
+      // Cmd+S (Mac) / Ctrl+S (Win/Linux) — save
+      if (e.key === 's' && (e.metaKey || e.ctrlKey) && !e.altKey) {
+        e.preventDefault()
+        handleSave()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colors, name, base]) // re-register when save/cancel deps change
+
   if (loading) {
     return <div style={{ padding: 32, color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}>Loading…</div>
   }
