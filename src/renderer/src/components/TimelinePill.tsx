@@ -18,11 +18,11 @@ import { parseTimeBlock } from './daily-notes/timeline-scale'
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-/** Sparkline covers 6 am–9 pm (15 hours × 2 = 30 half-hour slots). */
-const PILL_START_MIN = 6 * 60   // 360
+/** Sparkline covers 8 am–9 pm (13 hours × 2 = 26 half-hour slots). */
+const PILL_START_MIN = 8 * 60   // 480
 const PILL_END_MIN   = 21 * 60  // 1260
 const SLOT_MIN       = 30
-const TOTAL_SLOTS    = (PILL_END_MIN - PILL_START_MIN) / SLOT_MIN // 30
+const TOTAL_SLOTS    = (PILL_END_MIN - PILL_START_MIN) / SLOT_MIN // 26
 
 const DONE_STATUSES = new Set(['done', 'cancelled', 'forwarded'])
 
@@ -75,28 +75,17 @@ export function TimelinePill({ tasks, onClick }: TimelinePillProps): React.JSX.E
     return null
   })
 
-  // ── Derive next upcoming task ──────────────────────────────────────────
-  const upcoming = tasks
+  // ── Derive next/current task ───────────────────────────────────────────
+  // Show the earliest task whose end time is still in the future — this
+  // includes tasks that are currently happening (started but not finished).
+  const nextTask = tasks
     .filter((t) => {
       if (DONE_STATUSES.has(t.status)) return false
       const tb = parseTimeBlock(t.timeBlock)
-      return tb !== null && tb.start > nowMinutes
+      return tb !== null && tb.end > nowMinutes
     })
-    .sort((a, b) => {
-      const sa = parseTimeBlock(a.timeBlock)!.start
-      const sb = parseTimeBlock(b.timeBlock)!.start
-      return sa - sb
-    })
-
-  const nextTask = upcoming[0] ?? null
-  const nextTb   = nextTask ? parseTimeBlock(nextTask.timeBlock) : null
-
-  // Remaining count = all tasks whose end time is still in the future and not done
-  const remainingCount = tasks.filter((t) => {
-    if (DONE_STATUSES.has(t.status)) return false
-    const tb = parseTimeBlock(t.timeBlock)
-    return tb !== null && tb.end > nowMinutes
-  }).length
+    .sort((a, b) => parseTimeBlock(a.timeBlock)!.start - parseTimeBlock(b.timeBlock)!.start)[0] ?? null
+  const nextTb = nextTask ? parseTimeBlock(nextTask.timeBlock) : null
 
   // ── Render ─────────────────────────────────────────────────────────────
   const nowSlot = Math.floor((nowMinutes - PILL_START_MIN) / SLOT_MIN)
@@ -174,12 +163,6 @@ export function TimelinePill({ tasks, onClick }: TimelinePillProps): React.JSX.E
         </>
       )}
 
-      {/* Remaining count */}
-      {remainingCount > 0 && (
-        <div className="topbar-pill-count" aria-label={`${remainingCount} tasks remaining`}>
-          +{remainingCount}
-        </div>
-      )}
     </button>
   )
 }

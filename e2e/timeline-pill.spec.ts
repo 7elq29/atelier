@@ -130,7 +130,7 @@ test.describe('timeline-pill', () => {
     await expect(sparkline).toBeVisible()
 
     const bars = sparkline.locator('.topbar-pill-spark-bar')
-    await expect(bars).toHaveCount(30)
+    await expect(bars).toHaveCount(26) // 8am–9pm = 13h × 2 slots
 
     // Collect computed background colors from all bars
     const colors = await page.evaluate(() => {
@@ -185,22 +185,15 @@ test.describe('timeline-pill', () => {
     await page.screenshot({ path: join(artifactsDir, 'pill-04-next-task.png') })
   })
 
-  // ── 5. Count badge ───────────────────────────────────────────────────
+  // ── 5. Count badge removed ───────────────────────────────────────────
 
-  test('count badge: +N shown for remaining tasks', async () => {
+  test('count badge: not rendered', async () => {
     await ensurePanelClosed(page)
     const pill = page.locator('[data-testid="toggle-daily-notes-panel"]')
     await expect(pill).toHaveClass(/topbar-pill/, { timeout: 8_000 })
 
-    // 23:00 Late task is always upcoming → badge should say at least "+1"
     const badge = pill.locator('.topbar-pill-count')
-    await expect(badge).toBeVisible({ timeout: 3_000 })
-
-    const text = await badge.textContent()
-    console.log(`[pill] count badge: "${text}"`)
-    expect(text).toMatch(/^\+\d+$/)
-
-    await page.screenshot({ path: join(artifactsDir, 'pill-05-count-badge.png') })
+    await expect(badge).toBeHidden()
   })
 
   // ── 6. Clicking pill opens the panel ─────────────────────────────────
