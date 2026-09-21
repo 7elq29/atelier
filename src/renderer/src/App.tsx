@@ -2749,29 +2749,39 @@ const allSessions = useMemo(
               </>
             ) : (
               <>
-                {collapsedAlerts!.blocked.map((session) => (
-                  <CollapsedAlertChip
-                    key={session.id}
-                    session={session}
-                    kind="blocked"
-                    onClick={() => {
-                      void updateConfig({ sidebarCollapsed: false })
-                      void selectSession(session)
-                    }}
-                  />
-                ))}
-                {collapsedAlerts!.ready.map((session) => (
-                  <CollapsedAlertChip
-                    key={session.id}
-                    session={session}
-                    kind="ready"
-                    onClick={() => {
-                      clearWaitingInputAlert(session.id)
-                      void updateConfig({ sidebarCollapsed: false })
-                      void selectSession(session)
-                    }}
-                  />
-                ))}
+                {collapsedAlerts!.blocked.map((session) => {
+                  const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
+                  const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
+                  return (
+                    <CollapsedAlertChip
+                      key={session.id}
+                      session={session}
+                      kind="blocked"
+                      shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
+                      onClick={() => {
+                        void updateConfig({ sidebarCollapsed: false })
+                        void selectSession(session)
+                      }}
+                    />
+                  )
+                })}
+                {collapsedAlerts!.ready.map((session) => {
+                  const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
+                  const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
+                  return (
+                    <CollapsedAlertChip
+                      key={session.id}
+                      session={session}
+                      kind="ready"
+                      shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
+                      onClick={() => {
+                        clearWaitingInputAlert(session.id)
+                        void updateConfig({ sidebarCollapsed: false })
+                        void selectSession(session)
+                      }}
+                    />
+                  )
+                })}
               </>
             )}
           </div>
