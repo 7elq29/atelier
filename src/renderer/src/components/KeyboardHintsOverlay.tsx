@@ -214,6 +214,11 @@ export default function KeyboardHintsOverlay({
     function onKeyDown(e: KeyboardEvent): void {
       if (e.key === 'Meta') {
         if (e.repeat || disabledRef.current) return
+        // Don't activate hint mode when a text input is focused — the user is
+        // typing and Cmd is for clipboard shortcuts (Cmd+C/V/A/X), not hints.
+        const active = document.activeElement
+        const tag = active?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || (active as HTMLElement | null)?.isContentEditable) return
         metaHeldRef.current = true
         if (entriesRef.current.length === 0) scheduleHintMode()
         return
