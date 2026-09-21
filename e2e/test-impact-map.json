@@ -9,6 +9,17 @@
   ],
   "rules": [
     {
+      "id": "theme-editor-popup-shortcuts",
+      "paths": [
+        "src/renderer/src/components/ThemeEditorWindow.tsx"
+      ],
+      "targets": [
+        {
+          "file": "e2e/theme-editor-popup-shortcuts.spec.ts"
+        }
+      ]
+    },
+    {
       "id": "timeline-pill",
       "paths": [
         "src/renderer/src/components/TimelinePill.tsx",
