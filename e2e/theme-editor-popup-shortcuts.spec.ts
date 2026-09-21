@@ -83,6 +83,12 @@ test.describe('theme-editor-popup-shortcuts', () => {
     const windowsBefore = app.windows().length
     const popup = await openThemeEditorPopup(app, page)
 
+    // Verify keyboard hint badges are shown on Cancel and Save buttons
+    await expect(popup.locator('button:has-text("Cancel") kbd')).toBeVisible()
+    await expect(popup.locator('button:has-text("Cancel") kbd')).toHaveText('Esc')
+    await expect(popup.locator('button:has-text("Save") kbd')).toBeVisible()
+    await expect(popup.locator('button:has-text("Save") kbd')).toHaveText('⌘S')
+
     await popup.screenshot({ path: join(artifactsDir, 'theme-popup-open.png') })
 
     expect(app.windows().length, 'popup opened').toBe(windowsBefore + 1)

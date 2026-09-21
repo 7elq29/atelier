@@ -477,6 +477,30 @@
   color: currentColor;
   letter-spacing: -.2px;
 }
+/* ── Theme editor popup keyboard hint badges ── */
+.theme-editor-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: .02em;
+  background: rgba(255,255,255,.08);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-default);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+.theme-editor-kbd--primary {
+  background: rgba(255,255,255,.12);
+  color: var(--accent-text-on);
+  border-color: rgba(255,255,255,.18);
+}
+
 /* ── Topbar timeline pill (shown when daily notes panel is hidden) ── */
 .topbar-pill {
   position: relative;

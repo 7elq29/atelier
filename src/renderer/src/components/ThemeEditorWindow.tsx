@@ -193,8 +193,14 @@ export default function ThemeEditorWindow(): JSX.Element {
         <div style={{ flex: 1 }}>
           {error && <div className="modal-error">{error}</div>}
         </div>
-        <button type="button" className="btn" onClick={handleCancel}>Cancel</button>
-        <button type="button" className="btn btn-primary" onClick={handleSave}>Save</button>
+        <button type="button" className="btn" onClick={handleCancel} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          Cancel
+          <kbd className="theme-editor-kbd">Esc</kbd>
+        </button>
+        <button type="button" className="btn btn-primary" onClick={handleSave} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          Save
+          <kbd className="theme-editor-kbd theme-editor-kbd--primary">⌘S</kbd>
+        </button>
       </div>
     </div>
   )
