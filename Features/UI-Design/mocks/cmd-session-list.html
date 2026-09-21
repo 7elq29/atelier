@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <title>⌘ Session List — Collapsed Sidebar — Atelier Mock</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      font-family: var(--font-ui);
+    }
+
+    .app-shell {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: var(--bg-app);
+    }
+
+    .app-content {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      user-select: none;
+    }
+
+    .app-content-label {
+      font-size: 13.5px;
+      font-style: italic;
+      color: var(--text-disabled);
+    }
+
+    .app-content-hint {
+      font-size: 12px;
+      color: var(--text-disabled);
+      opacity: 0.7;
+    }
+
+    .app-content-hint kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-family: var(--font-ui);
+      background: var(--bg-hover);
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      padding: 0 4px;
+      min-width: 18px;
+      height: 17px;
+      color: var(--text-secondary);
+    }
+
+    /* ─────────────────────────────────────────────────────────
+       CHIPS — left edge, flush against it, same pattern as alerts
+       ───────────────────────────────────────────────────────── */
+
+    .sidebar-chips {
+      position: fixed;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      z-index: 40;
+    }
+
+    .chip {
+      position: relative;
+      width: 32px;
+      height: 32px;
+      border-radius: 0 var(--r-md) var(--r-md) 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border: 1px solid transparent;
+      border-left: none;
+      box-shadow: 2px 2px 8px rgba(0,0,0,.38), 0 1px 3px rgba(0,0,0,.22);
+      transition:
+        width .13s ease,
+        background .1s,
+        opacity .18s ease,
+        transform .18s ease;
+    }
+
+    .chip:hover,
+    .chip:focus-visible {
+      width: 36px;
+      outline: none;
+    }
+
+    /* ── ⌘ held: expand all chips to show name inline ── */
+    .cmd-active .chip {
+      width: auto;
+      min-width: 32px;
+      justify-content: flex-start;
+      padding: 0 12px 0 10px;
+      gap: 7px;
+    }
+    /* Don't apply the 36px hover expansion in expanded state */
+    .cmd-active .chip:hover,
+    .cmd-active .chip:focus-visible {
+      width: auto;
+    }
+
+    /* Session name label — hidden by default, revealed on ⌘ */
+    .chip-label {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      max-width: 0;
+      opacity: 0;
+      transition: max-width .18s ease, opacity .15s ease;
+    }
+    .chip--approval .chip-label,
+    .chip--comeback .chip-label { color: var(--warning); }
+    .chip--idle     .chip-label { color: var(--text-tertiary); }
+
+    .cmd-active .chip-label {
+      max-width: 150px;
+      opacity: 1;
+    }
+    /* Match stagger for label fade-in */
+    .cmd-active .chip:nth-child(3) .chip-label { transition-delay: .03s; }
+    .cmd-active .chip:nth-child(4) .chip-label { transition-delay: .06s; }
+    .cmd-active .chip:nth-child(5) .chip-label { transition-delay: .09s; }
+
+    /* Hide tooltip name in cmd mode — already visible on chip */
+    .cmd-active .tt-name { display: none; }
+
+    /* ── Alert: needs approval ── */
+    .chip--approval {
+      background: color-mix(in srgb, var(--warning) 22%, var(--bg-panel-raised));
+      border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+    }
+    .chip--approval:hover {
+      background: color-mix(in srgb, var(--warning) 32%, var(--bg-panel-raised));
+    }
+
+    /* ── Alert: agent ready ── */
+    .chip--comeback {
+      background: color-mix(in srgb, var(--warning) 12%, var(--bg-panel-raised));
+      border-color: color-mix(in srgb, var(--warning) 28%, transparent);
+    }
+    .chip--comeback:hover {
+      background: color-mix(in srgb, var(--warning) 20%, var(--bg-panel-raised));
+    }
+
+    /* ── Active session: working (uses session color) ── */
+    .chip--working {
+      background: var(--bg-panel-raised);
+      border-color: var(--border-default);
+      /* Hidden by default — revealed on ⌘ */
+      opacity: 0;
+      transform: translateX(-6px);
+      pointer-events: none;
+    }
+    .chip--working:hover {
+      background: var(--bg-hover);
+    }
+
+    /* ── Active session: idle ── */
+    .chip--idle {
+      background: var(--bg-panel-raised);
+      border-color: var(--border-subtle);
+      opacity: 0;
+      transform: translateX(-6px);
+      pointer-events: none;
+    }
+    .chip--idle:hover {
+      background: var(--bg-hover);
+    }
+
+    /* ── ⌘ held: reveal all chips ── */
+    .cmd-active .chip--working,
+    .cmd-active .chip--idle {
+      opacity: 1;
+      transform: translateX(0);
+      pointer-events: all;
+    }
+
+    .cmd-active .chip--idle {
+      opacity: 0.62;
+    }
+    .cmd-active .chip--idle:hover {
+      opacity: 1;
+    }
+
+    /* Stagger entrance for non-alert chips */
+    .cmd-active .chip--working:nth-child(3) { transition-delay: .03s; }
+    .cmd-active .chip--working:nth-child(4) { transition-delay: .06s; }
+    .cmd-active .chip--idle:nth-child(5)    { transition-delay: .09s; }
+
+    /* ── Icons / dots inside chips ── */
+    .chip-icon {
+      width: 13px;
+      height: 13px;
+      color: var(--warning);
+      flex-shrink: 0;
+    }
+    .chip--approval .chip-icon {
+      animation: chip-pulse 2s ease-in-out infinite;
+    }
+
+    .chip-dot {
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .chip--comeback .chip-dot {
+      width: 7px; height: 7px;
+      background: var(--warning);
+      animation: chip-pulse 2.5s ease-in-out infinite;
+    }
+
+    /* Session dots — colored by session, scaled to context */
+    .dot--green  { background: var(--sc-green); }
+    .dot--purple { background: var(--sc-purple); }
+    .dot--blue   { background: var(--sc-blue); }
+    .dot--amber  { background: var(--sc-amber); }
+    .dot--rose   { background: var(--sc-rose); }
+    .dot--cyan   { background: var(--sc-cyan); }
+
+    .chip--working .chip-dot {
+      width: 7px; height: 7px;
+      animation: chip-pulse 2.2s ease-in-out infinite;
+    }
+    .chip--working:nth-child(4) .chip-dot {
+      animation-delay: .35s;
+    }
+
+    .chip--idle .chip-dot {
+      width: 6px; height: 6px;
+    }
+
+    @keyframes chip-pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .36; }
+    }
+
+    /* ── Tooltip ── */
+    .chip-tooltip {
+      pointer-events: none;
+      position: absolute;
+      left: calc(100% + 10px);
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--bg-panel-raised);
+      border: 1px solid var(--border-default);
+      border-radius: var(--r-md);
+      box-shadow: var(--shadow-popover);
+      padding: 9px 13px;
+      min-width: 162px;
+      white-space: nowrap;
+      z-index: 50;
+      opacity: 0;
+      transition: opacity .12s;
+    }
+    .chip:hover .chip-tooltip,
+    .chip:focus-visible .chip-tooltip { opacity: 1; }
+
+    /* Arrow */
+    .chip-tooltip::before {
+      content: '';
+      position: absolute;
+      right: 100%; top: 50%; transform: translateY(-50%);
+      border: 5px solid transparent;
+      border-right-color: var(--border-default);
+    }
+    .chip-tooltip::after {
+      content: '';
+      position: absolute;
+      right: calc(100% - 1px); top: 50%; transform: translateY(-50%);
+      border: 5px solid transparent;
+      border-right-color: var(--bg-panel-raised);
+    }
+
+    .tt-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 3px;
+    }
+
+    .tt-status {
+      font-size: 11.5px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .tt-status.warning { color: var(--warning); }
+    .tt-status.working { color: var(--text-secondary); }
+    .tt-status.idle    { color: var(--text-disabled); }
+
+    .tt-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .tt-hint {
+      font-size: 10.5px;
+      color: var(--text-disabled);
+      margin-top: 5px;
+    }
+    .tt-hint kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-family: var(--font-ui);
+      background: var(--bg-hover);
+      border: 1px solid var(--border-default);
+      border-radius: 3px;
+      padding: 0 3px;
+      min-width: 14px;
+      height: 14px;
+      color: var(--text-tertiary);
+    }
+
+    /* ─────────────────────────────────────────────────────────
+       CMD STATUS PILL — subtle label when ⌘ is held
+       ───────────────────────────────────────────────────────── */
+    .cmd-pill {
+      position: fixed;
+      bottom: 64px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-panel-raised);
+      border: 1px solid var(--border-default);
+      border-radius: var(--r-xl);
+      padding: 3px 10px;
+      font-size: 11.5px;
+      color: var(--text-tertiary);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      opacity: 0;
+      transition: opacity .15s;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .cmd-active .cmd-pill { opacity: 1; }
+    .cmd-pill kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-family: var(--font-ui);
+      background: var(--bg-hover);
+      border: 1px solid var(--border-strong);
+      border-radius: 3px;
+      padding: 0 4px;
+      min-width: 16px;
+      height: 15px;
+      color: var(--text-secondary);
+    }
+
+    /* ─────────────────────────────────────────────────────────
+       MOCK CONTROLS
+       ───────────────────────────────────────────────────────── */
+    .mock-controls {
+      position: fixed;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      background: var(--bg-panel-raised);
+      border: 1px solid var(--border-default);
+      border-radius: var(--r-xl);
+      padding: 5px 12px;
+      box-shadow: var(--shadow-popover);
+      z-index: 200;
+    }
+    .mock-controls .sep {
+      font-size: 11.5px;
+      color: var(--text-disabled);
+      padding: 0 2px;
+    }
+    .mock-controls .label {
+      font-size: 11.5px;
+      color: var(--text-tertiary);
+    }
+    .mock-controls .btn-sm.active { border-color: var(--accent); color: var(--accent); }
+
+    /* ⌘ key button — styled to look like a keyboard key */
+    .cmd-key-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--font-ui);
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1.5px solid var(--border-strong);
+      background: var(--bg-panel);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background .08s, transform .06s, border-color .08s;
+      user-select: none;
+      box-shadow: 0 2px 0 rgba(0,0,0,.35);
+      line-height: 1;
+    }
+    .cmd-key-btn:active,
+    .cmd-key-btn.pressed {
+      background: var(--bg-hover);
+      border-color: var(--accent);
+      color: var(--text-primary);
+      transform: translateY(1px);
+      box-shadow: 0 1px 0 rgba(0,0,0,.35);
+    }
+  </style>
+</head>
+<body>
+<div class="app-shell" id="shell">
+
+  <!-- Simulated app content area -->
+  <div class="app-content">
+    <span class="app-content-label" id="contentLabel">Sidebar collapsed · full width</span>
+    <span class="app-content-hint" id="hintLabel">
+      Hold <kbd>⌘</kbd> to see all active sessions
+    </span>
+  </div>
+
+  <!-- Session chips — always mounted, visibility controlled by state -->
+  <div class="sidebar-chips" id="chips">
+
+    <!-- 1: theme-refactor — needs approval (alert, always visible) -->
+    <div class="chip chip--approval" tabindex="0">
+      <svg class="chip-icon" viewBox="0 0 16 16" fill="none"
+        stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="8" r="6.2"/>
+        <line x1="8" y1="5.4" x2="8" y2="8.6"/>
+        <circle cx="8" cy="10.6" r="0.55" fill="currentColor" stroke="none"/>
+      </svg>
+      <span class="chip-label">theme-refactor</span>
+      <div class="chip-tooltip">
+        <div class="tt-name">theme-refactor</div>
+        <div class="tt-status warning">
+          <span class="tt-dot" style="background:var(--warning)"></span>
+          Needs approval
+        </div>
+        <div class="tt-hint">Click to open</div>
+      </div>
+    </div>
+
+    <!-- 2: multi-image — agent ready (alert, always visible) -->
+    <div class="chip chip--comeback" tabindex="0">
+      <span class="chip-dot"></span>
+      <span class="chip-label">multi-image</span>
+      <div class="chip-tooltip">
+        <div class="tt-name">multi-image</div>
+        <div class="tt-status warning">
+          <span class="tt-dot" style="background:var(--warning)"></span>
+          Agent ready
+        </div>
+        <div class="tt-hint">Click to open</div>
+      </div>
+    </div>
+
+    <!-- 3: data-pipeline — working (visible on ⌘) -->
+    <div class="chip chip--working" tabindex="0">
+      <span class="chip-dot dot--green"></span>
+      <span class="chip-label">data-pipeline</span>
+      <div class="chip-tooltip">
+        <div class="tt-name">data-pipeline</div>
+        <div class="tt-status working">
+          <span class="tt-dot" style="background:var(--sc-green)"></span>
+          Working…
+        </div>
+        <div class="tt-hint">Click to open · <kbd>⌘</kbd> to hide</div>
+      </div>
+    </div>
+
+    <!-- 4: deploy-check — working (visible on ⌘) -->
+    <div class="chip chip--working" tabindex="0">
+      <span class="chip-dot dot--purple"></span>
+      <span class="chip-label">deploy-check</span>
+      <div class="chip-tooltip">
+        <div class="tt-name">deploy-check</div>
+        <div class="tt-status working">
+          <span class="tt-dot" style="background:var(--sc-purple)"></span>
+          Working…
+        </div>
+        <div class="tt-hint">Click to open · <kbd>⌘</kbd> to hide</div>
+      </div>
+    </div>
+
+    <!-- 5: api-tests — idle (visible on ⌘) -->
+    <div class="chip chip--idle" tabindex="0">
+      <span class="chip-dot dot--rose"></span>
+      <span class="chip-label">api-tests</span>
+      <div class="chip-tooltip">
+        <div class="tt-name">api-tests</div>
+        <div class="tt-status idle">
+          <span class="tt-dot" style="background:var(--sc-rose)"></span>
+          Idle
+        </div>
+        <div class="tt-hint">Click to open · <kbd>⌘</kbd> to hide</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Status pill shown while ⌘ is held -->
+  <div class="cmd-pill">
+    <kbd>⌘</kbd> active sessions
+  </div>
+
+</div>
+
+<!-- Controls -->
+<div class="mock-controls">
+  <span class="label">Try it:</span>
+  <button class="cmd-key-btn" id="cmdKeyBtn"
+    onmousedown="pressCmd()" onmouseup="releaseCmd()" onmouseleave="releaseCmd()">
+    ⌘ hold
+  </button>
+  <span class="sep">|</span>
+  <span class="label">Alerts:</span>
+  <button class="btn btn-sm active" id="ctrl-2" onclick="setAlerts(2)">2</button>
+  <button class="btn btn-sm" id="ctrl-1" onclick="setAlerts(1)">1</button>
+  <button class="btn btn-sm" id="ctrl-0" onclick="setAlerts(0)">0</button>
+  <span class="sep">|</span>
+  <button class="btn btn-sm" onclick="toggleTheme()">Light / Dark</button>
+</div>
+
+<script>
+  const shell   = document.getElementById('shell');
+  const chip1   = document.querySelector('.chip--approval');
+  const chip2   = document.querySelector('.chip--comeback');
+  const cmdBtn  = document.getElementById('cmdKeyBtn');
+  const content = document.getElementById('contentLabel');
+  const hint    = document.getElementById('hintLabel');
+
+  let cmdHeld = false;
+  let alertCount = 2;
+
+  // ── Cmd key state ──────────────────────────────────────────
+
+  function activate() {
+    if (cmdHeld) return;
+    cmdHeld = true;
+    shell.classList.add('cmd-active');
+    content.textContent = 'Sidebar collapsed · ⌘ held';
+    hint.innerHTML = 'Release <kbd>⌘</kbd> to hide session list';
+  }
+
+  function deactivate() {
+    if (!cmdHeld) return;
+    cmdHeld = false;
+    shell.classList.remove('cmd-active');
+    content.textContent = 'Sidebar collapsed · full width';
+    hint.innerHTML = 'Hold <kbd>⌘</kbd> to see all active sessions';
+    cmdBtn.classList.remove('pressed');
+  }
+
+  function pressCmd()   { activate();   cmdBtn.classList.add('pressed'); }
+  function releaseCmd() { deactivate(); cmdBtn.classList.remove('pressed'); }
+
+  // Real keyboard support
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Meta' || e.key === 'Control') activate();
+  });
+  document.addEventListener('keyup', e => {
+    if (e.key === 'Meta' || e.key === 'Control') deactivate();
+  });
+
+  // ── Alert count control ────────────────────────────────────
+
+  function setAlerts(n) {
+    alertCount = n;
+    chip1.style.display = n >= 1 ? '' : 'none';
+    chip2.style.display = n >= 2 ? '' : 'none';
+
+    // Hide the whole chip group if 0 alerts and cmd not held
+    const chips = document.getElementById('chips');
+    chips.style.display = (n === 0 && !cmdHeld) ? 'none' : '';
+
+    ['ctrl-0','ctrl-1','ctrl-2'].forEach(id =>
+      document.getElementById(id).classList.remove('active'));
+    document.getElementById('ctrl-' + n).classList.add('active');
+  }
+
+  // ── Theme toggle ───────────────────────────────────────────
+
+  let dark = true;
+  function toggleTheme() {
+    dark = !dark;
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  }
+</script>
+</body>
+</html>

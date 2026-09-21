@@ -1973,6 +1973,20 @@
           "file": "e2e/daily-panel-unified-redesign.spec.ts"
         }
       ]
+    },
+    {
+      "id": "cmd-session-list",
+      "paths": [
+        "src/renderer/src/components/CollapsedAlertChip.tsx",
+        "src/renderer/src/components/CollapsedSessionChip.tsx",
+        "src/renderer/src/styles/global.css"
+      ],
+      "changedLines": "cmd-held|chip-name-label|CollapsedSessionChip|cmdHeld|collapsedSessionList|collapsed-alert-chip--session|chip-session-dot",
+      "targets": [
+        {
+          "file": "e2e/cmd-session-list.spec.ts"
+        }
+      ]
     }
   ]
 }

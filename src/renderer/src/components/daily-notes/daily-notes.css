@@ -548,6 +548,10 @@
 .dn-task-chip-text {
   flex: 1;
   min-width: 0;
+  padding-right: 30px;
+}
+.dn-task-chip:not(.has-menu-button) .dn-task-chip-text {
+  padding-right: 0;
 }
 
 .dn-tb-label {
@@ -583,11 +587,11 @@
 }
 
 .dn-task-tag-add {
-  opacity: 0;
+  display: none;
   font-size: 12px;
 }
 .dn-task-chip:hover .dn-task-tag-add {
-  opacity: 1;
+  display: flex;
 }
 
 .dn-tag-picker {
@@ -1619,7 +1623,6 @@
   min-height: 22px;
   padding: 2px 5px;
   white-space: nowrap;
-  opacity: 0;
 }
 
 .dn-task-more {
@@ -1643,13 +1646,13 @@
   height: 22px;
   min-height: 22px;
   padding: 0;
-  opacity: 0;
+  display: none;
 }
 .dn-task-chip:hover .dn-task-chip-remove,
 .dn-task-chip:hover .dn-task-tag-add,
-.dn-task-chip .dn-task-chip-remove:focus-visible,
-.dn-task-chip .dn-task-tag-add:focus-visible {
-  opacity: 1;
+.dn-task-chip:focus-within .dn-task-chip-remove,
+.dn-task-chip:focus-within .dn-task-tag-add {
+  display: flex;
 }
 
 /* ---- Carry-over (prior daily note todos) ---- */

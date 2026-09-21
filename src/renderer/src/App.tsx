@@ -57,6 +57,7 @@ import { useSessionWorkspace } from './hooks/useSessionWorkspace'
 import { useSessionBookmarks } from './hooks/useSessionBookmarks'
 import { useSessionPromptDotsMap } from './hooks/useSessionMessages'
 import CollapsedAlertChip from './components/CollapsedAlertChip'
+import CollapsedSessionChip from './components/CollapsedSessionChip'
 import { sessionLiveWaitingForInput, sessionDotStatus } from './components/Sidebar'
 import { truncateContextPath } from './utils/truncateContextPath'
 import { sessionWorkspaceLabel } from './utils/sessionWorkspaceLabel'
@@ -902,6 +903,23 @@ const allSessions = useMemo(
     })
   }, [])
 
+  // True while the ⌘ key is physically held down — used to show the full
+  // session list on the collapsed left edge.
+  const [cmdHeld, setCmdHeld] = useState(false)
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => { if (e.key === 'Meta' && !e.repeat) setCmdHeld(true) }
+    const onUp   = (e: KeyboardEvent) => { if (e.key === 'Meta') setCmdHeld(false) }
+    const onBlur = () => setCmdHeld(false)
+    window.addEventListener('keydown', onDown)
+    window.addEventListener('keyup',   onUp)
+    window.addEventListener('blur',    onBlur)
+    return () => {
+      window.removeEventListener('keydown', onDown)
+      window.removeEventListener('keyup',   onUp)
+      window.removeEventListener('blur',    onBlur)
+    }
+  }, [])
+
 /**
    * Sessions that need the user's attention while the sidebar is fully hidden.
    * 'blocked' = waiting for permission / approval / plan confirm.
@@ -926,6 +944,25 @@ const allSessions = useMemo(
     }
     return blocked.length + ready.length > 0 ? { blocked, ready } : null
   }, [config.sidebarCollapsed, allSessions, activeSessionId, promptDotsBySession, waitingInputAlertIds])
+
+  // All active sessions bucketed by urgency, shown when ⌘ is held while the
+  // sidebar is collapsed. Ordered: blocked → ready → working → idle/other.
+  const collapsedSessionList = useMemo(() => {
+    if (!config.sidebarCollapsed || !cmdHeld) return null
+    const blocked: SessionRecord[] = [], ready: SessionRecord[] = []
+    const working: SessionRecord[] = [], other: SessionRecord[] = []
+    for (const s of sessions.activeSessions) {
+      if (s.deletedAt || s.id === activeSessionId) continue
+      const dot = sessionDotStatus(s, false, sessions.statuses, sessions.staleSessionIds, promptDotsBySession[s.id] ?? null)
+      if (dot === 'waiting-blocked') blocked.push(s)
+      else if (waitingInputAlertIds.has(s.id)) ready.push(s)
+      else if (dot === 'working') working.push(s)
+      else other.push(s)
+    }
+    const total = blocked.length + ready.length + working.length + other.length
+    return total > 0 ? { blocked, ready, working, other } : null
+  }, [config.sidebarCollapsed, cmdHeld, sessions.activeSessions, sessions.statuses,
+      sessions.staleSessionIds, activeSessionId, promptDotsBySession, waitingInputAlertIds])
 
   const runningSessionCount = useMemo(() => {
     if (!config.sidebarCollapsed) return 0
@@ -2637,42 +2674,96 @@ const allSessions = useMemo(
           />
         ) : null}
 
-        {/* Alert chips — float on the left edge when sidebar is hidden */}
-        {collapsedAlerts && (
+        {/* Left-edge chips: alert chips always, full session list when ⌘ held */}
+        {config.sidebarCollapsed && (collapsedSessionList || collapsedAlerts) && (
           <div className="sidebar-alert-chips" data-testid="sidebar-alert-chips">
-            {collapsedAlerts.blocked.map((session) => {
-              const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
-              const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
-              return (
-                <CollapsedAlertChip
-                  key={session.id}
-                  session={session}
-                  kind="blocked"
-                  shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
-                  onClick={() => {
-                    void updateConfig({ sidebarCollapsed: false })
-                    void selectSession(session)
-                  }}
-                />
-              )
-            })}
-            {collapsedAlerts.ready.map((session) => {
-              const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
-              const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
-              return (
-                <CollapsedAlertChip
-                  key={session.id}
-                  session={session}
-                  kind="ready"
-                  shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
-                  onClick={() => {
-                    clearWaitingInputAlert(session.id)
-                    void updateConfig({ sidebarCollapsed: false })
-                    void selectSession(session)
-                  }}
-                />
-              )
-            })}
+            {collapsedSessionList ? (
+              <>
+                {collapsedSessionList.blocked.map((session) => (
+                  <CollapsedAlertChip
+                    key={session.id}
+                    session={session}
+                    kind="blocked"
+                    cmdHeld
+                    onClick={() => {
+                      void updateConfig({ sidebarCollapsed: false })
+                      void selectSession(session)
+                    }}
+                  />
+                ))}
+                {collapsedSessionList.ready.map((session) => (
+                  <CollapsedAlertChip
+                    key={session.id}
+                    session={session}
+                    kind="ready"
+                    cmdHeld
+                    onClick={() => {
+                      clearWaitingInputAlert(session.id)
+                      void updateConfig({ sidebarCollapsed: false })
+                      void selectSession(session)
+                    }}
+                  />
+                ))}
+                {collapsedSessionList.working.map((session) => (
+                  <CollapsedSessionChip
+                    key={session.id}
+                    session={session}
+                    dotStatus="working"
+                    onClick={() => {
+                      void updateConfig({ sidebarCollapsed: false })
+                      void selectSession(session)
+                    }}
+                  />
+                ))}
+                {collapsedSessionList.other.map((session) => (
+                  <CollapsedSessionChip
+                    key={session.id}
+                    session={session}
+                    dotStatus="idle"
+                    onClick={() => {
+                      void updateConfig({ sidebarCollapsed: false })
+                      void selectSession(session)
+                    }}
+                  />
+                ))}
+              </>
+            ) : (
+              <>
+                {collapsedAlerts!.blocked.map((session) => {
+                  const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
+                  const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
+                  return (
+                    <CollapsedAlertChip
+                      key={session.id}
+                      session={session}
+                      kind="blocked"
+                      shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
+                      onClick={() => {
+                        void updateConfig({ sidebarCollapsed: false })
+                        void selectSession(session)
+                      }}
+                    />
+                  )
+                })}
+                {collapsedAlerts!.ready.map((session) => {
+                  const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
+                  const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
+                  return (
+                    <CollapsedAlertChip
+                      key={session.id}
+                      session={session}
+                      kind="ready"
+                      shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
+                      onClick={() => {
+                        clearWaitingInputAlert(session.id)
+                        void updateConfig({ sidebarCollapsed: false })
+                        void selectSession(session)
+                      }}
+                    />
+                  )
+                })}
+              </>
+            )}
           </div>
         )}
 

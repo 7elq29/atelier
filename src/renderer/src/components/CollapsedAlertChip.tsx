@@ -11,16 +11,18 @@ interface CollapsedAlertChipProps {
   kind: 'blocked' | 'ready'
   /** 1-based shortcut index — replaces the dot/icon when present */
   shortcutNumber?: number
+  /** When true, chip expands to show the session name inline (⌘-held mode) */
+  cmdHeld?: boolean
   onClick: () => void
 }
 
-export default function CollapsedAlertChip({ session, kind, shortcutNumber, onClick }: CollapsedAlertChipProps): JSX.Element {
+export default function CollapsedAlertChip({ session, kind, shortcutNumber, cmdHeld, onClick }: CollapsedAlertChipProps): JSX.Element {
   const label = session.name || session.projectPath.split('/').filter(Boolean).pop() || 'Session'
   const statusLabel = kind === 'blocked' ? 'Needs approval' : 'Agent ready'
 
   return (
     <div
-      className={`collapsed-alert-chip collapsed-alert-chip--${kind}`}
+      className={`collapsed-alert-chip collapsed-alert-chip--${kind}${cmdHeld ? ' cmd-held' : ''}`}
       onClick={onClick}
       role="button"
       tabIndex={0}
@@ -40,6 +42,9 @@ export default function CollapsedAlertChip({ session, kind, shortcutNumber, onCl
       ) : (
         <span className="chip-dot" />
       )}
+
+      {/* Session name — always in DOM, visible only when cmdHeld via CSS transition */}
+      <span className="chip-name-label">{label}</span>
 
       {/* Tooltip — appears on hover via CSS */}
       <div className="chip-tooltip" role="tooltip">
