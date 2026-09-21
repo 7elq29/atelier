@@ -9,6 +9,21 @@
   ],
   "rules": [
     {
+      "id": "timeline-pill",
+      "paths": [
+        "src/renderer/src/components/TimelinePill.tsx",
+        "src/renderer/src/hooks/useScheduledTasksForPill.ts",
+        "src/renderer/src/styles/global.css",
+        "src/renderer/src/App.tsx"
+      ],
+      "changedLines": "TimelinePill|useScheduledTasksForPill|topbar-pill",
+      "targets": [
+        {
+          "file": "e2e/timeline-pill.spec.ts"
+        }
+      ]
+    },
+    {
       "id": "calendar-day-refresh",
       "paths": [
         "src/main/calendar-day.ts",
