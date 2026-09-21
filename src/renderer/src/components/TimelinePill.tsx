@@ -90,6 +90,12 @@ export function TimelinePill({ tasks, onClick }: TimelinePillProps): React.JSX.E
   // ── Render ─────────────────────────────────────────────────────────────
   const nowSlot = Math.floor((nowMinutes - PILL_START_MIN) / SLOT_MIN)
 
+  // Precise pixel position of the now line within the sparkline.
+  // Each bar = 3px wide + 1.5px gap = 4.5px per slot.
+  const BAR_W = 3, BAR_GAP = 1.5, SLOT_PX = BAR_W + BAR_GAP
+  const minutesIntoSlot = (nowMinutes - PILL_START_MIN) % SLOT_MIN
+  const nowLineLeft = nowSlot * SLOT_PX + (minutesIntoSlot / SLOT_MIN) * SLOT_PX
+
   return (
     <button
       type="button"
@@ -118,7 +124,6 @@ export function TimelinePill({ tasks, onClick }: TimelinePillProps): React.JSX.E
       {tasks.length > 0 && (
         <div className="topbar-pill-sparkline" aria-hidden="true">
           {slots.map((task, i) => {
-            const isNowSlot = i === nowSlot
             const isEmpty   = task === null
             const isDone    = task !== null && DONE_STATUSES.has(task.status)
             const isMeeting = task !== null && task.isNote
@@ -127,28 +132,28 @@ export function TimelinePill({ tasks, onClick }: TimelinePillProps): React.JSX.E
               return tb !== null && tb.end <= nowMinutes
             })()
 
-            // Color
-            let bg: string
-            if (isEmpty || isNowSlot) {
-              bg = 'var(--border-default)'
-            } else if (isMeeting) {
-              bg = 'var(--sc-blue)'
-            } else {
-              bg = 'var(--sc-green)'
-            }
-
-            // Height: 10px for task, 3px for empty, 12px for now-slot
-            const height = isNowSlot ? 12 : (isEmpty ? 3 : 10)
-            const opacity = (isDone || isPast) && !isNowSlot ? 0.3 : 1
+            const bg = isEmpty
+              ? 'var(--border-default)'
+              : isMeeting ? 'var(--sc-blue)' : 'var(--sc-green)'
+            const height = isEmpty ? 3 : 10
+            const opacity = (isDone || isPast) ? 0.3 : 1
 
             return (
               <div
                 key={i}
-                className={`topbar-pill-spark-bar${isNowSlot ? ' topbar-pill-spark-now' : ''}`}
+                className="topbar-pill-spark-bar"
                 style={{ background: bg, height, opacity }}
               />
             )
           })}
+
+          {/* Now line — precise vertical marker at current time */}
+          {nowSlot >= 0 && nowSlot < TOTAL_SLOTS && (
+            <div
+              className="topbar-pill-now-line"
+              style={{ left: nowLineLeft }}
+            />
+          )}
         </div>
       )}
 

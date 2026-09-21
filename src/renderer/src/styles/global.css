@@ -512,6 +512,16 @@
   gap: 1.5px;
   height: 14px;
   flex-shrink: 0;
+  position: relative;
+}
+.topbar-pill-now-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
 }
 .topbar-pill-spark-bar {
   width: 3px;
@@ -537,7 +547,7 @@
 .topbar-pill-next-time {
   font-size: 10px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   letter-spacing: .01em;
