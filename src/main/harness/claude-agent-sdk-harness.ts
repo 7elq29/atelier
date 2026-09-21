@@ -798,6 +798,17 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
       if (this.sessions.get(sessionId) === active) {
         this.sessions.delete(sessionId)
       }
+      // fix-stale-subprocess-session-lock: always signal the SDK to release
+      // the session ID, regardless of how pump() exited. The catch block above
+      // already calls this for genuine errors, but the normal exit path (a
+      // keepAlive session whose result arrived with interruptRequested=true,
+      // returning from the loop rather than throwing) does NOT call it. Without
+      // this, the Claude Code subprocess keeps running and holding its session-ID
+      // lock after the session ends — verified as the root cause of "Session ID
+      // <id> is already in use" failures in startFreshWithRetry minutes later
+      // (the process was still alive long after the turn completed). Calling
+      // interrupt() on an already-interrupted query is idempotent and safe.
+      await active.query.interrupt().catch(() => undefined)
     }
   }
 
