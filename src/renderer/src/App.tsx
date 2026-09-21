@@ -3540,7 +3540,8 @@ const allSessions = useMemo(
       )}
 
       <KeyboardHintsOverlay
-        disabled={anyModalOpen || config.sidebarCollapsed}
+        disabled={anyModalOpen}
+        hideSessionRows={config.sidebarCollapsed}
         scanRootId="app"
         onSessionTabShortcut={handleSessionTabHintShortcut}
       />

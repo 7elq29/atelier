@@ -34,6 +34,10 @@ type BadgeLayout = {
 type Props = {
   /** When true, hint mode cannot start (modals / onboarding). */
   disabled: boolean
+  /** When true, [data-hint-session-row] and [data-hint-note-row] elements are excluded from
+   *  numbered badges (e.g. when sidebar is collapsed and rows are visually behind it).
+   *  Session tab shortcut badges (D/F/T/P) are unaffected. */
+  hideSessionRows?: boolean
   /** Root scanned for interactives (main app shell). */
   scanRootId?: string
   /** ⌘+h/d/f/t/p while hints are active — reserved session tab shortcuts (not c/v/a). */
@@ -49,6 +53,7 @@ type Props = {
  */
 export default function KeyboardHintsOverlay({
   disabled,
+  hideSessionRows = false,
   scanRootId = 'app',
   onSessionTabShortcut,
   reservedMetaCodes
@@ -63,6 +68,8 @@ export default function KeyboardHintsOverlay({
   const bufferRef = useRef('')
   const disabledRef = useRef(disabled)
   disabledRef.current = disabled
+  const hideSessionRowsRef = useRef(hideSessionRows)
+  hideSessionRowsRef.current = hideSessionRows
 
   const clearActivationTimer = useCallback(() => {
     if (activationTimerRef.current !== null) {
@@ -115,8 +122,16 @@ export default function KeyboardHintsOverlay({
     const root = document.getElementById(scanRootId)
     if (!root) return
 
-    const entries = buildHintEntries(root)
-    if (entries.length === 0) return
+    let entries = buildHintEntries(root)
+    if (hideSessionRowsRef.current) {
+      entries = entries.filter(
+        (e) =>
+          !e.element.hasAttribute('data-hint-session-row') &&
+          !e.element.hasAttribute('data-hint-note-row')
+      )
+    }
+    // Still activate when entries are empty but session tab shortcuts exist (D/F/T/P).
+    if (entries.length === 0 && collectSessionTabShortcutBadges(root).length === 0) return
 
     clearHintLabelAttributes(entriesRef.current)
     entriesRef.current = entries
