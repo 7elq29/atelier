@@ -696,7 +696,10 @@
 .dn-agenda {
   padding: 2px 8px 16px;
   flex: 1;
-  min-height: 0;
+  /* Must be at least AGENDA_HOURS.length * AGENDA_SLOT_H_PX (16 × 36 = 576px) so the
+     drag overlay grid aligns with hourFromClientY's AGENDA_SLOT_H_PX calculation. */
+  min-height: calc(16 * 36px);
+  position: relative; /* anchor for the absolute-positioned drag overlay */
 }
 
 .dn-agenda-entry {

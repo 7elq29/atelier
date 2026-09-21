@@ -167,6 +167,8 @@ export default function AgendaTimeline({
   const timeEditRef = useRef<HTMLDivElement>(null)
   const timeEditStartRef = useRef<HTMLDivElement>(null)
   const timeEditStartInputRef = useRef<HTMLInputElement>(null)
+  // Stable ref to commitTimeEdit — always current, safe to call from stale closures.
+  const commitTimeEditRef = useRef<() => void>(() => {})
 
   const agendaRef = useRef<HTMLDivElement>(null)
   const cardRef   = useRef<HTMLDivElement>(null)
@@ -281,12 +283,14 @@ export default function AgendaTimeline({
     const el = agendaRef.current
     if (!el) return 9
     const rect = el.getBoundingClientRect()
-    const relY = Math.max(0, Math.min(rect.height, clientY - rect.top))
-    const fraction = relY / rect.height
+    // Use AGENDA_SLOT_H_PX so the computed hour matches the fixed overlay grid
+    // (which positions slots at index * AGENDA_SLOT_H_PX). Previously this used
+    // rect.height, causing a mismatch when real element height ≠ overlay height.
+    const relY  = Math.max(0, clientY - rect.top)
     const first = AGENDA_HOURS[0]!
-    const last  = AGENDA_HOURS[AGENDA_HOURS.length - 1]! + 1
-    const hour  = first + Math.floor(fraction * (last - first))
-    return Math.max(first, Math.min(last - 1, hour))
+    const last  = AGENDA_HOURS[AGENDA_HOURS.length - 1]!
+    const hour  = first + Math.floor(relY / AGENDA_SLOT_H_PX)
+    return Math.max(first, Math.min(last, hour))
   }
 
   function handleDragOver(e: React.DragEvent): void {
@@ -344,8 +348,10 @@ export default function AgendaTimeline({
     if (!timeEditOpen) return
     function onClick(e: MouseEvent): void {
       if (timeEditRef.current?.contains(e.target as Node)) return
-      setTimeEdit(null)
-      setTimeEditStartText(null)
+      // Commit (save) the current time-edit on click-outside, same as the
+      // drop and create cards do. Use the stable ref so we always call the
+      // latest commitTimeEdit (avoids stale-closure capturing old durIdx).
+      commitTimeEditRef.current()
     }
     const t = setTimeout(() => document.addEventListener('click', onClick, { capture: true }), 80)
     return () => { clearTimeout(t); document.removeEventListener('click', onClick, { capture: true }) }
@@ -396,6 +402,9 @@ export default function AgendaTimeline({
     setTimeEdit(null)
     setTimeEditStartText(null)
   }
+  // Keep ref current so the click-outside handler (a stale closure) always
+  // calls the latest commitTimeEdit (which captures the latest timeEdit).
+  commitTimeEditRef.current = commitTimeEdit
 
   function commitStartText(): void {
     if (timeEditStartText === null) return
