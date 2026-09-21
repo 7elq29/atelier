@@ -855,6 +855,12 @@ const allSessions = useMemo(
   // sidebar row indicator use the same source of truth.
   const [waitingInputAlertIds, setWaitingInputAlertIds] = useState<Set<string>>(() => new Set())
   const prevDotStatusBySessionRef = useRef<Record<string, string>>({})
+  // Stable refs so the activeSessionId effect can read current values without
+  // adding them as deps (which would cause it to re-run on every status update).
+  const activeSessionsRef = useRef(sessions.activeSessions)
+  activeSessionsRef.current = sessions.activeSessions
+  const statusesRef = useRef(sessions.statuses)
+  statusesRef.current = sessions.statuses
 
   useEffect(() => {
     setWaitingInputAlertIds((prev) => {
@@ -884,7 +890,25 @@ const allSessions = useMemo(
     })
   }, [sessions.activeSessions, sessions.statuses, promptDotsBySession, sessions.staleSessionIds, activeSessionId])
 
+  const prevActiveSessionIdRef = useRef<string | null>(null)
   useEffect(() => {
+    const prevId = prevActiveSessionIdRef.current
+    prevActiveSessionIdRef.current = activeSessionId ?? null
+
+    // When switching away from a session that's already in waiting-input (agent
+    // responded while the user was still on it), add it to the alert set so the
+    // indicator appears on the row and the collapsed chip shows.
+    if (prevId && prevId !== activeSessionId) {
+      const prevSession = activeSessionsRef.current.find((s) => s.id === prevId)
+      if (prevSession && sessionLiveWaitingForInput(prevSession, false, statusesRef.current)) {
+        setWaitingInputAlertIds((prev) => {
+          if (prev.has(prevId)) return prev
+          return new Set([...prev, prevId])
+        })
+      }
+    }
+
+    // Remove the newly-active session from alerts — user can see it now.
     if (!activeSessionId) return
     setWaitingInputAlertIds((prev) => {
       if (!prev.has(activeSessionId)) return prev
