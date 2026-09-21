@@ -2863,7 +2863,18 @@ export class SessionManager {
         live.busy = false
         this.clearPendingUserTurn(live)
         this.sendStatus(sessionId)
-        this.sendTurnState(sessionId, false)
+        // fix-error-stuck-queue: Clear inflightId and drain the turn queue,
+        // mirroring what case 'result': does. Without this, an error event
+        // (e.g. from startFreshWithRetry exhausting all retries with "Session
+        // ID already in use") leaves inflightId set forever — any subsequent
+        // sendUserMessage() sees inflightId != null and enqueues rather than
+        // dispatching, so the session is permanently stuck and the user can
+        // never submit another prompt. drainTurnQueue dispatches the next
+        // queued message (if any) so queued messages survive a failed turn.
+        const errQ = this.turnQueues.get(sessionId)
+        if (errQ) errQ.inflightId = null
+        const errDrained = this.drainTurnQueue(sessionId)
+        if (!errDrained) this.sendTurnState(sessionId, false)
         return
       }
 
@@ -2927,6 +2938,18 @@ export class SessionManager {
             usage: event.usage
           })
           this.sendLifecycle({ type: 'session.updated', session: costUpdated })
+        }
+        // fix-ever-connected-missed-session-started: also mark everConnected
+        // here as a safety net. session_started is normally responsible for
+        // this, but a race between the initializationResult() control-protocol
+        // channel and an interrupt closing the SDK's input queue can cause the
+        // system/init streamed message to never arrive, silently skipping
+        // session_started. A completed result proves the CLI DID record a
+        // conversation, so future reconnects can safely use resume() rather
+        // than startFreshWithRetry. This is idempotent if session_started
+        // already ran.
+        if (!this.store.getSession(sessionId)?.everConnected) {
+          this.store.markEverConnected(sessionId)
         }
         // Drain the turn queue before signalling idle — if a queued message
         // is dispatched here, it sets busy=true again and the renderer never
