@@ -1161,6 +1161,7 @@ const allSessions = useMemo(
   const toggleDailyNotesPanel = useCallback(async () => {
     if (date) {
       setDate(null)
+      setNewTaskRequest(0)
       void checkTodayNoteExists()
       return
     }
