@@ -17,6 +17,8 @@ import {
 } from '../../../shared/app-bookmark-types'
 import { BookmarkEditModal } from './BookmarkEditModal'
 import type { SessionPromptDot } from '../stores/session-prompt-dot-store'
+import { countActiveBackgroundTasks } from '../../../shared/background-tasks-ui'
+import type { BackgroundTaskRow } from '../../../shared/harness-ui-types'
 import SpendStatusChip from './SpendStatusChip'
 import { handleEmacsTextareaKeyDown } from '../palette-input-keys'
 import { useSessionPromptDotsMap } from '../hooks/useSessionMessages'
@@ -84,6 +86,7 @@ interface SidebarProps {
    *  sidebar corner-dot use the same source of truth. */
   waitingInputAlertIds: Set<string>
   onClearWaitingInputAlert: (sessionId: string) => void
+  backgroundTasksBySession: Record<string, BackgroundTaskRow[]>
 }
 
 const SESSION_COLORS = ['--sc-blue', '--sc-green', '--sc-purple', '--sc-amber', '--sc-rose', '--sc-cyan', '--sc-indigo', '--sc-teal']
@@ -158,13 +161,16 @@ export function sessionDotStatus(
   closed: boolean,
   statuses: Record<string, SessionStatus>,
   staleSessionIds: Set<string>,
-  promptDot: SessionPromptDot
+  promptDot: SessionPromptDot,
+  backgroundTasksRunning = false
 ): string {
-  return session.deletedAt
-    ? 'cleaning-up'
-    : staleSessionIds.has(session.id)
-    ? 'stale'
-    : dotStatusClass(displayStatus(session, closed, statuses), promptDot)
+  if (session.deletedAt) return 'cleaning-up'
+  if (staleSessionIds.has(session.id)) return 'stale'
+  const base = dotStatusClass(displayStatus(session, closed, statuses), promptDot)
+  // Show background-tasks icon only when the main agent is free (idle / waiting for input).
+  // When the agent is actively working or blocked, that status takes priority.
+  if (backgroundTasksRunning && (base === 'idle' || base === 'waiting-input')) return 'background-tasks'
+  return base
 }
 
 /**
@@ -1004,7 +1010,8 @@ export default function Sidebar({
   onDeleteBookmark,
   onOpenBookmark,
   waitingInputAlertIds,
-  onClearWaitingInputAlert
+  onClearWaitingInputAlert,
+  backgroundTasksBySession
 }: SidebarProps): JSX.Element {
   const promptDotsBySession = useSessionPromptDotsMap()
   const [newGroupOpen, setNewGroupOpen] = useState(false)
@@ -1133,7 +1140,7 @@ export default function Sidebar({
         active={session.id === activeSessionId && !noteSurfaceActive}
         closed={closed}
         status={displayStatus(session, closed, statuses)}
-        dotStatus={sessionDotStatus(session, closed, statuses, staleSessionIds, promptDotsBySession[session.id] ?? null)}
+        dotStatus={sessionDotStatus(session, closed, statuses, staleSessionIds, promptDotsBySession[session.id] ?? null, countActiveBackgroundTasks(backgroundTasksBySession[session.id] ?? []) > 0)}
         showWaitingInputAlert={
           !closed &&
           waitingInputAlertIds.has(session.id) &&

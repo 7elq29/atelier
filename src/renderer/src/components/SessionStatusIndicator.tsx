@@ -71,6 +71,16 @@ function IconTree(): JSX.Element {
   )
 }
 
+/** Dashed container + solid play = "a job running autonomously in the background." */
+function IconBackgroundTask(): JSX.Element {
+  return (
+    <svg viewBox={VIEW} aria-hidden fill="none" stroke="currentColor" strokeWidth="1.3">
+      <rect x="2" y="2" width="12" height="12" rx="2.5" strokeDasharray="2.4 1.8" />
+      <path fill="currentColor" stroke="none" d="M6.5 5.5v5l4-2.5-4-2.5z" />
+    </svg>
+  )
+}
+
 export function ApprovalNeededIcon(): JSX.Element {
   return (
     <span className="approval-needed-icon" aria-hidden>
@@ -128,6 +138,10 @@ export function SessionStatusIndicator({ dotStatus }: { dotStatus: string }): JS
       tone = 'tone-faint'
       anim = 'anim-spin'
       icon = <IconCircleDashed />
+      break
+    case 'background-tasks':
+      anim = 'anim-blink-slow'
+      icon = <IconBackgroundTask />
       break
     default:
       icon = null
