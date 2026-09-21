@@ -88,6 +88,7 @@ import type {
 import { restorableSessionTab } from '../../shared/session-types'
 import { parseStructuredContent } from '../../shared/chat-content'
 import { isClaudePlanPath } from '../../shared/claude-plan-path'
+import { countActiveBackgroundTasks } from '../../shared/background-tasks-ui'
 import { findPlanCapEdition } from '../../shared/plan-cap-editions'
 import { resolveSessionFilePath, collectFilePathCandidates, sessionFileLinkWorkspaceRoot, remapSessionFilePathToWorktree } from './components/chat/file-path-links'
 import type { SessionWorkspacePayload } from '../../shared/session-workspace-types'
@@ -2687,6 +2688,7 @@ const allSessions = useMemo(
           onOpenBookmark={(url) => void window.atelier.openExternal(url)}
           waitingInputAlertIds={waitingInputAlertIds}
           onClearWaitingInputAlert={clearWaitingInputAlert}
+          backgroundTasksBySession={sessions.backgroundTasksBySession}
           />
         </div>
 

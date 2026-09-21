@@ -299,6 +299,9 @@
 .session-status.anim-blink {
   animation: session-status-blink 1.15s ease-in-out infinite;
 }
+.session-status.anim-blink-slow {
+  animation: session-status-blink 2.2s ease-in-out infinite;
+}
 .session-status.anim-spin {
   animation: session-status-spin 1.35s linear infinite;
 }
