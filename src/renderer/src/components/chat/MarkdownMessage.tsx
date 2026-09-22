@@ -65,6 +65,59 @@ function nodeText(node: ReactNode): string {
  * in-app navigation. Paths use the `atelier-file:` scheme and open in the
  * Files tab when `onOpenFileInFiles` is provided.
  */
+/**
+ * Module-level component so react-markdown sees a stable reference on every
+ * createMarkdownComponents() call. If defined inline inside the returned
+ * Components object, every recompute (filePathCandidates change, workspace
+ * refresh, etc.) gives react-markdown a new function reference — it treats
+ * that as a different component type, unmounts/remounts the <pre> DOM nodes,
+ * and clears any active text selection inside the code block.
+ */
+function PreBlock({ children }: { children?: ReactNode }): JSX.Element {
+  const [copied, setCopied] = useState(false)
+
+  // Extract the plain code text from the <code> child react-markdown injects.
+  // Structure for a fenced block: <pre> → <code className="language-X">…text…</code>
+  function getText(): string {
+    if (!isValidElement(children)) return typeof children === 'string' ? children : ''
+    const codeEl = children as React.ReactElement<{ children?: ReactNode }>
+    const inner = codeEl.props.children
+    if (typeof inner === 'string') return inner
+    if (Array.isArray(inner)) return inner.map((c) => (typeof c === 'string' ? c : '')).join('')
+    return ''
+  }
+
+  function handleCopy(): void {
+    void navigator.clipboard.writeText(getText()).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  return (
+    <div className="md-pre-wrap">
+      <pre>{children}</pre>
+      <button
+        type="button"
+        className={`md-pre-copy-btn${copied ? ' md-pre-copy-btn--copied' : ''}`}
+        title={copied ? 'Copied!' : 'Copy code'}
+        onClick={handleCopy}
+      >
+        {copied ? (
+          <svg className="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        ) : (
+          <svg className="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="9" width="12" height="12" rx="2" />
+            <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+          </svg>
+        )}
+      </button>
+    </div>
+  )
+}
+
 export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Components {
   const {
     workspaceRoot = '',
@@ -217,49 +270,7 @@ export function createMarkdownComponents(options: MarkdownLinkOptions = {}): Com
         </a>
       )
     },
-    pre: function PreBlock({ children }) {
-      const [copied, setCopied] = useState(false)
-
-      // Extract the plain code text from the <code> child react-markdown injects.
-      // Structure for a fenced block: <pre> → <code className="language-X">…text…</code>
-      function getText(): string {
-        if (!isValidElement(children)) return typeof children === 'string' ? children : ''
-        const codeEl = children as React.ReactElement<{ children?: ReactNode }>
-        const inner = codeEl.props.children
-        if (typeof inner === 'string') return inner
-        if (Array.isArray(inner)) return inner.map((c) => (typeof c === 'string' ? c : '')).join('')
-        return ''
-      }
-
-      function handleCopy(): void {
-        void navigator.clipboard.writeText(getText()).then(() => {
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1500)
-        })
-      }
-
-      return (
-        <div className="md-pre-wrap">
-          <pre>{children}</pre>
-          <button
-            className={`md-pre-copy-btn${copied ? ' md-pre-copy-btn--copied' : ''}`}
-            title={copied ? 'Copied!' : 'Copy code'}
-            onClick={handleCopy}
-          >
-            {copied ? (
-              <svg className="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            ) : (
-              <svg className="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="9" width="12" height="12" rx="2" />
-                <path d="M5 15V5a2 2 0 0 1 2-2h10" />
-              </svg>
-            )}
-          </button>
-        </div>
-      )
-    }
+    pre: PreBlock
   }
 }
 
