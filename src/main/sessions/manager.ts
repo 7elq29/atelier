@@ -1618,8 +1618,20 @@ export class SessionManager {
   ): Promise<void> {
     const session = this.store.getSession(sessionId)
     if (!session) return
-    const { text, attachments, modelOverride, userMessageId } = item
-    if (userMessageId != null) this.beginPendingUserTurn(sessionId, userMessageId)
+    const { text, attachments, modelOverride } = item
+    // Deferred message (was queued while another turn was inflight): add to
+    // the DB and show in chat now, just before dispatching, so the message
+    // appears in the transcript at the right moment rather than when typed.
+    let resolvedMessageId = item.userMessageId
+    if (resolvedMessageId == null) {
+      const content: string = attachments?.length
+        ? JSON.stringify({ kind: 'files_attachment', files: attachments.map(({ mimeType, data, name }) => ({ mimeType, data, name })), text } satisfies FilesAttachmentContent)
+        : text
+      const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
+      this.sendMessage(sessionId, userMessage)
+      resolvedMessageId = userMessage.id
+    }
+    if (resolvedMessageId != null) this.beginPendingUserTurn(sessionId, resolvedMessageId)
     this.sendTurnState(sessionId, true)
     try {
       const previousSelection = this.modelSelections.get(sessionId)
@@ -1700,8 +1712,8 @@ export class SessionManager {
       this.resetHarnessUiForSession(sessionId)
       const liveEntry = this.live.get(sessionId)!
       liveEntry.busy = true
-      if (userMessageId != null) {
-        liveEntry.pendingUserMessageId = userMessageId
+      if (resolvedMessageId != null) {
+        liveEntry.pendingUserMessageId = resolvedMessageId
         liveEntry.turnExecutionStarted = false
       }
       this.sendStatus(sessionId)
@@ -1730,18 +1742,22 @@ export class SessionManager {
     const content: string = attachments?.length
       ? JSON.stringify({ kind: 'files_attachment', files: attachments.map(({ mimeType, data, name }) => ({ mimeType, data, name })), text } satisfies FilesAttachmentContent)
       : text
-    const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
     this.touchLastActive(sessionId)
     this.sendPromptSuggestion(sessionId, null)
-    this.sendMessage(sessionId, userMessage)
 
-    if (session.mode !== 'claude-code') return
+    if (session.mode !== 'claude-code') {
+      const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
+      this.sendMessage(sessionId, userMessage)
+      return
+    }
 
     const q = this.getOrCreateTurnQueue(sessionId)
-    const item = this.makeQueuedEntry(text, attachments, override, userMessage.id)
 
     if (q.inflightId === null) {
-      // Nothing inflight — dispatch immediately.
+      // Nothing inflight — add to DB, show in chat, dispatch immediately.
+      const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
+      this.sendMessage(sessionId, userMessage)
+      const item = this.makeQueuedEntry(text, attachments, override, userMessage.id)
       q.inflightId = item.id
       // No items to show in the queue strip (this message is already dispatching).
       this.sendQueueState(sessionId)
@@ -1753,7 +1769,10 @@ export class SessionManager {
         throw err
       }
     } else {
-      // A turn is inflight — enqueue for dispatch after it completes.
+      // A turn is inflight — enqueue without adding to DB or chat yet.
+      // dispatchTurnToHarness will add the message to the DB and show it
+      // in the chat just before it's actually dispatched to the harness.
+      const item = this.makeQueuedEntry(text, attachments, override)
       q.items.push(item)
       this.sendQueueState(sessionId)
       logger.info('turnQueue: enqueued (turn inflight)', { sessionId, id: item.id, queueDepth: q.items.length })
@@ -2436,6 +2455,15 @@ export class SessionManager {
       this.pendingPanelPreload.delete(sessionId)
       this.workspacePreloadInFlight.delete(sessionId)
       this.reportHarnessFailure(sessionId, 'event stream', err)
+      // fix-consume-throw-stuck-queue: mirrors fix-error-stuck-queue in
+      // case 'error':. When the async generator throws (subprocess crash,
+      // SDK failure before any event is emitted), applyEvent's terminal
+      // cases never run, so inflightId stays set forever and all queued
+      // messages silently get stuck behind it.
+      const q = this.turnQueues.get(sessionId)
+      if (q) q.inflightId = null
+      const drained = this.drainTurnQueue(sessionId)
+      if (!drained) this.sendTurnState(sessionId, false)
     }
   }
 
