@@ -250,11 +250,8 @@
 .dn-sections-stack--agenda .dn-timeline-section:has(.dn-agenda--drag-over) {
   overflow: visible;
 }
-/* Make the overlay fill the full expanded agenda height (not just the fixed
-   576px), so it visually reaches all the way to the Unscheduled section. */
-.dn-sections-stack--agenda .dn-agenda--drag-over .dn-agenda-overlay {
-  min-height: 100%;
-}
+/* Overlay height is now computed dynamically in AgendaTimeline.tsx based on
+   the container's actual clientHeight after CSS :has() expansion. */
 .dn-sections-stack--agenda .dn-timeline-section .dn-section-body {
   flex: 1;
   display: flex;

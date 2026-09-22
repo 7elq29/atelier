@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { DailyTask } from '../../../../shared/daily-note-types'
 import { formatTaskEditBuffer } from '../../../../shared/task-priority'
 import { priorityTimelineAccentClass } from '../../../../shared/task-priority'
@@ -150,6 +150,25 @@ export default function AgendaTimeline({
   const [isDragOver, setIsDragOver] = useState(false)
   const [ghostHour, setGhostHour] = useState<number | null>(null)
 
+  // Dynamic slot height: recomputed after the CSS :has() rules expand the
+  // timeline section (Trackers hides, more flex space is available). Using a
+  // ref for hourFromClientY (avoids stale closures) + state for JSX renders.
+  const slotHRef = useRef(AGENDA_SLOT_H_PX)
+  const [slotH, setSlotH] = useState(AGENDA_SLOT_H_PX)
+  useLayoutEffect(() => {
+    const el = agendaRef.current
+    if (!el) return
+    if (isDragOver) {
+      const h = el.clientHeight
+      const computed = h > 0 ? Math.max(AGENDA_SLOT_H_PX, h / AGENDA_HOURS.length) : AGENDA_SLOT_H_PX
+      slotHRef.current = computed
+      setSlotH(computed)
+    } else {
+      slotHRef.current = AGENDA_SLOT_H_PX
+      setSlotH(AGENDA_SLOT_H_PX)
+    }
+  }, [isDragOver])
+
   // Duration confirm card (for drops)
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null)
 
@@ -283,13 +302,12 @@ export default function AgendaTimeline({
     const el = agendaRef.current
     if (!el) return 9
     const rect = el.getBoundingClientRect()
-    // Use AGENDA_SLOT_H_PX so the computed hour matches the fixed overlay grid
-    // (which positions slots at index * AGENDA_SLOT_H_PX). Previously this used
-    // rect.height, causing a mismatch when real element height ≠ overlay height.
     const relY  = Math.max(0, clientY - rect.top)
     const first = AGENDA_HOURS[0]!
     const last  = AGENDA_HOURS[AGENDA_HOURS.length - 1]!
-    const hour  = first + Math.floor(relY / AGENDA_SLOT_H_PX)
+    // Use slotHRef (always current) so the hour maps correctly whether the
+    // overlay is at the fixed 36px pitch or the expanded dynamic pitch.
+    const hour  = first + Math.floor(relY / slotHRef.current)
     return Math.max(first, Math.min(last, hour))
   }
 
@@ -555,7 +573,7 @@ export default function AgendaTimeline({
       {isDragOver && (
         <div
           className="dn-agenda-overlay"
-          style={{ height: AGENDA_HOURS.length * AGENDA_SLOT_H_PX }}
+          style={{ height: AGENDA_HOURS.length * slotH }}
           aria-hidden="true"
         >
           {/* Hour grid lines */}
@@ -571,9 +589,9 @@ export default function AgendaTimeline({
           {entries.map(({ task, start, end }) => {
             const topH = start / 60
             const durH = (end - start) / 60
-            const topPx = (topH - AGENDA_HOURS[0]!) * AGENDA_SLOT_H_PX
-            const heightPx = Math.max(durH * AGENDA_SLOT_H_PX, 8)
-            if (topPx < 0 || topPx > AGENDA_HOURS.length * AGENDA_SLOT_H_PX) return null
+            const topPx = (topH - AGENDA_HOURS[0]!) * slotH
+            const heightPx = Math.max(durH * slotH, 8)
+            if (topPx < 0 || topPx > AGENDA_HOURS.length * slotH) return null
             return (
               <div
                 key={task.id}
@@ -588,7 +606,7 @@ export default function AgendaTimeline({
           {ghostHour !== null && (
             <div
               className="dn-agenda-ghost"
-              style={{ top: AGENDA_HOURS.indexOf(ghostHour) * AGENDA_SLOT_H_PX }}
+              style={{ top: AGENDA_HOURS.indexOf(ghostHour) * slotH }}
               data-testid="agenda-drag-ghost"
             >
               <span className="dn-agenda-ghost-label">
