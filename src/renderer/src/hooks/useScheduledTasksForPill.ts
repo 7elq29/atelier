@@ -14,9 +14,15 @@ function isScheduled(t: DailyTask): boolean {
   return t.section === 'day-plan' && !!t.timeBlock
 }
 
+function localToday(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
 export function useScheduledTasksForPill(date: string | null): DailyTask[] {
-  // Persist the last non-null date so the pill stays populated after panel closes
-  const lastDateRef = useRef<string | null>(null)
+  // Persist the last non-null date so the pill stays populated after panel closes.
+  // Seed with today so tasks load on mount even if the panel was never opened.
+  const lastDateRef = useRef<string | null>(localToday())
   if (date !== null) lastDateRef.current = date
   const effectiveDate = date ?? lastDateRef.current
 
