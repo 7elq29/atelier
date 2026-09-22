@@ -722,7 +722,7 @@
 }
 
 .dn-agenda-entry-wrap {
-  margin-bottom: 3px;
+  margin-bottom: 6px;
 }
 
 .dn-agenda-entry {
@@ -733,33 +733,10 @@
   column-gap: 8px;
   min-height: 52px;
   color: var(--text-primary);
-  /* Subtle card: rounded rect + very faint raised background */
-  background: color-mix(in srgb, var(--bg-panel-raised) 55%, transparent);
-  border-radius: 8px;
-  padding: 7px 8px 7px 10px;
-  /* 2px accent bar on the left edge */
-  border-left: 2px solid var(--accent);
-  transition: background 100ms;
-}
-
-.dn-agenda-entry:hover {
-  background: var(--bg-panel-raised);
 }
 
 .dn-agenda-entry.done {
   color: var(--text-tertiary);
-  border-left-color: var(--border-subtle);
-}
-
-.dn-agenda-entry.meeting {
-  border-left-color: var(--info);
-}
-
-.dn-tblock-pri-high.dn-agenda-entry {
-  border-left-color: #e5484d;
-}
-[data-theme='light'] .dn-tblock-pri-high.dn-agenda-entry {
-  border-left-color: #c53030;
 }
 
 /* Clickable time label */
@@ -843,14 +820,14 @@
 .dn-agenda-time,
 .dn-agenda-duration {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-tertiary);
   white-space: nowrap;
 }
 
 .dn-agenda-duration {
   font-family: var(--font-ui);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-tertiary);
 }
 .dn-agenda-duration--hi-pri {
@@ -871,8 +848,8 @@
 
 .dn-agenda-label {
   min-width: 0;
-  font-size: 14px;
-  line-height: 1.4;
+  font-size: 14.5px;
+  line-height: 1.45;
 }
 /* Agenda: title + tags inline so they share a line when space allows */
 .dn-agenda-label .dn-task-text-clamp {
@@ -978,9 +955,8 @@
   display: grid;
   grid-template-columns: 61px minmax(0, 1fr) auto;
   align-items: center;
-  min-height: 22px;
+  min-height: 24px;
   color: var(--text-tertiary);
-  padding: 2px 0;
 }
 
 .dn-agenda-gap span {
