@@ -987,24 +987,19 @@ const allSessions = useMemo(
     return blocked.length + ready.length > 0 ? { blocked, ready } : null
   }, [config.sidebarCollapsed, allSessions, activeSessionId, promptDotsBySession, waitingInputAlertIds])
 
-  // All active sessions bucketed by urgency, shown when ⌘ is held while the
-  // sidebar is collapsed. Ordered: blocked → ready → working → idle/other.
+  // All active sessions in sidebar sequence order, shown when ⌘ is held while
+  // the sidebar is collapsed.
   const collapsedSessionList = useMemo(() => {
     if (!config.sidebarCollapsed || !cmdHeld) return null
-    const blocked: SessionRecord[] = [], ready: SessionRecord[] = []
-    const working: SessionRecord[] = [], other: SessionRecord[] = []
+    const list: Array<{ session: SessionRecord; dotStatus: string }> = []
     for (const s of sessions.activeSessions) {
       if (s.deletedAt || s.id === activeSessionId) continue
       const dot = sessionDotStatus(s, false, sessions.statuses, sessions.staleSessionIds, promptDotsBySession[s.id] ?? null)
-      if (dot === 'waiting-blocked') blocked.push(s)
-      else if (waitingInputAlertIds.has(s.id)) ready.push(s)
-      else if (dot === 'working') working.push(s)
-      else other.push(s)
+      list.push({ session: s, dotStatus: dot })
     }
-    const total = blocked.length + ready.length + working.length + other.length
-    return total > 0 ? { blocked, ready, working, other } : null
+    return list.length > 0 ? list : null
   }, [config.sidebarCollapsed, cmdHeld, sessions.activeSessions, sessions.statuses,
-      sessions.staleSessionIds, activeSessionId, promptDotsBySession, waitingInputAlertIds])
+      sessions.staleSessionIds, activeSessionId, promptDotsBySession])
 
   const runningSessionCount = useMemo(() => {
     if (!config.sidebarCollapsed) return 0
@@ -2724,75 +2719,38 @@ const allSessions = useMemo(
         {config.sidebarCollapsed && (collapsedSessionList || collapsedAlerts) && (
           <div className="sidebar-alert-chips" data-testid="sidebar-alert-chips" data-hint-exclude-root>
             {collapsedSessionList ? (
-              <>
-                {collapsedSessionList.blocked.map((session) => {
-                  const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
-                  const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
+              collapsedSessionList.map(({ session, dotStatus }, idx) => {
+                const isBlocked = dotStatus === 'waiting-blocked'
+                const isReady = !isBlocked && waitingInputAlertIds.has(session.id)
+                if (isBlocked || isReady) {
                   return (
                     <CollapsedAlertChip
                       key={session.id}
                       session={session}
-                      kind="blocked"
+                      kind={isBlocked ? 'blocked' : 'ready'}
                       cmdHeld
-                      shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
+                      shortcutNumber={idx + 1}
                       onClick={() => {
+                        if (isReady) clearWaitingInputAlert(session.id)
                         void updateConfig({ sidebarCollapsed: false })
                         void selectSession(session)
                       }}
                     />
                   )
-                })}
-                {collapsedSessionList.ready.map((session) => {
-                  const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
-                  const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
-                  return (
-                    <CollapsedAlertChip
-                      key={session.id}
-                      session={session}
-                      kind="ready"
-                      cmdHeld
-                      shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
-                      onClick={() => {
-                        clearWaitingInputAlert(session.id)
-                        void updateConfig({ sidebarCollapsed: false })
-                        void selectSession(session)
-                      }}
-                    />
-                  )
-                })}
-                {collapsedSessionList.working.map((session) => {
-                  const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
-                  const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
-                  return (
-                    <CollapsedSessionChip
-                      key={session.id}
-                      session={session}
-                      dotStatus="working"
-                      shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
-                      onClick={() => {
-                        void updateConfig({ sidebarCollapsed: false })
-                        void selectSession(session)
-                      }}
-                    />
-                  )
-                })}
-                {collapsedSessionList.other.map((session) => {
-                  const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
-                  const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
-                  return (
-                    <CollapsedSessionChip
-                      key={session.id}
-                      session={session}
-                      dotStatus="idle"
-                      shortcutNumber={rowIndex >= 0 ? rowIndex + 1 : undefined}
-                      onClick={() => {
-                        void updateConfig({ sidebarCollapsed: false })
-                        void selectSession(session)
-                      }}
-                    />
-                  )
-                })}
-              </>
+                }
+                return (
+                  <CollapsedSessionChip
+                    key={session.id}
+                    session={session}
+                    dotStatus={dotStatus}
+                    shortcutNumber={idx + 1}
+                    onClick={() => {
+                      void updateConfig({ sidebarCollapsed: false })
+                      void selectSession(session)
+                    }}
+                  />
+                )
+              })
             ) : (
               <>
                 {collapsedAlerts!.blocked.map((session) => {
