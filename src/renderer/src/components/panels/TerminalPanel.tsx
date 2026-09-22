@@ -92,6 +92,29 @@ const TerminalPanel = forwardRef(function TerminalPanel(
     const rows = dims?.rows || 30
     void window.atelier.ptySpawn({ id: ptyId, cwd, hostname: hostname ?? null, cols, rows })
 
+    // Wire Cmd+C → copy xterm selection, Cmd+V → paste from clipboard.
+    // xterm.js manages its own internal selection (canvas overlay), which is
+    // invisible to window.getSelection() and therefore to the OS clipboard
+    // shortcut. Without this handler Cmd+C copies nothing and Cmd+V pastes
+    // nothing into the terminal.
+    term.attachCustomKeyEventHandler((e) => {
+      if (!e.metaKey || e.ctrlKey || e.altKey || e.type !== 'keydown') return true
+      if (e.key === 'c') {
+        const sel = term.getSelection()
+        if (sel) {
+          void navigator.clipboard.writeText(sel)
+          return false // handled — don't send to pty
+        }
+      }
+      if (e.key === 'v') {
+        void navigator.clipboard.readText().then((text) => {
+          if (text) term.paste(text)
+        })
+        return false
+      }
+      return true
+    })
+
     const dataDisposable = term.onData((data) => {
       void window.atelier.ptyWrite(ptyId, data)
     })
