@@ -2127,6 +2127,32 @@ input[type='range'] {
   border-radius: 0;
   font-size: 0.9em;
 }
+/* Code-block copy button: hidden by default, revealed on pre wrapper hover.
+   The button is a sibling of <pre> (not inside it) so it stays pinned even
+   when the code scrolls horizontally (pre has overflow-x: auto). */
+.md-pre-wrap { position: relative; }
+.md-pre-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  box-shadow: var(--shadow-panel);
+  padding: 0;
+  z-index: 1;
+}
+.md-pre-wrap:hover .md-pre-copy-btn { display: flex; }
+.md-pre-copy-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+/* Keep the button visible (green) after click even when hover moves away */
+.md-pre-copy-btn--copied { display: flex; color: var(--accent); }
 :is(.msg-assistant, .msg-user) .md-body :where(a), .plan-body .md-body :where(a) {
   color: var(--info, #7fa8c1);
   cursor: pointer;
