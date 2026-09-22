@@ -30,7 +30,10 @@ export default function CollapsedAlertChip({ session, kind, shortcutNumber, cmdH
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       data-testid={`collapsed-alert-chip-${session.id}`}
     >
-      {kind === 'blocked' ? (
+      {/* Compact (non-cmd-held): ⌘N replaces the icon. Expanded (cmd-held): icon + name + ⌘N */}
+      {!cmdHeld && shortcutNumber != null ? (
+        <span className="chip-shortcut-label">⌘{shortcutNumber}</span>
+      ) : kind === 'blocked' ? (
         <svg className="chip-icon" viewBox="0 0 16 16" fill="none"
           stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
           <circle cx="8" cy="8" r="6.2"/>
@@ -43,7 +46,7 @@ export default function CollapsedAlertChip({ session, kind, shortcutNumber, cmdH
 
       {/* Session name — always in DOM, visible only when cmdHeld via CSS transition */}
       <span className="chip-name-label">{label}</span>
-      {shortcutNumber != null && (
+      {cmdHeld && shortcutNumber != null && (
         <span className="chip-shortcut-label">⌘{shortcutNumber}</span>
       )}
 
