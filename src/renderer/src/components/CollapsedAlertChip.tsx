@@ -9,7 +9,7 @@ interface CollapsedAlertChipProps {
   session: SessionRecord
   /** 'blocked' = needs approval (permission/question/plan), 'ready' = agent done, waiting for next message */
   kind: 'blocked' | 'ready'
-  /** 1-based shortcut index — replaces the dot/icon when present */
+  /** 1-based shortcut index shown after the session name */
   shortcutNumber?: number
   /** When true, chip expands to show the session name inline (⌘-held mode) */
   cmdHeld?: boolean
@@ -30,9 +30,7 @@ export default function CollapsedAlertChip({ session, kind, shortcutNumber, cmdH
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       data-testid={`collapsed-alert-chip-${session.id}`}
     >
-      {shortcutNumber != null ? (
-        <span className="chip-shortcut-label">⌘{shortcutNumber}</span>
-      ) : kind === 'blocked' ? (
+      {kind === 'blocked' ? (
         <svg className="chip-icon" viewBox="0 0 16 16" fill="none"
           stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
           <circle cx="8" cy="8" r="6.2"/>
@@ -45,6 +43,9 @@ export default function CollapsedAlertChip({ session, kind, shortcutNumber, cmdH
 
       {/* Session name — always in DOM, visible only when cmdHeld via CSS transition */}
       <span className="chip-name-label">{label}</span>
+      {shortcutNumber != null && (
+        <span className="chip-shortcut-label">⌘{shortcutNumber}</span>
+      )}
 
       {/* Tooltip — appears on hover via CSS */}
       <div className="chip-tooltip" role="tooltip">
@@ -53,7 +54,7 @@ export default function CollapsedAlertChip({ session, kind, shortcutNumber, cmdH
           <span className="chip-tooltip-dot" />
           {statusLabel}
         </div>
-        <div className="chip-tooltip-hint">{shortcutNumber != null ? `⌘${shortcutNumber} to switch` : 'Click to open'}</div>
+        <div className="chip-tooltip-hint">{shortcutNumber != null ? `⌘${shortcutNumber} · Click to open` : 'Click to open'}</div>
       </div>
     </div>
   )
