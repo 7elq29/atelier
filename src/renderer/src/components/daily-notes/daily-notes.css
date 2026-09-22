@@ -736,7 +736,7 @@
 }
 
 .dn-agenda-entry.done {
-  opacity: .45;
+  color: var(--text-tertiary);
 }
 
 /* Clickable time label */
