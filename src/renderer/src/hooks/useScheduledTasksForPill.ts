@@ -20,13 +20,32 @@ function localToday(): string {
 }
 
 export function useScheduledTasksForPill(date: string | null): DailyTask[] {
-  // Persist the last non-null date so the pill stays populated after panel closes.
-  // Seed with today so tasks load on mount even if the panel was never opened.
   const lastDateRef = useRef<string | null>(localToday())
+  const prevDateRef = useRef<string | null>(null)
   if (date !== null) lastDateRef.current = date
   const effectiveDate = date ?? lastDateRef.current
 
   const [tasks, setTasks] = useState<DailyTask[]>([])
+
+  // Re-read when the panel closes (date goes non-null → null) so any
+  // deletion that was written during panel cleanup is reflected in the pill.
+  // The write handler suppresses its own fs-watcher echo, so without this
+  // re-read the pill would show stale data.
+  useEffect(() => {
+    const wasOpen = prevDateRef.current !== null
+    const justClosed = date === null && wasOpen
+    prevDateRef.current = date
+
+    if (!justClosed || !lastDateRef.current) return
+
+    const target = lastDateRef.current
+    const id = setTimeout(() => {
+      void window.atelier.readDailyNote(target).then((result) => {
+        setTasks((result.note?.tasks ?? []).filter(isScheduled))
+      })
+    }, 100)  // allow the cleanup write to land before re-reading
+    return () => clearTimeout(id)
+  }, [date])
 
   useEffect(() => {
     if (!effectiveDate) {

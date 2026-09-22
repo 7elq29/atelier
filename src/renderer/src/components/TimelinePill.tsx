@@ -41,12 +41,12 @@ export function TimelinePill({ tasks, onClick }: TimelinePillProps): React.JSX.E
     })
     .sort((a, b) => parseTimeBlock(a.timeBlock)!.start - parseTimeBlock(b.timeBlock)!.start)[0] ?? null
 
-  // Next meeting: earliest isNote item that hasn't started yet
+  // Next meeting: earliest isNote item not yet ended (includes in-progress)
   const nextMeeting = tasks
     .filter((t) => {
       if (DONE_STATUSES.has(t.status) || !t.isNote) return false
       const tb = parseTimeBlock(t.timeBlock)
-      return tb !== null && tb.start > nowMinutes
+      return tb !== null && tb.end > nowMinutes
     })
     .sort((a, b) => parseTimeBlock(a.timeBlock)!.start - parseTimeBlock(b.timeBlock)!.start)[0] ?? null
 
