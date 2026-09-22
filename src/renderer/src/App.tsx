@@ -2719,9 +2719,16 @@ const allSessions = useMemo(
         {config.sidebarCollapsed && (collapsedSessionList || collapsedAlerts) && (
           <div className="sidebar-alert-chips" data-testid="sidebar-alert-chips" data-hint-exclude-root>
             {collapsedSessionList ? (
-              collapsedSessionList.map(({ session, dotStatus }, idx) => {
+              collapsedSessionList.map(({ session, dotStatus }) => {
                 const isBlocked = dotStatus === 'waiting-blocked'
                 const isReady = !isBlocked && waitingInputAlertIds.has(session.id)
+                // Shortcut number must match the ⌘N handler which indexes ALL
+                // sidebar rows (note rows + session rows). Using the session's
+                // list-position (sessions only) produces off-by-N numbers when
+                // Daily/Weekly note rows occupy the top slots.
+                const rows = [...document.querySelectorAll('[data-hint-session-row], [data-hint-note-row]')]
+                const rowIndex = rows.findIndex((el) => el.getAttribute('data-session-id') === session.id)
+                const shortcutNumber = rowIndex >= 0 ? rowIndex + 1 : undefined
                 if (isBlocked || isReady) {
                   return (
                     <CollapsedAlertChip
@@ -2729,7 +2736,7 @@ const allSessions = useMemo(
                       session={session}
                       kind={isBlocked ? 'blocked' : 'ready'}
                       cmdHeld
-                      shortcutNumber={idx + 1}
+                      shortcutNumber={shortcutNumber}
                       onClick={() => {
                         if (isReady) clearWaitingInputAlert(session.id)
                         void updateConfig({ sidebarCollapsed: false })
@@ -2743,7 +2750,7 @@ const allSessions = useMemo(
                     key={session.id}
                     session={session}
                     dotStatus={dotStatus}
-                    shortcutNumber={idx + 1}
+                    shortcutNumber={shortcutNumber}
                     onClick={() => {
                       void updateConfig({ sidebarCollapsed: false })
                       void selectSession(session)
