@@ -722,21 +722,21 @@
 }
 
 .dn-agenda-entry-wrap {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .dn-agenda-entry {
   position: relative;
   display: grid;
-  grid-template-columns: 38px 16px minmax(0, 1fr) auto;
+  grid-template-columns: 36px 18px minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 8px;
-  min-height: 52px;
+  column-gap: 9px;
+  padding: 7px 0;
   color: var(--text-primary);
 }
 
 .dn-agenda-entry.done {
-  color: var(--text-tertiary);
+  opacity: .45;
 }
 
 /* Clickable time label */
@@ -820,15 +820,15 @@
 .dn-agenda-time,
 .dn-agenda-duration {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-tertiary);
   white-space: nowrap;
 }
 
 .dn-agenda-duration {
   font-family: var(--font-ui);
-  font-size: 12px;
-  color: var(--text-tertiary);
+  font-size: 11px;
+  color: var(--text-disabled);
 }
 .dn-agenda-duration--hi-pri {
   color: #e5484d;
@@ -848,8 +848,10 @@
 
 .dn-agenda-label {
   min-width: 0;
-  font-size: 14.5px;
-  line-height: 1.45;
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 450;
+  letter-spacing: -.01em;
 }
 /* Agenda: title + tags inline so they share a line when space allows */
 .dn-agenda-label .dn-task-text-clamp {
@@ -871,9 +873,9 @@
 }
 
 .dn-agenda-entry .dn-tbox {
-  width: 13px;
-  height: 13px;
-  border-radius: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
   justify-self: center;
   padding: 0;
 }

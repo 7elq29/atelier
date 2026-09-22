@@ -661,7 +661,7 @@ export default function AgendaTimeline({
                 title="Click to edit time"
                 onClick={(e) => openTimeEdit(e, task, start, end)}
               >{formatClock(start)}</span>
-              {!task.isNote ? (
+              {!task.isNote && (
                 <button
                   type="button"
                   className="dn-tbox"
@@ -669,8 +669,6 @@ export default function AgendaTimeline({
                   onClick={(event) => { event.stopPropagation(); onToggle(task.id) }}
                   aria-label={task.status === 'done' ? 'Mark task incomplete' : 'Mark task complete'}
                 />
-              ) : (
-                <span className="dn-agenda-meeting-dot" aria-hidden="true" />
               )}
               <div
                 className="dn-agenda-task-main"
