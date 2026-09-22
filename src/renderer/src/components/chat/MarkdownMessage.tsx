@@ -314,17 +314,107 @@ export default function MarkdownMessage({
     )
   }, [content, workspaceRoot, projectRoot, filePathCandidates, onOpenFileInFiles])
 
-  const components = useMemo(
-    () =>
-      createMarkdownComponents({
-        workspaceRoot,
-        projectRoot: projectRoot ?? workspaceRoot,
-        filePathCandidates,
-        onOpenFileInFiles,
-        onBookmarkRequest
-      }),
-    [workspaceRoot, projectRoot, filePathCandidates, onOpenFileInFiles, onBookmarkRequest]
-  )
+  // All mutable link-resolution options in a ref so the stable callbacks
+  // below can always read the latest values without being recreated.
+  // Recreating the a/code/pre component references causes react-markdown to
+  // unmount + remount the corresponding DOM nodes (different function reference
+  // = different React component type), which clears any active text selection
+  // inside code spans or code blocks.
+  const optsRef = useRef<MarkdownLinkOptions & { onBookmarkRequest: typeof onBookmarkRequest }>({
+    onBookmarkRequest
+  })
+  optsRef.current = {
+    workspaceRoot,
+    projectRoot: projectRoot ?? workspaceRoot,
+    filePathCandidates,
+    onOpenFileInFiles,
+    onBookmarkRequest
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const AComponent = useCallback(({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'> & { children?: ReactNode }) => {
+    const { workspaceRoot: wr = '', projectRoot: pr = '', filePathCandidates: fps, onOpenFileInFiles: openFile, onBookmarkRequest: bookmarkReq } = optsRef.current
+    const encodedFilePath = href ? hrefToAtelierFilePath(href) : null
+    const filePath =
+      encodedFilePath ??
+      (href && looksLikeFilePath(href)
+        ? resolveKnownSessionFilePath(href, wr, pr, fps)
+        : null)
+    if (filePath && openFile) {
+      const fileHref = `${ATELIER_FILE_SCHEME}${encodeURIComponent(filePath)}`
+      return (
+        <a
+          {...props}
+          href={fileHref}
+          data-testid="msg-file-link"
+          onContextMenu={(e) => {
+            if (!bookmarkReq) return
+            e.preventDefault()
+            e.stopPropagation()
+            bookmarkReq(e, { kind: 'file', target: normalizeSessionBookmarkTarget('file', filePath), label: nodeText(children).trim() || filePath })
+          }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); openFile(filePath) }}
+        >{children}</a>
+      )
+    }
+    if (!href || !/^https?:\/\//i.test(href)) return <>{children}</>
+    return (
+      <a
+        {...props}
+        href={href}
+        data-testid="external-link"
+        draggable
+        onDragStart={(e) => {
+          if (!href || !/^https?:\/\//i.test(href)) return
+          const label = nodeText(children).trim()
+          const payload: AppBookmarkDragPayload = { url: href, title: label === href ? '' : label }
+          e.dataTransfer.setData(APP_BOOKMARK_DRAG_MIME, JSON.stringify(payload))
+          e.dataTransfer.setData('text/uri-list', href)
+          e.dataTransfer.setData('text/plain', href)
+          e.dataTransfer.effectAllowed = 'copy'
+        }}
+        onContextMenu={(e) => {
+          if (!href || !/^https?:\/\//i.test(href) || !bookmarkReq) return
+          e.preventDefault()
+          e.stopPropagation()
+          bookmarkReq(e, { kind: 'link', target: normalizeSessionBookmarkTarget('link', href), label: nodeText(children).trim() || href })
+        }}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (href) openExternalLink(href) }}
+      >{children}</a>
+    )
+  }, []) // stable for the lifetime of this MarkdownMessage instance
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const CodeComponent = useCallback(({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'> & { children?: ReactNode }) => {
+    const { workspaceRoot: wr = '', projectRoot: pr = '', filePathCandidates: fps, onOpenFileInFiles: openFile, onBookmarkRequest: bookmarkReq } = optsRef.current
+    const isFenced = Boolean(className?.startsWith('language-'))
+    if (isFenced) return <code className={className} {...props}>{children}</code>
+    const text = String(children).replace(/\n$/, '')
+    if (/^https?:\/\//i.test(text)) {
+      return <a href={text} onClick={(e) => { e.preventDefault(); e.stopPropagation(); openExternalLink(text) }}>{text}</a>
+    }
+    if (!openFile || !wr) return <code className={className} {...props}>{children}</code>
+    const resolved = resolveKnownSessionFilePath(text, wr, pr, fps)
+    if (!resolved || !looksLikeFilePath(text)) return <code className={className} {...props}>{children}</code>
+    const href = `${ATELIER_FILE_SCHEME}${encodeURIComponent(resolved)}`
+    return (
+      <a
+        className={className}
+        href={href}
+        data-testid="msg-file-link"
+        onContextMenu={(e) => {
+          if (!bookmarkReq) return
+          e.preventDefault()
+          e.stopPropagation()
+          bookmarkReq(e, { kind: 'file', target: normalizeSessionBookmarkTarget('file', resolved), label: text })
+        }}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); openFile(resolved) }}
+      >{text}</a>
+    )
+  }, []) // stable for the lifetime of this MarkdownMessage instance
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const components = { a: AComponent, code: CodeComponent, pre: PreBlock }
 
   useEffect(() => {
     function handleCopy(event: ClipboardEvent): void {
