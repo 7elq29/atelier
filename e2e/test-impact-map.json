@@ -9,6 +9,19 @@
   ],
   "rules": [
     {
+      "id": "session-alert-dot",
+      "paths": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/components/Sidebar.tsx"
+      ],
+      "changedLines": "waitingInputAlert|hasBeenWorkingWhileActive|statusAtSelection|session-waiting-input-alert|showWaitingInputAlert",
+      "targets": [
+        {
+          "file": "e2e/bug-collapsed-alert-chip.spec.ts"
+        }
+      ]
+    },
+    {
       "id": "theme-editor-popup-shortcuts",
       "paths": [
         "src/renderer/src/components/ThemeEditorWindow.tsx"

@@ -862,6 +862,13 @@ const allSessions = useMemo(
   activeSessionsRef.current = sessions.activeSessions
   const statusesRef = useRef(sessions.statuses)
   statusesRef.current = sessions.statuses
+  // Tracks sessions that went through the 'working' state while that session was
+  // the active (visible) one. Used to gatekeep the orange alert dot: we only
+  // re-show the dot when switching away from a session if the agent actually
+  // completed a full turn (working → waiting) during the user's current visit.
+  // Without this, clicking a session that already had the dot and then switching
+  // away would re-show the dot even though no new response arrived.
+  const hasBeenWorkingWhileActiveRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     setWaitingInputAlertIds((prev) => {
@@ -881,6 +888,11 @@ const allSessions = useMemo(
         ) {
           touch().add(session.id)
         }
+        // Track when the active session enters 'working' so the switch-away logic
+        // can tell whether a new turn completed during this visit (see hasBeenWorkingWhileActiveRef).
+        if (session.id === activeSessionId && dotStatus === 'working') {
+          hasBeenWorkingWhileActiveRef.current.add(session.id)
+        }
         prevDotStatusBySessionRef.current[session.id] = dotStatus
       }
       for (const id of prev) {
@@ -896,12 +908,17 @@ const allSessions = useMemo(
     const prevId = prevActiveSessionIdRef.current
     prevActiveSessionIdRef.current = activeSessionId ?? null
 
-    // When switching away from a session that's already in waiting-input (agent
-    // responded while the user was still on it), add it to the alert set so the
-    // indicator appears on the row and the collapsed chip shows.
+    // When switching away from a session that became waiting-input WHILE the user
+    // was on it (agent completed a turn during their visit), add it to the alert
+    // set so the indicator appears on the row and the collapsed chip shows.
+    // Guard: only add the dot if the session actually went through 'working' since
+    // the user selected it. This prevents the dot from reappearing when the user
+    // explicitly clicks a session (clearing the dot) and then switches away without
+    // sending a message — the session is still in 'waiting' but no new response arrived.
     if (prevId && prevId !== activeSessionId) {
       const prevSession = activeSessionsRef.current.find((s) => s.id === prevId)
-      if (prevSession && sessionLiveWaitingForInput(prevSession, false, statusesRef.current)) {
+      const hadNewTurn = hasBeenWorkingWhileActiveRef.current.has(prevId)
+      if (prevSession && sessionLiveWaitingForInput(prevSession, false, statusesRef.current) && hadNewTurn) {
         setWaitingInputAlertIds((prev) => {
           if (prev.has(prevId)) return prev
           return new Set([...prev, prevId])
@@ -1108,6 +1125,9 @@ const allSessions = useMemo(
   )
 
   async function selectSession(session: SessionRecord): Promise<void> {
+    // Reset the "was working while active" flag for the newly-selected session so
+    // the alert dot can only fire for turns that complete during THIS visit.
+    hasBeenWorkingWhileActiveRef.current.delete(session.id)
     setActiveAppNoteId(null)
     setActiveDailyNoteDate(null)
     setActiveWeeklyPlanOpen(false)

@@ -1,8 +1,8 @@
 09-vault-sync.log — obsidian-integration e2e run
-vaultRoot=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-NrdOye/vault
-notePath=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-NrdOye/vault/01.dailynotes/2026/Jul/31/2026-07-31.md
+vaultRoot=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-E9juPy/vault
+notePath=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-E9juPy/vault/01.dailynotes/2026/Jul/31/2026-07-31.md
 
 
 ===== main-process daily-note log lines =====
-{"ts":"2026-09-17T16:49:52.366Z","level":"info","process":"main","msg":"daily-note watcher: started dir watch","dir":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-NrdOye/vault/01.dailynotes/2026/Jul/31","fileCount":1}
-{"ts":"2026-09-17T16:49:52.371Z","level":"info","process":"main","msg":"daily-note read","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-NrdOye/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":8}
+{"ts":"2026-09-21T17:03:20.072Z","level":"info","process":"main","msg":"daily-note watcher: started dir watch","dir":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-E9juPy/vault/01.dailynotes/2026/Jul/31","fileCount":1}
+{"ts":"2026-09-21T17:03:20.074Z","level":"info","process":"main","msg":"daily-note read","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-E9juPy/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":8}

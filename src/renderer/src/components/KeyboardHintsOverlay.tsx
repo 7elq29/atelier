@@ -214,16 +214,6 @@ export default function KeyboardHintsOverlay({
     function onKeyDown(e: KeyboardEvent): void {
       if (e.key === 'Meta') {
         if (e.repeat || disabledRef.current) return
-        // Don't activate hint mode when the composer textarea is focused — the user
-        // is editing text and Cmd is for clipboard shortcuts, not hints. We check for
-        // data-hint-exclude to target only explicitly opted-out inputs (the composer),
-        // NOT xterm's hidden capture textarea or contenteditable note editors, which
-        // the user still wants to overlay with hints.
-        const active = document.activeElement as HTMLElement | null
-        if (
-          active?.hasAttribute('data-hint-exclude') &&
-          (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')
-        ) return
         metaHeldRef.current = true
         if (entriesRef.current.length === 0) scheduleHintMode()
         return

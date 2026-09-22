@@ -86,7 +86,15 @@ export function hintBadgeDisplayLabel(fullLabel: string, typedBuffer: string): s
 }
 
 function isHintExcluded(el: Element): boolean {
-  return !!el.closest('[data-hint-exclude], [data-hint-exclude-root], [data-keyboard-hints-root]')
+  if (el.closest('[data-hint-exclude], [data-hint-exclude-root], [data-keyboard-hints-root]')) return true
+  // Don't label elements inside contenteditable regions — setting data-hint-label
+  // attributes on DOM nodes inside a contenteditable triggers browser selection resets.
+  let node: Element | null = el.parentElement
+  while (node) {
+    if ((node as HTMLElement).isContentEditable) return true
+    node = node.parentElement
+  }
+  return false
 }
 
 function isElementVisible(el: HTMLElement): boolean {

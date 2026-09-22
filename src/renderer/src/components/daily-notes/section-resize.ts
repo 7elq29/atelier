@@ -8,14 +8,17 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const STORAGE_KEY = 'atelier.dailyNotes.sectionWeights'
+const STORAGE_KEY = 'atelier.dailyNotes.sectionWeights.v2'
 const MIN_WEIGHT = 0.4
 
 export type SectionKey = 'timeline' | 'unscheduled' | 'carry' | 'trackers'
 
 export type SectionWeights = Record<SectionKey, number>
 
-const DEFAULT_WEIGHTS: SectionWeights = { timeline: 2, unscheduled: 2, carry: 1, trackers: 1 }
+// v2 defaults: timeline takes ~80% of space so it dominates over unscheduled.
+// The old v1 key used equal weights (timeline:2, unscheduled:2) which caused
+// the timeline to only occupy half the screen in schedule view.
+const DEFAULT_WEIGHTS: SectionWeights = { timeline: 5, unscheduled: 1, carry: 0.5, trackers: 0.5 }
 
 function loadWeights(): SectionWeights {
   try {
