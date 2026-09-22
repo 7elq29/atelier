@@ -119,9 +119,6 @@ export default function KeyboardHintsOverlay({
 
   const beginHintMode = useCallback(() => {
     if (disabledRef.current) return
-    // Safety net: if a selection appeared since we scheduled (user selected
-    // text within the 200ms window), abort so we don't clear it.
-    if ((window.getSelection()?.toString().length ?? 0) > 0) return
     const root = document.getElementById(scanRootId)
     if (!root) return
 
@@ -217,10 +214,6 @@ export default function KeyboardHintsOverlay({
     function onKeyDown(e: KeyboardEvent): void {
       if (e.key === 'Meta') {
         if (e.repeat || disabledRef.current) return
-        // Don't schedule hint mode when the user has text selected — they're
-        // about to copy it. The 200ms DOM mutations from beginHintMode clear
-        // browser text selection, making Cmd+C copy nothing.
-        if ((window.getSelection()?.toString().length ?? 0) > 0) return
         metaHeldRef.current = true
         if (entriesRef.current.length === 0) scheduleHintMode()
         return

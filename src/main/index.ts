@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Notification, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, nativeImage, Menu } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import './bootstrap-branding'
@@ -247,6 +247,12 @@ function registerIpcHandlers(sessionManager: SessionManager): void {
 }
 
 app.whenReady().then(() => {
+  // Remove the default Electron menu. Its role-based Edit items (Copy, Paste, etc.)
+  // fire Cocoa actions on top of the browser's own native clipboard handling,
+  // causing double-paste in xterm (two paste events reach the textarea). All
+  // standard shortcuts (Cmd+C/V/Z/A) work through the browser natively.
+  Menu.setApplicationMenu(null)
+
   // Gardenia → Atelier rename: pull SQLite/config from the old Application Support
   // folder before openDatabase() (npm run dev changed userData when package name changed).
   migrateLegacyUserDataFromGardeniaProfiles()
