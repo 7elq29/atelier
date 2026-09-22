@@ -994,12 +994,13 @@ const allSessions = useMemo(
     const list: Array<{ session: SessionRecord; dotStatus: string }> = []
     for (const s of sessions.activeSessions) {
       if (s.deletedAt || s.id === activeSessionId) continue
-      const dot = sessionDotStatus(s, false, sessions.statuses, sessions.staleSessionIds, promptDotsBySession[s.id] ?? null)
+      const dot = sessionDotStatus(s, false, sessions.statuses, sessions.staleSessionIds, promptDotsBySession[s.id] ?? null,
+        countActiveBackgroundTasks(sessions.backgroundTasksBySession[s.id] ?? []) > 0)
       list.push({ session: s, dotStatus: dot })
     }
     return list.length > 0 ? list : null
   }, [config.sidebarCollapsed, cmdHeld, sessions.activeSessions, sessions.statuses,
-      sessions.staleSessionIds, activeSessionId, promptDotsBySession])
+      sessions.staleSessionIds, activeSessionId, promptDotsBySession, sessions.backgroundTasksBySession])
 
   const runningSessionCount = useMemo(() => {
     if (!config.sidebarCollapsed) return 0
