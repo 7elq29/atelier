@@ -237,14 +237,23 @@
   display: flex;
   flex-direction: column;
 }
-/* While a task is being dragged over the agenda, let the 576px overlay grid
-   extend past the section's flex-allocated height so the full time range is
-   visible above the Unscheduled section. The overlay itself has
-   pointer-events:none so nothing below is blocked. Outside drag mode the base
-   overflow:hidden stays in effect so the transparent min-height padding of
-   .dn-agenda never captures pointer events over sibling sections. */
+/* While dragging over the agenda:
+   1. Let the timeline section grow taller by hiding Trackers and Carry (they
+      sit between the timeline and Unscheduled, eating space the grid needs).
+      pointer-events stay off on the overlay so nothing below is blocked.
+   2. Allow the overlay to extend past the section's overflow boundary so
+      the full 576px time grid reaches down toward the Unscheduled section. */
+.dn-sections-stack--agenda:has(.dn-agenda--drag-over) .dn-trackers-section,
+.dn-sections-stack--agenda:has(.dn-agenda--drag-over) .dn-carry-review {
+  display: none;
+}
 .dn-sections-stack--agenda .dn-timeline-section:has(.dn-agenda--drag-over) {
   overflow: visible;
+}
+/* Make the overlay fill the full expanded agenda height (not just the fixed
+   576px), so it visually reaches all the way to the Unscheduled section. */
+.dn-sections-stack--agenda .dn-agenda--drag-over .dn-agenda-overlay {
+  min-height: 100%;
 }
 .dn-sections-stack--agenda .dn-timeline-section .dn-section-body {
   flex: 1;
