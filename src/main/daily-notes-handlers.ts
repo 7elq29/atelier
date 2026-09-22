@@ -897,6 +897,10 @@ export function registerDailyNoteHandlers(
     logger.info('daily-note write committed', { path, taskCount: toWrite.tasks.length })
     const schedW = _getScheduler?.()
     if (schedW) scheduleMeetingReminders(toWrite, date, schedW)
+    // Notify all renderer listeners (e.g. useScheduledTasksForPill) so they
+    // pick up additions/deletions immediately without waiting for the fs watcher
+    // echo (which is suppressed for self-writes).
+    notifyDailyNoteChanged(getMainWindow, toWrite)
 
     return { note: toWrite }
   })
