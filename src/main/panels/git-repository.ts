@@ -703,29 +703,45 @@ export async function mergeHintPathsIntoDiffSummary(
 ): Promise<DiffSummary> {
   if (!summary.isRepo || hintPaths.length === 0) return summary
 
-  const seen = new Set(summary.files.map((f) => f.path))
-  const extra: DiffFileChange[] = []
+  const seenInSummary = new Set(summary.files.map((f) => f.path))
 
-  for (const raw of hintPaths) {
-    const path = raw.trim().replace(/\\/g, '/').replace(/^\.\//, '')
-    if (!path || seen.has(path)) continue
+  // Process all hint paths concurrently: each path's own async git calls
+  // still run in sequence internally, but paths no longer block each other.
+  // Previously 21 paths × 5 serial git calls ≈ 105 sequential spawns (~1 s);
+  // now all paths start in parallel → wall-clock ≈ 5 calls × ~10 ms = ~50 ms.
+  const candidates = await Promise.all(
+    hintPaths.map(async (raw): Promise<DiffFileChange | null> => {
+      const path = raw.trim().replace(/\\/g, '/').replace(/^\.\//, '')
+      if (!path || seenInSummary.has(path)) return null
 
-    const ctx = await resolveCapGitContext(path, projectPath, sshHost ?? null)
-    const gitPath = ctx?.gitRelative ?? path
-    if (seen.has(gitPath)) continue
+      const ctx = await resolveCapGitContext(path, projectPath, sshHost ?? null)
+      const gitPath = ctx?.gitRelative ?? path
+      if (seenInSummary.has(gitPath)) return null
 
-    const repoRoot = ctx?.repoRoot ?? projectPath
-    const stats = await getPathWorkingTreeNumstat(repoRoot, gitPath, sshHost)
-    if (!stats || (stats.additions === 0 && stats.deletions === 0)) continue
+      const repoRoot = ctx?.repoRoot ?? projectPath
+      const stats = await getPathWorkingTreeNumstat(repoRoot, gitPath, sshHost)
+      if (!stats || (stats.additions === 0 && stats.deletions === 0)) return null
 
-    seen.add(gitPath)
-    extra.push({
-      path: gitPath,
-      status: 'added',
-      additions: stats.additions,
-      deletions: stats.deletions,
-      hunks: []
+      return {
+        path: gitPath,
+        status: 'added',
+        additions: stats.additions,
+        deletions: stats.deletions,
+        hunks: []
+      }
     })
+  )
+
+  // Deduplicate: two hint paths may resolve to the same gitPath (e.g. an
+  // absolute path and its workspace-relative equivalent). Since they ran
+  // concurrently both could have passed the seenInSummary check above;
+  // keep the first occurrence here.
+  const seen = new Set(seenInSummary)
+  const extra: DiffFileChange[] = []
+  for (const c of candidates) {
+    if (!c || seen.has(c.path)) continue
+    seen.add(c.path)
+    extra.push(c)
   }
 
   if (extra.length === 0) return summary
