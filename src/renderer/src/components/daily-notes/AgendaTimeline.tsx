@@ -576,9 +576,9 @@ export default function AgendaTimeline({
           style={{ height: AGENDA_HOURS.length * slotH }}
           aria-hidden="true"
         >
-          {/* Hour grid lines */}
+          {/* Hour grid lines — use dynamic slotH so lines align with task chips */}
           {AGENDA_HOURS.map((h) => (
-            <div key={h} className="dn-agenda-overlay-slot">
+            <div key={h} className="dn-agenda-overlay-slot" style={{ flex: `0 0 ${slotH}px` }}>
               <span className="dn-agenda-overlay-label">
                 {h === 12 ? '12p' : h < 12 ? `${h}a` : `${h - 12}p`}
               </span>
