@@ -1,32 +1,8 @@
-/**
- * TimelinePill — the enriched calendar-toggle button shown in the topbar
- * when the daily notes panel is hidden.
- *
- * Shows:
- *  • A calendar icon (same as the plain toggle)
- *  • A 30-slot sparkline (6 am–9 pm in 30-min buckets), colored by task type:
- *      blue  = isNote (meetings / plain-bullet events)
- *      green = !isNote (checkbox tasks)
- *  • The next upcoming task: time + name
- *  • A "+N" remaining count badge
- *
- * Clicking anywhere opens the daily notes panel (same as the plain toggle).
- */
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import type { DailyTask } from '../../../shared/daily-note-types'
 import { parseTimeBlock } from './daily-notes/timeline-scale'
 
-// ── Constants ──────────────────────────────────────────────────────────────
-
-/** Sparkline covers 8 am–9 pm (13 hours × 2 = 26 half-hour slots). */
-const PILL_START_MIN = 8 * 60   // 480
-const PILL_END_MIN   = 21 * 60  // 1260
-const SLOT_MIN       = 30
-const TOTAL_SLOTS    = (PILL_END_MIN - PILL_START_MIN) / SLOT_MIN // 26
-
 const DONE_STATUSES = new Set(['done', 'cancelled', 'forwarded'])
-
-/** Refresh "now" every 60 s. */
 const NOW_POLL_MS = 60_000
 
 function getNowMinutes(): number {
@@ -34,16 +10,14 @@ function getNowMinutes(): number {
   return d.getHours() * 60 + d.getMinutes()
 }
 
-/** "3:00 PM" */
+// Drop ":00" when on the hour — "2 PM" instead of "2:00 PM"
 function formatTime(minutes: number): string {
   const h = Math.floor(minutes / 60)
   const m = minutes % 60
   const h12 = h % 12 || 12
   const ampm = h < 12 ? 'AM' : 'PM'
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+  return m === 0 ? `${h12} ${ampm}` : `${h12}:${String(m).padStart(2, '0')} ${ampm}`
 }
-
-// ── Component ──────────────────────────────────────────────────────────────
 
 interface TimelinePillProps {
   tasks: DailyTask[]
@@ -58,43 +32,34 @@ export function TimelinePill({ tasks, onClick }: TimelinePillProps): React.JSX.E
     return () => clearInterval(id)
   }, [])
 
-  // ── Derive sparkline slots ─────────────────────────────────────────────
-  // For each 30-min bucket, find the first task that overlaps it.
-  const slots = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
-    const slotStart = PILL_START_MIN + i * SLOT_MIN
-    const slotEnd   = slotStart + SLOT_MIN
-
-    for (const task of tasks) {
-      const tb = parseTimeBlock(task.timeBlock)
-      if (!tb) continue
-      // Overlaps if task starts before slot ends AND ends after slot starts
-      if (tb.start < slotEnd && tb.end > slotStart) {
-        return task
-      }
-    }
-    return null
-  })
-
-  // ── Derive next/current task ───────────────────────────────────────────
-  // Show the earliest task whose end time is still in the future — this
-  // includes tasks that are currently happening (started but not finished).
+  // Next task: earliest checkbox task that hasn't started yet
   const nextTask = tasks
     .filter((t) => {
-      if (DONE_STATUSES.has(t.status)) return false
+      if (DONE_STATUSES.has(t.status) || t.isNote) return false
       const tb = parseTimeBlock(t.timeBlock)
-      return tb !== null && tb.end > nowMinutes
+      return tb !== null && tb.start > nowMinutes
     })
     .sort((a, b) => parseTimeBlock(a.timeBlock)!.start - parseTimeBlock(b.timeBlock)!.start)[0] ?? null
-  const nextTb = nextTask ? parseTimeBlock(nextTask.timeBlock) : null
 
-  // ── Render ─────────────────────────────────────────────────────────────
-  const nowSlot = Math.floor((nowMinutes - PILL_START_MIN) / SLOT_MIN)
+  // Next meeting: earliest isNote item that hasn't started yet
+  const nextMeeting = tasks
+    .filter((t) => {
+      if (DONE_STATUSES.has(t.status) || !t.isNote) return false
+      const tb = parseTimeBlock(t.timeBlock)
+      return tb !== null && tb.start > nowMinutes
+    })
+    .sort((a, b) => parseTimeBlock(a.timeBlock)!.start - parseTimeBlock(b.timeBlock)!.start)[0] ?? null
 
-  // Precise pixel position of the now line within the sparkline.
-  // Each bar = 3px wide + 1.5px gap = 4.5px per slot.
-  const BAR_W = 3, BAR_GAP = 1.5, SLOT_PX = BAR_W + BAR_GAP
-  const minutesIntoSlot = (nowMinutes - PILL_START_MIN) % SLOT_MIN
-  const nowLineLeft = nowSlot * SLOT_PX + (minutesIntoSlot / SLOT_MIN) * SLOT_PX
+  // Build items in chronological order
+  type PillItem = { kind: 'task' | 'meeting'; startMin: number; task: DailyTask }
+  const items: PillItem[] = []
+  if (nextTask) {
+    items.push({ kind: 'task', startMin: parseTimeBlock(nextTask.timeBlock)!.start, task: nextTask })
+  }
+  if (nextMeeting) {
+    items.push({ kind: 'meeting', startMin: parseTimeBlock(nextMeeting.timeBlock)!.start, task: nextMeeting })
+  }
+  items.sort((a, b) => a.startMin - b.startMin)
 
   return (
     <button
@@ -105,7 +70,6 @@ export function TimelinePill({ tasks, onClick }: TimelinePillProps): React.JSX.E
       data-testid="toggle-daily-notes-panel"
       onClick={onClick}
     >
-      {/* Calendar icon — same as plain toggle */}
       <svg
         className="topbar-pill-icon"
         viewBox="0 0 24 24"
@@ -120,54 +84,28 @@ export function TimelinePill({ tasks, onClick }: TimelinePillProps): React.JSX.E
         <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
       </svg>
 
-      {/* Sparkline */}
-      {tasks.length > 0 && (
-        <div className="topbar-pill-sparkline" aria-hidden="true">
-          {slots.map((task, i) => {
-            const isEmpty   = task === null
-            const isDone    = task !== null && DONE_STATUSES.has(task.status)
-            const isMeeting = task !== null && task.isNote
-            const isPast    = task !== null && (() => {
-              const tb = parseTimeBlock(task.timeBlock)
-              return tb !== null && tb.end <= nowMinutes
-            })()
-
-            const bg = isEmpty
-              ? 'var(--border-default)'
-              : isMeeting ? 'var(--sc-blue)' : 'var(--sc-green)'
-            const height = isEmpty ? 3 : 10
-            const opacity = (isDone || isPast) ? 0.3 : 1
-
-            return (
-              <div
-                key={i}
-                className="topbar-pill-spark-bar"
-                style={{ background: bg, height, opacity }}
-              />
-            )
-          })}
-
-          {/* Now line — precise vertical marker at current time */}
-          {nowSlot >= 0 && nowSlot < TOTAL_SLOTS && (
-            <div
-              className="topbar-pill-now-line"
-              style={{ left: nowLineLeft }}
-            />
-          )}
-        </div>
-      )}
-
-      {/* Next task */}
-      {nextTask && nextTb && (
+      {items.length > 0 && (
         <>
-          <div className="topbar-pill-divider" aria-hidden="true" />
-          <div className="topbar-pill-next">
-            <span className="topbar-pill-next-time">{formatTime(nextTb.start)}</span>
-            <span className="topbar-pill-next-name">{nextTask.text}</span>
-          </div>
+          <span className="topbar-pill-divider" aria-hidden="true" />
+          {items.map((item, idx) => (
+            <React.Fragment key={item.task.id}>
+              {idx > 0 && <span className="topbar-pill-divider" aria-hidden="true" />}
+              <span className="topbar-pill-item">
+                <span
+                  className="topbar-pill-item-label"
+                  style={{ color: item.kind === 'task' ? 'var(--sc-green)' : 'var(--sc-blue)' }}
+                >
+                  {item.kind === 'task' ? 'next' : 'mtg'}
+                </span>
+                <span className="topbar-pill-item-time">{formatTime(item.startMin)}</span>
+                {item.kind === 'meeting' && (
+                  <span className="topbar-pill-item-name">{item.task.text}</span>
+                )}
+              </span>
+            </React.Fragment>
+          ))}
         </>
       )}
-
     </button>
   )
 }
