@@ -275,6 +275,8 @@ interface ComposerProps {
   busy: boolean
   /** Active session id — used for worktree branch label before git/harness events arrive. */
   sessionId?: string
+  /** Session mode — hides Claude-specific controls (mode pill, model picker) for non-claude-code sessions. */
+  sessionMode?: string
   /** Active session's project root — `@file` mentions are resolved (real, live `fs` walk via the existing Files-panel IPC) against this. Undefined/empty just disables the mention popover. */
   projectPath?: string
   /** Worktree path if the session runs inside a git worktree, else null. */
@@ -526,6 +528,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   onInterrupt,
   busy,
   sessionId,
+  sessionMode,
   projectPath,
   worktreePath,
   harnessCwd,
@@ -1111,13 +1114,15 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       data-testid="composer-primary-actions"
       data-placement={placement}
     >
-      <ModelPicker
-        selection={modelSelection}
-        onChange={onModelSelectionChange}
-        open={modelPickerOpen}
-        onOpenChange={setModelPickerOpen}
-        liveModels={liveModels}
-      />
+      {sessionMode !== 'cortana' && (
+        <ModelPicker
+          selection={modelSelection}
+          onChange={onModelSelectionChange}
+          open={modelPickerOpen}
+          onOpenChange={setModelPickerOpen}
+          liveModels={liveModels}
+        />
+      )}
       {busy && !hasSendableContent ? (
         <button
           className="stop-btn composer-turn-action-active"
@@ -1162,16 +1167,18 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         onDrop={handleDrop}
       >
         <div className="context-bar" data-testid="composer-context-bar">
-          <span
-            className={`mode-pill mode-${mode} context-bar-mode`}
-            data-testid="composer-mode-pill"
-            data-mode={mode}
-            title="Click or press Shift+Tab to cycle mode"
-            onClick={onCycleMode}
-          >
-            <span className="mode-icon">{MODE_ICON[mode]}</span>
-            <span>{MODE_LABEL[mode]}</span>
-          </span>
+          {sessionMode !== 'cortana' && (
+            <span
+              className={`mode-pill mode-${mode} context-bar-mode`}
+              data-testid="composer-mode-pill"
+              data-mode={mode}
+              title="Click or press Shift+Tab to cycle mode"
+              onClick={onCycleMode}
+            >
+              <span className="mode-icon">{MODE_ICON[mode]}</span>
+              <span>{MODE_LABEL[mode]}</span>
+            </span>
+          )}
           {tokenUsage && tokenUsage.contextWindow > 0 && (() => {
             const pct = Math.min(100, Math.round((tokenUsage.inputTokens / tokenUsage.contextWindow) * 100))
             const usageTitle = `${tokenUsage.inputTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} context tokens (${pct}%)`

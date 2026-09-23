@@ -3376,6 +3376,7 @@ const allSessions = useMemo(
                       onInterrupt={() => void handleInterrupt(sessionId)}
                       busy={sessions.busyBySession[sessionId] ?? false}
                       sessionId={sessionId}
+                      sessionMode={session.mode}
                       projectPath={session.projectPath}
                       worktreePath={session.worktreePath}
                       harnessCwd={sessions.harnessCwdBySession[sessionId] ?? null}
