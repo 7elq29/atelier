@@ -169,16 +169,17 @@ export default function NewSessionModal({
   }
 
   async function handleCreate(): Promise<void> {
-    if (!resolvedProjectPath || creating) return
+    if (mode !== 'cortana' && !resolvedProjectPath) return
+    if (creating) return
     setCreating(true)
     setErrorMessage(null)
     try {
       await onCreate({
-        projectPath: resolvedProjectPath,
-        profileId: selectedProfile?.id,
+        projectPath: mode === 'cortana' ? '' : resolvedProjectPath!,
+        profileId: mode === 'cortana' ? undefined : selectedProfile?.id,
         mode,
-        hostId,
-        prompt: mode === 'claude-code' && prompt.trim() ? prompt.trim() : undefined,
+        hostId: mode === 'cortana' ? 'local' : hostId,
+        prompt: (mode === 'claude-code' || mode === 'cortana') && prompt.trim() ? prompt.trim() : undefined,
         useWorktree: mode === 'claude-code' ? useWorktree : undefined
       })
       onClose()
@@ -199,7 +200,7 @@ export default function NewSessionModal({
           </button>
         </div>
         <div className="modal-body">
-          <div className="project-path-field">
+          {mode !== 'cortana' && <div className="project-path-field">
             <div className="field-label">Project</div>
             <input
               className={'input project-path-input' + (selectedProfile ? ' profile-selected' : '')}
@@ -320,7 +321,7 @@ export default function NewSessionModal({
                 )}
               </div>
             )}
-          </div>
+          </div>}
 
           <div>
             <div className="field-label">Session type</div>
@@ -339,10 +340,17 @@ export default function NewSessionModal({
               >
                 Terminal
               </button>
+              <button
+                className={mode === 'cortana' ? 'active' : ''}
+                data-testid="mode-cortana"
+                onClick={() => setMode('cortana')}
+              >
+                Cortana
+              </button>
             </div>
           </div>
 
-          <div>
+          {mode !== 'cortana' && <div>
             <div className="field-label">Host</div>
             <div className="host-options">
               <label className={'host-option' + (hostId === 'local' ? ' selected' : '')}>
@@ -367,9 +375,9 @@ export default function NewSessionModal({
                 </label>
               ))}
             </div>
-          </div>
+          </div>}
 
-          {mode === 'claude-code' && (
+          {(mode === 'claude-code' || mode === 'cortana') && (
             <div>
               <div className="field-label">
                 Initial prompt <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span>
@@ -377,7 +385,7 @@ export default function NewSessionModal({
               <div className="prompt-box">
                 <textarea
                   data-testid="initial-prompt"
-                  placeholder="What should Claude do first?"
+                  placeholder={mode === 'cortana' ? 'Ask Cortana anything…' : 'What should Claude do first?'}
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   onKeyDown={(e) => {
@@ -385,20 +393,22 @@ export default function NewSessionModal({
                   }}
                 />
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 14.5, color: 'var(--text-secondary)' }}>
-                <input
-                  type="checkbox"
-                  data-testid="use-worktree-checkbox"
-                  checked={useWorktree}
-                  onChange={(e) => setUseWorktree(e.target.checked)}
-                />
-                <span>
-                  Use worktree
-                  <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
-                    — isolated copy at {worktreeRootLabel}/&lt;id&gt;
+              {mode === 'claude-code' && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 14.5, color: 'var(--text-secondary)' }}>
+                  <input
+                    type="checkbox"
+                    data-testid="use-worktree-checkbox"
+                    checked={useWorktree}
+                    onChange={(e) => setUseWorktree(e.target.checked)}
+                  />
+                  <span>
+                    Use worktree
+                    <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>
+                      — isolated copy at {worktreeRootLabel}/&lt;id&gt;
+                    </span>
                   </span>
-                </span>
-              </label>
+                </label>
+              )}
             </div>
           )}
         </div>
@@ -412,7 +422,7 @@ export default function NewSessionModal({
           <button
             className="btn btn-primary"
             data-testid="start-session-button"
-            disabled={!resolvedProjectPath || creating}
+            disabled={(mode !== 'cortana' && !resolvedProjectPath) || creating}
             onClick={handleCreate}
           >
             {creating ? 'Starting…' : 'Start Session'}

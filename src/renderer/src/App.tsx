@@ -2263,7 +2263,7 @@ const allSessions = useMemo(
     const ids = new Set<string>()
     for (const id of aliveChatComposers) ids.add(id)
     for (const id of sessionWorkspace.readySessionIds) ids.add(id)
-    if (activeSessionId && activeSession?.mode === 'claude-code' && !activeSessionDisconnected) {
+    if (activeSessionId && (activeSession?.mode === 'claude-code' || activeSession?.mode === 'cortana') && !activeSessionDisconnected) {
       ids.add(activeSessionId)
     }
     return [...ids]
@@ -2276,9 +2276,10 @@ const allSessions = useMemo(
     activeSessionDisconnected
   ])
 
-  // Register claude-code chat composers on first connected visit; keep mounted across session/note switches.
+  // Register chat composers on first connected visit; keep mounted across session/note switches.
   useEffect(() => {
-    if (!activeSessionId || !activeSession || activeSession.mode !== 'claude-code') return
+    if (!activeSessionId || !activeSession) return
+    if (activeSession.mode !== 'claude-code' && activeSession.mode !== 'cortana') return
     if (sessions.statuses[activeSessionId] === 'startup-idle' || activeSession?.closedAt) return
     setAliveChatComposers((prev) => {
       if (prev.has(activeSessionId)) return prev
@@ -2372,7 +2373,7 @@ const allSessions = useMemo(
     !activeAppNote &&
     !activeDailyNoteDate &&
     !activeWeeklyPlanSurface &&
-    activeSession?.mode === 'claude-code' &&
+    (activeSession?.mode === 'claude-code' || activeSession?.mode === 'cortana') &&
     !activeSessionDisconnected &&
     isChatTabVisible(activeTab, activeWorkspaceSplit)
   )
@@ -3354,7 +3355,7 @@ const allSessions = useMemo(
             >
               {[...aliveChatComposers].map((sessionId) => {
                 const session = allSessions.find((s) => s.id === sessionId)
-                if (!session || session.mode !== 'claude-code') return null
+                if (!session || (session.mode !== 'claude-code' && session.mode !== 'cortana')) return null
                 const composerActive = composerDockVisible && activeSessionId === sessionId
                 const ws = sessionWorkspace.workspaceBySession[sessionId]
                 const mentionPaths = ws?.filesList?.map((e) => e.relativePath)
