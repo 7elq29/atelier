@@ -661,15 +661,18 @@ export default function AgendaTimeline({
                 title="Click to edit time"
                 onClick={(e) => openTimeEdit(e, task, start, end)}
               >{formatClock(start)}</span>
-              {!task.isNote && (
-                <button
-                  type="button"
-                  className="dn-tbox"
-                  data-testid="agenda-task-toggle"
-                  onClick={(event) => { event.stopPropagation(); onToggle(task.id) }}
-                  aria-label={task.status === 'done' ? 'Mark task incomplete' : 'Mark task complete'}
-                />
-              )}
+              {task.isNote
+                ? <span aria-hidden="true" />
+                : (
+                  <button
+                    type="button"
+                    className="dn-tbox"
+                    data-testid="agenda-task-toggle"
+                    onClick={(event) => { event.stopPropagation(); onToggle(task.id) }}
+                    aria-label={task.status === 'done' ? 'Mark task incomplete' : 'Mark task complete'}
+                  />
+                )
+              }
               <div
                 className="dn-agenda-task-main"
                 onDoubleClick={(event) => { event.stopPropagation(); startRename(task) }}
