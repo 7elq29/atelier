@@ -61,7 +61,7 @@ function callAgentGateway(tool: string, args: Record<string, unknown>): Promise<
   return new Promise((resolve, reject) => {
     execFile(
       'aifx',
-      ['mcp', 'call', 'agent-gateway', tool, '--args', JSON.stringify(args)],
+      ['mcp', 'call', '--usso', 'agent-gateway', tool, '--args', JSON.stringify(args)],
       { timeout: 60_000 },
       (err, stdout, stderr) => {
         if (err) {
