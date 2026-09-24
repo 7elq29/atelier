@@ -20,7 +20,7 @@ import type { HarnessDriver, HarnessEvent, HarnessFileInput, HarnessSession, Har
 /** Minimum polling interval between get_session_history calls, in ms. */
 const POLL_INTERVAL_MS = 1500
 /** How long to poll before giving up on a response, in ms. */
-const POLL_TIMEOUT_MS = 5 * 60 * 1000
+const POLL_TIMEOUT_MS = 30 * 60 * 1000
 
 // ── EventChannel ────────────────────────────────────────────────────────────
 
@@ -203,6 +203,7 @@ export class CortanaHarness implements HarnessDriver {
         user_input: text
       }) as { message_id: string; status: string }
       messageId = sent.message_id
+      logger.info('cortanaHarness: message sent, polling for reply', { sessionId, messageId })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       logger.error('cortanaHarness: failed to send message', { sessionId, error: msg })
