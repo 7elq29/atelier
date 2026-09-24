@@ -383,10 +383,17 @@ export class SessionManager {
 
   constructor(
     private readonly store: SessionStore,
-    private readonly harness: HarnessDriver,
+    private readonly claudeHarness: HarnessDriver,
+    private readonly cortanaHarness: HarnessDriver,
     private readonly hosts: RemoteHostResolver,
     private readonly getWindow: () => BrowserWindow | null
   ) {}
+
+  /** Return the right harness for a session, defaulting to Claude. */
+  private resolveHarness(sessionId: string): HarnessDriver {
+    const mode = this.store.getSession(sessionId)?.mode
+    return mode === 'cortana' ? this.cortanaHarness : this.claudeHarness
+  }
 
   /**
    * Overlays the tracked-in-memory `permissionModes` entry (or `'default'`)
@@ -1068,6 +1075,32 @@ export class SessionManager {
       return session
     }
 
+    if (opts.mode === 'cortana') {
+      // Cortana: REST-backed agent — no project path, host, or worktree needed.
+      const harnessSession = await this.cortanaHarness.start(opts.prompt ?? '', {} as HarnessStartOptions)
+      const session = this.decorate(
+        this.store.createSession({
+          id: harnessSession.sessionId,
+          name: opts.suggestedName?.trim() || 'Cortana',
+          projectPath: '',
+          mode: 'cortana',
+          hostname: null,
+          groupId: opts.groupId ?? null,
+          worktreePath: null,
+          profileId: opts.profileId ?? null
+        })
+      )
+      if (opts.prompt) {
+        const userMessage = this.store.addMessage({ sessionId: session.id, role: 'user', content: opts.prompt })
+        this.sendMessage(session.id, userMessage)
+        this.beginPendingUserTurn(session.id, userMessage.id)
+      }
+      this.live.set(session.id, newLiveStream())
+      this.sendLifecycle({ type: 'session.created', session })
+      void this.consume(session.id, harnessSession.events, this.bumpConsumeGeneration(session.id))
+      return session
+    }
+
     // use-worktree: create an isolated git worktree for claude-code sessions
     // (local or remote/devpod) when the user opted in. We pre-allocate the
     // session id (so the worktree path can embed it) and use harness.startWithId()
@@ -1116,7 +1149,7 @@ export class SessionManager {
     }
 
     const permissionMode = this.resolveInitialPermissionMode(opts)
-    const harnessSession = await this.harness.start(opts.prompt ?? '', {
+    const harnessSession = await this.claudeHarness.start(opts.prompt ?? '', {
       cwd: effectiveCwd,
       host,
       // Real interactive chat session: stays connected past its first turn
@@ -1238,7 +1271,7 @@ export class SessionManager {
         ...this.permissionModeHarnessOpts(permissionMode),
         ...this.worktreeHarnessOpts(opts.projectPath, worktreePath, homeDir)
       }
-      const harnessSession = await this.harness.startWithId(sessionId, opts.prompt ?? '', harnessOpts)
+      const harnessSession = await this.claudeHarness.startWithId(sessionId, opts.prompt ?? '', harnessOpts)
 
       if (opts.prompt) {
         const userMessage = this.store.addMessage({ sessionId, role: 'user', content: opts.prompt })
@@ -1311,6 +1344,10 @@ export class SessionManager {
     session: SessionRecord,
     opts: { permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort']; initialPrompt?: string }
   ): Promise<HarnessSession> {
+    // Cortana: REST API — no subprocess resume needed, just a fresh event channel.
+    if (session.mode === 'cortana') {
+      return this.cortanaHarness.resume(session.id)
+    }
     const host = this.resolveHostFromSession(session.hostname)
     const startOpts = {
       cwd: this.resolveHarnessCwd(session.projectPath, session.hostname, session.worktreePath),
@@ -1335,7 +1372,7 @@ export class SessionManager {
         events: this.startFreshWithRetry(session, startOpts, opts.initialPrompt)
       }
     }
-    const harnessSession = await this.harness.resume(session.id, {
+    const harnessSession = await this.claudeHarness.resume(session.id, {
       ...startOpts,
       resumeSessionId: sdkSessionId
     })
@@ -1445,7 +1482,7 @@ export class SessionManager {
     const MAX_ATTEMPTS = 4
     const RETRY_DELAYS_MS = [1500, 3000, 5000]
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const fresh = await this.harness.startWithId(session.id, initialPrompt ?? '', {
+      const fresh = await this.claudeHarness.startWithId(session.id, initialPrompt ?? '', {
         ...startOpts,
         cliSessionId: this.store.getSdkSessionId(session.id)
       })
@@ -1483,7 +1520,7 @@ export class SessionManager {
     if (this.creatingWorktree.has(sessionId)) return
     if (this.connecting.has(sessionId)) return
     // Already live (e.g. connected by createSession or startupReconnect) — resync ephemeral UI.
-    if (this.live.has(sessionId) || this.harness.isActive(sessionId)) {
+    if (this.live.has(sessionId) || this.resolveHarness(sessionId).isActive(sessionId)) {
       this.sendBackgroundTasks(sessionId)
       this.sendSdkChrome(sessionId)
       this.sendRateLimitChrome(sessionId)
@@ -1516,13 +1553,17 @@ export class SessionManager {
         this.connecting.delete(sessionId)
         this.pendingPanelPreload.delete(sessionId)
         this.workspacePreloadInFlight.delete(sessionId)
-        void this.harness.interrupt(sessionId).catch(() => undefined)
+        void this.resolveHarness(sessionId).interrupt(sessionId).catch(() => undefined)
         return
       }
-      // NOT cleared here — `harness.resume()` resolving only means the SDK
-      // `query()` call was constructed, not that the subprocess has handshaken.
-      // `connecting` stays until this session's workspace preload finishes
-      // (or times out) in `applyEvent()` → `completeSessionOpen()`.
+      // NOT cleared here for Claude — `harness.resume()` resolving only means
+      // the SDK `query()` call was constructed, not that the subprocess has
+      // handshaken. `connecting` stays until `completeSessionOpen()` fires.
+      // For Cortana the REST API connects immediately, so clear it now.
+      if (currentSession.mode === 'cortana') {
+        this.connecting.delete(sessionId)
+        this.pendingPanelPreload.delete(sessionId)
+      }
       this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
       this.resetHarnessUiForSession(sessionId)
       this.sendStatus(sessionId)
@@ -1644,8 +1685,8 @@ export class SessionManager {
         })
         this.modelSelections.set(sessionId, modelOverride)
         this.store.setModelSelection(sessionId, modelOverride)
-        if (this.harness.isActive(sessionId)) {
-          await this.harness.interrupt(sessionId)
+        if (this.resolveHarness(sessionId).isActive(sessionId)) {
+          await this.resolveHarness(sessionId).interrupt(sessionId)
         }
       }
 
@@ -1661,9 +1702,9 @@ export class SessionManager {
       // error and the turn would hang forever, Stop button stuck. So a
       // `selectionChanged` reconnect ALWAYS falls through to the `resume()`
       // path below, regardless of what `isActive()` reports afterward.
-      if (!selectionChanged && this.harness.isActive(sessionId)) {
+      if (!selectionChanged && this.resolveHarness(sessionId).isActive(sessionId)) {
         logger.info('dispatchTurnToHarness: live injection (streamInput, no resume)', { sessionId })
-        await this.harness.streamInput(sessionId, text, attachments)
+        await this.resolveHarness(sessionId).streamInput(sessionId, text, attachments)
         const liveEntry = this.live.get(sessionId)
         if (liveEntry) {
           liveEntry.busy = true
@@ -1673,9 +1714,9 @@ export class SessionManager {
       }
       if (this.connecting.has(sessionId)) {
         await this.waitUntilNotConnecting(sessionId)
-        if (!selectionChanged && this.harness.isActive(sessionId)) {
+        if (!selectionChanged && this.resolveHarness(sessionId).isActive(sessionId)) {
           logger.info('dispatchTurnToHarness: live injection after reconnect wait (streamInput)', { sessionId })
-          await this.harness.streamInput(sessionId, text, attachments)
+          await this.resolveHarness(sessionId).streamInput(sessionId, text, attachments)
           const liveEntry = this.live.get(sessionId)
           if (liveEntry) {
             liveEntry.busy = true
@@ -1703,7 +1744,7 @@ export class SessionManager {
         ...(needsInitialPrompt ? { initialPrompt: text } : {})
       })
       if (!needsInitialPrompt) {
-        await this.harness.streamInput(sessionId, text, attachments)
+        await this.resolveHarness(sessionId).streamInput(sessionId, text, attachments)
       }
       const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
       const previousLive = this.live.get(sessionId)
@@ -1745,7 +1786,7 @@ export class SessionManager {
     this.touchLastActive(sessionId)
     this.sendPromptSuggestion(sessionId, null)
 
-    if (session.mode !== 'claude-code') {
+    if (session.mode === 'terminal') {
       const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
       this.sendMessage(sessionId, userMessage)
       return
@@ -1819,8 +1860,8 @@ export class SessionManager {
     if (!session) throw new Error(`Unknown session: ${sessionId}`)
     this.wipeConversation(sessionId)
     if (session.mode !== 'claude-code') return
-    if (this.harness.isActive(sessionId)) {
-      await this.harness.streamInput(sessionId, '/clear')
+    if (this.resolveHarness(sessionId).isActive(sessionId)) {
+      await this.resolveHarness(sessionId).streamInput(sessionId, '/clear')
       return
     }
     const { randomUUID } = await import('node:crypto')
@@ -1866,25 +1907,25 @@ export class SessionManager {
       const removed = this.store.deleteMessage(messageId)
       if (removed) this.sendMessageRemoved(sessionId, messageId)
       this.applyOptimisticInterrupt(sessionId, live!)
-      await this.harness.interrupt(sessionId)
+      await this.resolveHarness(sessionId).interrupt(sessionId)
       return { action: 'withdrawn', restoredText: removed ? userMessagePlainText(removed.content) : '' }
     }
 
     if (live && this.composerTurnActive(sessionId, live)) {
       this.applyOptimisticInterrupt(sessionId, live)
     }
-    await this.harness.interrupt(sessionId)
+    await this.resolveHarness(sessionId).interrupt(sessionId)
     return { action: 'interrupted' }
   }
 
   /** `/model <id>` validation against the live SDK — see `HarnessDriver.validateModel`. */
   async validateModel(sessionId: string, model: string): Promise<{ ok: true } | { ok: false; error: string }> {
-    return this.harness.validateModel(sessionId, model)
+    return this.resolveHarness(sessionId).validateModel(sessionId, model)
   }
 
   /** Settings default-model validation — see `HarnessDriver.validateClaudeModel`. */
   async validateClaudeModel(model: string): Promise<{ ok: true } | { ok: false; error: string }> {
-    return this.harness.validateClaudeModel(model)
+    return this.claudeHarness.validateClaudeModel(model)
   }
 
   // ── Interactive prompts (05-interactive-prompts) ─────────────────────
@@ -1964,7 +2005,7 @@ export class SessionManager {
       }
     }
 
-    await this.harness.respondToPrompt(sessionId, requestId, toHarnessPromptResponse(decision))
+    await this.resolveHarness(sessionId).respondToPrompt(sessionId, requestId, toHarnessPromptResponse(decision))
   }
 
   // ── Mode cycling (11-composer-mode-indicator) ─────────────────────────
@@ -2008,7 +2049,7 @@ export class SessionManager {
     logger.info('cycleMode: mode changed', { sessionId, from: current, to: next })
 
     if (existing.mode === 'claude-code') {
-      await this.harness.setPermissionMode(sessionId, next)
+      await this.resolveHarness(sessionId).setPermissionMode(sessionId, next)
     }
 
     const session = this.decorate(existing)
@@ -2078,7 +2119,7 @@ export class SessionManager {
     // Restart replaces rather than archives the old session. Tear down all
     // source-id runtime state without deleting its worktree: the replacement
     // deliberately inherited that same checkout.
-    void this.harness.interrupt(sourceId).catch(() => undefined)
+    void this.resolveHarness(sourceId).interrupt(sourceId).catch(() => undefined)
     this.live.delete(sourceId)
     this.invalidateConsume(sourceId)
     this.connecting.delete(sourceId)
@@ -2122,7 +2163,7 @@ export class SessionManager {
     if (!beforeClose) throw new Error(`Unknown session: ${sessionId}`)
     // Never block Close on harness teardown — same fire-and-forget pattern as
     // the pre-async closeSession; interrupt can hang on mid-stream turns.
-    void this.harness.interrupt(sessionId).catch(() => undefined)
+    void this.resolveHarness(sessionId).interrupt(sessionId).catch(() => undefined)
     const live = this.live.get(sessionId)
     this.finalizeStaleRunningToolCalls(sessionId, live)
     this.live.delete(sessionId)
@@ -2208,7 +2249,7 @@ export class SessionManager {
     this.markInterruptedTurnNoticeIfBusy(sessionId)
     const live = this.live.get(sessionId)
     this.finalizeStaleRunningToolCalls(sessionId, live)
-    await this.harness.interrupt(sessionId).catch((err) => {
+    await this.resolveHarness(sessionId).interrupt(sessionId).catch((err) => {
       logger.warn('session cleanup: harness interrupt failed (continuing)', {
         sessionId,
         error: err instanceof Error ? err.message : String(err)
@@ -2991,7 +3032,7 @@ export class SessionManager {
         // own query — `totalTokens` is full in-context usage; cap is the
         // effective window (`maxTokens`), not auto-compaction threshold or
         // modelUsage's raw `contextWindow`.
-        void this.harness.getContextUsage(sessionId).then((ctx) => {
+        void this.resolveHarness(sessionId).getContextUsage(sessionId).then((ctx) => {
           if (ctx && ctx.contextWindow > 0) {
             this.sendTokenUsage(sessionId, ctx.totalTokens, ctx.contextWindow)
           }
@@ -3195,7 +3236,7 @@ export class SessionManager {
     if (!transcript) return
 
     const host = this.resolveHostFromSession(session.hostname)
-    const namingSession = await this.harness.start(`${AUTO_NAME_PROMPT}\n\nConversation:\n${transcript}`, {
+    const namingSession = await this.claudeHarness.start(`${AUTO_NAME_PROMPT}\n\nConversation:\n${transcript}`, {
       cwd: this.resolveHarnessCwd(session.projectPath, session.hostname, session.worktreePath),
       host
     })
@@ -3231,7 +3272,7 @@ export class SessionManager {
       .listActiveSessions()
       .filter((s) => s.mode === 'claude-code')
       .map((s) => s.id)
-    await Promise.all(sessionIds.map((id) => this.harness.interrupt(id).catch(() => undefined)))
+    await Promise.all(sessionIds.map((id) => this.resolveHarness(id).interrupt(id).catch(() => undefined)))
     // Let each session's `consume()` loop apply `interrupted` before the DB closes.
     await delay(750)
     for (const sessionId of sessionIds) {
@@ -3283,7 +3324,7 @@ export class SessionManager {
       }
 
       const sessionId = session.id
-      if (this.live.has(sessionId) || this.harness.isActive(sessionId)) {
+      if (this.live.has(sessionId) || this.resolveHarness(sessionId).isActive(sessionId)) {
         continue
       }
       this.startupAutoReconnect.add(sessionId)

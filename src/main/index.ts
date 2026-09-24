@@ -15,6 +15,7 @@ import type { CustomTheme, CustomThemeColors } from '../shared/theme-types'
 import { registerDailyNoteHandlers } from './daily-notes-handlers'
 import { registerWeeklyPlanHandlers } from './weekly-notes-handlers'
 import { ClaudeAgentSdkHarness } from './harness'
+import { CortanaHarness } from './harness/cortana-harness'
 import { SessionStore } from './sessions/store'
 import { SessionManager } from './sessions/manager'
 import { WorkspaceService } from './sessions/workspace-service'
@@ -265,7 +266,8 @@ app.whenReady().then(() => {
   // guidance) — sessions/turns are keyed off its own internal map, not
   // re-created per IPC call.
   const harness = new ClaudeAgentSdkHarness()
-  sessionManager = new SessionManager(sessionStore, harness, createStaticHostResolver(), () => mainWindow)
+  const cortanaHarness = new CortanaHarness()
+  sessionManager = new SessionManager(sessionStore, harness, cortanaHarness, createStaticHostResolver(), () => mainWindow)
   workspaceService = new WorkspaceService(
     () => mainWindow,
     async (sessionId) => {

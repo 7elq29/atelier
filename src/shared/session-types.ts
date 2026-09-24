@@ -6,7 +6,7 @@ import { APP_DISPLAY_NAME } from './app-brand'
  * Electron/Node/better-sqlite3 types so it can be imported from either side.
  */
 
-export type SessionMode = 'terminal' | 'claude-code'
+export type SessionMode = 'terminal' | 'claude-code' | 'cortana'
 
 /**
  * The workspace tabs a claude-code session can be parked on
