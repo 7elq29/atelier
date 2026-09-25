@@ -267,6 +267,15 @@ export class CortanaHarness implements HarnessDriver {
 
   async setPermissionMode(_sessionId: string, _mode: string): Promise<void> {}
 
+  async listFiles(sessionId: string): Promise<Array<{ name: string; url: string }>> {
+    const state = this.sessions.get(sessionId)
+    const cortanaSessionId = state?.cortanaSessionId ?? sessionId
+    const resp = await callRest('GET', `/api/v1/files/list?session_id=${cortanaSessionId}`) as {
+      files: Array<{ filename: string; terrablob_url?: string }>
+    }
+    return (resp.files ?? []).map(f => ({ name: f.filename, url: f.terrablob_url ?? '' }))
+  }
+
   // ── Internal: send + poll snapshot ───────────────────────────────────────
 
   private async sendAndPoll(sessionId: string, text: string, attachments: HarnessFileInput[]): Promise<void> {

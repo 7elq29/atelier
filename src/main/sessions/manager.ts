@@ -3008,6 +3008,20 @@ export class SessionManager {
           })
           this.sendLifecycle({ type: 'session.updated', session: costUpdated })
         }
+        // For Cortana sessions, refresh the uploaded file list into the diff panel.
+        if (this.store.getSession(sessionId)?.mode === 'cortana') {
+          void this.resolveHarness(sessionId).listFiles?.(sessionId)
+            .then(files => {
+              this.workspace?.patchFiles(sessionId, files.map(f => ({
+                path: f.name,
+                status: 'added' as const,
+                additions: 0,
+                deletions: 0,
+                hunks: []
+              })))
+            })
+            .catch(() => undefined)
+        }
         // fix-ever-connected-missed-session-started: also mark everConnected
         // here as a safety net. session_started is normally responsible for
         // this, but a race between the initializationResult() control-protocol
