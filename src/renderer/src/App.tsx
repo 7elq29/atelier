@@ -2882,6 +2882,9 @@ const allSessions = useMemo(
                   'Atelier'
                 )}
               </span>
+              {activeSession?.mode === 'cortana' && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanSurface && (
+                <span className="topbar-mode-tag">Cortana</span>
+              )}
               {activeAppNote ? (
                 <span
                   className={`daily-sync-chip app-note-sync-chip ${
