@@ -614,6 +614,7 @@
 }
 .spend-indicator-row1 { display: flex; align-items: center; gap: 5px; }
 .spend-indicator-row2 { padding-left: 19px; font-size: 12px; }
+.spend-indicator-cortana { padding-left: 19px; font-size: 12px; margin-top: 3px; }
 .spend-indicator b {
   color: var(--text-secondary);
 }
