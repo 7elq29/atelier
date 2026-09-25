@@ -16,7 +16,7 @@ import { execFile } from 'node:child_process'
 import { logger } from '../logger'
 import type { HarnessDriver, HarnessEvent, HarnessFileInput, HarnessSession, HarnessStartOptions, PromptResponse } from './types'
 
-const POLL_INTERVAL_MS = 1500
+const POLL_INTERVAL_MS = 5000
 const POLL_TIMEOUT_MS = 30 * 60 * 1000
 
 const AGENT_GATEWAY_BASE = 'https://agent-gateway.uberinternal.com'
