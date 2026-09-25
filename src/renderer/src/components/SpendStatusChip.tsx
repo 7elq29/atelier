@@ -9,8 +9,53 @@ function insightsUrl(): string {
   return `https://eng-insights.uberinternal.com/ai-insights/individual/cost?granularity=monthly&period=${period}`
 }
 
-function formatSpent(value: number): string {
+function fmt(value: number): string {
+  // Drop cents when >= $100 to save space
+  if (value >= 100) return `$${Math.round(value).toLocaleString()}`
   return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function fmtCap(value: number): string {
+  return `$${Math.round(value).toLocaleString()}`
+}
+
+function barColor(pct: number): string {
+  if (pct >= 0.95) return 'var(--error, #e06c75)'
+  if (pct >= 0.80) return 'var(--warning, #e5b75a)'
+  return 'var(--accent)'
+}
+
+function SpendBar({
+  label,
+  spent,
+  cap,
+  color
+}: {
+  label: string
+  spent: number
+  cap: number | null | undefined
+  color: string
+}): JSX.Element {
+  const pct = cap ? Math.min(spent / cap, 1) : 0
+  const barFill = barColor(pct)
+  return (
+    <div className="spend-bar-block">
+      <div className="spend-bar-header">
+        <span className="spend-bar-label" style={{ color }}>{label}</span>
+        <span className="spend-bar-amount">
+          {fmt(spent)}{cap != null ? <> / <span className="spend-bar-cap">{fmtCap(cap)}</span></> : null}
+        </span>
+      </div>
+      {cap != null && (
+        <div className="spend-bar-track">
+          <div
+            className="spend-bar-fill"
+            style={{ width: `${pct * 100}%`, background: barFill }}
+          />
+        </div>
+      )}
+    </div>
+  )
 }
 
 function formatTooltip(data: SpendStatus): string {
@@ -24,28 +69,22 @@ function formatTooltip(data: SpendStatus): string {
 }
 
 /**
- * Org-wide AI harness-pool spend chip, ported from Morpheus's
- * `CostSpendIndicator.tsx`. Polls the main process every 5 minutes and
- * renders nothing if the fetch fails (missing `usso`, offline, disabled).
+ * Org-wide AI harness-pool spend chip. Shows a progress bar for Claude Code
+ * (main pool) and, when present, a second bar for Cortana.
  */
 export default function SpendStatusChip(): JSX.Element | null {
   const [data, setData] = useState<SpendStatus | null>(null)
 
   useEffect(() => {
     let cancelled = false
-
     const load = (): void => {
       void window.atelier.getSpendStatus().then((next) => {
         if (!cancelled) setData(next)
       })
     }
-
     load()
     const interval = setInterval(load, POLL_MS)
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
+    return () => { cancelled = true; clearInterval(interval) }
   }, [])
 
   if (!data) return null
@@ -54,41 +93,31 @@ export default function SpendStatusChip(): JSX.Element | null {
 
   return (
     <div className="spend-indicator" data-testid="spend-status-chip" title={formatTooltip(data)}>
-      <div className="spend-indicator-row1">
-        <svg
-          className="spend-indicator-icon"
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <rect x="2" y="5" width="20" height="14" rx="2" />
-          <line x1="2" y1="10" x2="22" y2="10" />
-        </svg>
-        <b>{formatSpent(data.spent)}{data.cap != null ? ` / $${Math.round(data.cap).toLocaleString()}` : ''}</b>
-      </div>
-      <div className="spend-indicator-row2">
-        spent this month ·{' '}
+      <SpendBar
+        label="Claude Code"
+        spent={data.spent}
+        cap={data.cap}
+        color="var(--accent)"
+      />
+      {cortana && (
+        <SpendBar
+          label="Cortana"
+          spent={cortana.spent}
+          cap={cortana.cap}
+          color="var(--sc-purple)"
+        />
+      )}
+      <div className="spend-indicator-footer">
+        this month ·{' '}
         <button
           type="button"
           className="spend-indicator-link"
           onClick={() => void window.atelier.openExternal(insightsUrl())}
-          aria-label={`AI spend ${formatSpent(data.spent)}, view usage`}
+          aria-label={`AI spend ${fmt(data.spent)}, view usage`}
         >
           view usage
         </button>
       </div>
-      {cortana && (
-        <div className="spend-indicator-cortana">
-          Cortana {formatSpent(cortana.spent)}{cortana.cap != null ? ` / $${Math.round(cortana.cap).toLocaleString()}` : ''}
-        </div>
-      )}
     </div>
   )
 }
-
