@@ -786,6 +786,9 @@ function SessionRow({
           ) : (
             <span data-testid="session-meta-host">{sessionMetaLabel(session, shellRemoteHost, dotStatus)}</span>
           )}
+          {session.mode === 'cortana' && (
+            <span className="row-tag row-tag--cortana" data-testid="cortana-tag">Cortana</span>
+          )}
           {session.tags.map((tag) => (
             <span className="row-tag" key={tag} data-testid="tag-pill">
               {tag}

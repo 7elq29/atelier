@@ -1792,6 +1792,11 @@ input[type='range'] {
   color: var(--text-tertiary);
   border: 1px solid var(--border-subtle);
 }
+.row-tag--cortana {
+  background: color-mix(in srgb, var(--sc-purple, #9b8ec4) 12%, transparent);
+  color: var(--sc-purple, #9b8ec4);
+  border-color: color-mix(in srgb, var(--sc-purple, #9b8ec4) 30%, transparent);
+}
 .session-meta {
   display: flex;
   align-items: center;
