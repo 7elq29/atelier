@@ -690,4 +690,10 @@ export interface HarnessDriver {
    * like the pre-existing plan-mode tracking.
    */
   setPermissionMode(sessionId: string, mode: PermissionModeValue): Promise<void>
+
+  /**
+   * Optional: return uploaded artifacts for a session (e.g. Cortana file uploads).
+   * Used by SessionManager to populate the workspace diff panel after each turn.
+   */
+  listFiles?(sessionId: string): Promise<Array<{ name: string; url: string }>>
 }

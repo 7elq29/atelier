@@ -2919,7 +2919,7 @@ const allSessions = useMemo(
               !activeAppNote &&
               !activeDailyNoteDate &&
               !activeWeeklyPlanSurface &&
-              activeSession.mode === 'claude-code' &&
+              (activeSession.mode === 'claude-code' || activeSession.mode === 'cortana') &&
               !activeSessionDisconnected ? (
                 <span className="topbar-cost" data-testid="cost-chip">
                   ${activeSession.totalCostUsd.toFixed(2)}

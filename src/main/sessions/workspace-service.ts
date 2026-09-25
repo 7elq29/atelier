@@ -200,6 +200,23 @@ export class WorkspaceService {
     })
   }
 
+  /** Overwrite the diff files for a session and push a workspace update — used for Cortana artifact lists. */
+  patchFiles(sessionId: string, files: import('../../shared/panel-types').DiffFileChange[]): void {
+    const cached = this.cache.get(sessionId)
+    const base: SessionWorkspacePayload = cached ?? {
+      sessionId,
+      workspacePath: '',
+      hostname: null,
+      diff: { isRepo: false, branch: null, files: [] },
+      sessionChangesCap: { items: [] },
+      filesTree: null,
+      filesList: null,
+      tabTerminalPtyId: '',
+      loadedAt: Date.now()
+    }
+    this.sendUpdated({ ...base, diff: { ...base.diff, files } })
+  }
+
   private sendUpdated(payload: SessionWorkspacePayload): void {
     this.cache.set(payload.sessionId, payload)
     this.getWindow()?.webContents.send('session:workspaceUpdated', {
