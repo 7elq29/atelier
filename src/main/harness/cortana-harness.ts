@@ -236,10 +236,19 @@ export class CortanaHarness implements HarnessDriver {
       const sent = await callRest('POST', '/api/v1/chat/session/async', {
         session_id: cortanaSessionId,
         user_input: text,
-      }) as { message_id?: string; status?: string }
+      }) as { message_id?: string; response?: { response?: string; content?: string } }
+
+      // 200 inline: server resolved the turn without queuing — emit and return.
       if (!sent.message_id) {
-        throw new Error('No message_id in async chat response')
+        const content = sent.response?.response ?? sent.response?.content ?? ''
+        logger.info('cortanaHarness: inline response received', { sessionId })
+        const ts = new Date().toISOString()
+        channel.push({ type: 'text_delta', sessionId, timestamp: ts, text: content })
+        channel.push({ type: 'result', sessionId, timestamp: ts, isError: false, subtype: 'end_turn', numTurns: 1, durationMs: 0, totalCostUsd: 0, usage: null })
+        return
       }
+
+      // 202 async: poll snapshot until the assistant reply appears.
       messageId = sent.message_id
       logger.info('cortanaHarness: message sent, polling for reply', { sessionId, messageId })
     } catch (err) {
