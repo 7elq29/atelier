@@ -19,39 +19,27 @@ function fmtCap(value: number): string {
   return `$${Math.round(value).toLocaleString()}`
 }
 
-function barColor(pct: number): string {
-  if (pct >= 0.95) return 'var(--error, #e06c75)'
-  if (pct >= 0.80) return 'var(--warning, #e5b75a)'
-  return 'var(--accent)'
-}
-
 function SpendBar({
   label,
   spent,
-  cap,
-  color
+  cap
 }: {
   label: string
   spent: number
   cap: number | null | undefined
-  color: string
 }): JSX.Element {
   const pct = cap ? Math.min(spent / cap, 1) : 0
-  const barFill = barColor(pct)
   return (
     <div className="spend-bar-block">
       <div className="spend-bar-header">
-        <span className="spend-bar-label" style={{ color }}>{label}</span>
+        <span className="spend-bar-label">{label}</span>
         <span className="spend-bar-amount">
           {fmt(spent)}{cap != null ? <> / <span className="spend-bar-cap">{fmtCap(cap)}</span></> : null}
         </span>
       </div>
       {cap != null && (
         <div className="spend-bar-track">
-          <div
-            className="spend-bar-fill"
-            style={{ width: `${pct * 100}%`, background: barFill }}
-          />
+          <div className="spend-bar-fill" style={{ width: `${pct * 100}%` }} />
         </div>
       )}
     </div>
@@ -93,19 +81,9 @@ export default function SpendStatusChip(): JSX.Element | null {
 
   return (
     <div className="spend-indicator" data-testid="spend-status-chip" title={formatTooltip(data)}>
-      <SpendBar
-        label="Claude Code"
-        spent={data.spent}
-        cap={data.cap}
-        color="var(--accent)"
-      />
+      <SpendBar label="Claude Code" spent={data.spent} cap={data.cap} />
       {cortana && (
-        <SpendBar
-          label="Cortana"
-          spent={cortana.spent}
-          cap={cortana.cap}
-          color="var(--sc-purple)"
-        />
+        <SpendBar label="Cortana" spent={cortana.spent} cap={cortana.cap} />
       )}
       <div className="spend-indicator-footer">
         this month ·{' '}
