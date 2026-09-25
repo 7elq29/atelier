@@ -224,6 +224,31 @@ async function fetchSpendStatus(email: string, forceRefresh = false): Promise<Re
   })
 }
 
+/** Fetch Cortana's separate monthly spend from genai-api. Silently returns null on failure. */
+async function fetchCortanaSpend(email: string): Promise<HarnessSpendBreakdown | null> {
+  try {
+    const token = await getGenAiToken()
+    const resp = await fetch(
+      `https://genai-api.uberinternal.com/v1/spendstatus/cortana/${encodeURIComponent(email)}`,
+      {
+        headers: { Authorization: `Bearer ${token}`, 'rpc-caller': 'atelier', 'rpc-service': 'genai-api', Accept: 'application/json' },
+        signal: AbortSignal.timeout(SPEND_STATUS_TIMEOUT_MS)
+      }
+    )
+    if (!resp.ok) return null
+    const data = await resp.json() as Record<string, unknown>
+    const spent = typeof data.spend_usd === 'number' ? data.spend_usd : null
+    if (spent == null) return null
+    return {
+      harness: 'Cortana',
+      spent,
+      cap: typeof data.cap_usd === 'number' ? data.cap_usd : null
+    }
+  } catch {
+    return null
+  }
+}
+
 /**
  * Fetches the current user's org-wide harness-pool spend status. Throws on
  * any failure (missing `usso`, offline, non-200) — callers must catch and
@@ -246,5 +271,15 @@ export async function getSpendStatus(): Promise<SpendStatus> {
     throw new Error(`spendstatus exited ${response.status}: ${body.slice(0, 200)}`)
   }
 
-  return parseSpendStatusResponse(await response.json(), email)
+  const [status, cortana] = await Promise.all([
+    parseSpendStatusResponse(await response.json(), email),
+    fetchCortanaSpend(email)
+  ])
+
+  if (cortana) {
+    status.harnesses.push(cortana)
+    status.harnesses.sort((a, b) => b.spent - a.spent)
+  }
+
+  return status
 }

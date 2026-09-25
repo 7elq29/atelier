@@ -165,6 +165,8 @@ interface CortanaSessionState {
   channel: EventChannel
   /** The message_id of the in-flight turn, needed to call /sessions/stop on interrupt. */
   currentMessageId: string | null
+  /** Cumulative session cost seen so far; used to compute per-turn delta. */
+  lastTotalCostUsd: number
 }
 
 export class CortanaHarness implements HarnessDriver {
@@ -180,7 +182,7 @@ export class CortanaHarness implements HarnessDriver {
     }) as { session_id: string }
     const cortanaSessionId = result.session_id
     const channel = new EventChannel()
-    this.sessions.set(cortanaSessionId, { cortanaSessionId, channel, currentMessageId: null })
+    this.sessions.set(cortanaSessionId, { cortanaSessionId, channel, currentMessageId: null, lastTotalCostUsd: 0 })
 
     channel.push({
       type: 'session_started',
@@ -205,7 +207,12 @@ export class CortanaHarness implements HarnessDriver {
     const existing = this.sessions.get(sessionId)
     const cortanaSessionId = existing?.cortanaSessionId ?? sessionId
     const channel = new EventChannel()
-    this.sessions.set(sessionId, { cortanaSessionId, channel, currentMessageId: null })
+    this.sessions.set(sessionId, {
+      cortanaSessionId,
+      channel,
+      currentMessageId: null,
+      lastTotalCostUsd: existing?.lastTotalCostUsd ?? 0
+    })
     channel.push({
       type: 'session_started',
       sessionId,
@@ -369,7 +376,9 @@ export class CortanaHarness implements HarnessDriver {
         const reply = history.find(m => m.role === 'assistant' && m.message_id === messageId)
         if (reply) {
           const ts = new Date().toISOString()
-          const turnCost = (snapshot.cost_by_message_id ?? {})[messageId] ?? 0
+          const sessionTotal = snapshot.total_cost_usd ?? 0
+          const turnCost = Math.max(0, sessionTotal - state.lastTotalCostUsd)
+          state.lastTotalCostUsd = sessionTotal
           channel.push({ type: 'sdk_status', sessionId, timestamp: ts, status: null })
           channel.push({ type: 'text_delta', sessionId, timestamp: ts, text: reply.content })
           channel.push({
