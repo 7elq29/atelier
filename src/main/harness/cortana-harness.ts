@@ -405,10 +405,37 @@ export class CortanaHarness implements HarnessDriver {
     openIds: Map<string, string>
   ): void {
     const ts = evt.timestamp ?? new Date().toISOString()
-    const execType = (evt.data.execution_type as string | undefined) ?? ''
 
-    // Only surface claude_agent events — skip the outer main orchestrator layer.
-    if (evt.event_type === 'agent_start' && execType === 'claude_agent') {
+    if (evt.event_type === 'tool_invocation') {
+      const toolId = (evt.data.tool_id as string | undefined) ?? `cortana-tool-${Date.now()}`
+      const toolName = (evt.data.tool_name as string | undefined) ?? 'Tool'
+      let input: unknown = evt.data.input_data ?? {}
+      if (typeof input === 'string') {
+        try { input = JSON.parse(input) } catch { /* keep as string */ }
+      }
+      openIds.set(toolId, toolId)
+      channel.push({
+        type: 'tool_call_start',
+        sessionId,
+        timestamp: ts,
+        toolUseId: toolId,
+        name: toolName,
+        input,
+        parentToolUseId: null,
+      })
+    } else if (evt.event_type === 'tool_result') {
+      const toolId = (evt.data.tool_use_id as string | undefined) ?? ''
+      openIds.delete(toolId)
+      channel.push({
+        type: 'tool_call_end',
+        sessionId,
+        timestamp: ts,
+        toolUseId: toolId,
+        isError: evt.data.is_error === 'True' || evt.data.is_error === true,
+        output: evt.data.output ?? '',
+        parentToolUseId: null,
+      })
+    } else if (evt.event_type === 'agent_start' && evt.data.execution_type === 'claude_agent') {
       const toolUseId = `cortana-agent-${messageId}`
       openIds.set('claude_agent', toolUseId)
       channel.push({
@@ -420,7 +447,7 @@ export class CortanaHarness implements HarnessDriver {
         input: { model: evt.data.model ?? 'cortana' },
         parentToolUseId: null,
       })
-    } else if (evt.event_type === 'agent_end' && execType === 'claude_agent') {
+    } else if (evt.event_type === 'agent_end' && evt.data.execution_type === 'claude_agent') {
       const toolUseId = openIds.get('claude_agent') ?? `cortana-agent-${messageId}`
       openIds.delete('claude_agent')
       channel.push({
