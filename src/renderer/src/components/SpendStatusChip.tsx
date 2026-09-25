@@ -50,6 +50,8 @@ export default function SpendStatusChip(): JSX.Element | null {
 
   if (!data) return null
 
+  const cortana = data.harnesses.find((h) => h.harness === 'Cortana')
+
   return (
     <div className="spend-indicator" data-testid="spend-status-chip" title={formatTooltip(data)}>
       <div className="spend-indicator-row1">
@@ -81,6 +83,11 @@ export default function SpendStatusChip(): JSX.Element | null {
           view usage
         </button>
       </div>
+      {cortana && (
+        <div className="spend-indicator-cortana">
+          Cortana {formatSpent(cortana.spent)}{cortana.cap != null ? ` / $${Math.round(cortana.cap).toLocaleString()}` : ''}
+        </div>
+      )}
     </div>
   )
 }
