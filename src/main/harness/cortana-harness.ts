@@ -2,9 +2,9 @@
  * CortanaHarness — HarnessDriver backed by the Uber Agent Gateway REST API.
  *
  * Transport: direct HTTPS to agent-gateway.uberinternal.com with a USSO
- * bearer token obtained via `usso -fetch`. Polling replaces streaming: the
- * async endpoint returns a message_id immediately, and we poll
- * get_session_snapshot until the assistant's reply appears.
+ * bearer token from `usso -fetch`. Polling replaces streaming: the async
+ * endpoint returns a message_id immediately, and we poll get_session_snapshot
+ * until the assistant's reply appears.
  *
  * Session-id contract: the session_id returned by create_session is used
  * directly as the Atelier app session id (same UUID format as the Claude CLI
@@ -16,22 +16,14 @@ import { execFile } from 'node:child_process'
 import { logger } from '../logger'
 import type { HarnessDriver, HarnessEvent, HarnessFileInput, HarnessSession, HarnessStartOptions, PromptResponse } from './types'
 
-/** Minimum polling interval between get_session_snapshot calls, in ms. */
 const POLL_INTERVAL_MS = 1500
-/** How long to poll before giving up on a response, in ms. */
 const POLL_TIMEOUT_MS = 30 * 60 * 1000
 
 const AGENT_GATEWAY_BASE = 'https://agent-gateway.uberinternal.com'
-/** Cache USSO tokens for 4 minutes (tokens are valid for ~5 minutes). */
 const TOKEN_TTL_MS = 4 * 60 * 1000
 
 // ── EventChannel ────────────────────────────────────────────────────────────
 
-/**
- * A push-into/pull-from async generator channel. push() enqueues events;
- * close() signals the generator to return. Callers iterate via
- * `channel[Symbol.asyncIterator]()` which is what HarnessSession.events expects.
- */
 class EventChannel {
   private readonly queue: HarnessEvent[] = []
   private waiter: (() => void) | null = null
@@ -83,6 +75,14 @@ async function getToken(): Promise<string> {
   return value
 }
 
+function authHeaders(token: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    'Rpc-Caller': 'atelier',
+    'X-Uber-Source': 'atelier',
+  }
+}
+
 async function callRest(
   method: 'GET' | 'POST',
   path: string,
@@ -93,9 +93,7 @@ async function callRest(
   const resp = await fetch(`${AGENT_GATEWAY_BASE}${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${token}`,
-      'Rpc-Caller': 'atelier',
-      'X-Uber-Source': 'atelier',
+      ...authHeaders(token),
       'Content-Type': 'application/json',
       ...(method === 'POST' ? { 'x-csrf-token': 'x' } : {}),
     },
@@ -112,19 +110,65 @@ async function callRest(
   return resp.json()
 }
 
+async function uploadFile(
+  sessionId: string,
+  attachment: HarnessFileInput
+): Promise<string | null> {
+  const token = await getToken()
+  const bytes = attachment.mimeType === 'text/plain'
+    ? Buffer.from(attachment.data, 'utf-8')
+    : Buffer.from(attachment.data, 'base64')
+  const filename = attachment.name ?? `attachment.${attachment.mimeType.split('/')[1]}`
+  const form = new FormData()
+  form.append('file', new Blob([bytes], { type: attachment.mimeType }), filename)
+  const url = `${AGENT_GATEWAY_BASE}/api/v1/files/upload?session_id=${sessionId}&agent_name=cortana`
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'x-csrf-token': 'x' },
+    body: form,
+  })
+  if (!resp.ok) {
+    logger.warn('cortanaHarness: file upload failed', { sessionId, filename, status: resp.status })
+    return null
+  }
+  const data = await resp.json() as { terrablob_url?: string; filename?: string }
+  return data.terrablob_url ?? null
+}
+
+// ── Snapshot types ───────────────────────────────────────────────────────────
+
+interface SnapshotMessage {
+  role: string
+  content: string
+  message_id: string
+}
+
+interface ExecutionEvent {
+  event_type: string
+  timestamp: string
+  message_id: string
+  content: string
+  data: Record<string, unknown>
+}
+
+interface SnapshotResponse {
+  history: SnapshotMessage[]
+  execution_events: ExecutionEvent[]
+  total_cost_usd: number
+  cost_by_message_id: Record<string, number>
+}
+
 // ── CortanaHarness ──────────────────────────────────────────────────────────
 
 interface CortanaSessionState {
-  /** The Agent Gateway session_id (== Atelier app session id). */
   cortanaSessionId: string
-  /** The event channel for the current connection. Replaced on resume(). */
   channel: EventChannel
+  /** The message_id of the in-flight turn, needed to call /sessions/stop on interrupt. */
+  currentMessageId: string | null
 }
 
 export class CortanaHarness implements HarnessDriver {
-  /** sessionId → state for all active Cortana sessions. */
   private readonly sessions = new Map<string, CortanaSessionState>()
-  /** sessionId → AbortController for the current in-flight poll. */
   private readonly polls = new Map<string, AbortController>()
 
   // ── HarnessDriver: lifecycle ─────────────────────────────────────────────
@@ -136,7 +180,7 @@ export class CortanaHarness implements HarnessDriver {
     }) as { session_id: string }
     const cortanaSessionId = result.session_id
     const channel = new EventChannel()
-    this.sessions.set(cortanaSessionId, { cortanaSessionId, channel })
+    this.sessions.set(cortanaSessionId, { cortanaSessionId, channel, currentMessageId: null })
 
     channel.push({
       type: 'session_started',
@@ -147,24 +191,21 @@ export class CortanaHarness implements HarnessDriver {
     })
 
     if (prompt.trim()) {
-      void this.sendAndPoll(cortanaSessionId, prompt)
+      void this.sendAndPoll(cortanaSessionId, prompt, [])
     }
 
     return { sessionId: cortanaSessionId, events: channel[Symbol.asyncIterator]() }
   }
 
   async startWithId(_sessionId: string, prompt: string, opts: HarnessStartOptions): Promise<HarnessSession> {
-    // Cortana has no concept of a pre-assigned session id — create fresh.
     return this.start(prompt, opts)
   }
 
   async resume(sessionId: string, _opts?: Partial<HarnessStartOptions>): Promise<HarnessSession> {
-    // The sessionId IS the cortana_session_id — create a new channel so the
-    // manager's consume() loop gets a fresh generator for this reconnect.
     const existing = this.sessions.get(sessionId)
     const cortanaSessionId = existing?.cortanaSessionId ?? sessionId
     const channel = new EventChannel()
-    this.sessions.set(sessionId, { cortanaSessionId, channel })
+    this.sessions.set(sessionId, { cortanaSessionId, channel, currentMessageId: null })
     channel.push({
       type: 'session_started',
       sessionId,
@@ -183,6 +224,15 @@ export class CortanaHarness implements HarnessDriver {
     }
     const state = this.sessions.get(sessionId)
     if (state) {
+      // Tell the backend to stop the in-flight turn.
+      if (state.currentMessageId) {
+        callRest('POST', '/api/v1/sessions/stop', {
+          session_id: state.cortanaSessionId,
+          message_id: state.currentMessageId,
+        }).catch(err => {
+          logger.warn('cortanaHarness: stop request failed', { sessionId, error: String(err) })
+        })
+      }
       state.channel.push({ type: 'interrupted', sessionId, timestamp: new Date().toISOString() })
       state.channel.close()
       this.sessions.delete(sessionId)
@@ -191,15 +241,15 @@ export class CortanaHarness implements HarnessDriver {
 
   // ── HarnessDriver: messaging ─────────────────────────────────────────────
 
-  async streamInput(sessionId: string, message: string, _attachments?: HarnessFileInput[]): Promise<void> {
-    void this.sendAndPoll(sessionId, message)
+  async streamInput(sessionId: string, message: string, attachments?: HarnessFileInput[]): Promise<void> {
+    void this.sendAndPoll(sessionId, message, attachments ?? [])
   }
 
   isActive(sessionId: string): boolean {
     return this.polls.has(sessionId)
   }
 
-  // ── HarnessDriver: stubs for Claude-SDK-specific features ────────────────
+  // ── HarnessDriver: stubs ─────────────────────────────────────────────────
 
   async validateModel(_sessionId: string, _model: string): Promise<{ ok: true } | { ok: false; error: string }> {
     return { ok: false, error: 'Model selection is not supported for Cortana sessions.' }
@@ -213,17 +263,13 @@ export class CortanaHarness implements HarnessDriver {
     return null
   }
 
-  async respondToPrompt(_sessionId: string, _requestId: string, _response: PromptResponse): Promise<void> {
-    // Cortana does not emit interactive prompts.
-  }
+  async respondToPrompt(_sessionId: string, _requestId: string, _response: PromptResponse): Promise<void> {}
 
-  async setPermissionMode(_sessionId: string, _mode: string): Promise<void> {
-    // Cortana has no permission-mode concept.
-  }
+  async setPermissionMode(_sessionId: string, _mode: string): Promise<void> {}
 
-  // ── Internal: async send + poll ──────────────────────────────────────────
+  // ── Internal: send + poll snapshot ───────────────────────────────────────
 
-  private async sendAndPoll(sessionId: string, text: string): Promise<void> {
+  private async sendAndPoll(sessionId: string, text: string, attachments: HarnessFileInput[]): Promise<void> {
     const state = this.sessions.get(sessionId)
     if (!state) {
       logger.warn('cortanaHarness: sendAndPoll called for unknown session', { sessionId })
@@ -231,16 +277,28 @@ export class CortanaHarness implements HarnessDriver {
     }
     const { cortanaSessionId, channel } = state
 
+    // Upload attachments and append file references to the message.
+    let userInput = text
+    if (attachments.length > 0) {
+      const uploads = await Promise.all(attachments.map(a => uploadFile(cortanaSessionId, a)))
+      const refs = uploads
+        .map((url, i) => url ? `- ${attachments[i].name ?? 'file'}: ${url}` : null)
+        .filter(Boolean)
+      if (refs.length > 0) {
+        userInput = `${text}\n\n[Attached files:\n${refs.join('\n')}\n]`
+      }
+    }
+
     let messageId: string
     try {
       const sent = await callRest('POST', '/api/v1/chat/session/async', {
         session_id: cortanaSessionId,
-        user_input: text,
-      }) as { message_id?: string; response?: { response?: string; content?: string } }
+        user_input: userInput,
+      }) as { message_id?: string; response?: { response_text?: string } }
 
-      // 200 inline: server resolved the turn without queuing — emit and return.
+      // 200 inline response — emit and return without polling.
       if (!sent.message_id) {
-        const content = sent.response?.response ?? sent.response?.content ?? ''
+        const content = sent.response?.response_text ?? ''
         logger.info('cortanaHarness: inline response received', { sessionId })
         const ts = new Date().toISOString()
         channel.push({ type: 'text_delta', sessionId, timestamp: ts, text: content })
@@ -248,9 +306,9 @@ export class CortanaHarness implements HarnessDriver {
         return
       }
 
-      // 202 async: poll snapshot until the assistant reply appears.
       messageId = sent.message_id
-      logger.info('cortanaHarness: message sent, polling for reply', { sessionId, messageId })
+      state.currentMessageId = messageId
+      logger.info('cortanaHarness: message sent, polling snapshot', { sessionId, messageId })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       logger.error('cortanaHarness: failed to send message', { sessionId, error: msg })
@@ -258,34 +316,52 @@ export class CortanaHarness implements HarnessDriver {
       return
     }
 
+    // Show a requesting indicator while we wait.
+    channel.push({ type: 'sdk_status', sessionId, timestamp: new Date().toISOString(), status: 'requesting' })
+
     const abort = new AbortController()
     this.polls.set(sessionId, abort)
     const deadline = Date.now() + POLL_TIMEOUT_MS
+
+    // Track which execution events we've already emitted.
+    let emittedEventCount = 0
+    // Track open tool-call IDs so we can close them properly.
+    const openAgentToolUseIds = new Map<string, string>() // executionType → toolUseId
 
     try {
       while (!abort.signal.aborted && Date.now() < deadline) {
         await sleep(POLL_INTERVAL_MS)
         if (abort.signal.aborted) return
 
-        let history: Array<{ role: string; content: string; message_id: string }>
+        let snapshot: SnapshotResponse
         try {
-          const resp = await callRest(
+          snapshot = await callRest(
             'GET',
             `/api/v1/sessions/${cortanaSessionId}/snapshot?limit=1000&offset=0`
-          ) as { history: Array<{ role: string; content: string; message_id: string }> }
-          history = resp.history ?? []
+          ) as SnapshotResponse
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           logger.error('cortanaHarness: poll error', { sessionId, error: msg })
+          channel.push({ type: 'sdk_status', sessionId, timestamp: new Date().toISOString(), status: null })
           channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: msg })
           return
         }
 
-        const reply = history.find(
-          (m) => m.role === 'assistant' && m.message_id === messageId
-        )
+        // Emit any new execution events (tool call visibility).
+        const allEvents = snapshot.execution_events ?? []
+        const newEvents = allEvents.slice(emittedEventCount)
+        for (const evt of newEvents) {
+          emittedEventCount++
+          this.emitExecutionEvent(sessionId, channel, evt, messageId, openAgentToolUseIds)
+        }
+
+        // Check whether the assistant reply has arrived.
+        const history = snapshot.history ?? []
+        const reply = history.find(m => m.role === 'assistant' && m.message_id === messageId)
         if (reply) {
           const ts = new Date().toISOString()
+          const turnCost = (snapshot.cost_by_message_id ?? {})[messageId] ?? 0
+          channel.push({ type: 'sdk_status', sessionId, timestamp: ts, status: null })
           channel.push({ type: 'text_delta', sessionId, timestamp: ts, text: reply.content })
           channel.push({
             type: 'result',
@@ -295,23 +371,58 @@ export class CortanaHarness implements HarnessDriver {
             subtype: 'end_turn',
             numTurns: 1,
             durationMs: 0,
-            totalCostUsd: 0,
-            usage: null
+            totalCostUsd: turnCost,
+            usage: null,
           })
+          state.currentMessageId = null
           return
         }
       }
 
       if (!abort.signal.aborted) {
-        channel.push({
-          type: 'error',
-          sessionId,
-          timestamp: new Date().toISOString(),
-          message: 'Cortana response timed out.'
-        })
+        channel.push({ type: 'sdk_status', sessionId, timestamp: new Date().toISOString(), status: null })
+        channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: 'Cortana response timed out.' })
       }
     } finally {
       this.polls.delete(sessionId)
+    }
+  }
+
+  private emitExecutionEvent(
+    sessionId: string,
+    channel: EventChannel,
+    evt: ExecutionEvent,
+    messageId: string,
+    openIds: Map<string, string>
+  ): void {
+    const ts = evt.timestamp ?? new Date().toISOString()
+    const execType = (evt.data.execution_type as string | undefined) ?? ''
+
+    // Only surface claude_agent events — skip the outer main orchestrator layer.
+    if (evt.event_type === 'agent_start' && execType === 'claude_agent') {
+      const toolUseId = `cortana-agent-${messageId}`
+      openIds.set('claude_agent', toolUseId)
+      channel.push({
+        type: 'tool_call_start',
+        sessionId,
+        timestamp: ts,
+        toolUseId,
+        name: (evt.data.agent_name as string | undefined) ?? 'Cortana',
+        input: { model: evt.data.model ?? 'cortana' },
+        parentToolUseId: null,
+      })
+    } else if (evt.event_type === 'agent_end' && execType === 'claude_agent') {
+      const toolUseId = openIds.get('claude_agent') ?? `cortana-agent-${messageId}`
+      openIds.delete('claude_agent')
+      channel.push({
+        type: 'tool_call_end',
+        sessionId,
+        timestamp: ts,
+        toolUseId,
+        isError: evt.data.success === false,
+        output: evt.data.output ?? '',
+        parentToolUseId: null,
+      })
     }
   }
 }
@@ -320,5 +431,4 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms))
 }
 
-/** Convenience re-export so index.ts has a single import path. */
 export const cortanaHarness = new CortanaHarness()
