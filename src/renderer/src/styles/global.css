@@ -4908,7 +4908,16 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 }
 .terminal-cache-entry {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  /* Leave space for the workspace tool rail so xterm column count matches the
+     actually usable area and mouse events reach the terminal at the right edge.
+     --terminal-rail-clearance is set on .workspace-shell when the tool rail is
+     rendered (claude-code sessions); defaults to 0 for terminal-only sessions.
+     Split-pane geometry CSS overrides `right` directly, so this clearance only
+     applies in single (full-screen) mode — which is the case where it matters. */
+  right: var(--terminal-rail-clearance, 0px);
   display: flex;
   flex-direction: column;
   min-height: 0;

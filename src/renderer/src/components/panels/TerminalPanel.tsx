@@ -4,8 +4,11 @@ import { FitAddon } from '@xterm/addon-fit'
 import { useConfig } from '../../hooks/useConfig'
 import '@xterm/xterm/css/xterm.css'
 
-function readTheme(): ITheme {
-  const style = getComputedStyle(document.documentElement)
+// Read from the actual container element so descendant CSS variable overrides
+// (e.g. --bg-app on the active split pane) are reflected in the xterm theme
+// rather than always falling back to the root-level token values.
+function readTheme(el: Element): ITheme {
+  const style = getComputedStyle(el)
   const v = (name: string): string => style.getPropertyValue(name).trim()
   return {
     background: v('--bg-app'),
@@ -72,7 +75,7 @@ const TerminalPanel = forwardRef(function TerminalPanel(
     const term = new Terminal({
       fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim(),
       fontSize: config.fontSizes.terminal,
-      theme: readTheme(),
+      theme: readTheme(container),
       cursorBlink: true,
       allowProposedApi: true,
       // Make the Option key send ESC-prefixed sequences so that readline/zsh
@@ -149,8 +152,9 @@ const TerminalPanel = forwardRef(function TerminalPanel(
   useEffect(() => {
     const term = termRef.current
     const fitAddon = fitAddonRef.current
-    if (!term || !fitAddon) return
-    term.options.theme = readTheme()
+    const container = containerRef.current
+    if (!term || !fitAddon || !container) return
+    term.options.theme = readTheme(container)
     term.options.fontSize = config.fontSizes.terminal
     fitAddon.fit()
     void window.atelier.ptyResize(ptyId, term.cols, term.rows)

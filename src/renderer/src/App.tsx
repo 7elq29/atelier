@@ -3001,7 +3001,19 @@ const allSessions = useMemo(
             )}
           </div>
 
-          <div className="workspace-shell">
+          <div
+            className="workspace-shell"
+            style={
+              activeSession &&
+              !activeAppNote &&
+              !activeDailyNoteDate &&
+              !activeWeeklyPlanSurface &&
+              activeSession.mode === 'claude-code' &&
+              !activeSessionDisconnected
+                ? ({ '--terminal-rail-clearance': '52px' } as React.CSSProperties)
+                : undefined
+            }
+          >
           {/* Content area below topbar — position:relative anchors terminal + composer keep-alive layers */}
           <div
             data-main-content
@@ -3056,7 +3068,7 @@ const allSessions = useMemo(
                   const sessionId = ptyId.replace(/:tab-terminal$/, '')
                   const isActive =
                     sessionMainInForeground &&
-                    activeSession?.mode === 'claude-code' &&
+                    (activeSession?.mode === 'claude-code' || activeSession?.mode === 'cortana') &&
                     activeSession.id === sessionId &&
                     isTerminalTabVisible(activeTab, activeWorkspaceSplit) &&
                     !activeSessionDisconnected
@@ -3071,7 +3083,7 @@ const allSessions = useMemo(
                       : ''
                   return (
                     <div
-                      key={`${ptyId}:${info.cwd}`}
+                      key={ptyId}
                       className={`terminal-cache-entry workspace-pane--tool${isActive ? ' active' : ''}${paneClass}`}
                     >
                       <WorkspaceSplitPaneClose
