@@ -501,6 +501,7 @@
       "id": "terminal-chrome",
       "paths": [
         "src/renderer/src/components/panels/TerminalWithToolbox.tsx",
+        "src/renderer/src/components/panels/TerminalSplitLayout.tsx",
         "src/renderer/src/components/panels/TerminalPanelHeader.tsx",
         "src/renderer/src/components/panels/CompanionTerminalDrawer.tsx"
       ],

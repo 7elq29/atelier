@@ -5026,6 +5026,157 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   right: 10px;
   z-index: 2;
 }
+
+/* ── Terminal split pane buttons (⊟ ⊞ next to toolbox toggle) ───────── */
+.term-split-btn {
+  position: absolute;
+  top: 8px;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-disabled);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+}
+.term-split-btn:hover { background: rgba(255,255,255,.05); color: var(--text-secondary); }
+/* Position the two split buttons to the left of the toolbox toggle (right: 10px) */
+.term-split-btn--below { right: 40px; }
+.term-split-btn--right { right: 66px; }
+
+/* ── Terminal split pane layout ─────────────────────────────────────── */
+.term-split-layout {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+}
+.term-split-layout.row { flex-direction: row; }
+.term-split-layout.col { flex-direction: column; }
+
+/* ── Individual terminal pane ───────────────────────────────────────── */
+.term-pane-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  outline: 1.5px solid transparent;
+  outline-offset: -1.5px;
+  transition: outline-color 0.1s;
+}
+.term-pane-wrapper[data-focused="true"] {
+  outline-color: rgba(143, 193, 127, 0.3);
+}
+
+/* ── Per-pane mini-header (shown only when multiPane) ───────────────── */
+.term-pane-header {
+  height: 26px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px 0 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.term-pane-wrapper[data-focused="true"] .term-pane-header {
+  background: rgba(143, 193, 127, 0.05);
+}
+.term-pane-header-cwd {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-disabled);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.term-pane-wrapper[data-focused="true"] .term-pane-header-cwd { color: var(--text-tertiary); }
+.term-pane-header-btns {
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.term-pane-wrapper:hover .term-pane-header-btns,
+.term-pane-wrapper[data-focused="true"] .term-pane-header-btns { opacity: 1; }
+.term-pane-header-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-disabled);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+}
+.term-pane-header-btn:hover { background: rgba(255,255,255,.07); color: var(--text-secondary); }
+.term-pane-header-btn.close:hover { color: var(--danger); }
+.term-pane-header-btn.split:hover { color: var(--accent); }
+
+/* ── Draggable divider between panes ────────────────────────────────── */
+.term-split-divider {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+  position: relative;
+  z-index: 5;
+  transition: background 0.12s;
+}
+.term-split-divider.row { width: 5px; cursor: col-resize; }
+.term-split-divider.col { height: 5px; cursor: row-resize; }
+.term-split-divider:hover,
+.term-split-divider.dragging { background: var(--accent-dim); }
+.term-split-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--border-strong);
+  border-radius: 2px;
+  transition: background 0.12s;
+}
+.term-split-divider.row::after  { width: 2px; height: 28px; }
+.term-split-divider.col::after  { width: 28px; height: 2px; }
+.term-split-divider:hover::after,
+.term-split-divider.dragging::after { background: var(--accent); }
+
+/* ── Status bar shown at bottom when split ──────────────────────────── */
+.term-split-statusbar {
+  height: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-disabled);
+}
+.term-split-statusbar-tab {
+  cursor: pointer;
+  padding: 0 3px;
+  border-radius: 2px;
+  user-select: none;
+}
+.term-split-statusbar-tab.active { color: var(--accent); }
 .term-panel-header .term-toolbox-toggle {
   position: static;
   flex-shrink: 0;
