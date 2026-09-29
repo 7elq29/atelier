@@ -343,6 +343,8 @@ export class CortanaHarness implements HarnessDriver {
     let emittedEventCount = 0
     // Track open tool-call IDs so we can close them properly.
     const openAgentToolUseIds = new Map<string, string>() // executionType → toolUseId
+    let consecutivePollErrors = 0
+    const MAX_CONSECUTIVE_POLL_ERRORS = 3
 
     try {
       while (!abort.signal.aborted && Date.now() < deadline) {
@@ -355,9 +357,15 @@ export class CortanaHarness implements HarnessDriver {
             'GET',
             `/api/v1/sessions/${cortanaSessionId}/snapshot?limit=1000&offset=0`
           ) as SnapshotResponse
+          consecutivePollErrors = 0
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          logger.error('cortanaHarness: poll error', { sessionId, error: msg })
+          consecutivePollErrors++
+          if (consecutivePollErrors < MAX_CONSECUTIVE_POLL_ERRORS) {
+            logger.warn('cortanaHarness: poll error (retrying)', { sessionId, error: msg, consecutivePollErrors })
+            continue
+          }
+          logger.error('cortanaHarness: poll error (giving up)', { sessionId, error: msg, consecutivePollErrors })
           channel.push({ type: 'sdk_status', sessionId, timestamp: new Date().toISOString(), status: null })
           channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: msg })
           return
