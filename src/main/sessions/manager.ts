@@ -1843,7 +1843,6 @@ export class SessionManager {
     this.finalizeStaleRunningToolCalls(sessionId, live)
     this.clearPendingUserTurn(live)
     live.busy = false
-    this.clearTurnQueue(sessionId)
     this.sendTurnState(sessionId, false)
     if (this.connecting.has(sessionId)) {
       this.connecting.delete(sessionId)
@@ -2948,18 +2947,21 @@ export class SessionManager {
         return
       }
 
-      case 'interrupted':
+      case 'interrupted': {
         this.flushBuffer(sessionId, live)
         this.finalizeStaleRunningToolCalls(sessionId, live)
         this.expirePendingPrompts(sessionId, live)
         live.busy = false
         live.interruptRequested = false
         this.clearPendingUserTurn(live)
-        this.clearTurnQueue(sessionId)
         this.sendStatus(sessionId)
         logger.info('harness event: interrupted (terminal)', { sessionId })
-        this.sendTurnState(sessionId, false)
+        const intQ = this.turnQueues.get(sessionId)
+        if (intQ) intQ.inflightId = null
+        const intDrained = this.drainTurnQueue(sessionId)
+        if (!intDrained) this.sendTurnState(sessionId, false)
         return
+      }
 
       case 'result': {
         this.flushBuffer(sessionId, live)
