@@ -969,11 +969,36 @@ const allSessions = useMemo(
    * Only non-active sessions are included — the active session's state is
    * already visible in the main panel.
    */
+
+  // Active sessions flattened in sidebar visual order: pinned → groups (in
+  // group sort order) → ungrouped → terminals. Mirrors Sidebar's groupSessions()
+  // exactly so that any chip list built from this slice has the same sequence
+  // the user sees when the sidebar is expanded.
+  const sidebarOrderedActiveSessions = useMemo((): SessionRecord[] => {
+    const agentActive = sessions.activeSessions.filter((s) => s.mode !== 'terminal')
+    const terminalActive = sessions.activeSessions.filter((s) => s.mode === 'terminal')
+    const pinned = agentActive.filter((s) => s.pinned)
+    const rest = agentActive.filter((s) => !s.pinned)
+    const byGroup = new Map<string, SessionRecord[]>()
+    for (const g of sessions.groups) byGroup.set(g.id, [])
+    const ungrouped: SessionRecord[] = []
+    for (const s of rest) {
+      if (s.groupId && byGroup.has(s.groupId)) byGroup.get(s.groupId)!.push(s)
+      else ungrouped.push(s)
+    }
+    return [
+      ...pinned,
+      ...sessions.groups.flatMap((g) => byGroup.get(g.id) ?? []),
+      ...ungrouped,
+      ...terminalActive,
+    ]
+  }, [sessions.activeSessions, sessions.groups])
+
   const collapsedAlerts = useMemo(() => {
     if (!config.sidebarCollapsed) return null
-    const blocked: (typeof allSessions)[0][] = []
-    const ready: (typeof allSessions)[0][] = []
-    for (const session of allSessions) {
+    const blocked: SessionRecord[] = []
+    const ready: SessionRecord[] = []
+    for (const session of sidebarOrderedActiveSessions) {
       if (session.deletedAt || session.id === activeSessionId) continue
       const promptDot = promptDotsBySession[session.id] ?? null
       if (promptDot === 'waiting-blocked') {
@@ -985,43 +1010,20 @@ const allSessions = useMemo(
       }
     }
     return blocked.length + ready.length > 0 ? { blocked, ready } : null
-  }, [config.sidebarCollapsed, allSessions, activeSessionId, promptDotsBySession, waitingInputAlertIds])
+  }, [config.sidebarCollapsed, sidebarOrderedActiveSessions, activeSessionId, promptDotsBySession, waitingInputAlertIds])
 
   // All active sessions in sidebar sequence order, shown when ⌘ is held while
-  // the sidebar is collapsed. Order must mirror the sidebar: pinned → grouped
-  // (in group sort order) → ungrouped → terminals.
+  // the sidebar is collapsed.
   const collapsedSessionList = useMemo(() => {
     if (!config.sidebarCollapsed || !cmdHeld) return null
-
-    const agentActive = sessions.activeSessions.filter((s) => !s.deletedAt && s.mode !== 'terminal')
-    const terminalActive = sessions.activeSessions.filter((s) => !s.deletedAt && s.mode === 'terminal')
-
-    const pinned = agentActive.filter((s) => s.pinned)
-    const rest = agentActive.filter((s) => !s.pinned)
-    const byGroup = new Map<string, SessionRecord[]>()
-    for (const g of sessions.groups) byGroup.set(g.id, [])
-    const ungrouped: SessionRecord[] = []
-    for (const s of rest) {
-      if (s.groupId && byGroup.has(s.groupId)) byGroup.get(s.groupId)!.push(s)
-      else ungrouped.push(s)
-    }
-
-    const ordered: SessionRecord[] = [
-      ...pinned,
-      ...sessions.groups.flatMap((g) => byGroup.get(g.id) ?? []),
-      ...ungrouped,
-      ...terminalActive,
-    ]
-
-    const list = ordered.map((s) => ({
+    const list = sidebarOrderedActiveSessions.map((s) => ({
       session: s,
       dotStatus: sessionDotStatus(s, false, sessions.statuses, sessions.staleSessionIds,
         promptDotsBySession[s.id] ?? null,
         countActiveBackgroundTasks(sessions.backgroundTasksBySession[s.id] ?? []) > 0)
     }))
-
     return list.length > 0 ? list : null
-  }, [config.sidebarCollapsed, cmdHeld, sessions.activeSessions, sessions.groups, sessions.statuses,
+  }, [config.sidebarCollapsed, cmdHeld, sidebarOrderedActiveSessions, sessions.statuses,
       sessions.staleSessionIds, promptDotsBySession, sessions.backgroundTasksBySession])
 
   const runningSessionCount = useMemo(() => {
