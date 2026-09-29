@@ -68,6 +68,7 @@ export function TimelinePill({ tasks, onClick }: TimelinePillProps): React.JSX.E
       title="Timeline — click to open"
       aria-label="Open timeline panel"
       data-testid="toggle-daily-notes-panel"
+      data-hint-exclude=""
       onClick={onClick}
     >
       <svg
