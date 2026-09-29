@@ -1,4 +1,4 @@
-import type { BrowserWindow } from 'electron'
+import { Notification, type BrowserWindow } from 'electron'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
@@ -3042,6 +3042,16 @@ export class SessionManager {
         if (q) q.inflightId = null
         const drained = this.drainTurnQueue(sessionId)
         if (!drained) this.sendTurnState(sessionId, false)
+        // Notify via OS desktop notification when a Cortana session finishes responding
+        // and the app window is not focused (user is elsewhere).
+        if (!drained && this.store.getSession(sessionId)?.mode === 'cortana') {
+          const win = this.getWindow()
+          if (!win?.isFocused() && Notification.isSupported()) {
+            const sessionName = this.store.getSession(sessionId)?.name ?? 'Cortana'
+            const body = event.isError ? 'Turn ended with an error' : 'Response ready'
+            new Notification({ title: sessionName, body }).show()
+          }
+        }
         void this.refreshSessionWorkspace(sessionId, false).catch(() => undefined)
         // token-usage-indicator: pull context usage directly from the SDK's
         // own query — `totalTokens` is full in-context usage; cap is the
