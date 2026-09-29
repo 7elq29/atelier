@@ -1097,6 +1097,7 @@ export class SessionManager {
       }
       this.live.set(session.id, newLiveStream())
       this.sendLifecycle({ type: 'session.created', session })
+      this.workspace?.openReadyCortana(session.id)
       void this.consume(session.id, harnessSession.events, this.bumpConsumeGeneration(session.id))
       return session
     }

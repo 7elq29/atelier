@@ -3034,7 +3034,7 @@ const allSessions = useMemo(
               !activeAppNote &&
               !activeDailyNoteDate &&
               !activeWeeklyPlanSurface &&
-              activeSession.mode === 'claude-code' &&
+              (activeSession.mode === 'claude-code' || activeSession.mode === 'cortana') &&
               !activeSessionDisconnected
                 ? ({ '--terminal-rail-clearance': '52px' } as React.CSSProperties)
                 : undefined
@@ -3475,15 +3475,16 @@ const allSessions = useMemo(
           !activeAppNote &&
           !activeDailyNoteDate &&
           !activeWeeklyPlanSurface &&
-          activeSession.mode === 'claude-code' &&
+          (activeSession.mode === 'claude-code' || activeSession.mode === 'cortana') &&
           !activeSessionDisconnected ? (
             <WorkspaceToolRail
               activeTool={activeWorkspaceTool}
-              showPorts={Boolean(activeSession.hostname)}
+              showPorts={Boolean(activeSession.hostname) && activeSession.mode === 'claude-code'}
               diffChangedCount={activeDiffChangedCount}
               onSelect={selectTab}
               onToolPress={workspaceTabDrag.trackTabPress}
               didDragTool={workspaceTabDrag.didDrag}
+              allowedTools={activeSession.mode === 'cortana' ? ['terminal'] : undefined}
             />
           ) : null}
           </div>
