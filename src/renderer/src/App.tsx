@@ -988,18 +988,40 @@ const allSessions = useMemo(
   }, [config.sidebarCollapsed, allSessions, activeSessionId, promptDotsBySession, waitingInputAlertIds])
 
   // All active sessions in sidebar sequence order, shown when ⌘ is held while
-  // the sidebar is collapsed.
+  // the sidebar is collapsed. Order must mirror the sidebar: pinned → grouped
+  // (in group sort order) → ungrouped → terminals.
   const collapsedSessionList = useMemo(() => {
     if (!config.sidebarCollapsed || !cmdHeld) return null
-    const list: Array<{ session: SessionRecord; dotStatus: string }> = []
-    for (const s of sessions.activeSessions) {
-      if (s.deletedAt) continue
-      const dot = sessionDotStatus(s, false, sessions.statuses, sessions.staleSessionIds, promptDotsBySession[s.id] ?? null,
-        countActiveBackgroundTasks(sessions.backgroundTasksBySession[s.id] ?? []) > 0)
-      list.push({ session: s, dotStatus: dot })
+
+    const agentActive = sessions.activeSessions.filter((s) => !s.deletedAt && s.mode !== 'terminal')
+    const terminalActive = sessions.activeSessions.filter((s) => !s.deletedAt && s.mode === 'terminal')
+
+    const pinned = agentActive.filter((s) => s.pinned)
+    const rest = agentActive.filter((s) => !s.pinned)
+    const byGroup = new Map<string, SessionRecord[]>()
+    for (const g of sessions.groups) byGroup.set(g.id, [])
+    const ungrouped: SessionRecord[] = []
+    for (const s of rest) {
+      if (s.groupId && byGroup.has(s.groupId)) byGroup.get(s.groupId)!.push(s)
+      else ungrouped.push(s)
     }
+
+    const ordered: SessionRecord[] = [
+      ...pinned,
+      ...sessions.groups.flatMap((g) => byGroup.get(g.id) ?? []),
+      ...ungrouped,
+      ...terminalActive,
+    ]
+
+    const list = ordered.map((s) => ({
+      session: s,
+      dotStatus: sessionDotStatus(s, false, sessions.statuses, sessions.staleSessionIds,
+        promptDotsBySession[s.id] ?? null,
+        countActiveBackgroundTasks(sessions.backgroundTasksBySession[s.id] ?? []) > 0)
+    }))
+
     return list.length > 0 ? list : null
-  }, [config.sidebarCollapsed, cmdHeld, sessions.activeSessions, sessions.statuses,
+  }, [config.sidebarCollapsed, cmdHeld, sessions.activeSessions, sessions.groups, sessions.statuses,
       sessions.staleSessionIds, promptDotsBySession, sessions.backgroundTasksBySession])
 
   const runningSessionCount = useMemo(() => {

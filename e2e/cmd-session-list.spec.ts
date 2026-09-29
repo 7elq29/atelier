@@ -51,3 +51,72 @@ test('⌘ held while sidebar collapsed shows all active sessions with names', as
     await app.close()
   }
 })
+
+test('⌘ chips follow sidebar sequence: pinned → grouped → ungrouped → terminal', async () => {
+  const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-cmd-session-order-'))
+  const projectPath = join(userDataDir, 'project')
+  seedE2eConfig(userDataDir)
+  mkdirSync(projectPath, { recursive: true })
+  mkdirSync(artifactsDir, { recursive: true })
+
+  const app = await electron.launch({
+    args: ['.', `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+    env: { ...process.env }
+  })
+
+  try {
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 10_000 })
+
+    // Create 4 sessions via IPC: ungrouped-A, ungrouped-B, future-grouped-C, future-pinned-D.
+    // All created as cortana (no SDK turn needed) so they stay in active list immediately.
+    const [sessionA, sessionB, sessionC, sessionD] = await page.evaluate(
+      async ([path]: [string]) => {
+        const opts = { projectPath: path, mode: 'cortana' as const, hostId: 'local' }
+        const a = await window.atelier.createSession({ ...opts, suggestedName: 'Session-A' })
+        const b = await window.atelier.createSession({ ...opts, suggestedName: 'Session-B' })
+        const c = await window.atelier.createSession({ ...opts, suggestedName: 'Session-C' })
+        const d = await window.atelier.createSession({ ...opts, suggestedName: 'Session-D' })
+        return [a, b, c, d]
+      },
+      [projectPath]
+    )
+
+    // Create a group and assign C to it; pin D.
+    await page.evaluate(
+      async ([cId, dId]: [string, string]) => {
+        const group = await window.atelier.createGroup('My Group')
+        await window.atelier.setSessionGroup(cId, group.id)
+        await window.atelier.setSessionPinned(dId, true)
+      },
+      [sessionC.id, sessionD.id]
+    )
+
+    // Wait for sidebar to reflect the updated list.
+    await expect(page.locator('[data-hint-session-row]')).toHaveCount(4, { timeout: 5_000 })
+
+    // Collapse the sidebar.
+    await page.getByTestId('sidebar-collapse-toggle').click()
+    await expect(page.getByTestId('sidebar')).toHaveClass(/collapsed/)
+
+    // Hold ⌘ to show the session chips.
+    await page.keyboard.down('Meta')
+    const chips = page.locator('[data-testid^="collapsed-session-chip-"]')
+    await expect(chips).toHaveCount(4, { timeout: 5_000 })
+
+    // Expected order: D (pinned) → C (in group) → A (ungrouped) → B (ungrouped)
+    const chipIds = await chips.evaluateAll((els) =>
+      els.map((el) => el.getAttribute('data-testid')?.replace('collapsed-session-chip-', '') ?? '')
+    )
+    expect(chipIds).toEqual([sessionD.id, sessionC.id, sessionA.id, sessionB.id])
+
+    await page.keyboard.up('Meta')
+
+    // Screenshot for visual verification.
+    await page.screenshot({ path: join(artifactsDir, 'cmd-session-list-order.png') })
+  } finally {
+    await app.close()
+  }
+})
