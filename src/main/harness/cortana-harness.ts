@@ -367,7 +367,7 @@ export class CortanaHarness implements HarnessDriver {
           }
           logger.error('cortanaHarness: poll error (giving up)', { sessionId, error: msg, consecutivePollErrors })
           channel.push({ type: 'sdk_status', sessionId, timestamp: new Date().toISOString(), status: null })
-          channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: msg })
+          channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: msg, retryable: true })
           return
         }
 

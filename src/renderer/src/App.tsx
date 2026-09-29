@@ -3371,6 +3371,7 @@ const allSessions = useMemo(
                             onDeleteComment={deleteReviewCommentByNote}
                             reviewComments={reviewCommentsBySession[activeSession.id] ?? []}
                             busy={sessions.busyBySession[activeSession.id] ?? false}
+                            onRetryTurn={() => void sessions.retryLastTurn(activeSession.id)}
                           />
                           {import.meta.env.DEV && (sessions.hookLogBySession[activeSession.id]?.length ?? 0) > 0 && (
                             <div className="sdk-debug-log" data-testid="sdk-debug-log">

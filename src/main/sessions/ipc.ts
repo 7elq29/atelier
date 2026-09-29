@@ -93,6 +93,8 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
 
   ipcMain.handle('session:cancelQueued', (_event, sessionId: string, id: string) => manager.cancelQueued(sessionId, id))
 
+  ipcMain.handle('session:retryLastTurn', (_event, sessionId: string) => manager.retryLastTurn(sessionId))
+
   ipcMain.handle('session:clearConversation', (_event, sessionId: string) => manager.clearConversation(sessionId))
 
   ipcMain.handle('session:validateModel', (_event, sessionId: string, model: string) => manager.validateModel(sessionId, model))

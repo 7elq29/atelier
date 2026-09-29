@@ -1628,6 +1628,32 @@ export class SessionManager {
   }
 
   /**
+   * Retry the last user turn after a retryable error: delete the error system
+   * message and re-dispatch the preceding user message to the harness.
+   */
+  retryLastTurn(sessionId: string): void {
+    const messages = this.store.listMessages(sessionId)
+    // The last message should be the retryable system error; the one before it the user turn.
+    const errorMsg = messages.at(-1)
+    const userMsg = messages.at(-2)
+    if (!errorMsg || errorMsg.role !== 'system') return
+    if (!userMsg || userMsg.role !== 'user') return
+    // Remove the error message from the DB and renderer.
+    this.store.deleteMessage(errorMsg.id)
+    this.sendMessageRemoved(sessionId, errorMsg.id)
+    // Re-dispatch the user message without creating a new DB row.
+    const entry: QueueEntry = {
+      id: crypto.randomUUID(),
+      text: userMsg.content,
+      userMessageId: userMsg.id,
+    }
+    logger.info('retryLastTurn: re-dispatching user message', { sessionId, userMessageId: userMsg.id })
+    void this.dispatchTurnToHarness(sessionId, entry).catch((err) => {
+      this.reportHarnessFailure(sessionId, 'retryLastTurn', err)
+    })
+  }
+
+  /**
    * Drain the next pending message from the turn queue after a turn completes.
    * Returns true if a new turn was dispatched (caller should NOT call
    * sendTurnState(false) in that case — dispatchTurnToHarness does it).

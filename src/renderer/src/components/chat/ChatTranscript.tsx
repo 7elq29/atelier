@@ -181,6 +181,7 @@ export default function ChatTranscript({
   hiddenTurnCount = 0,
   busy = false,
   emptyState = null,
+  onRetryTurn,
 }: {
   messages: MessageRecord[]
   /** Resolves a permission/AskUserQuestion/plan card by requestId (05-interactive-prompts). */
@@ -218,6 +219,8 @@ export default function ChatTranscript({
   busy?: boolean
   /** Shown in place of the (blank) transcript when the session has no messages yet. */
   emptyState?: JSX.Element | null
+  /** Re-dispatches the last user turn after a retryable error. */
+  onRetryTurn?: () => void
 }): JSX.Element {
   function findPreviousPlanMarkdown(currentMessageId: number): string | undefined {
     const idx = messages.findIndex((m) => m.id === currentMessageId)
@@ -746,9 +749,13 @@ export default function ChatTranscript({
         </div>
       )
     } else if (message.role === 'system') {
+      const isRetryable = onRetryTurn && (message.rawEvent as { retryable?: boolean } | null)?.retryable
       nodes.push(
         <div className="msg-system" data-testid="transcript-message" data-role="system" data-message-id={message.id} key={message.id}>
           {formatSystemTranscriptError(message.content)}
+          {isRetryable && (
+            <button className="msg-system-retry" onClick={onRetryTurn}>Retry again</button>
+          )}
         </div>
       )
     } else {

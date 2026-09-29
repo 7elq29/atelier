@@ -349,6 +349,8 @@ export type HarnessEvent =
       sessionId: string
       timestamp: string
       message: string
+      /** When true, the UI should offer a retry action to re-send the last user turn. */
+      retryable?: true
     }
   | {
       /**

@@ -42,6 +42,7 @@ export function SessionChatSurface({
   onDeleteComment,
   reviewComments = [],
   busy = false,
+  onRetryTurn,
 }: {
   session: SessionRecord
   pendingJumpMessageId: number | null
@@ -71,6 +72,7 @@ export function SessionChatSurface({
   onDeleteComment: (composerNote: string) => void
   reviewComments?: readonly ReviewComposerComment[]
   busy?: boolean
+  onRetryTurn?: () => void
 }): JSX.Element {
   const messages = useSessionMessages(session.id)
   const truncation = useTranscriptTruncation(session.id)
@@ -118,6 +120,7 @@ export function SessionChatSurface({
             onDeleteComment={onDeleteComment}
             reviewComments={reviewComments}
             busy={busy}
+            onRetryTurn={onRetryTurn}
             // This surface only renders once the session is past the connecting
             // gate, so an empty transcript here means "connected, nothing said yet".
             emptyState={<SessionReadyHint workspaceLabel={sessionWorkspaceLabel(session)} />}

@@ -59,6 +59,7 @@ export interface UseSessionsResult {
   /** Main-process turn queue state per session — pending messages waiting for the current SDK turn to complete. */
   queuedBySession: Record<string, PendingQueuedMessage[]>
   cancelQueued: (sessionId: string, id: string) => Promise<void>
+  retryLastTurn: (sessionId: string) => Promise<void>
   refresh: () => Promise<void>
   createSession: (opts: CreateSessionOptions) => Promise<SessionRecord>
   resumeSession: (sessionId: string) => Promise<void>
@@ -388,6 +389,10 @@ export function useSessions(): UseSessionsResult {
     await window.atelier.cancelQueued(sessionId, id)
   }, [])
 
+  const retryLastTurn = useCallback(async (sessionId: string): Promise<void> => {
+    await window.atelier.retryLastTurn(sessionId)
+  }, [])
+
   const interrupt = useCallback(async (sessionId: string): Promise<SessionInterruptResult> => {
     setBusyBySession((prev) => (prev[sessionId] === false ? prev : { ...prev, [sessionId]: false }))
     return window.atelier.interruptSession(sessionId)
@@ -587,6 +592,7 @@ export function useSessions(): UseSessionsResult {
     staleSessionIds,
     queuedBySession,
     cancelQueued,
+    retryLastTurn,
     refresh,
     createSession,
     resumeSession,

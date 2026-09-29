@@ -262,6 +262,7 @@ const api = {
   sendSessionMessage: (sessionId: string, text: string, modelSelection?: ModelSelection, attachments?: FileAttachment[]): Promise<void> =>
     ipcRenderer.invoke('session:sendMessage', sessionId, text, modelSelection, attachments),
   cancelQueued: (sessionId: string, id: string): Promise<void> => ipcRenderer.invoke('session:cancelQueued', sessionId, id),
+  retryLastTurn: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:retryLastTurn', sessionId),
   interruptSession: (sessionId: string): Promise<SessionInterruptResult> => ipcRenderer.invoke('session:interrupt', sessionId),
   clearConversation: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:clearConversation', sessionId),
   validateModel: (sessionId: string, model: string): Promise<ModelValidationResult> =>
