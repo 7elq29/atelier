@@ -4,6 +4,7 @@
  * full git diff + changes cap load in the background so connect is not blocked on remote git.
  */
 import { watch, type FSWatcher } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import type { SessionRecord } from '../../shared/session-types'
@@ -198,6 +199,23 @@ export class WorkspaceService {
       treeEntries: payload.filesTree?.length ?? null,
       gitDeferred: true
     })
+  }
+
+  /** Emit session:openReady for a Cortana session with a terminal at $HOME and no git/files workspace. */
+  openReadyCortana(sessionId: string): void {
+    const tabTerminalPtyId = `${sessionId}:tab-terminal`
+    const payload: SessionWorkspacePayload = {
+      sessionId,
+      workspacePath: homedir(),
+      hostname: null,
+      diff: { isRepo: false, branch: null, files: [] },
+      sessionChangesCap: { items: [] },
+      filesTree: null,
+      filesList: null,
+      tabTerminalPtyId,
+      loadedAt: Date.now()
+    }
+    this.sendOpenReady(payload)
   }
 
   /** Overwrite the diff files for a session and push a workspace update — used for Cortana artifact lists. */

@@ -46,7 +46,8 @@ export default function WorkspaceToolRail({
   diffChangedCount,
   onSelect,
   onToolPress,
-  didDragTool
+  didDragTool,
+  allowedTools
 }: {
   activeTool: WorkspaceToolTab | null
   showPorts: boolean
@@ -54,8 +55,9 @@ export default function WorkspaceToolRail({
   onSelect: (tab: WorkspaceToolTab) => void
   onToolPress?: (tab: WorkspaceToolTab, event: React.MouseEvent) => void
   didDragTool?: () => boolean
+  allowedTools?: WorkspaceToolTab[]
 }): JSX.Element {
-  const tools: WorkspaceToolTab[] = ['diff', 'files', 'terminal', ...(showPorts ? ['ports' as const] : [])]
+  const tools: WorkspaceToolTab[] = allowedTools ?? ['diff', 'files', 'terminal', ...(showPorts ? ['ports' as const] : [])]
 
   return (
     <nav className="workspace-tool-rail" data-testid="workspace-tool-rail" aria-label="Workspace tools">
