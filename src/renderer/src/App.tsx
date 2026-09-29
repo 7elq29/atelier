@@ -39,8 +39,7 @@ import DailyNoteEditorPanel from './components/panels/DailyNoteEditorPanel'
 import WeeklyPlanWizardPanel from './components/panels/WeeklyPlanWizardPanel'
 import WeeklyPlanViewPanel from './components/panels/WeeklyPlanViewPanel'
 import PortsPanel from './components/panels/PortsPanel'
-import TerminalWithToolbox from './components/panels/TerminalWithToolbox'
-import type { TerminalPanelHandle } from './components/panels/TerminalPanel'
+import TerminalWithToolbox, { type TerminalWithToolboxHandle } from './components/panels/TerminalWithToolbox'
 import type { DiffPanelHandle } from './components/panels/DiffPanel'
 import type { FilesPanelHandle } from './components/panels/FilesPanel'
 import TitleBar from './components/TitleBar'
@@ -283,7 +282,7 @@ export default function App(): JSX.Element {
   const composerRefs = useRef<Map<string, ComposerHandle>>(new Map())
   const filesPanelRefs = useRef<Map<string, FilesPanelHandle>>(new Map())
   const diffPanelRefs = useRef<Map<string, DiffPanelHandle>>(new Map())
-  const tabTerminalRefs = useRef<Map<string, TerminalPanelHandle>>(new Map())
+  const tabTerminalRefs = useRef<Map<string, TerminalWithToolboxHandle>>(new Map())
   const composerCacheRef = useRef<HTMLDivElement>(null)
   const [activeComposerHeight, setActiveComposerHeight] = useState(0)
   /** Launch-local caret positions; deliberately never persisted to disk. */
@@ -682,14 +681,8 @@ export default function App(): JSX.Element {
                 if (t === 'app-note') return split?.secondaryTab === 'app-note'
                 return resolveTabVisibility(t, tab, split) !== 'hidden'
               })
-              if (visible.length > 1) {
-                e.preventDefault()
-                const currentPanel = (document.activeElement as HTMLElement | null)
-                  ?.closest<HTMLElement>('[data-panel]')
-                  ?.dataset.panel as (SessionTab | 'app-note') | undefined
-                const currentIdx = currentPanel ? visible.indexOf(currentPanel) : -1
-                const nextPanel = visible[(currentIdx + 1) % visible.length]
-                switch (nextPanel) {
+              const focusPanel = (panel: SessionTab | 'app-note'): void => {
+                switch (panel) {
                   case 'chat':
                     composerRefs.current.get(session.id)?.focus()
                     break
@@ -704,10 +697,37 @@ export default function App(): JSX.Element {
                     break
                   case 'terminal': {
                     const ptyId = `${session.id}:tab-terminal`
-                    tabTerminalRefs.current.get(ptyId)?.focus()
+                    const termHandle = tabTerminalRefs.current.get(ptyId)
+                    termHandle?.focus()
                     break
                   }
                 }
+              }
+
+              if (visible.length > 1) {
+                e.preventDefault()
+                const currentPanel = (document.activeElement as HTMLElement | null)
+                  ?.closest<HTMLElement>('[data-panel]')
+                  ?.dataset.panel as (SessionTab | 'app-note') | undefined
+                const currentIdx = currentPanel ? visible.indexOf(currentPanel) : -1
+
+                // Special case: if we're already inside the terminal panel and it has
+                // sub-panes, cycle within those sub-panes (chat → t1 → t2 → t3 → chat)
+                // instead of the default outer rotation (chat → terminal → chat).
+                if (currentPanel === 'terminal' && visible.includes('terminal')) {
+                  const ptyId = `${session.id}:tab-terminal`
+                  const termHandle = tabTerminalRefs.current.get(ptyId)
+                  if (termHandle?.hasSplit()) {
+                    const wrapped = termHandle.cycleFocusedPane()
+                    if (!wrapped) return  // still within terminal sub-panes — done
+                    // wrapped past last pane → jump to the outer panel after terminal
+                    const termIdx = visible.indexOf('terminal')
+                    focusPanel(visible[(termIdx + 1) % visible.length])
+                    return
+                  }
+                }
+
+                focusPanel(visible[(currentIdx + 1) % visible.length])
               }
             }
             return
@@ -738,8 +758,34 @@ export default function App(): JSX.Element {
             fileQuickOpenChordAtRef.current = null
             const session = activeSessionRef.current
             if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
-              e.preventDefault()
-              setSplitOpenPickerOpen(true)
+              const split = activeWorkspaceSplitRef.current
+              const termHandle = split?.secondaryTab === 'terminal'
+                ? tabTerminalRefs.current.get(`${session.id}:tab-terminal`)
+                : null
+              if (termHandle?.hasSplit() !== undefined) {
+                // Terminal panel is the active tool — split the focused terminal pane below
+                e.preventDefault()
+                termHandle.splitBelow()
+              } else {
+                // No terminal panel active — open the workspace split picker as before
+                e.preventDefault()
+                setSplitOpenPickerOpen(true)
+              }
+            }
+            return
+          }
+          if (e.code === 'Digit3') {
+            fileQuickOpenChordAtRef.current = null
+            const session = activeSessionRef.current
+            if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
+              const split = activeWorkspaceSplitRef.current
+              const termHandle = split?.secondaryTab === 'terminal'
+                ? tabTerminalRefs.current.get(`${session.id}:tab-terminal`)
+                : null
+              if (termHandle) {
+                e.preventDefault()
+                termHandle.splitRight()
+              }
             }
             return
           }
@@ -756,7 +802,15 @@ export default function App(): JSX.Element {
             const session = activeSessionRef.current
             if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
               const split = activeWorkspaceSplitRef.current
-              if (split && split.secondaryTab !== 'app-note' && split.fullscreenTab === split.secondaryTab) {
+              // If terminal panel is active and has a split, close the focused sub-pane
+              const termHandle = split?.secondaryTab === 'terminal'
+                ? tabTerminalRefs.current.get(`${session.id}:tab-terminal`)
+                : null
+              if (termHandle?.hasSplit()) {
+                e.preventDefault()
+                termHandle.closeFocused()
+              } else if (split && split.secondaryTab !== 'app-note' && split.fullscreenTab === split.secondaryTab) {
+                // No terminal split — restore from fullscreen as before
                 e.preventDefault()
                 handleWorkspaceToolToggleMaximizeRef.current(split.secondaryTab)
               }
@@ -769,7 +823,14 @@ export default function App(): JSX.Element {
             if (session?.mode === 'claude-code' && !anyModalOpenRef.current) {
               const split = activeWorkspaceSplitRef.current
               if (split) {
-                if (split.fullscreenTab === split.secondaryTab) {
+                // If terminal panel is active and has a split, kill the focused terminal sub-pane
+                const termHandle = split.secondaryTab === 'terminal'
+                  ? tabTerminalRefs.current.get(`${session.id}:tab-terminal`)
+                  : null
+                if (termHandle?.hasSplit()) {
+                  e.preventDefault()
+                  termHandle.closeFocused()
+                } else if (split.fullscreenTab === split.secondaryTab) {
                   // Secondary pane is fullscreened — close directly, no focus check needed.
                   e.preventDefault()
                   handleWorkspaceSplitPaneCloseRef.current(split.secondaryTab as SessionTab)

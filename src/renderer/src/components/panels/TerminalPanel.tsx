@@ -130,6 +130,17 @@ const TerminalPanel = forwardRef(function TerminalPanel(
     const term = termRef.current
     const fitAddon = fitAddonRef.current
     if (!term || !fitAddon) return
+    // Only auto-focus if focus is not already held by a different app panel.
+    // This prevents stealing focus from chat when ^X O cycles past the last
+    // terminal sub-pane and jumps to chat (the sub-pane state resets, making
+    // this pane "active" again, which would otherwise re-steal focus).
+    const focused = document.activeElement
+    const focusedPanel = focused?.closest?.('[data-panel]')?.getAttribute('data-panel')
+    if (focusedPanel && focusedPanel !== 'terminal') {
+      fitAddon.fit()
+      void window.atelier.ptyResize(ptyId, term.cols, term.rows)
+      return
+    }
     term.focus()
     fitAddon.fit()
     void window.atelier.ptyResize(ptyId, term.cols, term.rows)
