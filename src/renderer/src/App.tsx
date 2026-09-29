@@ -2837,6 +2837,7 @@ const allSessions = useMemo(
                   : 'Toggle sidebar'
               }
               data-testid="sidebar-collapse-toggle"
+              data-hint-exclude=""
               onClick={() => updateConfig({ sidebarCollapsed: !config.sidebarCollapsed })}
             >
               {config.sidebarCollapsed ? (
@@ -2997,6 +2998,7 @@ const allSessions = useMemo(
                 aria-label="Toggle timeline panel"
                 aria-pressed={dailyNotesOpen}
                 data-testid="toggle-daily-notes-panel"
+                data-hint-exclude=""
                 onClick={() => void toggleDailyNotesPanel()}
               >
                 {todayNoteExists === false ? (
