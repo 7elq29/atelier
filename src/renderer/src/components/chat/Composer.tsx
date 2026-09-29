@@ -1254,7 +1254,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             />
           )}
         </div>
-        <div className="context-bar-divider" />
+        {sessionMode !== 'cortana' && <div className="context-bar-divider" />}
         {popover?.kind === 'mention' && mentionMatches.length > 0 && (
           <div className="mention-popup" data-testid="mention-popover">
             {mentionMatches.map((path, idx) => {
