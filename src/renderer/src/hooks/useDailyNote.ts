@@ -266,7 +266,13 @@ export function useDailyNote(date: string, configVaultRoot?: string): UseDailyNo
   const moveTask = useCallback(
     (id: string, section: 'day-plan' | 'unscheduled', timeBlock?: string) =>
       mutate((prev) => {
-        const tasks = prev.tasks.map((t) => (t.id === id ? { ...t, section, timeBlock } : t))
+        const tasks = prev.tasks.map((t) => {
+          if (t.id !== id) return t
+          // When moving to unscheduled, preserve the existing timeBlock so the
+          // duration is remembered if the task is later dragged back to the timeline.
+          const nextTimeBlock = section === 'unscheduled' ? t.timeBlock : timeBlock
+          return { ...t, section, timeBlock: nextTimeBlock }
+        })
         return section === 'unscheduled'
           ? { ...prev, tasks: reorderUnscheduledTasks(tasks) }
           : { ...prev, tasks }

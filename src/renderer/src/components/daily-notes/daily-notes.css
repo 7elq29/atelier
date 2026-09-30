@@ -1282,15 +1282,16 @@
   left: 0;
   right: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   height: 0;
+  overflow: visible;
 }
 .dn-hour-label {
   flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: 11px;
+  line-height: 1;
   color: var(--text-tertiary);
-  transform: translateY(-6px);
 }
 /* Draft slot time label — same typography as .dn-hour-label (not .dn-tb-range). */
 .dn-draft-range {

@@ -34,6 +34,8 @@ const GRID_HEIGHT_PX = minutesToPx(GRID_END_MIN - GRID_START_MIN)
 
 interface TimelineProps {
   tasks: DailyTask[]
+  /** All tasks for the note (including unscheduled) — used to look up duration on drop. */
+  allTasks?: DailyTask[]
   onToggle: (id: string) => void
   onCreate: (text: string, timeBlock: string) => void
   onDropExisting: (id: string, timeBlock: string) => void
@@ -82,6 +84,7 @@ function formatHourLabel(hour: number): string {
 
 export default function Timeline({
   tasks,
+  allTasks,
   onToggle,
   onCreate,
   onDropExisting,
@@ -322,7 +325,7 @@ export default function Timeline({
     setLiveBlock(null)
     const id = e.dataTransfer.getData('text/task-id')
     if (!id) return
-    const task = tasks.find((t) => t.id === id)
+    const task = (allTasks ?? tasks).find((t) => t.id === id)
     const parsed = task ? parseTimeBlock(task.timeBlock) : null
     const duration = parsed ? parsed.end - parsed.start : DEFAULT_DURATION_MIN
     const start = clampedStartForDefaultDuration(e.clientY)
