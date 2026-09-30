@@ -1474,6 +1474,18 @@
       ]
     },
     {
+      "id": "keyboard-hints-app-mount",
+      "paths": [
+        "src/renderer/src/App.tsx"
+      ],
+      "changedLines": "KeyboardHintsOverlay|keyboard-hints|hint-exclude|onSessionTabShortcut|handleSessionTabHintShortcut",
+      "targets": [
+        {
+          "file": "e2e/bug-keyboard-hint-labels.spec.ts"
+        }
+      ]
+    },
+    {
       "id": "app-notes",
       "paths": [
         "src/renderer/src/components/panels/AppNotesPanel.tsx",

@@ -3,6 +3,19 @@
 This file governs how any feature or bug in this repo is planned, built, and
 verified. It applies to every task, whether done directly or via a subagent.
 
+## 0. Hard constraints — never violate
+
+- **Never delete existing UI features or components.** If a component conflicts
+  with your task, add a scoped attribute (`data-hint-exclude`, a prop, a CSS
+  class) — do not remove it. Removing any mounted component (e.g.
+  `<KeyboardHintsOverlay>`, `<CommandPalette>`, `<Sidebar>`) requires the user
+  to name it explicitly in the request. "Fix X" is never permission to delete Y.
+- **Stay in scope.** Only touch files directly needed for the assigned task.
+  If fixing a bug in `pty.ts` requires changing `App.tsx` for an unrelated
+  reason, stop and discuss — don't commit the unrelated change silently.
+- **Run `npm run test:e2e:affected -- --base main` before every commit** that
+  touches production source. A passing build alone is not sufficient.
+
 ## 0. Mandatory ordering — never skip or reorder
 
 For **any** feature or bug, do these steps in this order. Do not write
