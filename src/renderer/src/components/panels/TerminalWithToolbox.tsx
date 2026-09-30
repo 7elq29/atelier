@@ -128,6 +128,13 @@ const TerminalWithToolbox = forwardRef(function TerminalWithToolbox(
       const atLast = idx === ids.length - 1
       const next = ids[(idx + 1) % ids.length]
       setFocusedPaneId(next)
+      if (!atLast) {
+        // Move DOM focus to the next pane's textarea so the user can type there
+        const ta = document.querySelector<HTMLElement>(
+          `[data-pane-id="${next}"] .xterm-helper-textarea`
+        )
+        ta?.focus()
+      }
       return atLast
     },
     hasSplit() {
@@ -187,7 +194,6 @@ const TerminalWithToolbox = forwardRef(function TerminalWithToolbox(
           cwd={cwd}
           hostname={hostname}
           active={active}
-          multiPane={multiPane}
           onFocus={setFocusedPaneId}
           onSplit={handleSplit}
           onClose={handleClose}

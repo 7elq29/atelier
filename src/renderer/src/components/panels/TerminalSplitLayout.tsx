@@ -8,7 +8,6 @@ interface TerminalSplitLayoutProps {
   cwd: string
   hostname?: string | null
   active: boolean
-  multiPane: boolean
   onFocus: (id: string) => void
   onSplit: (id: string, dir: 'row' | 'col') => void
   onClose: (id: string) => void
@@ -33,10 +32,7 @@ function TerminalPane({
   cwd,
   hostname,
   active,
-  multiPane,
   onFocus,
-  onSplit,
-  onClose,
 }: { paneNode: TerminalPaneNode & { type: 'pane' } } & ChildProps): JSX.Element {
   const isFocused = paneNode.id === focusedId
 
@@ -47,40 +43,6 @@ function TerminalPane({
       data-pane-id={paneNode.id}
       onMouseDown={() => onFocus(paneNode.id)}
     >
-      {multiPane && (
-        <div className="term-pane-header">
-          <span className="term-pane-header-cwd">{cwd}</span>
-          <div className="term-pane-header-btns">
-            <button
-              type="button"
-              className="term-pane-header-btn split"
-              title="Split right (^X 3)"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); onSplit(paneNode.id, 'row') }}
-            >
-              ⊟
-            </button>
-            <button
-              type="button"
-              className="term-pane-header-btn split"
-              title="Split below (^X 2)"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); onSplit(paneNode.id, 'col') }}
-            >
-              ⊞
-            </button>
-            <button
-              type="button"
-              className="term-pane-header-btn close"
-              title="Close pane (^X K)"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); onClose(paneNode.id) }}
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
       <TerminalPanel
         ptyId={paneNode.ptyId}
         cwd={cwd}

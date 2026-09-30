@@ -88,8 +88,12 @@ async function tmuxEnableMouse(runner: (args: string[]) => Promise<unknown>, ses
     await runner(['set-option', '-t', sessionName, 'mouse', 'on'])
     logger.info('pty spawn: tmux mouse reporting enabled', { name: sessionName })
   } catch (err) {
-    // Non-fatal: the terminal still works, the wheel just keeps walking history.
     logger.warn('pty spawn: could not enable tmux mouse reporting', { name: sessionName, error: String(err) })
+  }
+  try {
+    await runner(['set-option', '-t', sessionName, 'status', 'off'])
+  } catch {
+    // Non-fatal — status bar will still show but doesn't break anything.
   }
 }
 
@@ -190,7 +194,12 @@ export class PtyManager {
     const elapsed = (): number => Date.now() - t0
 
     const isRemote = Boolean(opts.hostname)
-    const useTmux = !isRemote && tmuxBin !== null
+    // Sub-pane ptys (id contains ':sp-') are ephemeral splits — they don't need
+    // tmux persistence and MUST NOT share a session name with the base terminal
+    // (tmuxSessionName truncates to 50 chars, so ':tab-terminal' and
+    // ':tab-terminal:sp-xxx' would collide → same content, original detaches).
+    const isSubPane = id.includes(':sp-')
+    const useTmux = !isRemote && !isSubPane && tmuxBin !== null
     const localCwd = isRemote ? opts.cwd : resolveLocalPtyCwd(opts.cwd)
 
     let shell: string
