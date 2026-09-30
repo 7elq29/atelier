@@ -257,7 +257,7 @@ export class PtyManager {
       shell = tmuxBin!
       args = ['attach-session', '-t', name]
       entryTmuxName = name
-    } else if (isRemote) {
+    } else if (isRemote && !isSubPane) {
       const hostname = opts.hostname as string
       const name = tmuxSessionName(id)
       logger.info('pty spawn: remote tmux has-session check', { id, hostname, name, elapsedMs: elapsed() })
@@ -301,6 +301,15 @@ export class PtyManager {
         shell = 'ssh'
         args = [...SSH_MUX_OPTS, hostname]
       }
+    } else if (isRemote) {
+      // Sub-pane on a remote session: plain ssh, no tmux.
+      // tmuxSessionName truncates to 50 chars and would produce the same name
+      // as the base pane's session — attaching to it shares content/input.
+      // Sub-panes are ephemeral and don't need persistence, so plain ssh suffices.
+      const hostname = opts.hostname as string
+      shell = 'ssh'
+      args = [...SSH_MUX_OPTS, hostname]
+      entryHostname = hostname
     } else {
       shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh')
       args = []
