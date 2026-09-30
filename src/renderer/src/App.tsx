@@ -696,9 +696,14 @@ export default function App(): JSX.Element {
                     diffPanelRefs.current.get(session.id)?.focus()
                     break
                   case 'terminal': {
-                    const ptyId = `${session.id}:tab-terminal`
-                    const termHandle = tabTerminalRefs.current.get(ptyId)
-                    termHandle?.focus()
+                    // rAF fires after React commits data-focused attrs, so the
+                    // query reliably finds the currently-focused pane's textarea.
+                    requestAnimationFrame(() => {
+                      const ta = document.querySelector<HTMLElement>(
+                        '[data-panel="terminal"] [data-pane-id][data-focused="true"] .xterm-helper-textarea'
+                      )
+                      ta?.focus()
+                    })
                     break
                   }
                 }
