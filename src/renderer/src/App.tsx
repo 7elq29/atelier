@@ -3681,7 +3681,14 @@ const allSessions = useMemo(
         />
       )}
 
-<NewSessionModal
+      <KeyboardHintsOverlay
+        disabled={anyModalOpen}
+        hideSessionRows={config.sidebarCollapsed}
+        scanRootId="app"
+        onSessionTabShortcut={handleSessionTabHintShortcut}
+      />
+
+      <NewSessionModal
         isOpen={newSessionOpen}
         hosts={sessions.hosts}
         config={config}
