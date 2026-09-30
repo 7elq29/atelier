@@ -1970,6 +1970,15 @@ const allSessions = useMemo(
               run: () => selectTab('diff')
             },
             {
+              id: 'refresh-commit-history',
+              label: 'Refresh commit history',
+              category: 'Workspace',
+              run: () => {
+                selectTab('diff')
+                diffPanelRefs.current.get(activeSessionId!)?.refreshCommits()
+              }
+            },
+            {
               id: 'open-workspace-files',
               label: 'Open Files',
               category: 'Workspace',

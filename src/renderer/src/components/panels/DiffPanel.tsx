@@ -445,6 +445,7 @@ function defaultCommitFilePath(files: DiffFileChange[]): string | null {
 
 export interface DiffPanelHandle {
   focus(): void
+  refreshCommits(): void
 }
 
 /**
@@ -962,6 +963,14 @@ const DiffPanel = forwardRef(function DiffPanel(
   useImperativeHandle(ref, () => ({
     focus() {
       containerRef.current?.querySelector<HTMLElement>('.diff-area')?.focus()
+    },
+    refreshCommits() {
+      selectSub('commits')
+      setCommitsLoading(true)
+      void window.atelier
+        .gitCommits(workspacePath, hostname, true)
+        .then(setCommits)
+        .finally(() => setCommitsLoading(false))
     }
   }))
 
