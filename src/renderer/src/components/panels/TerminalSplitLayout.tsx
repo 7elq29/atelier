@@ -41,7 +41,7 @@ function TerminalPane({
       className="term-pane-wrapper"
       data-focused={isFocused ? 'true' : 'false'}
       data-pane-id={paneNode.id}
-      onMouseDown={() => onFocus(paneNode.id)}
+      onMouseDown={() => { if (!isFocused) onFocus(paneNode.id) }}
     >
       <TerminalPanel
         ptyId={paneNode.ptyId}
