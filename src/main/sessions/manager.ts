@@ -2955,10 +2955,16 @@ export class SessionManager {
         live.busy = false
         live.interruptRequested = false
         this.clearPendingUserTurn(live)
-        this.clearTurnQueue(sessionId)
         this.sendStatus(sessionId)
         logger.info('harness event: interrupted (terminal)', { sessionId })
-        this.sendTurnState(sessionId, false)
+        // Drain (not clear) the queue so messages queued while the cancelled
+        // turn was running are dispatched, matching the behaviour of 'result'.
+        {
+          const q = this.turnQueues.get(sessionId)
+          if (q) q.inflightId = null
+          const drained = this.drainTurnQueue(sessionId)
+          if (!drained) this.sendTurnState(sessionId, false)
+        }
         return
 
       case 'result': {
