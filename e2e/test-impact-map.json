@@ -22,6 +22,21 @@
       ]
     },
     {
+      "id": "spend-status-chip",
+      "paths": [
+        "src/main/spend-status.ts",
+        "src/main/spend-status-ipc.ts",
+        "src/shared/spend-status-types.ts",
+        "src/renderer/src/components/SpendStatusChip.tsx"
+      ],
+      "targets": [
+        {
+          "file": "e2e/global-nav-and-settings.spec.ts",
+          "grep": "sidebar spend-status chip"
+        }
+      ]
+    },
+    {
       "id": "session-alert-dot",
       "paths": [
         "src/renderer/src/App.tsx",

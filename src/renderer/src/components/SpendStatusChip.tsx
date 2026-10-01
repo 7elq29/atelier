@@ -56,9 +56,12 @@ function formatTooltip(data: SpendStatus): string {
     .join('\n')
 }
 
+/** Sidebar display order for named product pools (Claude Code is the main bar). */
+const NAMED_BAR_ORDER = ['Cortana', 'Minion', 'Cursor'] as const
+
 /**
- * Org-wide AI harness-pool spend chip. Shows a progress bar for Claude Code
- * (main pool) and, when present, a second bar for Cortana.
+ * Org-wide AI spend chip. Claude Code = harness-pool total; Cortana / Minion /
+ * Cursor render as extra bars when their spendstatus endpoints return data.
  */
 export default function SpendStatusChip(): JSX.Element | null {
   const [data, setData] = useState<SpendStatus | null>(null)
@@ -77,14 +80,17 @@ export default function SpendStatusChip(): JSX.Element | null {
 
   if (!data) return null
 
-  const cortana = data.harnesses.find((h) => h.harness === 'Cortana')
+  const namedBars = NAMED_BAR_ORDER.flatMap((label) => {
+    const entry = data.harnesses.find((h) => h.harness === label)
+    return entry ? [{ label, spent: entry.spent, cap: entry.cap }] : []
+  })
 
   return (
     <div className="spend-indicator" data-testid="spend-status-chip" title={formatTooltip(data)}>
       <SpendBar label="Claude Code" spent={data.spent} cap={data.cap} />
-      {cortana && (
-        <SpendBar label="Cortana" spent={cortana.spent} cap={cortana.cap} />
-      )}
+      {namedBars.map((bar) => (
+        <SpendBar key={bar.label} label={bar.label} spent={bar.spent} cap={bar.cap} />
+      ))}
       <div className="spend-indicator-footer">
         this month ·{' '}
         <button

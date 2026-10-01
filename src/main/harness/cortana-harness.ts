@@ -119,26 +119,46 @@ async function callRest(
 async function uploadFile(
   sessionId: string,
   attachment: HarnessFileInput
-): Promise<string | null> {
+): Promise<{ filename: string; terrablobPath: string | null; terrablobUrl: string | null } | null> {
   const token = await getToken()
   const bytes = attachment.mimeType === 'text/plain'
     ? Buffer.from(attachment.data, 'utf-8')
     : Buffer.from(attachment.data, 'base64')
-  const filename = attachment.name ?? `attachment.${attachment.mimeType.split('/')[1]}`
+  const filename = attachment.name ?? `attachment.${attachment.mimeType.split('/')[1] ?? 'bin'}`
   const form = new FormData()
   form.append('file', new Blob([bytes], { type: attachment.mimeType }), filename)
-  const url = `${AGENT_GATEWAY_BASE}/api/v1/files/upload?session_id=${sessionId}&agent_name=cortana`
+  const url = `${AGENT_GATEWAY_BASE}/api/v1/files/upload?session_id=${sessionId}&agent_name=cortana&author=human`
   const resp = await fetch(url, {
     method: 'POST',
     headers: { ...authHeaders(token), 'x-csrf-token': 'x' },
     body: form,
   })
   if (!resp.ok) {
-    logger.warn('cortanaHarness: file upload failed', { sessionId, filename, status: resp.status })
+    const body = await resp.text().catch(() => '')
+    logger.warn('cortanaHarness: file upload failed', {
+      sessionId,
+      filename,
+      status: resp.status,
+      body: body.slice(0, 300),
+    })
     return null
   }
-  const data = await resp.json() as { terrablob_url?: string; filename?: string }
-  return data.terrablob_url ?? null
+  const data = await resp.json() as {
+    filename?: string
+    terrablob_path?: string
+    terrablob_url?: string
+  }
+  const uploadedName = data.filename ?? filename
+  logger.info('cortanaHarness: file uploaded', {
+    sessionId,
+    filename: uploadedName,
+    terrablobPath: data.terrablob_path ?? null,
+  })
+  return {
+    filename: uploadedName,
+    terrablobPath: data.terrablob_path ?? null,
+    terrablobUrl: data.terrablob_url ?? null,
+  }
 }
 
 // ── Snapshot types ───────────────────────────────────────────────────────────
@@ -271,6 +291,16 @@ export class CortanaHarness implements HarnessDriver {
       return { sessionId, events: existing.channel[Symbol.asyncIterator]() }
     }
 
+    // fix-cortana-resume-orphan-poll: abort any leftover poll before swapping
+    // the event channel so its `finally` cannot delete a newer turn's
+    // AbortController from `this.polls` (same sessionId key).
+    const inFlight = this.polls.get(sessionId)
+    if (inFlight) {
+      inFlight.abort()
+      this.polls.delete(sessionId)
+      logger.info('cortanaHarness: resume() aborted in-flight poll', { sessionId })
+    }
+    if (existing) existing.channel.close()
     const cortanaSessionId = existing?.cortanaSessionId ?? sessionId
     const channel = new EventChannel()
     this.sessions.set(sessionId, {
@@ -443,16 +473,34 @@ export class CortanaHarness implements HarnessDriver {
     }
     const { cortanaSessionId, channel } = state
 
-    // Upload attachments and append file references to the message.
+    // Upload attachments into this session's agent artifacts, then tell Cortana
+    // to open those filenames via session file tools. Pasting terrablob URLs
+    // alone fails for screenshots — the gateway URLs are auth-gated and are
+    // not multimodal content blocks (fix-cortana-attachment-session-artifact).
     let userInput = text
     if (attachments.length > 0) {
-      const uploads = await Promise.all(attachments.map(a => uploadFile(cortanaSessionId, a)))
-      const refs = uploads
-        .map((url, i) => url ? `- ${attachments[i].name ?? 'file'}: ${url}` : null)
-        .filter(Boolean)
-      if (refs.length > 0) {
-        userInput = `${text}\n\n[Attached files:\n${refs.join('\n')}\n]`
+      const uploads = await Promise.all(attachments.map((a) => uploadFile(cortanaSessionId, a)))
+      const failed = uploads
+        .map((u, i) => (u ? null : attachments[i]?.name ?? `attachment-${i + 1}`))
+        .filter((name): name is string => name != null)
+      if (failed.length > 0) {
+        const msg = `Failed to upload attachment(s): ${failed.join(', ')}`
+        logger.error('cortanaHarness: attachment upload failed', { sessionId, failed })
+        channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: msg, retryable: true })
+        return
       }
+      const lines = uploads.map((u) => {
+        const pathHint = u!.terrablobPath ? ` (artifact path: ${u!.terrablobPath})` : ''
+        return `- ${u!.filename}${pathHint}`
+      })
+      const preamble = text.trim()
+      const instruction = [
+        "The user attached the following file(s) to THIS Cortana session's artifact store.",
+        'Open each file with your session file tools and inspect it (for images: look at the pixels and describe what you see).',
+        'Do NOT try to fetch terrablob or external URLs — use the session artifact filename/path below.',
+        ...lines,
+      ].join('\n')
+      userInput = preamble ? `${preamble}\n\n${instruction}` : instruction
     }
 
     // Already attached to a gateway turn (e.g. after resume reattach). Post the
@@ -611,7 +659,11 @@ export class CortanaHarness implements HarnessDriver {
         channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: 'Cortana response timed out.' })
       }
     } finally {
-      this.polls.delete(sessionId)
+      // Only clear our own controller — a resume()/newer sendAndPoll may have
+      // already replaced polls.get(sessionId) with a different AbortController.
+      if (this.polls.get(sessionId) === abort) {
+        this.polls.delete(sessionId)
+      }
     }
   }
 
