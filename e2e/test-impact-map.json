@@ -14,10 +14,23 @@
         "src/renderer/src/App.tsx",
         "src/renderer/src/components/Sidebar.tsx"
       ],
-      "changedLines": "waitingInputAlert|hasBeenWorkingWhileActive|statusAtSelection|session-waiting-input-alert|showWaitingInputAlert",
+      "changedLines": "waitingInputAlert|hasBeenWorkingWhileActive|statusAtSelection|session-waiting-input-alert|showWaitingInputAlert|sessionLiveWaitingForInput|mode !== 'cortana'|mode !== 'claude-code'",
       "targets": [
         {
           "file": "e2e/bug-collapsed-alert-chip.spec.ts"
+        }
+      ]
+    },
+    {
+      "id": "cortana-response-notifications",
+      "paths": [
+        "src/main/sessions/manager.ts"
+      ],
+      "changedLines": "Match claude-code: an initial prompt|response-ready alerts|live\\.get\\(session\\.id\\)!\\.busy = true",
+      "targets": [
+        {
+          "file": "e2e/bug-collapsed-alert-chip.spec.ts",
+          "grep": "cortana"
         }
       ]
     },

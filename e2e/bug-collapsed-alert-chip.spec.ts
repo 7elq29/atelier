@@ -92,3 +92,65 @@ test.describe('session-ready alert dot', () => {
     await page.screenshot({ path: join(artifactsDir, 'alert-dot-confirmed.png') })
   })
 })
+
+test.describe('cortana session-ready alert dot', () => {
+  let electronApp: ElectronApplication
+  let page: Page
+
+  test.beforeAll(async () => {
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-cortana-alert-dot-'))
+    seedSkipOnboarding(userDataDir)
+
+    electronApp = await electron.launch({
+      args: ['.', `--user-data-dir=${userDataDir}`],
+      cwd: projectRoot,
+    })
+    page = await electronApp.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 15_000 })
+  })
+
+  test.afterAll(async () => {
+    await electronApp.close().catch(() => undefined)
+  })
+
+  test('cortana: orange dot appears after respond-then-switch-away', async () => {
+    mkdirSync(artifactsDir, { recursive: true })
+
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId('mode-cortana').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    await expect(page.getByTestId('workspace-tool-rail')).toBeVisible({ timeout: 20_000 })
+
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId('mode-cortana').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    await expect(page.getByTestId('workspace-tool-rail')).toBeVisible({ timeout: 20_000 })
+
+    const cortanaRows = page.locator('[data-testid="session-row"]').filter({ has: page.getByTestId('cortana-tag') })
+    await expect(cortanaRows).toHaveCount(2)
+    await cortanaRows.nth(0).click()
+    await expect(cortanaRows.nth(0)).toHaveAttribute('data-active', 'true')
+
+    const composer = page.getByTestId('composer-input').locator('visible=true').first()
+    await expect(composer).toBeVisible({ timeout: 15_000 })
+    await composer.fill('Reply with exactly the word: DONE')
+    await composer.press('Enter')
+
+    await expect(cortanaRows.nth(0).getByTestId('session-dot')).not.toHaveClass(/status-working/, {
+      timeout: 60_000
+    })
+    await page.screenshot({ path: join(artifactsDir, 'cortana-alert-dot-still-on-s1.png') })
+
+    await cortanaRows.nth(1).click()
+    await expect(cortanaRows.nth(1)).toHaveAttribute('data-active', 'true')
+    await page.screenshot({ path: join(artifactsDir, 'cortana-alert-dot-after-switch.png') })
+
+    await expect(cortanaRows.nth(0).getByTestId('session-waiting-input-alert')).toBeVisible({
+      timeout: 5_000
+    })
+    await page.screenshot({ path: join(artifactsDir, 'cortana-alert-dot-confirmed.png') })
+  })
+})

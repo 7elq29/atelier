@@ -132,7 +132,7 @@ export function sessionLiveWaitingForInput(
   closed: boolean,
   statuses: Record<string, SessionStatus>
 ): boolean {
-  if (closed || session.mode !== 'claude-code') return false
+  if (closed || (session.mode !== 'claude-code' && session.mode !== 'cortana')) return false
   return displayStatus(session, closed, statuses) === 'waiting'
 }
 
