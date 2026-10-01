@@ -358,8 +358,16 @@ export class CortanaHarness implements HarnessDriver {
    * transcript still ends on a user message, emit that assistant reply once.
    * Caller (SessionManager) must only invoke this when the DB trailing message
    * is role=user so we do not duplicate an already-stored assistant.
+   *
+   * When `knownAssistantContents` already includes the gateway's last final
+   * text, skip — idle follow-ups reconnect with a trailing user message that
+   * was just appended for the *new* turn; without this guard we re-emit the
+   * previous turn's reply into the transcript every time.
    */
-  async syncCompletedTurn(sessionId: string): Promise<void> {
+  async syncCompletedTurn(
+    sessionId: string,
+    opts?: { knownAssistantContents?: string[] }
+  ): Promise<void> {
     if (this.polls.has(sessionId)) return
     const state = this.sessions.get(sessionId)
     if (!state) return
@@ -381,6 +389,14 @@ export class CortanaHarness implements HarnessDriver {
       )
       const content = (fromHistory?.content ?? lastFinal.content ?? '').trim()
       if (!content) return
+      const known = opts?.knownAssistantContents ?? []
+      if (known.some((c) => c.trim() === content)) {
+        logger.info('cortanaHarness: syncCompletedTurn skipped; final already in transcript', {
+          sessionId,
+          messageId: lastFinal.message_id,
+        })
+        return
+      }
       logger.info('cortanaHarness: syncing completed turn after resume', {
         sessionId,
         messageId: lastFinal.message_id,

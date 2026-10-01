@@ -297,4 +297,98 @@ test.describe('terminal-pty', () => {
       await app?.close().catch(() => undefined)
     }
   })
+
+  /**
+   * Idle Cortana follow-up reconnects via resume(). Must not call
+   * syncCompletedTurn for the previous final_response (that duplicated the
+   * prior assistant into the transcript — Features/cortana-followup-no-duplicate-sync).
+   */
+  test('cortana: idle follow-up must not re-emit previous assistant', async () => {
+    test.setTimeout(240_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = join(artifactsDir, 'cortana-followup-nodup-userdata')
+    execFileSync('rm', ['-rf', userDataDir])
+    mkdirSync(userDataDir, { recursive: true })
+    seedSkipOnboarding(userDataDir)
+    let app: ElectronApplication | undefined
+    let page: Page
+
+    const marker1 = 'FOLLOWUP-NO-DUP-A'
+    const marker2 = 'FOLLOWUP-NO-DUP-B'
+    try {
+      ;({ app, page } = await launchApp(userDataDir))
+      await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 20_000 })
+
+      await page.getByTestId('new-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toBeVisible()
+      await page.getByTestId('mode-cortana').click()
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+      await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 20_000 })
+
+      await page.getByTestId('composer-input').fill(
+        `Reply with exactly the token ${marker1} on its own line and nothing else.`
+      )
+      await page.getByTestId('composer-input').press('Enter')
+
+      const logPath = join(userDataDir, 'logs', 'main.log')
+      await expect
+        .poll(async () => page.getByTestId('stop-button').count(), { timeout: 150_000 })
+        .toBe(0)
+
+      await expect
+        .poll(async () => {
+          const text = (await page.locator('[data-testid="transcript-message"]').allTextContents()).join('\n')
+          return text.includes(marker1)
+        }, { timeout: 90_000 })
+        .toBe(true)
+
+      const beforeFollowUp = readFileSync(logPath, 'utf8')
+      const syncBefore = (beforeFollowUp.match(/syncing completed turn after resume/g) ?? []).length
+
+      await page.getByTestId('composer-input').fill(
+        `Reply with exactly the token ${marker2} on its own line and nothing else.`
+      )
+      await page.getByTestId('composer-input').press('Enter')
+
+      await expect
+        .poll(() => {
+          const log = readFileSync(logPath, 'utf8')
+          return (
+            log.includes('message sent, polling snapshot') ||
+            log.includes('inline response received') ||
+            log.includes('live injection (streamInput')
+          )
+        }, { timeout: 60_000 })
+        .toBe(true)
+
+      // Give syncCompletedTurn a moment if it were wrongly invoked.
+      await page.waitForTimeout(2_000)
+      const afterFollowUp = readFileSync(logPath, 'utf8')
+      const syncAfter = (afterFollowUp.match(/syncing completed turn after resume/g) ?? []).length
+      expect(
+        syncAfter,
+        'follow-up must not syncCompletedTurn the previous final_response'
+      ).toBe(syncBefore)
+
+      await expect
+        .poll(async () => {
+          const msgs = page.locator('[data-testid="transcript-message"][data-role="assistant"]')
+          const n = await msgs.count()
+          let marker1Count = 0
+          let hasMarker2 = false
+          for (let i = 0; i < n; i++) {
+            const text = (await msgs.nth(i).textContent()) ?? ''
+            if (text.includes(marker1)) marker1Count++
+            if (text.includes(marker2)) hasMarker2 = true
+          }
+          return { marker1Count, hasMarker2 }
+        }, { timeout: 150_000 })
+        .toEqual({ marker1Count: 1, hasMarker2: true })
+
+      await page.screenshot({ path: join(artifactsDir, 'cortana-followup-no-duplicate.png') })
+    } finally {
+      await app?.close().catch(() => undefined)
+    }
+  })
 })

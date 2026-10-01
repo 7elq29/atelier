@@ -679,8 +679,13 @@ export interface HarnessDriver {
    * Optional (Cortana): after resume, if the gateway finished while Atelier was
    * dead and the local transcript still ends on a user message, emit that
    * assistant reply so the UI is not stuck pending with no text.
+   * Pass `knownAssistantContents` (trimmed text already in the local transcript)
+   * so a follow-up reconnect does not re-emit the previous turn's final_response.
    */
-  syncCompletedTurn?(sessionId: string): Promise<void>
+  syncCompletedTurn?(
+    sessionId: string,
+    opts?: { knownAssistantContents?: string[] }
+  ): Promise<void>
 
   /**
    * Returns the current context window usage for a live session via the SDK's
