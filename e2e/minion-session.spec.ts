@@ -111,6 +111,17 @@ test.describe('minion-session', () => {
         return minion.id
       })
 
+      // Already-open attach must focus the same row — never createtask a twin.
+      await page.getByTestId('new-session-button').click()
+      await page.getByTestId('mode-minion').click()
+      await page.getByTestId('minion-attach-link').fill(`https://minion.uberinternal.com/v2/${taskId}`)
+      await expect(page.getByTestId('minion-attach-parsed')).toContainText(taskId)
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 15_000 })
+      await expect(page.locator('[data-testid="session-row"][data-mode="minion"]')).toHaveCount(1)
+      // Still the original create ack only — attach-of-open must not mint a second task.
+      await expect(page.getByText(/spinning up a DevPod/i)).toHaveCount(1)
+
       await page.evaluate(async (id) => {
         await window.atelier.closeSession(id)
         await window.atelier.deleteSession(id)
@@ -127,6 +138,9 @@ test.describe('minion-session', () => {
 
       await expect(page.getByTestId('minion-tag').first()).toBeVisible({ timeout: 30_000 })
       await expect(page.getByText(/Attached to existing Minion task/i).first()).toBeVisible({ timeout: 30_000 })
+      // Fresh attach row: attach ack only — no createtask DevPod line.
+      await expect(page.getByText(/spinning up a DevPod/i)).toHaveCount(0)
+      await expect(page.locator('[data-testid="session-row"][data-mode="minion"]')).toHaveCount(1)
       await page.screenshot({ path: join(artifactsDir, 'minion-session-attached.png') })
     } finally {
       await page.evaluate(async () => {

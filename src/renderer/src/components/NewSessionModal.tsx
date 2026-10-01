@@ -493,8 +493,8 @@ export default function NewSessionModal({
                 )}
                 {!minionAttachTaskId && (
                   <div className="field-hint" style={{ marginTop: 6 }}>
-                    Paste a Minion URL with taskId=… or a bare task UUID. Attach skips creating a new
-                    task.
+                    Paste a Minion URL (taskId=… or /v2/&lt;uuid&gt;) or a bare task UUID. Attach
+                    reuses that task — it does not create a twin.
                   </div>
                 )}
               </div>

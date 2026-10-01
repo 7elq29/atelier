@@ -1144,12 +1144,26 @@ export class SessionManager {
       // Minion: aifx-backed task — no project path, host, or worktree needed.
       const attachId = opts.minion?.attachTaskId?.trim()
       if (attachId) {
-        const existing = this.store.getSession(attachId)
+        // Cleanup may still be running after Delete — wait so we don't refuse
+        // attach while deletedAt is set, then treat as a fresh attach.
+        const inflightCleanup = this.sessionCleanupInFlight.get(attachId)
+        if (inflightCleanup) {
+          await inflightCleanup.catch(() => undefined)
+        }
+        let existing = this.store.getSession(attachId)
         if (existing?.deletedAt) {
-          throw new Error('That Minion session was permanently deleted in Atelier.')
+          // Soft-delete marker without an in-flight cleanup (interrupted quit).
+          // Finish purge so the task UUID can be re-bound.
+          await this.deleteSession(attachId).catch(() => undefined)
+          existing = this.store.getSession(attachId)
+        }
+        if (existing?.deletedAt) {
+          throw new Error('That Minion session is still cleaning up. Try Attach again in a moment.')
         }
         if (existing && !existing.closedAt) {
-          throw new Error('That Minion task is already open in the sidebar.')
+          // Already open — return the same row so the modal just focuses it.
+          // Never createtask a twin session for the same task UUID.
+          return this.decorate(existing)
         }
         if (existing?.closedAt) {
           // Reopen the Atelier row and reconnect polling — same task id.
