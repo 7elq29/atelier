@@ -363,7 +363,14 @@ test.describe('terminal-pty', () => {
       await page.waitForTimeout(400)
       await page.keyboard.type(`echo ${marker}`)
       await page.keyboard.press('Enter')
-      await expect.poll(async () => rows.textContent(), { timeout: 15_000 }).toContain(marker)
+      // xterm textContent joins rows without "\n"; require the marker twice
+      // (typed command + echo output), not merely the command line.
+      await expect
+        .poll(async () => {
+          const text = (await rows.textContent()) ?? ''
+          return (text.match(new RegExp(marker, 'g')) ?? []).length
+        }, { timeout: 15_000 })
+        .toBeGreaterThanOrEqual(2)
       await page.screenshot({ path: join(artifactsDir, 'cortana-terminal-after-create.png') })
 
       const sessionId = await page
@@ -377,7 +384,18 @@ test.describe('terminal-pty', () => {
       ;({ app, page } = await launchApp(userDataDir))
       await expect(page.getByTestId('session-row')).toBeVisible({ timeout: 20_000 })
       await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
-      await expect(page.getByTestId('workspace-tool-rail')).toBeVisible({ timeout: 30_000 })
+      // Closed/idle Cortana shows the reconnect gate; open sessions show the tool rail.
+      const gate = page.getByTestId('session-reconnect-button')
+      const rail = page.getByTestId('workspace-tool-rail')
+      await expect.poll(async () => {
+        if (await gate.isVisible().catch(() => false)) return 'gate'
+        if (await rail.isVisible().catch(() => false)) return 'rail'
+        return 'wait'
+      }, { timeout: 30_000 }).not.toBe('wait')
+      if (await gate.isVisible().catch(() => false)) {
+        await gate.click()
+      }
+      await expect(rail).toBeVisible({ timeout: 45_000 })
       await page.getByTestId('tab-terminal').click()
       const term2 = page.getByTestId('terminal-body')
       const rows2 = term2.locator('.xterm-rows')
@@ -388,8 +406,43 @@ test.describe('terminal-pty', () => {
       const marker2 = 'CORTANA-TERM-RELAUNCH'
       await page.keyboard.type(`echo ${marker2}`)
       await page.keyboard.press('Enter')
-      await expect.poll(async () => rows2.textContent(), { timeout: 15_000 }).toContain(marker2)
+      await expect
+        .poll(async () => {
+          const text = (await rows2.textContent()) ?? ''
+          return (text.match(new RegExp(marker2, 'g')) ?? []).length
+        }, { timeout: 15_000 })
+        .toBeGreaterThanOrEqual(2)
       await page.screenshot({ path: join(artifactsDir, 'cortana-terminal-after-relaunch.png') })
+
+      // Closed Cortana: close clears the selection; re-selecting shows the
+      // reconnect gate (not a dead Terminal slot).
+      await page
+        .locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+        .getByTestId('session-menu-button')
+        .click()
+      await page.getByTestId('menu-close').click()
+      await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
+      await expect(page.getByTestId('session-disconnected-panel')).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByTestId('workspace-tool-rail')).toHaveCount(0)
+      await page.getByTestId('session-reconnect-button').click()
+      await expect(page.getByTestId('workspace-tool-rail')).toBeVisible({ timeout: 45_000 })
+      await page.getByTestId('tab-terminal').click()
+      const term3 = page.getByTestId('terminal-body')
+      const rows3 = term3.locator('.xterm-rows')
+      await expect(term3).toBeVisible({ timeout: 20_000 })
+      await term3.click()
+      await expect.poll(async () => rows3.textContent(), { timeout: 25_000 }).toMatch(/[%$#>]/)
+      await page.waitForTimeout(400)
+      const marker3 = 'CORTANA-TERM-RECONNECT'
+      await page.keyboard.type(`echo ${marker3}`)
+      await page.keyboard.press('Enter')
+      await expect
+        .poll(async () => {
+          const text = (await rows3.textContent()) ?? ''
+          return (text.match(new RegExp(marker3, 'g')) ?? []).length
+        }, { timeout: 15_000 })
+        .toBeGreaterThanOrEqual(2)
+      await page.screenshot({ path: join(artifactsDir, 'cortana-terminal-after-reconnect.png') })
     } finally {
       await app?.close().catch(() => undefined)
     }

@@ -167,15 +167,22 @@ function resolveEffectiveTheme(theme: 'system' | 'light' | 'dark'): 'light' | 'd
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-/** Claude-code sessions that show the main gate (no tabs/composer/panels until connected). */
+/**
+ * Sessions that show the main gate (no chat/tools until connected).
+ * Cortana must be included: a closed Cortana used to still show the Terminal
+ * tool rail while select skipped hydrate/openReady, leaving a dead empty slot
+ * (Features/cortana-terminal-open-ready).
+ */
 function claudeCodeSessionDisconnected(
   session: SessionRecord | null | undefined,
   sessionId: string | null,
   statuses: Record<string, SessionStatus>
 ): boolean {
-  if (!session || session.mode !== 'claude-code' || !sessionId) return false
+  if (!session || !sessionId) return false
+  if (session.mode !== 'claude-code' && session.mode !== 'cortana') return false
   if (session.closedAt) return true
   const status = statuses[sessionId]
+  if (session.mode === 'cortana') return status === 'connecting'
   return status === 'startup-idle' || status === 'connecting'
 }
 
@@ -1260,6 +1267,10 @@ const allSessions = useMemo(
       await sessions.resumeSession(session.id)
     }
     if (!disconnectedGate) {
+      sessionWorkspace.hydrateSnapshot(session.id)
+    } else if (session.mode === 'cortana' && !session.closedAt) {
+      // Connecting Cortana: still emit openReady so Terminal keep-alive can
+      // mount as soon as the rail is allowed; harness connect is independent.
       sessionWorkspace.hydrateSnapshot(session.id)
     }
   }

@@ -1,5 +1,5 @@
 /**
- * Full main-area gate when a claude-code session has no live harness
+ * Full main-area gate when a claude-code or cortana session has no live harness
  * (startup-idle, closed in history, or reconnect in flight). Chat/diff/files/terminal
  * stay unavailable until connected.
  */

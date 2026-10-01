@@ -503,9 +503,10 @@
       "id": "cortana-terminal-open-ready",
       "paths": [
         "src/main/sessions/manager.ts",
-        "src/main/sessions/workspace-service.ts"
+        "src/main/sessions/workspace-service.ts",
+        "src/renderer/src/App.tsx"
       ],
-      "changedLines": "openReadyCortana|patchFiles|cortana-terminal-open-ready|mode === 'cortana'|mode !== 'claude-code' && session.mode !== 'cortana'|refreshSessionWorkspace|workspacePath: homedir|tab-terminal",
+      "changedLines": "openReadyCortana|patchFiles|cortana-terminal-open-ready|mode === 'cortana'|mode !== 'claude-code' && session.mode !== 'cortana'|refreshSessionWorkspace|workspacePath: homedir|tab-terminal|claudeCodeSessionDisconnected|session.mode !== 'claude-code' && session.mode !== 'cortana'",
       "targets": [
         {
           "file": "e2e/terminal-pty.spec.ts",

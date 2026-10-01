@@ -203,9 +203,9 @@ export class WorkspaceService {
 
   /**
    * Emit session:openReady for a Cortana session with a terminal at $HOME and
-   * no git/files workspace. Spawns the tab-terminal PTY (same as Claude
-   * essential preload) so resume/reconnect get a live shell without waiting
-   * for the Terminal tab mount.
+   * no git/files workspace. The renderer TerminalPanel mounts from this event
+   * and owns the PTY spawn (do not spawn here — a second spawn races
+   * kill+respawn and drops keystrokes into a dead client).
    */
   openReadyCortana(sessionId: string): SessionWorkspacePayload {
     const tabTerminalPtyId = `${sessionId}:tab-terminal`
@@ -223,7 +223,6 @@ export class WorkspaceService {
       tabTerminalPtyId,
       loadedAt: Date.now()
     }
-    void this.spawnTabTerminal(sessionId, tabTerminalPtyId, workspacePath, null)
     this.sendOpenReady(payload)
     return payload
   }
