@@ -1420,10 +1420,14 @@
       "paths": [
         "src/renderer/src/App.tsx"
       ],
-      "changedLines": "toggleWorkspaceTool|handleWorkspacePanelShortcut|workspacePanelShortcutsEnabled|handleSessionTabHintShortcut|tabByCode|ArrowRight|ArrowLeft",
+      "changedLines": "toggleWorkspaceTool|handleWorkspacePanelShortcut|workspacePanelShortcutsEnabled|handleSessionTabHintShortcut|tabByCode|ArrowRight|ArrowLeft|mode === 'cortana'",
       "targets": [
         {
           "file": "e2e/command-palette-workspace-tools.spec.ts"
+        },
+        {
+          "file": "e2e/terminal-pty.spec.ts",
+          "grep": "cortana: .*⌘T|cortana:.*Meta"
         },
         {
           "file": "e2e/app-shell.spec.ts",
