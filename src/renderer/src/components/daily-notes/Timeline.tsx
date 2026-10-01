@@ -7,7 +7,6 @@ import type { MoveDateOptions } from './move-date-options'
 import {
   TIMELINE_START_HOUR,
   TIMELINE_END_HOUR,
-  HOUR_HEIGHT_PX,
   SNAP_MINUTES,
   LABEL_WIDTH,
   parseTimeBlock,
@@ -15,7 +14,6 @@ import {
   minutesToPx,
   pxToMinutes,
   snapMinutes,
-  snapToHalfHour,
   computeColumns
 } from './timeline-scale'
 import { extractInlineTagsFromText } from '../../../../shared/daily-note-tags'
@@ -107,6 +105,8 @@ export default function Timeline({
   const pendingDragRef = useRef<Omit<DragInfo, 'liveStartMin' | 'liveEndMin'> | null>(null)
   /** Task id for an in-flight HTML5 drag — dataTransfer is empty during dragover. */
   const htmlDragTaskIdRef = useRef<string | null>(null)
+  /** Minutes from block start to the grab point — keeps HTML5 reposition from jumping. */
+  const htmlDragGrabOffsetMinRef = useRef(0)
   const dragRef = useRef<DragInfo | null>(null)
   const dragActivatedRef = useRef(false)
   const [dragActive, setDragActive] = useState(false)
@@ -252,30 +252,33 @@ export default function Timeline({
     }
   }
 
-  /** Map a client Y coordinate to a snapped grid-minutes value (UC-5/UC-13). */
-  const yToMinutes = (clientY: number): number => {
+  /** Raw (unsnapped) grid minutes for a client Y inside the scrollable body. */
+  const clientYToRawMinutes = (clientY: number): number => {
     const el = containerRef.current
     if (!el) return GRID_START_MIN
     const rect = el.getBoundingClientRect()
     const relY = clientY - rect.top + el.scrollTop
-    return snapMinutes(GRID_START_MIN + pxToMinutes(relY))
+    return GRID_START_MIN + pxToMinutes(relY)
   }
 
-  const clampedStartForDefaultDuration = (clientY: number): number => {
-    const el = containerRef.current
-    if (!el) return GRID_START_MIN
-    const rect = el.getBoundingClientRect()
-    const relY = clientY - rect.top + el.scrollTop
-    const rawMin = GRID_START_MIN + pxToMinutes(relY)
-    const start = snapToHalfHour(rawMin)
-    return clamp(start, GRID_START_MIN, GRID_END_MIN - DEFAULT_DURATION_MIN)
+  /**
+   * Start time for create / HTML5 drop: snap to SNAP_MINUTES (15), optionally
+   * subtracting a grab offset so repositioning an existing block does not jump.
+   */
+  const clampedStartAtClientY = (
+    clientY: number,
+    durationMin: number,
+    grabOffsetMin = 0
+  ): number => {
+    const start = snapMinutes(clientYToRawMinutes(clientY) - grabOffsetMin)
+    return clamp(start, GRID_START_MIN, GRID_END_MIN - durationMin)
   }
 
   const handleContextMenu = (e: React.MouseEvent): void => {
     e.preventDefault()
     if ((e.target as HTMLElement).closest('.dn-tblock')) return
     if ((e.target as HTMLElement).closest('.dn-tblock-draft-wrap')) return
-    const start = clampedStartForDefaultDuration(e.clientY)
+    const start = clampedStartAtClientY(e.clientY, DEFAULT_DURATION_MIN)
     const end = start + DEFAULT_DURATION_MIN
     if (draft?.text.trim()) {
       onCreate(draft.text.trim(), draft.timeBlock)
@@ -296,7 +299,8 @@ export default function Timeline({
     const task = id ? tasks.find((t) => t.id === id) : null
     const parsed = task ? parseTimeBlock(task.timeBlock) : null
     const duration = parsed ? parsed.end - parsed.start : DEFAULT_DURATION_MIN
-    const start = clampedStartForDefaultDuration(e.clientY)
+    const grabOffset = id ? htmlDragGrabOffsetMinRef.current : 0
+    const start = clampedStartAtClientY(e.clientY, duration, grabOffset)
     const end = Math.min(start + duration, GRID_END_MIN)
     setLiveBlock({ taskId: id ?? '__external__', startMin: start, endMin: end })
   }
@@ -309,26 +313,34 @@ export default function Timeline({
 
   const handleDragEnd = (): void => {
     htmlDragTaskIdRef.current = null
+    htmlDragGrabOffsetMinRef.current = 0
     setLiveBlock(null)
   }
 
   const handleTaskDragStart = (task: DailyTask, e: React.DragEvent): void => {
     clearDragGesture()
     htmlDragTaskIdRef.current = task.id
+    const parsed = parseTimeBlock(task.timeBlock)
+    htmlDragGrabOffsetMinRef.current = parsed
+      ? clientYToRawMinutes(e.clientY) - parsed.start
+      : 0
     e.dataTransfer.setData('text/task-id', task.id)
     e.dataTransfer.effectAllowed = 'move'
   }
 
   const handleDrop = (e: React.DragEvent): void => {
     e.preventDefault()
+    const grabOffset = htmlDragTaskIdRef.current ? htmlDragGrabOffsetMinRef.current : 0
     htmlDragTaskIdRef.current = null
+    htmlDragGrabOffsetMinRef.current = 0
     setLiveBlock(null)
     const id = e.dataTransfer.getData('text/task-id')
     if (!id) return
     const task = (allTasks ?? tasks).find((t) => t.id === id)
     const parsed = task ? parseTimeBlock(task.timeBlock) : null
     const duration = parsed ? parsed.end - parsed.start : DEFAULT_DURATION_MIN
-    const start = clampedStartForDefaultDuration(e.clientY)
+    // External (unscheduled) drops map cursor → start; in-timeline moves keep grab offset.
+    const start = clampedStartAtClientY(e.clientY, duration, parsed ? grabOffset : 0)
     const end = Math.min(start + duration, GRID_END_MIN)
     onDropExisting(id, `${minutesToTime(start)}-${minutesToTime(end)}`)
   }
@@ -468,6 +480,14 @@ export default function Timeline({
               </button>
               <div
                 className="dn-tb-body"
+                onMouseDown={(e) => {
+                  if (renamingTaskId === task.id) return
+                  if ((e.target as HTMLElement).closest('.dn-tbox')) return
+                  // Pointer move (15-min snap + grab offset). preventDefault inside
+                  // startDrag suppresses native HTML5 drag for this gesture; dragging
+                  // to Unscheduled still works via the block chrome / context menu.
+                  startDrag('move', task, { start, end }, e)
+                }}
                 onDoubleClick={(e) => {
                   if ((e.target as HTMLElement).closest('.dn-tbox')) return
                   e.stopPropagation()

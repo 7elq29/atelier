@@ -1,8 +1,33 @@
 09-vault-sync.log — obsidian-integration e2e run
-vaultRoot=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-E9juPy/vault
-notePath=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-E9juPy/vault/01.dailynotes/2026/Jul/31/2026-07-31.md
+vaultRoot=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-knhZmm/vault
+notePath=/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-knhZmm/vault/01.dailynotes/2026/Jul/31/2026-07-31.md
+
+
+===== 54a: after pixel-Y right-click creation =====
+---
+date: 2026-07-29
+day: Wednesday
+type: daily
+---
+
+## 📋 Tasks
+
+- [ ] 09:00–09:15 Standup [gid:: 66666666-6666-4666-8666-666666666666]
+- [ ] 13:00–13:30 Resize target [gid:: 77777777-7777-4777-8777-777777777777]
+- [ ] 15:00–15:30 Delete target [gid:: a6a6a6a6-a6a6-4a6a-8a6a-a6a6a6a6a6a6]
+- [ ] 10:00–11:00 Overlap A [gid:: b7b7b7b7-b7b7-4b7b-8b7b-b7b7b7b7b7b7]
+- [ ] 10:00–11:00 Overlap B [gid:: c8c8c8c8-c8c8-4c8c-8c8c-c8c8c8c8c8c8]
+- [ ] 06:45-07:15 Pixel-Y right-click task [gid:: 7770ec04-8365-42a9-9ccd-3855de698e2c]
+
+### ⚪ Backlog
+- 
+
+### 🤝 Delegated
+- 
+
 
 
 ===== main-process daily-note log lines =====
-{"ts":"2026-09-21T17:03:20.072Z","level":"info","process":"main","msg":"daily-note watcher: started dir watch","dir":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-E9juPy/vault/01.dailynotes/2026/Jul/31","fileCount":1}
-{"ts":"2026-09-21T17:03:20.074Z","level":"info","process":"main","msg":"daily-note read","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-E9juPy/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":8}
+{"ts":"2026-10-01T17:48:08.970Z","level":"info","process":"main","msg":"daily-note watcher: started dir watch","dir":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-knhZmm/vault/01.dailynotes/2026/Jul/31","fileCount":1}
+{"ts":"2026-10-01T17:48:08.971Z","level":"info","process":"main","msg":"daily-note read","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-knhZmm/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":8}
+{"ts":"2026-10-01T17:48:08.972Z","level":"info","process":"main","msg":"daily-note read","path":"/var/folders/xh/546qgw_90vg_zq6631qcr09r0000gn/T/atelier-e2e-vault-knhZmm/vault/01.dailynotes/2026/Jul/31/2026-07-31.md","taskCount":8}

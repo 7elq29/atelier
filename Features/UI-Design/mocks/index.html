@@ -1087,9 +1087,9 @@
   /* Timeline absolute grid + task-creation draft (app: dn-tblock / dn-tblock-draft) */
   #timelineBody.dn-timeline-grid-wrap { position: relative; padding: 0 18px 16px; height: 240px; overflow-y: auto; }
   .dn-timeline-grid { position: relative; height: 240px; margin-right: -18px; padding-right: 18px; }
-  .dn-hour-row { position: absolute; left: 0; right: 0; display: flex; align-items: flex-start; height: 0; }
-  .dn-hour-label { width: 36px; flex-shrink: 0; font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); transform: translateY(-6px); }
-  .dn-hour-line { flex: 1; height: 1px; background: var(--border-subtle); }
+  .dn-hour-row { position: absolute; left: 0; right: 0; height: 0; overflow: visible; pointer-events: none; }
+  .dn-hour-label { position: absolute; left: 0; top: 0; width: 36px; font-family: var(--font-mono); font-size: 11px; line-height: 1; color: var(--text-tertiary); transform: translateY(-50%); }
+  .dn-hour-line { position: absolute; left: 36px; right: 0; top: 0; height: 1px; transform: translateY(-50%); background: var(--border-subtle); }
   .dn-tblock {
     position: absolute; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px;
     padding: 6px 10px; background: var(--bg-panel-raised); border: 1px solid var(--border-subtle);

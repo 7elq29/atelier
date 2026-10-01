@@ -314,6 +314,12 @@
           "file": "e2e/bug-note-content-survives-immediate-edit.spec.ts"
         },
         {
+          "file": "e2e/bug-timeline-dnd-15min-snap.spec.ts"
+        },
+        {
+          "file": "e2e/bug-agenda-drag-time.spec.ts"
+        },
+        {
           "file": "e2e/audit-scroll-experience.spec.ts",
           "grep": "daily notes"
         },

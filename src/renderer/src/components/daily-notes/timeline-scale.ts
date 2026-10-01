@@ -31,11 +31,6 @@ export function snapMinutes(minutes: number): number {
   return Math.round(minutes / SNAP_MINUTES) * SNAP_MINUTES
 }
 
-/** Snap a minutes value to the nearest half hour (:00 or :30). */
-export function snapToHalfHour(minutes: number): number {
-  return Math.round(minutes / 30) * 30
-}
-
 export interface LayoutEntry {
   taskId: string
   startMin: number

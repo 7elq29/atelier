@@ -6,13 +6,16 @@ import TaskMoveContextMenu from './TaskMoveContextMenu'
 import type { MoveDateOptions } from './move-date-options'
 import { buildTaskEditPatch, TaskEditInput } from './task-priority-ui'
 import TaskTextDisplay from './TaskTextDisplay'
-import { minutesToTime, parseTimeBlock } from './timeline-scale'
+import { minutesToTime, parseTimeBlock, snapMinutes } from './timeline-scale'
 
 const NOW_POLL_MS = 30_000
 const MEANINGFUL_GAP_MINUTES = 60
 
 const AGENDA_HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+const AGENDA_START_MIN = AGENDA_HOURS[0]! * 60
+const AGENDA_END_MIN = (AGENDA_HOURS[AGENDA_HOURS.length - 1]! + 1) * 60
 const AGENDA_SLOT_H_PX = 36 // px per hour slot in the drag overlay grid
+const AGENDA_SNAP_MIN = 15
 
 interface TimeEditState {
   taskId: string
@@ -47,7 +50,7 @@ interface AgendaTimelineProps {
 interface PendingDrop {
   taskId: string
   taskLabel: string
-  hour: number
+  startMin: number  // minutes from midnight, 15-min resolution
   durIdx: number
   cardX: number
   cardY: number
@@ -148,11 +151,11 @@ export default function AgendaTimeline({
 
   // Drag-over overlay state
   const [isDragOver, setIsDragOver] = useState(false)
-  const [ghostHour, setGhostHour] = useState<number | null>(null)
+  const [ghostStartMin, setGhostStartMin] = useState<number | null>(null)
 
   // Dynamic slot height: recomputed after the CSS :has() rules expand the
   // timeline section (Trackers hides, more flex space is available). Using a
-  // ref for hourFromClientY (avoids stale closures) + state for JSX renders.
+  // ref for minutesFromClientY (avoids stale closures) + state for JSX renders.
   const slotHRef = useRef(AGENDA_SLOT_H_PX)
   const [slotH, setSlotH] = useState(AGENDA_SLOT_H_PX)
   useLayoutEffect(() => {
@@ -171,6 +174,7 @@ export default function AgendaTimeline({
 
   // Duration confirm card (for drops)
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null)
+  const dropStartRef = useRef<HTMLDivElement>(null)
 
   // Right-click create draft
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null)
@@ -209,14 +213,26 @@ export default function AgendaTimeline({
     if (!pendingOpen) return
     function onWheel(e: WheelEvent): void {
       e.preventDefault()
-      setPendingDrop((prev) => {
-        if (!prev) return null
-        const next = Math.max(
-          0,
-          Math.min(DUR_STEPS_MIN.length - 1, prev.durIdx + (e.deltaY < 0 ? 1 : -1))
-        )
-        return { ...prev, durIdx: next }
-      })
+      if (dropStartRef.current?.contains(e.target as Node)) {
+        // Scroll on "starting" → nudge start ±15 min (same as create/time-edit cards)
+        setPendingDrop((prev) => {
+          if (!prev) return null
+          const next = Math.max(
+            AGENDA_START_MIN,
+            Math.min(AGENDA_END_MIN - DUR_STEPS_MIN[prev.durIdx]!, prev.startMin + (e.deltaY < 0 ? AGENDA_SNAP_MIN : -AGENDA_SNAP_MIN))
+          )
+          return { ...prev, startMin: next }
+        })
+      } else {
+        setPendingDrop((prev) => {
+          if (!prev) return null
+          const next = Math.max(
+            0,
+            Math.min(DUR_STEPS_MIN.length - 1, prev.durIdx + (e.deltaY < 0 ? 1 : -1))
+          )
+          return { ...prev, durIdx: next }
+        })
+      }
     }
     window.addEventListener('wheel', onWheel, { passive: false, capture: true })
     return () => window.removeEventListener('wheel', onWheel, { capture: true })
@@ -298,17 +314,17 @@ export default function AgendaTimeline({
     requestAnimationFrame(() => createInputRef.current?.focus())
   }, [requestCreate]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function hourFromClientY(clientY: number): number {
+  function minutesFromClientY(clientY: number): number {
     const el = agendaRef.current
-    if (!el) return 9
+    if (!el) return AGENDA_START_MIN
     const rect = el.getBoundingClientRect()
-    const relY  = Math.max(0, clientY - rect.top)
-    const first = AGENDA_HOURS[0]!
-    const last  = AGENDA_HOURS[AGENDA_HOURS.length - 1]!
-    // Use slotHRef (always current) so the hour maps correctly whether the
+    const relY = Math.max(0, clientY - rect.top)
+    // Use slotHRef (always current) so the minute maps correctly whether the
     // overlay is at the fixed 36px pitch or the expanded dynamic pitch.
-    const hour  = first + Math.floor(relY / slotHRef.current)
-    return Math.max(first, Math.min(last, hour))
+    const rawMin = AGENDA_START_MIN + (relY / slotHRef.current) * 60
+    const snapped = snapMinutes(rawMin)
+    const maxStart = AGENDA_END_MIN - DUR_STEPS_MIN[DEFAULT_DUR_IDX]!
+    return Math.max(AGENDA_START_MIN, Math.min(maxStart, snapped))
   }
 
   function handleDragOver(e: React.DragEvent): void {
@@ -316,13 +332,13 @@ export default function AgendaTimeline({
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setIsDragOver(true)
-    setGhostHour(hourFromClientY(e.clientY))
+    setGhostStartMin(minutesFromClientY(e.clientY))
   }
 
   function handleDragLeave(e: React.DragEvent): void {
     if (!agendaRef.current?.contains(e.relatedTarget as Node)) {
       setIsDragOver(false)
-      setGhostHour(null)
+      setGhostStartMin(null)
     }
   }
 
@@ -332,13 +348,13 @@ export default function AgendaTimeline({
     if (!onDropExisting) return
     const id    = e.dataTransfer.getData('text/task-id')
     const label = e.dataTransfer.getData('text/task-label')
-    if (!id) { setGhostHour(null); return }
-    const hour = ghostHour ?? hourFromClientY(e.clientY)
-    setGhostHour(null)
+    if (!id) { setGhostStartMin(null); return }
+    const startMin = ghostStartMin ?? minutesFromClientY(e.clientY)
+    setGhostStartMin(null)
     setPendingDrop({
       taskId: id,
       taskLabel: label || 'Task',
-      hour,
+      startMin,
       durIdx: DEFAULT_DUR_IDX,
       cardX: e.clientX,
       cardY: e.clientY,
@@ -347,7 +363,7 @@ export default function AgendaTimeline({
 
   function confirmDrop(): void {
     if (!pendingDrop || !onDropExisting) return
-    const startMin  = pendingDrop.hour * 60
+    const startMin  = pendingDrop.startMin
     const durMin    = DUR_STEPS_MIN[pendingDrop.durIdx]!
     const endMin    = startMin + durMin
     const timeBlock = `${minutesToTime(startMin)}-${minutesToTime(endMin)}`
@@ -454,7 +470,7 @@ export default function AgendaTimeline({
     e.preventDefault()
     if ((e.target as Element).closest('.dn-agenda-entry')) return
     setPendingDrop(null)
-    const startMin = hourFromClientY(e.clientY) * 60
+    const startMin = minutesFromClientY(e.clientY)
     setPendingCreate({ startMin, durIdx: DEFAULT_DUR_IDX, text: '', cardX: e.clientX, cardY: e.clientY })
   }
 
@@ -491,11 +507,19 @@ export default function AgendaTimeline({
   }
 
   // Ghost label for the drag overlay
+  const ghostDurMin = DUR_STEPS_MIN[DEFAULT_DUR_IDX]!
+  const ghostEndMin = ghostStartMin !== null ? ghostStartMin + ghostDurMin : 0
+  const ghostHour = ghostStartMin !== null ? Math.floor(ghostStartMin / 60) : null
   const ghostH12 = ghostHour !== null ? (ghostHour % 12 || 12) : 0
-  const ghostSuf = ghostHour !== null ? (ghostHour < 12 ? 'am' : 'pm') : ''
+  const ghostMinute = ghostStartMin !== null ? ghostStartMin % 60 : 0
+  const ghostTopPx =
+    ghostStartMin !== null ? ((ghostStartMin / 60) - AGENDA_HOURS[0]!) * slotH : 0
+  const ghostHeightPx = (ghostDurMin / 60) * slotH
 
   // Duration card derived values
   const durMin      = pendingDrop ? DUR_STEPS_MIN[pendingDrop.durIdx]! : 30
+  const dropStartHour = pendingDrop ? Math.floor(pendingDrop.startMin / 60) : 0
+  const dropStartSuf = dropStartHour < 12 ? 'am' : 'pm'
   const { num: durNum, unit: durUnit } = durDisplayParts(durMin)
   const pct         = durMin / DUR_MAX_MIN
   const R           = 28
@@ -576,16 +600,16 @@ export default function AgendaTimeline({
           style={{ height: AGENDA_HOURS.length * slotH }}
           aria-hidden="true"
         >
-          {/* Hour grid lines — use dynamic slotH so lines align with task chips */}
+          {/* Hour grid — labels stay in the rail; active drop time is shown
+              IN the rail (GCal-style), never as a chip over the grid. */}
           {AGENDA_HOURS.map((h) => (
             <div key={h} className="dn-agenda-overlay-slot" style={{ flex: `0 0 ${slotH}px` }}>
               <span className="dn-agenda-overlay-label">
                 {h === 12 ? '12p' : h < 12 ? `${h}a` : `${h - 12}p`}
               </span>
-              <span className="dn-agenda-overlay-line" />
             </div>
           ))}
-          {/* Existing tasks rendered at their correct time positions */}
+          {/* Existing tasks — muted, content column only */}
           {entries.map(({ task, start, end }) => {
             const topH = start / 60
             const durH = (end - start) / 60
@@ -602,24 +626,33 @@ export default function AgendaTimeline({
               </div>
             )
           })}
-          {/* Ghost block for the task being dropped */}
-          {ghostHour !== null && (
-            <div
-              className="dn-agenda-ghost"
-              style={{ top: AGENDA_HOURS.indexOf(ghostHour) * slotH }}
-              data-testid="agenda-drag-ghost"
-            >
-              <span className="dn-agenda-ghost-label">
-                {`${ghostH12}:00 ${ghostSuf}`}
-                {' — '}
-                {(() => {
-                  const nextH = ghostHour + 1
-                  const h12 = nextH % 12 || 12
-                  const suf = nextH < 12 ? 'am' : 'pm'
-                  return `${h12}:00 ${suf}`
-                })()}
-              </span>
-            </div>
+          {/* Snap guide in the rail + empty translucent ghost (GCal-style:
+              time readout never paints over the grid). */}
+          {ghostStartMin !== null && (
+            <>
+              <div
+                className="dn-agenda-snap-guide"
+                style={{ top: ghostTopPx }}
+                data-testid="agenda-snap-guide"
+              >
+                <div className="dn-agenda-snap-rail">
+                  <span className="dn-agenda-snap-time">
+                    {`${ghostH12}:${String(ghostMinute).padStart(2, '0')}${ghostHour !== null && ghostHour < 12 ? 'a' : 'p'}`}
+                  </span>
+                  <span className="dn-agenda-ghost-label">
+                    {`${ghostH12}:${String(ghostMinute).padStart(2, '0')}–${formatClock(ghostEndMin)}${Math.floor(ghostEndMin / 60) < 12 ? 'a' : 'p'}`}
+                  </span>
+                </div>
+                <span className="dn-agenda-snap-line" />
+              </div>
+              <div
+                className="dn-agenda-ghost"
+                style={{ top: ghostTopPx, height: Math.max(ghostHeightPx, 8) }}
+                data-testid="agenda-drag-ghost"
+                data-start-min={ghostStartMin}
+                aria-label={`${ghostH12}:${String(ghostMinute).padStart(2, '0')} to ${formatClock(ghostEndMin)}`}
+              />
+            </>
           )}
         </div>
       )}
@@ -722,7 +755,7 @@ export default function AgendaTimeline({
       {pendingDrop && (
         <div className="dn-agenda-entry-wrap dn-agenda-entry-wrap--pending">
           <div className="dn-agenda-entry dn-agenda-entry--pending">
-            <span className="dn-agenda-time">{formatClock(pendingDrop.hour * 60)}</span>
+            <span className="dn-agenda-time">{formatClock(pendingDrop.startMin)}</span>
             <span className="dn-agenda-dot-pending" aria-hidden="true" />
             <div className="dn-agenda-task-main">
               <span className="dn-agenda-label">{pendingDrop.taskLabel}</span>
@@ -782,8 +815,12 @@ export default function AgendaTimeline({
           }}
         >
           <div className="dn-dur-card-task">{pendingDrop.taskLabel}</div>
-          <div className="dn-dur-card-at">
-            {`starting ${formatClock(pendingDrop.hour * 60)} ${pendingDrop.hour < 12 ? 'am' : 'pm'}`}
+          <div
+            className="dn-dur-card-at"
+            ref={dropStartRef}
+            title="Scroll to nudge ±15 min"
+          >
+            {`starting ${formatClock(pendingDrop.startMin)} ${dropStartSuf}`}
           </div>
 
           {/* Arc ring */}
