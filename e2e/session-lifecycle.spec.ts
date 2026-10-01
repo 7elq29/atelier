@@ -147,11 +147,14 @@ test.describe('02-session-lifecycle', () => {
         await openNewSessionModal(page)
 
     await page.getByTestId('project-path').fill(localProjectDir)
-    await expect(page.getByTestId('mode-claude-code')).toHaveClass(/active/)
-    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
+    await expect(page.getByTestId('mode-terminal')).toHaveCount(0)
+    await expect(page.getByTestId('mode-claude-code')).toHaveClass(/selected/)
     await page.getByTestId('start-session-button').click()
-
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    const composer = page.locator('.composer-cache-entry.active').getByTestId('composer-input')
+    await expect(composer).toBeVisible({ timeout: 45_000 })
+    await composer.fill('Reply with exactly the single word: PING')
+    await page.locator('.composer-cache-entry.active').getByTestId('send-button').click()
 
     const row = page.locator('[data-testid="session-row"]').first()
     await expect(row).toBeVisible({ timeout: 15_000 })
@@ -246,7 +249,7 @@ test.describe('02-session-lifecycle', () => {
     await page.getByTestId('send-button').click()
 
     // This is the composer-driven follow-up send path (SessionManager.sendUserMessage,
-    // as opposed to the initial-prompt-driven creation path in the "create local"
+    // same path as the first message after create in the "create local"
     // test above) — assert on the actual streamed content, not just the message
     // count, so a regression here (e.g. a silently-swallowed harness error, see
     // manager.ts's reportHarnessFailure) would be caught by a missing "PONG" rather
@@ -319,7 +322,9 @@ test.describe('02-session-lifecycle', () => {
     await expect(page.locator(`[data-group="ungrouped"] [data-session-id="${localSessionId}"]`)).toHaveCount(0)
     const historyRow = page.locator(`[data-group="history"] [data-session-id="${localSessionId}"]`)
     await expect(historyRow).toHaveCount(1)
-    await expect(historyRow.getByTestId('resume-button')).toHaveCount(0)
+    // Closed claude-code rows use startup-idle chrome and expose Reconnect
+    // (b3773c93); clicking the row still opens the disconnected panel.
+    await expect(historyRow.getByTestId('resume-button')).toHaveCount(1)
     await expect(historyRow).toHaveAttribute('data-status', 'startup-idle')
 
     await historyRow.click()
@@ -532,9 +537,12 @@ test.describe('02-session-lifecycle', () => {
     await openNewSessionModal(page)
     await page.getByTestId('host-option-devpod-us-or').click()
     await page.getByTestId('project-path').fill('/home/user')
-    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PONGREMOTE')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    const composer = page.locator('.composer-cache-entry.active').getByTestId('composer-input')
+    await expect(composer).toBeVisible({ timeout: 45_000 })
+    await composer.fill('Reply with exactly the single word: PONGREMOTE')
+    await page.locator('.composer-cache-entry.active').getByTestId('send-button').click()
 
     await expect
       .poll(
@@ -625,9 +633,12 @@ test.describe('02-session-lifecycle', () => {
     await openNewSessionModal(page)
     await page.getByTestId('host-option-devpod-us-or').click()
     await page.getByTestId('project-path').fill('~')
-    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PONGTILDE')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    const composer = page.locator('.composer-cache-entry.active').getByTestId('composer-input')
+    await expect(composer).toBeVisible({ timeout: 45_000 })
+    await composer.fill('Reply with exactly the single word: PONGTILDE')
+    await page.locator('.composer-cache-entry.active').getByTestId('send-button').click()
 
     let tildeSessionId: string
     await expect
@@ -674,9 +685,12 @@ test.describe('02-session-lifecycle', () => {
     testInfo.setTimeout(180_000)
     await openNewSessionModal(page)
     await page.getByTestId('project-path').fill('~')
-    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PONGLOCALTILDE')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    const composer = page.locator('.composer-cache-entry.active').getByTestId('composer-input')
+    await expect(composer).toBeVisible({ timeout: 45_000 })
+    await composer.fill('Reply with exactly the single word: PONGLOCALTILDE')
+    await page.locator('.composer-cache-entry.active').getByTestId('send-button').click()
 
     let localTildeSessionId: string
     await expect
@@ -760,9 +774,12 @@ test.describe('02-session-lifecycle', () => {
     // actively generating, per claude-agent-sdk-harness.ts's interrupt()
     // doc comment; closing an already-idle session ends the loop cleanly
     // with no thrown error at all — verified for real below).
-    await page.getByTestId('initial-prompt').fill('Write a very long, detailed 1500-word essay about the history of gardening. Do not use any tools, just write the essay directly as your response.')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    const composer = page.locator('.composer-cache-entry.active').getByTestId('composer-input')
+    await expect(composer).toBeVisible({ timeout: 45_000 })
+    await composer.fill('Write a very long, detailed 1500-word essay about the history of gardening. Do not use any tools, just write the essay directly as your response.')
+    await page.locator('.composer-cache-entry.active').getByTestId('send-button').click()
 
     const row = page.locator('[data-testid="session-row"]', { hasText: bugProjectDirName })
     await expect(row).toBeVisible({ timeout: 15_000 })
@@ -875,9 +892,12 @@ test.describe('02-session-lifecycle', () => {
         await openNewSessionModal(page)
     await page.getByTestId('project-path').fill(bugProjectDir)
     await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: PING')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    const composer = page.locator('.composer-cache-entry.active').getByTestId('composer-input')
+    await expect(composer).toBeVisible({ timeout: 45_000 })
+    await composer.fill('Reply with exactly the single word: PING')
+    await page.locator('.composer-cache-entry.active').getByTestId('send-button').click()
 
     const row = page.locator('[data-testid="session-row"]').first()
     await expect(row).toBeVisible({ timeout: 15_000 })
@@ -948,9 +968,12 @@ test.describe('02-session-lifecycle', () => {
         await openNewSessionModal(page)
     await page.getByTestId('project-path').fill(doomedProjectDir)
     await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: ACK')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    const composer = page.locator('.composer-cache-entry.active').getByTestId('composer-input')
+    await expect(composer).toBeVisible({ timeout: 45_000 })
+    await composer.fill('Reply with exactly the single word: ACK')
+    await page.locator('.composer-cache-entry.active').getByTestId('send-button').click()
 
     const row = page.locator('[data-testid="session-row"]').first()
     await expect(row).toBeVisible({ timeout: 15_000 })
@@ -1022,9 +1045,12 @@ test.describe('02-session-lifecycle', () => {
         await openNewSessionModal(page)
     await page.getByTestId('project-path').fill(bugProjectDir)
     await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: ACK')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    const composer = page.locator('.composer-cache-entry.active').getByTestId('composer-input')
+    await expect(composer).toBeVisible({ timeout: 45_000 })
+    await composer.fill('Reply with exactly the single word: ACK')
+    await page.locator('.composer-cache-entry.active').getByTestId('send-button').click()
 
     // NOTE: deliberately NOT `.first()` here. A previous test in this same
     // serial describe block (e.g. "bug repro safety net") can still have its

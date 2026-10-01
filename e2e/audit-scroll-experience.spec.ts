@@ -202,38 +202,6 @@ test.describe('audit: real scroll-experience verification (not just overflow met
       ).toBeLessThanOrEqual(metrics.clientHeight + 2)
     }
   })
-
-  test('sidebar session list: overflow-y auto, and scrolling to bottom surfaces the last real session row', async ({}, testInfo) => {
-    testInfo.setTimeout(60_000)
-    const before = await page.locator('[data-testid="session-row"]').count()
-    // Create enough terminal-mode sessions (real, but no SDK turn — fast) to
-    // force the session list past its own height at the short-small window
-    // size already in effect from beforeAll.
-    for (let i = 0; i < 10; i++) {
-            await openNewSessionModal(page)
-      await page.getByTestId('project-path').fill(projectDir)
-      await page.getByTestId('mode-terminal').click()
-      await page.getByTestId('start-session-button').click()
-      await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
-    }
-    await expect(page.locator('[data-testid="session-row"]')).toHaveCount(before + 10)
-    await page.waitForTimeout(150)
-
-    const overflowY = await computedOverflowY(page, '.session-list')
-    expect(overflowY, 'session-list should have overflow-y auto').toMatch(/auto|scroll/)
-
-    const scroll = await scrollToBottom(page, '.session-list')
-    // eslint-disable-next-line no-console
-    console.log('SCROLL-AUDIT[session-list]', JSON.stringify(scroll))
-    expect(scroll.scrollHeight, 'session-list should actually overflow with 11 sessions at 640px window height').toBeGreaterThan(scroll.clientHeight)
-
-    const { itemRect, containerRect } = await lastItemVisibleWithin(page, '.session-list', '[data-testid="session-row"]')
-    expect(itemRect.bottom, 'last session row should be visible within session-list after scrolling to bottom').toBeLessThanOrEqual(
-      containerRect.bottom + 1
-    )
-    await page.screenshot({ path: join(artifactsDir, 'scroll-audit-session-list-scrolled.png') })
-  })
-
   test('mention popover: overflow-y auto with many matches, scrolling to bottom surfaces the last match', async () => {
     // Open a claude-code-mode session so the composer (with @-mention wired
     // to a real project file list) is present; no message is sent, so no
@@ -269,10 +237,12 @@ test.describe('audit: real scroll-experience verification (not just overflow met
         await openNewSessionModal(page)
     await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('initial-prompt').fill(
-      'Reply with a numbered list from 1 to 80, one short line per number (e.g. "1. one"), and nothing else.'
-    )
     await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    const composer = page.locator('.composer-cache-entry.active').getByTestId('composer-input')
+    await expect(composer).toBeVisible({ timeout: 45_000 })
+    await composer.fill('Reply with a numbered list from 1 to 80, one short line per number (e.g. "1. one"), and nothing else.')
+    await page.locator('.composer-cache-entry.active').getByTestId('send-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
 
     const transcript = page.getByTestId('transcript')
@@ -407,11 +377,13 @@ test.describe('audit: real scroll-experience verification (not just overflow met
         await openNewSessionModal(page)
     await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('initial-prompt').fill(
-      'Use TaskCreate to create exactly eight tasks with subjects "Todo 1" through "Todo 8", then use TaskUpdate ' +
-        'with the returned task ID to mark "Todo 1" in_progress. Do not use any other tools. Then reply with a one-sentence summary.'
-    )
     await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+    const composer = page.locator('.composer-cache-entry.active').getByTestId('composer-input')
+    await expect(composer).toBeVisible({ timeout: 45_000 })
+    await composer.fill('Use TaskCreate to create exactly eight tasks with subjects "Todo 1" through "Todo 8", then use TaskUpdate ' +
+        'with the returned task ID to mark "Todo 1" in_progress. Do not use any other tools. Then reply with a one-sentence summary.')
+    await page.locator('.composer-cache-entry.active').getByTestId('send-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
 
     const todoCard = page.getByTestId('todo-tracker-card')
