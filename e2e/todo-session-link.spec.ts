@@ -38,9 +38,9 @@ async function openCreateSessionFromStandup(page: Page): Promise<void> {
   await page.getByTestId('task-create-session-option').click()
 }
 
-async function finishTerminalSessionModal(page: Page, projectPath: string): Promise<void> {
+async function finishClaudeSessionModal(page: Page, projectPath: string): Promise<void> {
   await expect(page.getByTestId('new-session-modal')).toBeVisible()
-  await page.getByTestId('mode-terminal').click()
+  await expect(page.getByTestId('mode-terminal')).toHaveCount(0)
   await page.getByTestId('project-path').fill(projectPath)
   await page.getByTestId('start-session-button').click()
   await expect(page.getByTestId('new-session-modal')).not.toBeVisible({ timeout: 15_000 })
@@ -84,7 +84,7 @@ test.describe('todo-session-link: task context menu creates linked session', () 
 
   test('create link, replace confirmation, and delete-with-complete flow', async () => {
     await openCreateSessionFromStandup(page)
-    await finishTerminalSessionModal(page, projectPath)
+    await finishClaudeSessionModal(page, projectPath)
     await page.screenshot({ path: join(artifactsDir, 'todo-session-link-created.png') })
 
     let rows = await queryDb<{ id: string; linked_daily_task_gid: string; linked_daily_note_date: string }>(

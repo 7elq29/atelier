@@ -140,10 +140,11 @@ not be expanded into a test command.
 
 Nearly every spec launches through the same New Session Modal boilerplate
 (`new-session-button` -> `new-session-modal` -> `project-path` ->
-`mode-claude-code`/`mode-terminal` -> `initial-prompt` -> `start-session-button`),
-so a regression in `NewSessionModal.tsx` or `src/main/sessions/*` can show up
-as failures across nearly all categories above, not just category 2. If
-you're touching session-creation/bootstrap code, run category 2 plus at
-least a couple of other categories whose specs rely on that same setup path
-(e.g. category 4 and category 6) to get a wider signal — still targeted,
-not the full suite.
+`mode-claude-code` / `mode-cortana` / `mode-minion` -> `start-session-button`,
+with the first Claude/Cortana message sent via the composer; Terminal is
+created outside this modal), so a regression in `NewSessionModal.tsx` or
+`src/main/sessions/*` can show up as failures across nearly all categories
+above, not just category 2. If you're touching session-creation/bootstrap
+code, run category 2 plus at least a couple of other categories whose specs
+rely on that same setup path (e.g. category 4 and category 6) to get a wider
+signal — still targeted, not the full suite.

@@ -933,55 +933,224 @@
   .field-label { font-size: var(--text-sm); font-weight: 500; margin-bottom: 6px; }
   .field-hint { font-size: 12.5px; color: var(--text-tertiary); margin-top: 4px; }
 
-  /* New Session dialog specifics */
-  #modal-new-session .modal-dialog { width: 560px; }
+  /* New Session — type rail + conditional panel (JetBrains-style single-screen wizard).
+     Selection uses neutral chrome only — no accent/green for selected state.
+     Type sizes match main window tokens: base 17.5 / sm 16 / xs 14 / md 19.5. */
+  #modal-new-session .modal-dialog {
+    width: min(720px, calc(100vw - 32px));
+    max-height: 88vh;
+  }
+  #modal-new-session .modal-header {
+    padding: 14px 18px;
+  }
+  #modal-new-session .modal-header h2 {
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+  #modal-new-session .modal-body {
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+    flex-direction: row;
+    min-height: 420px;
+  }
+  #modal-new-session .modal-footer {
+    padding: 12px 18px;
+  }
+  #modal-new-session .btn,
+  #modal-new-session .btn-start {
+    font-size: var(--text-sm);
+  }
+  #modal-new-session .btn-start {
+    background: var(--text-primary);
+    border-color: var(--text-primary);
+    color: var(--bg-panel);
+  }
+  #modal-new-session .btn-start:hover {
+    opacity: 0.92;
+  }
+  #modal-new-session .field-label {
+    font-size: var(--text-sm);
+  }
+  #modal-new-session .field-hint {
+    font-size: var(--text-xs);
+  }
+  #modal-new-session .input,
+  #modal-new-session select.input {
+    font-size: var(--text-base);
+  }
+  #modal-new-session .project-path-input {
+    font-size: var(--text-sm);
+  }
+  .ns-rail {
+    width: 200px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-subtle);
+    padding: 10px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: var(--bg-app);
+  }
+  .ns-rail-label {
+    padding: 4px 10px 8px;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .ns-rail-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    width: 100%;
+    padding: 10px 12px;
+    border: none;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: left;
+    position: relative;
+  }
+  .ns-rail-item:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .ns-rail-item.selected {
+    background: var(--bg-active);
+    color: var(--text-primary);
+  }
+  .ns-rail-item.selected::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--text-primary);
+  }
+  .ns-rail-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .ns-rail-sub {
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    line-height: 1.35;
+  }
+  .ns-rail-item.selected .ns-rail-sub {
+    color: var(--text-secondary);
+  }
+  .ns-panel {
+    flex: 1;
+    min-width: 0;
+    padding: 18px 20px 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .ns-panel-title {
+    margin: 0 0 2px;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .ns-panel-lead {
+    margin: 0 0 4px;
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    line-height: 1.45;
+  }
+  .ns-panel.hidden { display: none; }
   .project-picker { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-input); cursor: pointer; }
   .project-field { position: relative; }
-  .project-path-input { width: 100%; font-family: var(--font-mono); font-size: 13px; }
-  .project-path-input.profile-selected { color: var(--accent); font-family: var(--font-ui); font-weight: 500; }
+  .project-path-input { width: 100%; font-family: var(--font-mono); font-size: var(--text-sm); }
+  .project-path-input.profile-selected { color: var(--text-primary); font-family: var(--font-ui); font-weight: 500; }
   .project-picker-menu {
     position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 10;
     background: var(--bg-panel); border: 1px solid var(--border-default); border-radius: var(--r-md);
     box-shadow: var(--shadow-popover); max-height: 280px; overflow-y: auto; padding: 4px;
   }
   .project-picker-menu.hidden { display: none; }
-  .project-picker-section { padding: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-tertiary); }
-  .project-picker-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  .project-picker-section { padding: 6px 8px 4px; font-size: var(--text-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-tertiary); }
+  .project-picker-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: var(--text-sm); }
   .project-picker-item:hover, .project-picker-item.selected { background: var(--bg-active); }
   .project-picker-item .pp-main { flex: 1; min-width: 0; }
   .project-picker-item .pp-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .project-picker-item .pp-sub { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .project-picker-item .pp-tag { flex-shrink: 0; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 100px; background: var(--accent-dim); color: var(--accent); }
+  .project-picker-item .pp-sub { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-picker-item .pp-tag { flex-shrink: 0; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 100px; background: var(--bg-hover); color: var(--text-secondary); }
   .project-picker-footer { border-top: 1px solid var(--border-subtle); margin-top: 4px; padding-top: 4px; }
   .segmented { display: flex; gap: 2px; background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 100px; padding: 2px; }
   .segmented button { flex: 1; padding: 7px 10px; border: none; background: transparent; color: var(--text-secondary); font-size: var(--text-sm); font-weight: 500; border-radius: 100px; cursor: pointer; }
   .segmented button.active { background: var(--bg-active); color: var(--text-primary); }
   .host-options { display: flex; flex-direction: column; gap: 6px; }
-  .host-option { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--border-default); border-radius: var(--r-md); cursor: pointer; background: var(--bg-input); }
-  .host-option.selected { border-color: var(--accent); background: var(--accent-dim); }
-  .host-option .host-title { font-size: var(--text-sm); font-weight: 500; }
-  .host-option .host-sub { font-size: 12.5px; color: var(--text-tertiary); }
+  #modal-new-session .host-option {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+    border: 1px solid var(--border-default); border-radius: var(--r-md);
+    cursor: pointer; background: var(--bg-input);
+  }
+  #modal-new-session .host-option.selected {
+    border-color: var(--border-strong);
+    background: var(--bg-active);
+  }
+  #modal-new-session .host-option .host-title { font-size: var(--text-sm); font-weight: 500; }
+  #modal-new-session .host-option .host-sub { font-size: var(--text-xs); color: var(--text-tertiary); }
   .host-option-main { flex: 1; }
-  .status-chip { font-size: 11.5px; padding: 2px 7px; border-radius: 100px; }
-  .status-chip.running { background: var(--accent-dim); color: var(--accent); }
+  .status-chip { font-size: var(--text-xs); padding: 2px 7px; border-radius: 100px; }
+  #modal-new-session .status-chip.running {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
   .status-chip.sleeping { background: var(--bg-hover); color: var(--text-tertiary); }
   .new-devpod-form { margin-top: 8px; padding: 10px; border: 1px dashed var(--border-default); border-radius: var(--r-md); display: none; flex-direction: column; gap: 8px; }
   .new-devpod-form.show { display: flex; }
   .form-row { display: flex; gap: 8px; }
   .form-row > * { flex: 1; }
+  .ns-advanced {
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 12px;
+    margin-top: 4px;
+  }
+  .ns-advanced summary {
+    cursor: pointer;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--text-secondary);
+    list-style: none;
+    user-select: none;
+  }
+  .ns-advanced summary::-webkit-details-marker { display: none; }
+  .ns-advanced summary::before {
+    content: '▸';
+    display: inline-block;
+    width: 1em;
+    color: var(--text-tertiary);
+  }
+  .ns-advanced[open] summary::before { content: '▾'; }
+  .ns-advanced .toggle-row { margin-top: 10px; }
   .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-input); }
   .toggle-row .toggle-title { font-size: var(--text-sm); font-weight: 500; }
-  .toggle-row .toggle-sub { font-size: 12.5px; color: var(--text-tertiary); margin-top: 2px; }
+  .toggle-row .toggle-sub { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 2px; }
   .switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
   .switch input { opacity: 0; width: 0; height: 0; }
   .switch .track { position: absolute; inset: 0; background: var(--border-strong); border-radius: 100px; cursor: pointer; transition: .15s; }
   .switch .track::before { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: white; border-radius: 50%; transition: .15s; }
-  .switch input:checked + .track { background: var(--accent); }
+  #modal-new-session .switch input:checked + .track {
+    background: var(--text-secondary);
+  }
   .switch input:checked + .track::before { transform: translateX(16px); }
-  .claude-only { display: flex; flex-direction: column; gap: 20px; }
-  .claude-only.hidden { display: none; }
   .prompt-box { border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-input); overflow: hidden; }
-  .prompt-box textarea { width: 100%; border: none; background: transparent; color: var(--text-primary); padding: 10px; font-family: var(--font-ui); font-size: var(--text-base); resize: none; outline: none; min-height: 60px; }
+  #modal-new-session .prompt-box textarea {
+    width: 100%; border: none; background: transparent; color: var(--text-primary);
+    padding: 10px; font-family: var(--font-ui); font-size: var(--text-base);
+    resize: none; outline: none; min-height: 72px;
+  }
 
   /* Settings dialog */
   #modal-settings .modal-dialog { width: 620px; height: 520px; }
@@ -2472,62 +2641,112 @@ On branch main. nothing to commit, working tree clean.
 <!-- ===================== MODAL: NEW SESSION ===================== -->
 <div class="modal-backdrop hidden" id="modal-new-session">
   <div class="modal-dialog">
-    <div class="modal-header"><h2>New Session</h2><button class="btn btn-icon" onclick="closeModal('modal-new-session')">✕</button></div>
+    <div class="modal-header">
+      <h2>New Session</h2>
+      <button class="btn btn-icon" onclick="closeModal('modal-new-session')">✕</button>
+    </div>
     <div class="modal-body">
-      <div class="project-field">
-        <div class="field-label">Project</div>
-        <input
-          class="input project-path-input"
-          id="newSessionProjectInput"
-          type="text"
-          data-testid="project-path"
-          placeholder="/Users/you/code/my-project"
-          autocomplete="off"
-          onfocus="openNewSessionProjectMenu()"
-          oninput="onNewSessionProjectInput()"
-          onkeydown="onNewSessionProjectKeydown(event)"
-        />
-        <div class="project-picker-menu hidden" id="newSessionProjectMenu"></div>
-      </div>
-      <div>
-        <div class="field-label">Session type</div>
-        <div class="segmented" id="modeSegment">
-          <button class="active" data-mode="claude" onclick="setMode('claude')"><svg class="icon" width="14" height="14"><use href="#icon-sparkle"/></svg> Claude Code</button>
-          <button data-mode="terminal" onclick="setMode('terminal')">▢ Terminal</button>
+      <nav class="ns-rail" id="modeSegment" data-testid="mode-cards" aria-label="Session type">
+        <div class="ns-rail-label">Type</div>
+        <button type="button" class="ns-rail-item selected" data-mode="claude" data-testid="mode-claude-code" onclick="setMode('claude')">
+          <span class="ns-rail-title">Claude Code</span>
+          <span class="ns-rail-sub">Agent in a project</span>
+        </button>
+        <button type="button" class="ns-rail-item" data-mode="cortana" data-testid="mode-cortana" onclick="setMode('cortana')">
+          <span class="ns-rail-title">Cortana</span>
+          <span class="ns-rail-sub">Personal assistant</span>
+        </button>
+        <button type="button" class="ns-rail-item" data-mode="minion" data-testid="mode-minion" onclick="setMode('minion')">
+          <span class="ns-rail-title">Minion</span>
+          <span class="ns-rail-sub">Remote DevPod task</span>
+        </button>
+      </nav>
+
+      <div class="ns-panel" id="panel-claude" data-testid="panel-claude">
+        <p class="ns-panel-lead">Runs Claude Code against a project on the host you choose. Terminals stay on the sidebar / companion Terminal.</p>
+        <div class="project-field" id="newSessionProjectSection">
+          <div class="field-label">Project</div>
+          <input
+            class="input project-path-input"
+            id="newSessionProjectInput"
+            type="text"
+            data-testid="project-path"
+            placeholder="/Users/you/code/my-project"
+            autocomplete="off"
+            onfocus="openNewSessionProjectMenu()"
+            oninput="onNewSessionProjectInput()"
+            onkeydown="onNewSessionProjectKeydown(event)"
+          />
+          <div class="project-picker-menu hidden" id="newSessionProjectMenu"></div>
         </div>
-        <div class="field-hint">Terminal opens a plain shell — no agent involved. You can open a companion terminal alongside a Claude Code session later too.</div>
-      </div>
-      <div>
-        <div class="field-label">Host</div>
-        <div class="host-options" id="hostOptions">
-          <label class="host-option selected"><input type="radio" name="host" checked onclick="selectHost(this)"><div class="host-option-main"><div class="host-title">Local</div><div class="host-sub">Runs on this machine</div></div></label>
-          <label class="host-option"><input type="radio" name="host" onclick="selectHost(this)"><div class="host-option-main"><div class="host-title">devpod-us-or</div><div class="host-sub">DevPod · base-arm · oregon</div></div><span class="status-chip running">running</span></label>
-          <label class="host-option"><input type="radio" name="host" onclick="selectHost(this)"><div class="host-option-main"><div class="host-title">DSW</div><div class="host-sub">Paste a raw SSH command</div></div></label>
-          <label class="host-option" onclick="toggleNewDevpod(event, this)"><input type="radio" name="host"><div class="host-option-main"><div class="host-title">+ Create new DevPod…</div></div></label>
-        </div>
-        <div class="new-devpod-form" id="newDevpodForm">
-          <input class="input" placeholder="Name (optional)" />
-          <div class="form-row">
-            <select class="input"><option>base</option><option>go</option><option>web</option><option>ml</option><option>base-arm</option></select>
-            <select class="input"><option>oregon</option><option>virginia</option><option>netherlands</option></select>
+        <div id="newSessionHostSection">
+          <div class="field-label">Host</div>
+          <div class="host-options" id="hostOptions">
+            <label class="host-option selected"><input type="radio" name="host" checked onclick="selectHost(this)"><div class="host-option-main"><div class="host-title">Local</div><div class="host-sub">Runs on this machine</div></div></label>
+            <label class="host-option"><input type="radio" name="host" onclick="selectHost(this)"><div class="host-option-main"><div class="host-title">devpod-us-or</div><div class="host-sub">DevPod · base-arm · oregon</div></div><span class="status-chip running">running</span></label>
+            <label class="host-option"><input type="radio" name="host" onclick="selectHost(this)"><div class="host-option-main"><div class="host-title">DSW</div><div class="host-sub">Paste a raw SSH command</div></div></label>
+            <label class="host-option" onclick="toggleNewDevpod(event, this)"><input type="radio" name="host"><div class="host-option-main"><div class="host-title">+ Create new DevPod…</div></div></label>
+          </div>
+          <div class="new-devpod-form" id="newDevpodForm">
+            <input class="input" placeholder="Name (optional)" />
+            <div class="form-row">
+              <select class="input"><option>base</option><option>go</option><option>web</option><option>ml</option><option>base-arm</option></select>
+              <select class="input"><option>oregon</option><option>virginia</option><option>netherlands</option></select>
+            </div>
           </div>
         </div>
+        <label class="toggle-row">
+          <div>
+            <div class="toggle-title">Use worktree</div>
+            <div class="toggle-sub">Isolated copy at &lt;project&gt;/.gardenia/worktrees/&lt;name&gt;</div>
+          </div>
+          <span class="switch">
+            <input type="checkbox" id="newSessionUseWorktree" onchange="renderNewSessionProjectDisplay()" />
+            <span class="track"></span>
+          </span>
+        </label>
       </div>
-      <div class="claude-only" id="claudeOnlySection">
-        <div class="toggle-row">
-          <div><div class="toggle-title">Use worktree</div><div class="toggle-sub">Isolated copy at &lt;project&gt;/.gardenia/worktrees/&lt;name&gt;</div></div>
-          <label class="switch"><input type="checkbox" id="newSessionUseWorktree" checked onchange="renderNewSessionProjectDisplay()" /><span class="track"></span></label>
+
+      <div class="ns-panel hidden" id="panel-cortana" data-testid="panel-cortana">
+        <p class="ns-panel-lead">Starts Cortana on this machine. No project path required — open the session and chat from the composer.</p>
+      </div>
+
+      <div class="ns-panel hidden" id="panel-minion" data-testid="panel-minion">
+        <p class="ns-panel-lead">Create a new Minion DevPod task, or attach an existing one via link / task UUID.</p>
+        <div>
+          <div class="field-label">Repository</div>
+          <select class="input" style="width:100%;" data-testid="minion-repo" id="minionRepo">
+            <option value="go-code">go-code</option>
+            <option value="java-code">java-code</option>
+            <option value="android-code">android-code</option>
+            <option value="web-code">web-code</option>
+            <option value="ios-code">ios-code</option>
+            <option value="uber-one">uber-one</option>
+            <option value="ml-code">ml-code</option>
+          </select>
         </div>
         <div>
-          <div class="field-label">Initial prompt <span style="color:var(--text-tertiary); font-weight:400;">(optional)</span></div>
-          <div class="prompt-box"><textarea id="newSessionPrompt" placeholder="What should Claude do first?"></textarea></div>
+          <div class="field-label">Attach existing task <span style="color:var(--text-tertiary); font-weight:400;">(optional)</span></div>
+          <input
+            class="input"
+            style="width:100%;"
+            data-testid="minion-attach-link"
+            id="minionAttachLink"
+            placeholder="https://minion.uberinternal.com/v2?taskId=…"
+          />
+          <div class="field-hint">Paste a Minion URL with taskId=… or a bare task UUID. Attach skips creating a new task.</div>
+        </div>
+        <div>
+          <div class="field-label">Task prompt</div>
+          <div class="prompt-box"><textarea id="minionPrompt" data-testid="initial-prompt" placeholder="Describe the task for Minion…"></textarea></div>
+          <div class="field-hint">Required to create a new task. Not needed when attaching.</div>
         </div>
       </div>
     </div>
     <div class="modal-footer">
       <div style="flex:1;"></div>
       <button class="btn" onclick="closeModal('modal-new-session')">Cancel</button>
-      <button class="btn btn-primary" onclick="createSession()">Start Session</button>
+      <button class="btn btn-start" onclick="createSession()">Start Session</button>
     </div>
   </div>
 </div>
@@ -4937,8 +5156,14 @@ document.addEventListener('keydown', (e) => {
 
 /* ===== New Session dialog ===== */
 function setMode(mode) {
-  document.querySelectorAll('#modeSegment button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-  document.getElementById('claudeOnlySection').classList.toggle('hidden', mode !== 'claude');
+  document.querySelectorAll('#modeSegment .ns-rail-item').forEach(function (b) {
+    b.classList.toggle('selected', b.dataset.mode === mode);
+  });
+  document.getElementById('panel-claude').classList.toggle('hidden', mode !== 'claude');
+  document.getElementById('panel-cortana').classList.toggle('hidden', mode !== 'cortana');
+  document.getElementById('panel-minion').classList.toggle('hidden', mode !== 'minion');
+  var startBtn = document.querySelector('#modal-new-session .btn-start');
+  if (startBtn) startBtn.textContent = mode === 'minion' ? 'Start Session' : 'Start Session';
 }
 /** New Session project field: a path or a saved profile (same control). */
 var newSessionProject = { kind: 'path', value: '~/code/gardenia-app' };
@@ -5227,17 +5452,26 @@ function openLocalTerminal() {
   showToast('Local terminal session — listed in the sidebar like any other session');
 }
 function createSession() {
-  const mode = document.querySelector('#modeSegment button.active').dataset.mode;
-  const promptVal = document.getElementById('newSessionPrompt').value.trim();
+  const modeEl = document.querySelector('#modeSegment .ns-rail-item.selected') || document.querySelector('#modeSegment button.selected');
+  const mode = modeEl ? modeEl.dataset.mode : 'claude';
+  const minionPromptEl = document.getElementById('minionPrompt');
+  const promptVal = mode === 'minion' && minionPromptEl ? minionPromptEl.value.trim() : '';
   const profile = newSessionProject.kind === 'profile' ? sessionProfilesMock.byId(newSessionProject.value) : null;
   const useWorktree = newSessionUseWorktreeChecked();
   const id = 's' + (sessionCounter++);
-  const name = mode === 'terminal' ? 'New terminal session' : (promptVal ? promptVal.slice(0, 40) : 'New Claude Code session');
+  const name =
+    mode === 'minion'
+      ? promptVal
+        ? promptVal.slice(0, 40)
+        : 'New Minion session'
+      : mode === 'cortana'
+        ? 'Cortana'
+        : 'New Claude Code session';
   const metaLabel = profile ? profile.name : (newSessionProject.kind === 'path' ? newSessionProject.value.replace(/^~\/code\//, '').split('/')[0] : 'gardenia-app');
   const workspacePath = profile ? profile.workspace : newSessionProject.value;
-  const sessionCwd = profile && useWorktree && mode !== 'terminal' ? mockWorktreePathFor(profile.workspace) : workspacePath;
+  const sessionCwd = profile && useWorktree && mode === 'claude' ? mockWorktreePathFor(profile.workspace) : workspacePath;
   const profileFileRoots = profile ? profile.fileDirs.map(function (d, i) {
-    return { raw: d, resolved: resolveProfileFileDir(d, profile.workspace, useWorktree && mode !== 'terminal') };
+    return { raw: d, resolved: resolveProfileFileDir(d, profile.workspace, useWorktree && mode === 'claude') };
   }) : [];
   const profileFilesHtml = profile ? profileFileRoots.map(function (r) {
     return '<div class="files-tree-root"><div class="files-tree-root-label"><span class="root-kind">' + escapeHtml(r.raw) + '</span> ' + escapeHtml(r.resolved) + '</div><div class="ft-item dir"><svg class="icon" width="14" height="14"><use href="#icon-folder"/></svg> …</div></div>';

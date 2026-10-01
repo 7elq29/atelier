@@ -2063,6 +2063,206 @@ input[type='range'] {
   min-height: 60px;
 }
 
+/* New Session modal — type rail + conditional panel (Features/new-session-modal-redesign) */
+#new-session-modal .new-session-dialog {
+  width: min(45rem, calc(100vw - 32px));
+  max-height: 88vh;
+}
+#new-session-modal .modal-header h2 {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+#new-session-modal .new-session-body {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  flex-direction: row;
+  min-height: 420px;
+}
+#new-session-modal .btn,
+#new-session-modal .btn-start {
+  font-size: var(--text-sm);
+}
+#new-session-modal .btn-start {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--bg-panel);
+}
+#new-session-modal .btn-start:hover {
+  opacity: 0.92;
+}
+#new-session-modal .field-label {
+  font-size: var(--text-sm);
+}
+#new-session-modal .field-hint {
+  font-size: var(--text-xs);
+}
+#new-session-modal .input,
+#new-session-modal select.input {
+  font-size: var(--text-base);
+}
+#new-session-modal .project-path-input {
+  font-size: var(--text-sm);
+}
+#new-session-modal .host-option {
+  border: 1px solid var(--border-default);
+  background: var(--bg-input);
+}
+#new-session-modal .host-option.selected {
+  border-color: var(--border-strong);
+  background: var(--bg-active);
+}
+#new-session-modal .host-option .host-title {
+  font-size: var(--text-sm);
+}
+#new-session-modal .host-option .host-sub {
+  font-size: var(--text-xs);
+}
+#new-session-modal .status-chip.running {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+#new-session-modal .prompt-box textarea {
+  font-size: var(--text-base);
+  min-height: 72px;
+}
+#new-session-modal .switch input:checked + .track {
+  background: var(--text-secondary);
+}
+.ns-rail {
+  width: 200px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-subtle);
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-app);
+}
+.ns-rail-label {
+  padding: 4px 10px 8px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.ns-rail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+}
+.ns-rail-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ns-rail-item.selected {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+.ns-rail-item.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--text-primary);
+}
+.ns-rail-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.25;
+}
+.ns-rail-sub {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.35;
+}
+.ns-rail-item.selected .ns-rail-sub {
+  color: var(--text-secondary);
+}
+.ns-panel {
+  flex: 1;
+  min-width: 0;
+  padding: 18px 20px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.ns-panel-lead {
+  margin: 0 0 4px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.45;
+}
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  background: var(--bg-input);
+  cursor: pointer;
+}
+.toggle-row .toggle-title {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.toggle-row .toggle-sub {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+.switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.switch .track {
+  position: absolute;
+  inset: 0;
+  background: var(--border-strong);
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.switch .track::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  top: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.15s ease;
+}
+.switch input:checked + .track::before {
+  transform: translateX(16px);
+}
+
 /* ===== Chat surface core (03-chat-surface-core) =====
    Selectors/values copied verbatim from Features/UI-Design/mocks/index.html
    (+shared.css tokens) — see spec.md's "respect the interactive UI design". */
@@ -5619,10 +5819,4 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   margin-top: 3px;
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
-}
-
-.segmented.segmented--modes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px;
 }

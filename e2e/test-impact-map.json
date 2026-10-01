@@ -820,6 +820,24 @@
       ]
     },
     {
+      "id": "new-session-modal-css",
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
+      "changedLines": "new-session-modal|new-session-dialog|new-session-body|ns-rail|ns-panel|btn-start|toggle-row|segmented--modes",
+      "targets": [
+        {
+          "file": "e2e/session-lifecycle.spec.ts"
+        },
+        {
+          "file": "e2e/bug-new-session-path-history.spec.ts"
+        },
+        {
+          "file": "e2e/session-ready-hint.spec.ts"
+        }
+      ]
+    },
+    {
       "id": "session-ready",
       "paths": [
         "src/renderer/src/components/chat/SessionReadyHint.tsx",
