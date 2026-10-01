@@ -1464,17 +1464,49 @@ export class SessionManager {
    */
   private async reconnectHarness(
     session: SessionRecord,
-    opts: { permissionMode?: PermissionModeValue; model?: string; effort?: ModelSelection['effort']; initialPrompt?: string }
+    opts: {
+      permissionMode?: PermissionModeValue
+      model?: string
+      effort?: ModelSelection['effort']
+      initialPrompt?: string
+      /**
+       * Cortana only. When false (outbound follow-up dispatch), skip
+       * syncCompletedTurn — the trailing user row is the new turn we are about
+       * to send, not an orphan from a quit mid-flight. Default true for
+       * open/startup so a reply that finished offline still lands once.
+       */
+      pullCompletedCortanaTurn?: boolean
+    }
   ): Promise<HarnessSession> {
     // Cortana: REST API — no subprocess resume needed, just a fresh event channel.
     if (session.mode === 'cortana') {
       const harnessSession = await this.cortanaHarness.resume(session.id)
       // If we died mid-turn and the gateway finished offline, local transcript
       // still ends on a user message — pull that assistant reply in once.
-      const messages = this.store.listMessages(session.id)
-      const last = messages[messages.length - 1]
-      if (last?.role === 'user') {
-        await this.cortanaHarness.syncCompletedTurn?.(session.id)
+      // Skip when dispatching a new follow-up (pullCompletedCortanaTurn: false):
+      // that path already appended the outbound user message, so a naive sync
+      // re-emits the previous gateway final_response as a duplicate.
+      if (opts.pullCompletedCortanaTurn !== false) {
+        const messages = this.store.listMessages(session.id)
+        const last = messages[messages.length - 1]
+        if (last?.role === 'user') {
+          const knownAssistantContents = messages
+            .filter((m) => m.role === 'assistant')
+            .map((m) => {
+              const raw = m.content.trim()
+              if (raw.startsWith('{')) {
+                try {
+                  const parsed = JSON.parse(raw) as { kind?: string }
+                  if (parsed && typeof parsed === 'object' && parsed.kind) return null
+                } catch {
+                  /* plain text that happens to start with '{' */
+                }
+              }
+              return raw
+            })
+            .filter((c): c is string => !!c)
+          await this.cortanaHarness.syncCompletedTurn?.(session.id, { knownAssistantContents })
+        }
       }
       return harnessSession
     }
@@ -1914,6 +1946,9 @@ export class SessionManager {
         permissionMode,
         model: modelSelection?.model,
         effort: modelSelection?.effort,
+        // New outbound turn already in the DB — do not pull the previous
+        // Cortana final_response as if it answered this follow-up.
+        pullCompletedCortanaTurn: false,
         ...(needsInitialPrompt ? { initialPrompt: text } : {})
       })
       if (!needsInitialPrompt) {
