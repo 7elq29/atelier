@@ -2,13 +2,20 @@ import type { HarnessEvent } from '../harness/types'
 import type { BackgroundTaskRow } from '../../shared/harness-ui-types'
 
 export interface SdkChromeState {
-  status: 'compacting' | 'requesting' | null
+  status: 'compacting' | 'requesting' | 'minion_setup' | null
   permissionMode?: string
   compactFailed?: boolean
   compactError?: string
   apiRetryText?: string | null
   thinkingActive?: boolean
   thinkingEstimatedTokens?: number
+  title?: string
+  detail?: string
+  setupSteps?: Array<{
+    id: 'provision' | 'boot' | 'connect'
+    label: string
+    state: 'done' | 'active' | 'pending'
+  }>
 }
 
 export interface RateLimitChromeState {
@@ -120,6 +127,13 @@ export class SessionHarnessUiState {
   clearInFlightStatus(sessionId: string): void {
     const cur = this.sdkChrome.get(sessionId)
     if (!cur) return
+    // Minion SETUP card is owned by MinionHarness until it pushes status:null.
+    if (cur.status === 'minion_setup') {
+      if (cur.apiRetryText) {
+        this.sdkChrome.set(sessionId, { ...cur, apiRetryText: null })
+      }
+      return
+    }
     if (cur.compactFailed) {
       if (cur.apiRetryText) {
         this.sdkChrome.set(sessionId, { ...cur, apiRetryText: null })
@@ -135,6 +149,9 @@ export class SessionHarnessUiState {
       apiRetryText: null,
       thinkingActive: false,
       thinkingEstimatedTokens: undefined,
+      title: undefined,
+      detail: undefined,
+      setupSteps: undefined,
     })
   }
 
@@ -230,6 +247,9 @@ export class SessionHarnessUiState {
           this.sdkChrome.set(sid, {
             status: null,
             apiRetryText: this.sdkChrome.get(sid)?.apiRetryText ?? null,
+            title: undefined,
+            detail: undefined,
+            setupSteps: undefined,
           })
         } else if (event.compactResult === 'failed') {
           this.sdkChrome.set(sid, {
@@ -238,6 +258,9 @@ export class SessionHarnessUiState {
             compactError: event.compactError,
             permissionMode: event.permissionMode,
             apiRetryText: null,
+            title: undefined,
+            detail: undefined,
+            setupSteps: undefined,
           })
         } else {
           this.sdkChrome.set(sid, {
@@ -246,6 +269,9 @@ export class SessionHarnessUiState {
             compactFailed: false,
             compactError: undefined,
             apiRetryText: this.sdkChrome.get(sid)?.apiRetryText ?? null,
+            title: event.title,
+            detail: event.detail,
+            setupSteps: event.setupSteps,
           })
         }
         break

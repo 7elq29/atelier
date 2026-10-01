@@ -436,6 +436,54 @@ const MIGRATIONS: Array<{ name: string; sql?: string; run?: (database: Database.
         CREATE INDEX IF NOT EXISTS idx_sessions_group_id ON sessions(group_id);
       `)
     }
+  },
+  {
+    name: '0022_session_mode_minion',
+    run(database) {
+      database.exec(`
+        CREATE TABLE sessions_new (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          name_locked_by_user INTEGER NOT NULL DEFAULT 0,
+          project_path TEXT NOT NULL,
+          mode TEXT NOT NULL CHECK (mode IN ('terminal', 'claude-code', 'cortana', 'minion')),
+          hostname TEXT,
+          group_id TEXT,
+          pinned INTEGER NOT NULL DEFAULT 0,
+          color TEXT,
+          created_at TEXT NOT NULL,
+          closed_at TEXT,
+          deleted_at TEXT,
+          notes TEXT,
+          sort_order REAL NOT NULL DEFAULT 0,
+          total_cost_usd REAL NOT NULL DEFAULT 0,
+          ever_connected INTEGER NOT NULL DEFAULT 0,
+          permission_mode TEXT NOT NULL DEFAULT 'default',
+          model_id TEXT,
+          effort TEXT,
+          worktree_path TEXT,
+          pending_turn_interrupted_notice INTEGER NOT NULL DEFAULT 0,
+          last_active_at TEXT,
+          linked_daily_task_gid TEXT,
+          linked_daily_note_date TEXT,
+          profile_id TEXT,
+          active_tab TEXT NOT NULL DEFAULT 'chat',
+          sdk_session_id TEXT
+        );
+        INSERT INTO sessions_new SELECT
+          id, name, name_locked_by_user, project_path, mode, hostname, group_id,
+          pinned, color, created_at, closed_at, deleted_at, notes, sort_order,
+          total_cost_usd, ever_connected, permission_mode, model_id, effort,
+          worktree_path, pending_turn_interrupted_notice, last_active_at,
+          linked_daily_task_gid, linked_daily_note_date, profile_id, active_tab,
+          sdk_session_id
+        FROM sessions;
+        DROP TABLE sessions;
+        ALTER TABLE sessions_new RENAME TO sessions;
+        CREATE INDEX IF NOT EXISTS idx_sessions_closed_at ON sessions(closed_at);
+        CREATE INDEX IF NOT EXISTS idx_sessions_group_id ON sessions(group_id);
+      `)
+    }
   }
 ]
 

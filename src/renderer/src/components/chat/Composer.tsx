@@ -1114,7 +1114,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
       data-testid="composer-primary-actions"
       data-placement={placement}
     >
-      {sessionMode !== 'cortana' && (
+      {sessionMode !== 'cortana' && sessionMode !== 'minion' && (
         <ModelPicker
           selection={modelSelection}
           onChange={onModelSelectionChange}
@@ -1167,7 +1167,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         onDrop={handleDrop}
       >
         <div className="context-bar" data-testid="composer-context-bar">
-          {sessionMode !== 'cortana' && (
+          {sessionMode !== 'cortana' && sessionMode !== 'minion' && (
             <span
               className={`mode-pill mode-${mode} context-bar-mode`}
               data-testid="composer-mode-pill"
@@ -1254,7 +1254,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
             />
           )}
         </div>
-        {sessionMode !== 'cortana' && <div className="context-bar-divider" />}
+        {sessionMode !== 'cortana' && sessionMode !== 'minion' && <div className="context-bar-divider" />}
         {popover?.kind === 'mention' && mentionMatches.length > 0 && (
           <div className="mention-popup" data-testid="mention-popover">
             {mentionMatches.map((path, idx) => {

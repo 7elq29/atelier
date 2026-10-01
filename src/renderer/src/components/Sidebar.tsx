@@ -132,7 +132,10 @@ export function sessionLiveWaitingForInput(
   closed: boolean,
   statuses: Record<string, SessionStatus>
 ): boolean {
-  if (closed || session.mode !== 'claude-code') return false
+  if (closed) return false
+  if (session.mode !== 'claude-code' && session.mode !== 'cortana' && session.mode !== 'minion') {
+    return false
+  }
   return displayStatus(session, closed, statuses) === 'waiting'
 }
 
@@ -788,6 +791,9 @@ function SessionRow({
           )}
           {session.mode === 'cortana' && (
             <span className="row-tag row-tag--cortana" data-testid="cortana-tag">Cortana</span>
+          )}
+          {session.mode === 'minion' && (
+            <span className="row-tag row-tag--minion" data-testid="minion-tag">Minion</span>
           )}
           {session.tags.map((tag) => (
             <span className="row-tag" key={tag} data-testid="tag-pill">

@@ -6,7 +6,43 @@ import { APP_DISPLAY_NAME } from './app-brand'
  * Electron/Node/better-sqlite3 types so it can be imported from either side.
  */
 
-export type SessionMode = 'terminal' | 'claude-code' | 'cortana'
+export type SessionMode = 'terminal' | 'claude-code' | 'cortana' | 'minion'
+
+/** Repos a Uber Minion task can target. */
+export type MinionRepo = 'go-code' | 'java-code' | 'android-code' | 'web-code' | 'ios-code' | 'uber-one' | 'ml-code'
+
+export interface MinionCreateOptions {
+  repo: MinionRepo
+  runner?: 'devpod' | 'buildkite'
+  /**
+   * Attach to an existing Minion task instead of createtask.
+   * Prefer a parsed UUID from `parseMinionTaskId` (link or bare id).
+   */
+  attachTaskId?: string
+}
+
+const MINION_TASK_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Accepts a bare task UUID or a Minion web link
+ * (`https://minion.uberinternal.com/v2?taskId=…`).
+ */
+export function parseMinionTaskId(input: string): string | null {
+  const raw = input.trim()
+  if (!raw) return null
+  if (MINION_TASK_UUID_RE.test(raw)) return raw.toLowerCase()
+  try {
+    const u = new URL(raw)
+    const fromQuery = u.searchParams.get('taskId') ?? u.searchParams.get('task_id')
+    if (fromQuery && MINION_TASK_UUID_RE.test(fromQuery)) return fromQuery.toLowerCase()
+  } catch {
+    /* not a URL */
+  }
+  const embedded = raw.match(/taskId=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
+  if (embedded && MINION_TASK_UUID_RE.test(embedded[1])) return embedded[1].toLowerCase()
+  return null
+}
 
 /**
  * The workspace tabs a claude-code session can be parked on
@@ -275,6 +311,8 @@ export interface CreateSessionOptions {
   suggestedName?: string
   /** Saved session profile id — cwd comes from the profile workspace. */
   profileId?: string
+  /** Minion task options (mode === 'minion'). */
+  minion?: MinionCreateOptions
 }
 
 /**

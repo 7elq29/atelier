@@ -29,6 +29,8 @@ export interface RemoteHost {
 export interface HarnessStartOptions {
   /** Working directory the agent should operate in (on `host`, if set — otherwise local). */
   cwd: string
+  /** Minion task creation options (MinionHarness only). */
+  minion?: import('../../shared/session-types').MinionCreateOptions
   /** Optional model override; defaults to the harness's own default. */
   model?: string
   /**
@@ -516,10 +518,18 @@ export type HarnessEvent =
       type: 'sdk_status'
       sessionId: string
       timestamp: string
-      status: 'compacting' | 'requesting' | null
+      status: 'compacting' | 'requesting' | 'minion_setup' | null
       permissionMode?: string
       compactResult?: 'success' | 'failed'
       compactError?: string
+      /** Minion SETUP card — same transcript slot as Cortana requesting/compacting. */
+      title?: string
+      detail?: string
+      setupSteps?: Array<{
+        id: 'provision' | 'boot' | 'connect'
+        label: string
+        state: 'done' | 'active' | 'pending'
+      }>
     }
   | {
       type: 'api_retry'

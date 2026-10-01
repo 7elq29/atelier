@@ -86,6 +86,11 @@ const AUTO_NAME_PROMPT = `Summarize this conversation topic in under ${AUTO_NAME
 const MIN_SESSION_CLEANUP_VISIBLE_MS = 600
 
 /** Models sometimes ignore the word-count prompt — clamp to one line, ≤3 words, ≤25 chars. */
+/** Gateway-backed modes (no git workspace; terminal-only). */
+function isGatewayMode(mode: string | undefined): boolean {
+  return mode === 'cortana' || mode === 'minion'
+}
+
 function clampSessionTitle(raw: string): string {
   const firstLine = raw.trim().split(/\r?\n/, 1)[0]?.trim() ?? ''
   const cleaned = firstLine.replace(/^["'“”]+|["'“”]+$/g, '')
@@ -385,14 +390,22 @@ export class SessionManager {
     private readonly store: SessionStore,
     private readonly claudeHarness: HarnessDriver,
     private readonly cortanaHarness: HarnessDriver,
+    private readonly minionHarness: HarnessDriver,
     private readonly hosts: RemoteHostResolver,
     private readonly getWindow: () => BrowserWindow | null
-  ) {}
+  ) {
+    const minion = this.minionHarness as HarnessDriver & {
+      setActivityListener?(listener: ((sessionId: string) => void) | null): void
+    }
+    minion.setActivityListener?.((sessionId) => this.sendStatus(sessionId))
+  }
 
   /** Return the right harness for a session, defaulting to Claude. */
   private resolveHarness(sessionId: string): HarnessDriver {
     const mode = this.store.getSession(sessionId)?.mode
-    return mode === 'cortana' ? this.cortanaHarness : this.claudeHarness
+    if (mode === 'cortana') return this.cortanaHarness
+    if (mode === 'minion') return this.minionHarness
+    return this.claudeHarness
   }
 
   /**
@@ -502,7 +515,7 @@ export class SessionManager {
     if (!session || !this.workspace) return null
     // Cortana has no git/files workspace — hydrate via openReady so Terminal
     // keep-alive remounts after relaunch / select (Features/cortana-terminal-open-ready).
-    if (session.mode === 'cortana') {
+    if (isGatewayMode(session.mode)) {
       return this.workspace.openReadyCortana(sessionId)
     }
     if (session.mode !== 'claude-code') return null
@@ -641,6 +654,15 @@ export class SessionManager {
     if (!this.live.has(sessionId) && this.isSessionStartupIdle(sessionId)) return 'startup-idle'
     const live = this.live.get(sessionId)
     if (!live) return 'idle'
+    if (this.store.getSession(sessionId)?.mode === 'minion') {
+      // "working" while the composer turn is busy or the remote task is still
+      // non-terminal. Soft-stopped / post-complete background polls stay quiet.
+      const minion = this.minionHarness as HarnessDriver & {
+        isRemoteActive?(id: string): boolean
+      }
+      if (live.busy || minion.isRemoteActive?.(sessionId)) return 'working'
+      return 'waiting'
+    }
     return live.busy ? 'working' : 'waiting'
   }
 
@@ -804,6 +826,9 @@ export class SessionManager {
       apiRetryText: chrome?.apiRetryText ?? null,
       thinkingActive: chrome?.thinkingActive,
       thinkingEstimatedTokens: chrome?.thinkingEstimatedTokens,
+      title: chrome?.title,
+      detail: chrome?.detail,
+      setupSteps: chrome?.setupSteps,
     }
     this.getWindow()?.webContents.send('session:sdkChrome', payload)
   }
@@ -1108,6 +1133,75 @@ export class SessionManager {
       return session
     }
 
+    if (opts.mode === 'minion') {
+      // Minion: aifx-backed task — no project path, host, or worktree needed.
+      const attachId = opts.minion?.attachTaskId?.trim()
+      if (attachId) {
+        const existing = this.store.getSession(attachId)
+        if (existing?.deletedAt) {
+          throw new Error('That Minion session was permanently deleted in Atelier.')
+        }
+        if (existing && !existing.closedAt) {
+          throw new Error('That Minion task is already open in the sidebar.')
+        }
+        if (existing?.closedAt) {
+          // Reopen the Atelier row and reconnect polling — same task id.
+          const session = this.decorate(this.store.reopenSession(attachId)!)
+          this.sendLifecycle({ type: 'session.resumed', session })
+          await this.reconnect(attachId)
+          return session
+        }
+        const minion = this.minionHarness as HarnessDriver & {
+          attach(taskId: string): Promise<HarnessSession>
+        }
+        const harnessSession = await minion.attach(attachId)
+        const taskName = opts.suggestedName?.trim() || 'Minion'
+        const session = this.decorate(
+          this.store.createSession({
+            id: harnessSession.sessionId,
+            name: taskName,
+            projectPath: '',
+            mode: 'minion',
+            hostname: null,
+            groupId: opts.groupId ?? null,
+            worktreePath: null,
+            profileId: null
+          })
+        )
+        this.store.markEverConnected(session.id)
+        this.live.set(session.id, newLiveStream())
+        this.sendLifecycle({ type: 'session.created', session })
+        this.workspace?.openReadyCortana(session.id)
+        void this.consume(session.id, harnessSession.events, this.bumpConsumeGeneration(session.id))
+        return session
+      }
+      if (!opts.prompt?.trim()) throw new Error('A task prompt is required for Minion sessions.')
+      const harnessSession = await this.minionHarness.start(opts.prompt, {
+        cwd: '',
+        minion: opts.minion ?? { repo: 'go-code', runner: 'devpod' }
+      } as HarnessStartOptions)
+      const session = this.decorate(
+        this.store.createSession({
+          id: harnessSession.sessionId,
+          name: opts.suggestedName?.trim() || 'Minion',
+          projectPath: '',
+          mode: 'minion',
+          hostname: null,
+          groupId: opts.groupId ?? null,
+          worktreePath: null,
+          profileId: null
+        })
+      )
+      const userMessage = this.store.addMessage({ sessionId: session.id, role: 'user', content: opts.prompt })
+      this.sendMessage(session.id, userMessage)
+      this.beginPendingUserTurn(session.id, userMessage.id)
+      this.live.set(session.id, newLiveStream())
+      this.sendLifecycle({ type: 'session.created', session })
+      this.workspace?.openReadyCortana(session.id)
+      void this.consume(session.id, harnessSession.events, this.bumpConsumeGeneration(session.id))
+      return session
+    }
+
     // use-worktree: create an isolated git worktree for claude-code sessions
     // (local or remote/devpod) when the user opted in. We pre-allocate the
     // session id (so the worktree path can embed it) and use harness.startWithId()
@@ -1355,6 +1449,9 @@ export class SessionManager {
     if (session.mode === 'cortana') {
       return this.cortanaHarness.resume(session.id)
     }
+    if (session.mode === 'minion') {
+      return this.minionHarness.resume(session.id)
+    }
     const host = this.resolveHostFromSession(session.hostname)
     const startOpts = {
       cwd: this.resolveHarnessCwd(session.projectPath, session.hostname, session.worktreePath),
@@ -1520,7 +1617,7 @@ export class SessionManager {
   /** Reconnects the live harness session on top of the already-rendered transcript. No-op for terminal sessions. */
   async reconnect(sessionId: string): Promise<void> {
     let session = this.store.getSession(sessionId)
-    if (!session || (session.mode !== 'claude-code' && session.mode !== 'cortana')) return
+    if (!session || (session.mode !== 'claude-code' && !isGatewayMode(session.mode))) return
     if (session.mode === 'claude-code') {
       session = await this.ensureSessionWorktreePath(session)
     }
@@ -1532,7 +1629,7 @@ export class SessionManager {
     if (this.live.has(sessionId) || this.resolveHarness(sessionId).isActive(sessionId)) {
       // Cortana never goes through Claude's completeSessionOpen path; re-emit
       // openReady so Terminal keep-alive remounts after relaunch.
-      if (session.mode === 'cortana') this.workspace?.openReadyCortana(sessionId)
+      if (isGatewayMode(session.mode)) this.workspace?.openReadyCortana(sessionId)
       this.sendBackgroundTasks(sessionId)
       this.sendSdkChrome(sessionId)
       this.sendRateLimitChrome(sessionId)
@@ -1574,7 +1671,7 @@ export class SessionManager {
       // For Cortana the REST API connects immediately, so clear connecting now
       // and emit openReady (pendingPanelPreload would otherwise be consumed on
       // the first harness event — but we clear it here, so do openReady now).
-      if (currentSession.mode === 'cortana') {
+      if (isGatewayMode(currentSession.mode)) {
         this.connecting.delete(sessionId)
         this.pendingPanelPreload.delete(sessionId)
         this.workspace?.openReadyCortana(sessionId)
@@ -1717,15 +1814,21 @@ export class SessionManager {
     this.sendTurnState(sessionId, true)
     try {
       const previousSelection = this.modelSelections.get(sessionId)
-      const selectionChanged = modelOverride !== undefined && !modelSelectionsEqual(modelOverride, previousSelection)
+      // Gateway modes (Cortana/Minion) have no per-turn model switch — applying
+      // the Claude default here would flip null→haiku on the first follow-up,
+      // interrupt the live job, and cancel a Minion task just to "steer" it.
+      const selectionChanged =
+        !isGatewayMode(session.mode) &&
+        modelOverride !== undefined &&
+        !modelSelectionsEqual(modelOverride, previousSelection)
       if (selectionChanged) {
         logger.info('dispatchTurnToHarness: model/effort selection changed, applying from next turn', {
           sessionId,
           previous: previousSelection,
           next: modelOverride
         })
-        this.modelSelections.set(sessionId, modelOverride)
-        this.store.setModelSelection(sessionId, modelOverride)
+        this.modelSelections.set(sessionId, modelOverride!)
+        this.store.setModelSelection(sessionId, modelOverride!)
         if (this.resolveHarness(sessionId).isActive(sessionId)) {
           await this.resolveHarness(sessionId).interrupt(sessionId)
         }
@@ -1937,10 +2040,15 @@ export class SessionManager {
 
   async interrupt(sessionId: string): Promise<SessionInterruptResult> {
     const live = this.live.get(sessionId)
+    const mode = this.store.getSession(sessionId)?.mode
+    // Gateway (Cortana/Minion) turns often await a remote call before any
+    // harness text_delta — withdrawing would delete the user's message and
+    // interruptRequested would drop the cancel summary's text_delta.
     const canWithdraw =
       live != null &&
       !live.turnExecutionStarted &&
-      live.pendingUserMessageId != null
+      live.pendingUserMessageId != null &&
+      !isGatewayMode(mode)
 
     if (canWithdraw) {
       const messageId = live!.pendingUserMessageId!
@@ -1951,10 +2059,17 @@ export class SessionManager {
       return { action: 'withdrawn', restoredText: removed ? userMessagePlainText(removed.content) : '' }
     }
 
-    if (live && this.composerTurnActive(sessionId, live)) {
+    if (live && this.composerTurnActive(sessionId, live) && !isGatewayMode(mode)) {
       this.applyOptimisticInterrupt(sessionId, live)
     }
     await this.resolveHarness(sessionId).interrupt(sessionId)
+    if (live && isGatewayMode(mode)) {
+      live.busy = false
+      live.interruptRequested = false
+      this.clearPendingUserTurn(live)
+      this.sendTurnState(sessionId, false)
+      this.sendStatus(sessionId)
+    }
     return { action: 'interrupted' }
   }
 
@@ -2596,7 +2711,7 @@ export class SessionManager {
           this.connecting.delete(sessionId)
           this.sendStatus(sessionId)
         })
-      } else if (this.workspace && row?.mode === 'cortana') {
+      } else if (this.workspace && isGatewayMode(row?.mode)) {
         // Features/cortana-terminal-open-ready: startup/manual reconnect must
         // re-emit openReady so the Terminal tab remounts (Claude uses
         // completeSessionOpen; Cortana has no git preload).
@@ -3061,7 +3176,7 @@ export class SessionManager {
           this.sendLifecycle({ type: 'session.updated', session: costUpdated })
         }
         // For Cortana sessions, refresh the uploaded file list into the diff panel.
-        if (this.store.getSession(sessionId)?.mode === 'cortana') {
+        if (isGatewayMode(this.store.getSession(sessionId)?.mode)) {
           void this.resolveHarness(sessionId).listFiles?.(sessionId)
             .then(files => {
               this.workspace?.patchFiles(sessionId, files.map(f => ({
@@ -3093,14 +3208,42 @@ export class SessionManager {
         if (q) q.inflightId = null
         const drained = this.drainTurnQueue(sessionId)
         if (!drained) this.sendTurnState(sessionId, false)
-        // Notify via OS desktop notification when a Cortana session finishes responding
-        // and the app window is not focused (user is elsewhere).
-        if (!drained && this.store.getSession(sessionId)?.mode === 'cortana') {
+        // Desktop notify when a gateway session finishes a user-visible reply and
+        // the OS window is unfocused. Cortana: every turn. Minion: final summary
+        // (`end_turn`) and real agent rows (`minion_progress`) — not create/cancel.
+        const notifyMode = this.store.getSession(sessionId)?.mode
+        const minionNotify =
+          notifyMode === 'minion' &&
+          (event.subtype === 'end_turn' || event.subtype === 'minion_progress')
+        if (!drained && (notifyMode === 'cortana' || minionNotify)) {
+          const sessionName =
+            this.store.getSession(sessionId)?.name ??
+            (notifyMode === 'minion' ? 'Minion' : 'Cortana')
+          const body = event.isError ? 'Turn ended with an error' : 'Response ready'
           const win = this.getWindow()
-          if (!win?.isFocused() && Notification.isSupported()) {
-            const sessionName = this.store.getSession(sessionId)?.name ?? 'Cortana'
-            const body = event.isError ? 'Turn ended with an error' : 'Response ready'
+          if (!Notification.isSupported()) {
+            logger.warn('desktop notifications not supported', { sessionId, mode: notifyMode })
+          } else if (win?.isFocused()) {
+            logger.info('desktop notification skipped (window focused)', {
+              sessionId,
+              mode: notifyMode,
+              subtype: event.subtype
+            })
+            // Minion: still surface an in-app toast when focused (replies often
+            // arrive as minion_progress while the user is inside Atelier).
+            if (minionNotify) {
+              win.webContents.send('notification:push', {
+                notification: {
+                  id: `minion-ready-${sessionId}-${Date.now()}`,
+                  title: sessionName,
+                  sub: body,
+                  autoMs: 5000
+                }
+              })
+            }
+          } else {
             new Notification({ title: sessionName, body }).show()
+            logger.info('notification shown', { title: sessionName, body, sessionId, mode: notifyMode })
           }
         }
         void this.refreshSessionWorkspace(sessionId, false).catch(() => undefined)

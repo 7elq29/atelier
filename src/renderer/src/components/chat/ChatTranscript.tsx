@@ -958,9 +958,10 @@ export default function ChatTranscript({
           </div>
         ) : null}
         {emptyState && messages.length === 0 ? emptyState : rows}
-        {sdkChrome && (sdkChrome.status === 'compacting' || sdkChrome.compactFailed) && (
-          <ConversationStatusCard chrome={sdkChrome} />
-        )}
+        {sdkChrome &&
+          (sdkChrome.status === 'compacting' ||
+            sdkChrome.status === 'minion_setup' ||
+            sdkChrome.compactFailed) && <ConversationStatusCard chrome={sdkChrome} />}
       </div>
       {overlayHost && showScrollToEnd
         ? createPortal(

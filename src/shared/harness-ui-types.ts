@@ -15,7 +15,16 @@ export interface SessionBackgroundTasksEvent {
   tasks: BackgroundTaskRow[]
 }
 
-export type SdkStatusKind = 'compacting' | 'requesting'
+export type SdkStatusKind = 'compacting' | 'requesting' | 'minion_setup'
+
+export type MinionSetupStepId = 'provision' | 'boot' | 'connect'
+export type MinionSetupStepState = 'done' | 'active' | 'pending'
+
+export interface MinionSetupStep {
+  id: MinionSetupStepId
+  label: string
+  state: MinionSetupStepState
+}
 
 export interface SessionSdkChromeEvent {
   sessionId: string
@@ -29,6 +38,10 @@ export interface SessionSdkChromeEvent {
   thinkingActive?: boolean
   /** Latest SDK `thinking_tokens` estimate for the open thinking block. */
   thinkingEstimatedTokens?: number
+  /** Minion SETUP card title (Provision/Boot/Connect). */
+  title?: string
+  detail?: string
+  setupSteps?: MinionSetupStep[]
 }
 
 export interface SessionRateLimitEvent {

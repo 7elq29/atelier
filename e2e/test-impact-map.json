@@ -1444,7 +1444,11 @@
         "src/renderer/src/components/CollapsedAlertChip.tsx"
       ],
       "changedLines": "activateSidebarRowRef|sidebarCollapsed.*Digit|shortcutNumber|chip-tooltip-hint|KeyL.*composer|composer.*KeyL",
-      "targets": [{ "file": "e2e/sidebar-collapsed-shortcuts.spec.ts" }]
+      "targets": [
+        {
+          "file": "e2e/sidebar-collapsed-shortcuts.spec.ts"
+        }
+      ]
     },
     {
       "id": "chat-double-escape-interrupt",
@@ -1946,6 +1950,31 @@
         {
           "file": "e2e/session-lifecycle.spec.ts",
           "grep": "worktree"
+        }
+      ]
+    },
+    {
+      "id": "minion-session",
+      "paths": [
+        "src/main/harness/minion-harness.ts",
+        "src/main/sessions/manager.ts",
+        "src/main/sessions/session-harness-ui.ts",
+        "src/main/index.ts",
+        "src/main/db.ts",
+        "src/shared/session-types.ts",
+        "src/shared/harness-ui-types.ts",
+        "src/renderer/src/components/NewSessionModal.tsx",
+        "src/renderer/src/components/Sidebar.tsx",
+        "src/renderer/src/components/chat/Composer.tsx",
+        "src/renderer/src/components/chat/ConversationStatusCard.tsx",
+        "src/renderer/src/components/chat/ChatTranscript.tsx",
+        "src/renderer/src/App.tsx",
+        "e2e/minion-session.spec.ts"
+      ],
+      "changedLines": "minion|Minion|minion_setup|minion-setup",
+      "targets": [
+        {
+          "file": "e2e/minion-session.spec.ts"
         }
       ]
     }

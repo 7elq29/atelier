@@ -1063,6 +1063,12 @@ mark.search-hit.active { outline: 2px solid var(--accent); }
   font-size: 13px;
   margin-top: 8px;
 }
+.modal-hint {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  margin-top: 8px;
+  line-height: 1.4;
+}
 .field-label {
   font-size: var(--text-sm);
   font-weight: 500;
@@ -1840,6 +1846,11 @@ input[type='range'] {
   background: color-mix(in srgb, var(--sc-purple, #9b8ec4) 12%, transparent);
   color: var(--sc-purple, #9b8ec4);
   border-color: color-mix(in srgb, var(--sc-purple, #9b8ec4) 30%, transparent);
+}
+.row-tag--minion {
+  background: color-mix(in srgb, #3fb8af 12%, transparent);
+  color: #3fb8af;
+  border-color: color-mix(in srgb, #3fb8af 30%, transparent);
 }
 .session-meta {
   display: flex;
@@ -5443,6 +5454,33 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   background: color-mix(in srgb, var(--warning) 70%, transparent);
   animation: sdk-compact-progress 1.4s ease-in-out infinite;
 }
+.conversation-status-progress--accent > span {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.minion-setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 12px 8px;
+}
+.minion-setup-step {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-disabled);
+  background: var(--bg-hover);
+}
+.minion-setup-step--done {
+  color: var(--text-secondary);
+  border-color: color-mix(in srgb, var(--success, #3d9a6a) 40%, var(--border-subtle));
+}
+.minion-setup-step--active {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-tint));
+}
 @keyframes sdk-compact-progress {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(280%); }
@@ -5581,4 +5619,10 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   margin-top: 3px;
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
+}
+
+.segmented.segmented--modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
 }

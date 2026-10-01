@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CreateSessionOptions, RemoteHostOption, SessionMode } from '../../../shared/session-types'
+import type { CreateSessionOptions, MinionRepo, RemoteHostOption, SessionMode } from '../../../shared/session-types'
+import { parseMinionTaskId } from '../../../shared/session-types'
 import type { ProjectPathSuggestion } from '../../../shared/project-path-autocomplete'
 import { historyMatchesQuery } from '../../../shared/project-path-autocomplete'
 import { filterSessionProfiles } from '../../../shared/session-profile-resolve'
@@ -16,6 +17,8 @@ interface NewSessionModalProps {
   onCreate: (opts: CreateSessionOptions) => Promise<void>
   onManageProfiles?: () => void
 }
+
+const MINION_REPOS: MinionRepo[] = ['go-code', 'java-code', 'android-code', 'web-code', 'ios-code', 'uber-one', 'ml-code']
 
 type ProjectSelection =
   | { kind: 'path'; value: string }
@@ -42,6 +45,8 @@ export default function NewSessionModal({
   const [mode, setMode] = useState<SessionMode>('claude-code')
   const [hostId, setHostId] = useState<string>('local')
   const [prompt, setPrompt] = useState('')
+  const [minionRepo, setMinionRepo] = useState<MinionRepo>('go-code')
+  const [minionAttachLink, setMinionAttachLink] = useState('')
   const [useWorktree, setUseWorktree] = useState(false)
   const [creating, setCreating] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -63,6 +68,8 @@ export default function NewSessionModal({
       setMode('claude-code')
       setHostId('local')
       setPrompt('')
+      setMinionRepo('go-code')
+      setMinionAttachLink('')
       setUseWorktree(false)
       setCreating(false)
       setErrorMessage(null)
@@ -148,6 +155,10 @@ export default function NewSessionModal({
 
   if (!isOpen) return null
 
+  const agentOnly = mode === 'cortana' || mode === 'minion'
+  const minionAttachTaskId = mode === 'minion' ? parseMinionTaskId(minionAttachLink) : null
+  const minionCanStart =
+    mode !== 'minion' || Boolean(minionAttachTaskId) || Boolean(prompt.trim())
   const resolvedProjectPath = selectedProfile?.workspace ?? pathQuery.trim()
   const showPicker = pickerItems.length > 0 || profiles.length > 0 || onManageProfiles != null
 
@@ -169,17 +180,35 @@ export default function NewSessionModal({
   }
 
   async function handleCreate(): Promise<void> {
-    if (mode !== 'cortana' && !resolvedProjectPath) return
+    if (!agentOnly && !resolvedProjectPath) return
+    if (mode === 'minion' && !minionCanStart) return
     if (creating) return
     setCreating(true)
     setErrorMessage(null)
     try {
+      const attachTaskId = mode === 'minion' ? parseMinionTaskId(minionAttachLink) : null
+      if (mode === 'minion' && minionAttachLink.trim() && !attachTaskId) {
+        throw new Error('Paste a Minion link with taskId=… or a bare task UUID.')
+      }
       await onCreate({
-        projectPath: mode === 'cortana' ? '' : resolvedProjectPath!,
-        profileId: mode === 'cortana' ? undefined : selectedProfile?.id,
+        projectPath: agentOnly ? '' : resolvedProjectPath!,
+        profileId: agentOnly ? undefined : selectedProfile?.id,
         mode,
-        hostId: mode === 'cortana' ? 'local' : hostId,
-        prompt: (mode === 'claude-code' || mode === 'cortana') && prompt.trim() ? prompt.trim() : undefined,
+        hostId: agentOnly ? 'local' : hostId,
+        prompt:
+          mode === 'minion' && attachTaskId
+            ? undefined
+            : (mode === 'claude-code' || agentOnly) && prompt.trim()
+              ? prompt.trim()
+              : undefined,
+        minion:
+          mode === 'minion'
+            ? {
+                repo: minionRepo,
+                runner: 'devpod',
+                ...(attachTaskId ? { attachTaskId } : {})
+              }
+            : undefined,
         useWorktree: mode === 'claude-code' ? useWorktree : undefined
       })
       onClose()
@@ -200,7 +229,42 @@ export default function NewSessionModal({
           </button>
         </div>
         <div className="modal-body">
-          {mode !== 'cortana' && <div className="project-path-field">
+          <div>
+            <div className="field-label">Session type</div>
+            <div className="segmented segmented--modes">
+              <button
+                className={mode === 'claude-code' ? 'active' : ''}
+                data-testid="mode-claude-code"
+                onClick={() => setMode('claude-code')}
+              >
+                Claude Code
+              </button>
+              <button
+                className={mode === 'terminal' ? 'active' : ''}
+                data-testid="mode-terminal"
+                onClick={() => setMode('terminal')}
+              >
+                Terminal
+              </button>
+              <button
+                className={mode === 'cortana' ? 'active' : ''}
+                data-testid="mode-cortana"
+                onClick={() => setMode('cortana')}
+              >
+                Cortana
+              </button>
+              <button
+                className={mode === 'minion' ? 'active' : ''}
+                data-testid="mode-minion"
+                onClick={() => setMode('minion')}
+              >
+                Minion
+              </button>
+            </div>
+          </div>
+
+
+          {!agentOnly && <div className="project-path-field">
             <div className="field-label">Project</div>
             <input
               className={'input project-path-input' + (selectedProfile ? ' profile-selected' : '')}
@@ -323,34 +387,7 @@ export default function NewSessionModal({
             )}
           </div>}
 
-          <div>
-            <div className="field-label">Session type</div>
-            <div className="segmented">
-              <button
-                className={mode === 'claude-code' ? 'active' : ''}
-                data-testid="mode-claude-code"
-                onClick={() => setMode('claude-code')}
-              >
-                Claude Code
-              </button>
-              <button
-                className={mode === 'terminal' ? 'active' : ''}
-                data-testid="mode-terminal"
-                onClick={() => setMode('terminal')}
-              >
-                Terminal
-              </button>
-              <button
-                className={mode === 'cortana' ? 'active' : ''}
-                data-testid="mode-cortana"
-                onClick={() => setMode('cortana')}
-              >
-                Cortana
-              </button>
-            </div>
-          </div>
-
-          {mode !== 'cortana' && <div>
+          {!agentOnly && <div>
             <div className="field-label">Host</div>
             <div className="host-options">
               <label className={'host-option' + (hostId === 'local' ? ' selected' : '')}>
@@ -377,20 +414,77 @@ export default function NewSessionModal({
             </div>
           </div>}
 
-          {(mode === 'claude-code' || mode === 'cortana') && (
+          {mode === 'minion' && (
+            <div>
+              <div className="field-label">Repository</div>
+              <select
+                className="input"
+                style={{ width: '100%' }}
+                data-testid="minion-repo"
+                value={minionRepo}
+                onChange={(e) => setMinionRepo(e.target.value as MinionRepo)}
+                disabled={Boolean(minionAttachTaskId)}
+              >
+                {MINION_REPOS.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {mode === 'minion' && (
             <div>
               <div className="field-label">
-                Initial prompt <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span>
+                Attach existing task{' '}
+                <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span>
+              </div>
+              <input
+                className="input"
+                style={{ width: '100%' }}
+                data-testid="minion-attach-link"
+                placeholder="https://minion.uberinternal.com/v2?taskId=…"
+                value={minionAttachLink}
+                onChange={(e) => setMinionAttachLink(e.target.value)}
+              />
+              {minionAttachLink.trim() && !minionAttachTaskId && (
+                <div className="field-hint" style={{ marginTop: 6 }}>
+                  Need a Minion URL with <code>taskId=</code> or a bare UUID.
+                </div>
+              )}
+              {minionAttachTaskId && (
+                <div className="field-hint" style={{ marginTop: 6 }} data-testid="minion-attach-parsed">
+                  Will attach to <code>{minionAttachTaskId}</code>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(mode === 'claude-code' || agentOnly) && (
+            <div>
+              <div className="field-label">
+                {mode === 'minion' ? 'Task prompt' : 'Initial prompt'}{' '}
+                {(mode !== 'minion' || minionAttachTaskId) && (
+                  <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span>
+                )}
               </div>
               <div className="prompt-box">
                 <textarea
                   data-testid="initial-prompt"
-                  placeholder={mode === 'cortana' ? 'Ask Cortana anything…' : 'What should Claude do first?'}
+                  placeholder={
+                    mode === 'minion'
+                      ? minionAttachTaskId
+                        ? 'Optional note — attach does not create a new task'
+                        : 'Describe the task for Minion…'
+                      : mode === 'cortana'
+                        ? 'Ask Cortana anything…'
+                        : 'What should Claude do first?'
+                  }
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   onKeyDown={(e) => {
                     handleEmacsTextareaKeyDown(e, prompt, setPrompt)
                   }}
+                  disabled={mode === 'minion' && Boolean(minionAttachTaskId)}
                 />
               </div>
               {mode === 'claude-code' && (
@@ -415,17 +509,32 @@ export default function NewSessionModal({
         <div className="modal-footer">
           <div style={{ flex: 1 }}>
             {errorMessage && <div className="modal-error">{errorMessage}</div>}
+            {creating && mode === 'minion' && !errorMessage && (
+              <div className="modal-hint" data-testid="minion-starting-hint">
+                {minionAttachTaskId
+                  ? 'Attaching to Minion task…'
+                  : 'Starting Minion… DevPod setup can take a minute.'}
+              </div>
+            )}
           </div>
-          <button className="btn" onClick={onClose}>
+          <button className="btn" onClick={onClose} disabled={creating && mode === 'minion'}>
             Cancel
           </button>
           <button
             className="btn btn-primary"
             data-testid="start-session-button"
-            disabled={(mode !== 'cortana' && !resolvedProjectPath) || creating}
+            disabled={(!agentOnly && !resolvedProjectPath) || !minionCanStart || creating}
             onClick={handleCreate}
           >
-            {creating ? 'Starting…' : 'Start Session'}
+            {creating
+              ? mode === 'minion'
+                ? minionAttachTaskId
+                  ? 'Attaching…'
+                  : 'Starting Minion…'
+                : 'Starting…'
+              : mode === 'minion' && minionAttachTaskId
+                ? 'Attach Session'
+                : 'Start Session'}
           </button>
         </div>
       </div>

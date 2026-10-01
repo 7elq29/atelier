@@ -16,6 +16,7 @@ import { registerDailyNoteHandlers } from './daily-notes-handlers'
 import { registerWeeklyPlanHandlers } from './weekly-notes-handlers'
 import { ClaudeAgentSdkHarness } from './harness'
 import { CortanaHarness } from './harness/cortana-harness'
+import { MinionHarness } from './harness/minion-harness'
 import { SessionStore } from './sessions/store'
 import { SessionManager } from './sessions/manager'
 import { WorkspaceService } from './sessions/workspace-service'
@@ -267,7 +268,8 @@ app.whenReady().then(() => {
   // re-created per IPC call.
   const harness = new ClaudeAgentSdkHarness()
   const cortanaHarness = new CortanaHarness()
-  sessionManager = new SessionManager(sessionStore, harness, cortanaHarness, createStaticHostResolver(), () => mainWindow)
+  const minionHarness = new MinionHarness()
+  sessionManager = new SessionManager(sessionStore, harness, cortanaHarness, minionHarness, createStaticHostResolver(), () => mainWindow)
   workspaceService = new WorkspaceService(
     () => mainWindow,
     async (sessionId) => {

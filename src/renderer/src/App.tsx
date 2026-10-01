@@ -179,10 +179,10 @@ function claudeCodeSessionDisconnected(
   statuses: Record<string, SessionStatus>
 ): boolean {
   if (!session || !sessionId) return false
-  if (session.mode !== 'claude-code' && session.mode !== 'cortana') return false
+  if (session.mode !== 'claude-code' && session.mode !== 'cortana' && session.mode !== 'minion') return false
   if (session.closedAt) return true
   const status = statuses[sessionId]
-  if (session.mode === 'cortana') return status === 'connecting'
+  if (session.mode === 'cortana' || session.mode === 'minion') return status === 'connecting'
   return status === 'startup-idle' || status === 'connecting'
 }
 
@@ -1268,7 +1268,7 @@ const allSessions = useMemo(
     }
     if (!disconnectedGate) {
       sessionWorkspace.hydrateSnapshot(session.id)
-    } else if (session.mode === 'cortana' && !session.closedAt) {
+    } else if ((session.mode === 'cortana' || session.mode === 'minion') && !session.closedAt) {
       // Connecting Cortana: still emit openReady so Terminal keep-alive can
       // mount as soon as the rail is allowed; harness connect is independent.
       sessionWorkspace.hydrateSnapshot(session.id)
@@ -2375,7 +2375,7 @@ const allSessions = useMemo(
     const ids = new Set<string>()
     for (const id of aliveChatComposers) ids.add(id)
     for (const id of sessionWorkspace.readySessionIds) ids.add(id)
-    if (activeSessionId && (activeSession?.mode === 'claude-code' || activeSession?.mode === 'cortana') && !activeSessionDisconnected) {
+    if (activeSessionId && (activeSession?.mode === 'claude-code' || activeSession?.mode === 'cortana' || activeSession?.mode === 'minion') && !activeSessionDisconnected) {
       ids.add(activeSessionId)
     }
     return [...ids]
@@ -2391,7 +2391,7 @@ const allSessions = useMemo(
   // Register chat composers on first connected visit; keep mounted across session/note switches.
   useEffect(() => {
     if (!activeSessionId || !activeSession) return
-    if (activeSession.mode !== 'claude-code' && activeSession.mode !== 'cortana') return
+    if (activeSession.mode !== 'claude-code' && activeSession.mode !== 'cortana' && activeSession.mode !== 'minion') return
     if (sessions.statuses[activeSessionId] === 'startup-idle' || activeSession?.closedAt) return
     setAliveChatComposers((prev) => {
       if (prev.has(activeSessionId)) return prev
@@ -2485,7 +2485,7 @@ const allSessions = useMemo(
     !activeAppNote &&
     !activeDailyNoteDate &&
     !activeWeeklyPlanSurface &&
-    (activeSession?.mode === 'claude-code' || activeSession?.mode === 'cortana') &&
+    (activeSession?.mode === 'claude-code' || activeSession?.mode === 'cortana' || activeSession?.mode === 'minion') &&
     !activeSessionDisconnected &&
     isChatTabVisible(activeTab, activeWorkspaceSplit)
   )
@@ -2999,6 +2999,9 @@ const allSessions = useMemo(
               {activeSession?.mode === 'cortana' && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanSurface && (
                 <span className="topbar-mode-tag">Cortana</span>
               )}
+              {activeSession?.mode === 'minion' && !activeAppNote && !activeDailyNoteDate && !activeWeeklyPlanSurface && (
+                <span className="topbar-mode-tag" data-testid="topbar-minion-tag">Minion</span>
+              )}
               {activeAppNote ? (
                 <span
                   className={`daily-sync-chip app-note-sync-chip ${
@@ -3036,7 +3039,7 @@ const allSessions = useMemo(
               !activeAppNote &&
               !activeDailyNoteDate &&
               !activeWeeklyPlanSurface &&
-              (activeSession.mode === 'claude-code' || activeSession.mode === 'cortana') &&
+              (activeSession.mode === 'claude-code' || activeSession.mode === 'cortana' || activeSession.mode === 'minion') &&
               !activeSessionDisconnected ? (
                 <span className="topbar-cost" data-testid="cost-chip">
                   ${activeSession.totalCostUsd.toFixed(2)}
@@ -3123,7 +3126,7 @@ const allSessions = useMemo(
               !activeAppNote &&
               !activeDailyNoteDate &&
               !activeWeeklyPlanSurface &&
-              (activeSession.mode === 'claude-code' || activeSession.mode === 'cortana') &&
+              (activeSession.mode === 'claude-code' || activeSession.mode === 'cortana' || activeSession.mode === 'minion') &&
               !activeSessionDisconnected
                 ? ({ '--terminal-rail-clearance': '52px' } as React.CSSProperties)
                 : undefined
@@ -3183,7 +3186,7 @@ const allSessions = useMemo(
                   const sessionId = ptyId.replace(/:tab-terminal$/, '')
                   const isActive =
                     sessionMainInForeground &&
-                    (activeSession?.mode === 'claude-code' || activeSession?.mode === 'cortana') &&
+                    (activeSession?.mode === 'claude-code' || activeSession?.mode === 'cortana' || activeSession?.mode === 'minion') &&
                     activeSession.id === sessionId &&
                     isTerminalTabVisible(activeTab, activeWorkspaceSplit) &&
                     !activeSessionDisconnected
@@ -3486,7 +3489,7 @@ const allSessions = useMemo(
             >
               {[...aliveChatComposers].map((sessionId) => {
                 const session = allSessions.find((s) => s.id === sessionId)
-                if (!session || (session.mode !== 'claude-code' && session.mode !== 'cortana')) return null
+                if (!session || (session.mode !== 'claude-code' && session.mode !== 'cortana' && session.mode !== 'minion')) return null
                 const composerActive = composerDockVisible && activeSessionId === sessionId
                 const ws = sessionWorkspace.workspaceBySession[sessionId]
                 const mentionPaths = ws?.filesList?.map((e) => e.relativePath)
@@ -3565,7 +3568,7 @@ const allSessions = useMemo(
           !activeAppNote &&
           !activeDailyNoteDate &&
           !activeWeeklyPlanSurface &&
-          (activeSession.mode === 'claude-code' || activeSession.mode === 'cortana') &&
+          (activeSession.mode === 'claude-code' || activeSession.mode === 'cortana' || activeSession.mode === 'minion') &&
           !activeSessionDisconnected ? (
             <WorkspaceToolRail
               activeTool={activeWorkspaceTool}
@@ -3574,7 +3577,7 @@ const allSessions = useMemo(
               onSelect={selectTab}
               onToolPress={workspaceTabDrag.trackTabPress}
               didDragTool={workspaceTabDrag.didDrag}
-              allowedTools={activeSession.mode === 'cortana' ? ['terminal'] : undefined}
+              allowedTools={activeSession.mode === 'cortana' || activeSession.mode === 'minion' ? ['terminal'] : undefined}
             />
           ) : null}
           </div>
