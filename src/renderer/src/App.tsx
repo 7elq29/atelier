@@ -2662,7 +2662,7 @@ const allSessions = useMemo(
 
   const workspacePanelShortcutsEnabled = Boolean(
     activeSession &&
-      activeSession.mode === 'claude-code' &&
+      (activeSession.mode === 'claude-code' || activeSession.mode === 'cortana') &&
       !activeAppNote &&
       !activeDailyNoteDate &&
       !activeWeeklyPlanSurface &&
@@ -2708,6 +2708,8 @@ const allSessions = useMemo(
       }
       const tab = tabByCode[e.code]
       if (!tab || (tab === 'ports' && !activeSession?.hostname)) return
+      // Cortana's tool rail only exposes Terminal — ignore Diff/Files/Ports chords.
+      if (activeSession?.mode === 'cortana' && tab !== 'terminal') return
       e.preventDefault()
       e.stopPropagation()
       toggleWorkspaceTool(tab)
@@ -2717,6 +2719,7 @@ const allSessions = useMemo(
     return () => window.removeEventListener('keydown', handleWorkspacePanelShortcut)
   }, [
     activeSession?.hostname,
+    activeSession?.mode,
     anyModalOpen,
     config.sidebarCollapsed,
     toggleDailyNotesPanel,

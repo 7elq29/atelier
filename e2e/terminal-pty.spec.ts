@@ -447,4 +447,42 @@ test.describe('terminal-pty', () => {
       await app?.close().catch(() => undefined)
     }
   })
+
+  test('cortana: ⌘T toggles the Terminal split', async () => {
+    test.setTimeout(60_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-cortana-cmdt-'))
+    seedSkipOnboarding(userDataDir)
+    const { app, page } = await launchApp(userDataDir)
+
+    try {
+      await page.getByTestId('new-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toBeVisible()
+      await page.getByTestId('mode-cortana').click()
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+      await expect(page.getByTestId('workspace-tool-rail')).toBeVisible({ timeout: 20_000 })
+
+      const workspace = page.getByTestId('session-workspace-tabs')
+      await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
+
+      await page.keyboard.press('Meta+t')
+      await expect(workspace).toHaveClass(/session-workspace-tabs--split-row/)
+      await expect(page.getByTestId('tab-terminal')).toHaveAttribute('aria-pressed', 'true')
+      await expect(page.getByTestId('terminal-body')).toBeVisible({ timeout: 15_000 })
+      await page.screenshot({ path: join(artifactsDir, 'cortana-cmd-t-open.png') })
+
+      await page.keyboard.press('Meta+t')
+      await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
+      await expect(page.getByTestId('tab-terminal')).toHaveAttribute('aria-pressed', 'false')
+      await page.screenshot({ path: join(artifactsDir, 'cortana-cmd-t-closed.png') })
+
+      // Diff/Files shortcuts must not open tools Cortana does not expose.
+      await page.keyboard.press('Meta+d')
+      await page.keyboard.press('Meta+f')
+      await expect(workspace).not.toHaveClass(/session-workspace-tabs--split/)
+    } finally {
+      await app.close().catch(() => undefined)
+    }
+  })
 })

@@ -9,15 +9,41 @@
   ],
   "rules": [
     {
+      "id": "message-queue-interrupt-drain",
+      "paths": [
+        "src/main/sessions/manager.ts",
+        "src/main/harness/claude-agent-sdk-harness.ts"
+      ],
+      "changedLines": "fix-message-queue-interrupt-drain|turnQueue: draining|interruptRequested|isClosed|isActive",
+      "targets": [
+        {
+          "file": "e2e/message-queue-interrupt-drain.spec.ts"
+        }
+      ]
+    },
+    {
       "id": "session-alert-dot",
       "paths": [
         "src/renderer/src/App.tsx",
         "src/renderer/src/components/Sidebar.tsx"
       ],
-      "changedLines": "waitingInputAlert|hasBeenWorkingWhileActive|statusAtSelection|session-waiting-input-alert|showWaitingInputAlert",
+      "changedLines": "waitingInputAlert|hasBeenWorkingWhileActive|statusAtSelection|session-waiting-input-alert|showWaitingInputAlert|sessionLiveWaitingForInput|mode !== 'cortana'|mode !== 'claude-code'",
       "targets": [
         {
           "file": "e2e/bug-collapsed-alert-chip.spec.ts"
+        }
+      ]
+    },
+    {
+      "id": "cortana-response-notifications",
+      "paths": [
+        "src/main/sessions/manager.ts"
+      ],
+      "changedLines": "Match claude-code: an initial prompt|response-ready alerts|live\\.get\\(session\\.id\\)!\\.busy = true",
+      "targets": [
+        {
+          "file": "e2e/bug-collapsed-alert-chip.spec.ts",
+          "grep": "cortana"
         }
       ]
     },
@@ -1426,10 +1452,14 @@
       "paths": [
         "src/renderer/src/App.tsx"
       ],
-      "changedLines": "toggleWorkspaceTool|handleWorkspacePanelShortcut|workspacePanelShortcutsEnabled|handleSessionTabHintShortcut|tabByCode|ArrowRight|ArrowLeft",
+      "changedLines": "toggleWorkspaceTool|handleWorkspacePanelShortcut|workspacePanelShortcutsEnabled|handleSessionTabHintShortcut|tabByCode|ArrowRight|ArrowLeft|mode === 'cortana'",
       "targets": [
         {
           "file": "e2e/command-palette-workspace-tools.spec.ts"
+        },
+        {
+          "file": "e2e/terminal-pty.spec.ts",
+          "grep": "cortana: .*⌘T|cortana:.*Meta"
         },
         {
           "file": "e2e/app-shell.spec.ts",

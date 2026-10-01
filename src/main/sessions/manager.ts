@@ -1127,6 +1127,13 @@ export class SessionManager {
         this.beginPendingUserTurn(session.id, userMessage.id)
       }
       this.live.set(session.id, newLiveStream())
+      // Match claude-code: an initial prompt is an in-flight turn so status
+      // goes working→waiting and response-ready alerts can fire.
+      if (opts.prompt) {
+        this.live.get(session.id)!.busy = true
+        this.sendStatus(session.id)
+        this.sendTurnState(session.id, true)
+      }
       this.sendLifecycle({ type: 'session.created', session })
       this.workspace?.openReadyCortana(session.id)
       void this.consume(session.id, harnessSession.events, this.bumpConsumeGeneration(session.id))
@@ -3204,6 +3211,16 @@ export class SessionManager {
         // Drain the turn queue before signalling idle — if a queued message
         // is dispatched here, it sets busy=true again and the renderer never
         // sees a brief idle flash between turns.
+        //
+        // fix-message-queue-interrupt-drain: when Stop already set
+        // `live.interruptRequested`, the harness still emits a normal
+        // `result` and then an `interrupted` event. Draining here would
+        // race the closed input queue (isActive still true until pump
+        // finally) and then `interrupted` would clear the new inflightId.
+        // Let `case 'interrupted'` own the drain in that path.
+        if (live.interruptRequested) {
+          return
+        }
         const q = this.turnQueues.get(sessionId)
         if (q) q.inflightId = null
         const drained = this.drainTurnQueue(sessionId)

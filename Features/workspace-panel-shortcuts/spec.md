@@ -7,6 +7,8 @@
    - ⌘F to toggle Files.
    - ⌘T to toggle Terminal.
    - ⌘P to toggle Ports when the session supports Ports.
+   In an active Cortana session, only ⌘T toggles Terminal (Diff/Files/Ports
+   chords are ignored — those tools are not on the rail).
 2. If that tool is closed, the shortcut opens it on the right. If the same
    tool is already open, the shortcut closes it and returns focus to Chat.
    Pressing a different tool shortcut replaces the open right-hand tool.

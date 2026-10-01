@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { seedSkipOnboarding } from './e2e-config'
+import { seedE2eConfig } from './e2e-config'
 
 async function launchApp(userDataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
@@ -15,11 +15,8 @@ async function launchApp(userDataDir: string): Promise<{ app: ElectronApplicatio
 }
 
 async function runPaletteCommand(page: Page, label: string): Promise<void> {
-  if (process.platform === 'darwin') {
-    await page.keyboard.press('Meta+k')
-  } else {
-    await page.keyboard.press('Alt+x')
-  }
+  // Palette shortcut is Opt+X (Cmd+K was removed).
+  await page.keyboard.press('Alt+x')
   const input = page.getByTestId('command-palette-input')
   await expect(input).toBeFocused()
   await input.fill(label)
@@ -40,7 +37,10 @@ test.describe('command palette workspace tools', () => {
 
   test.beforeAll(async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-palette-workspace-'))
-    seedSkipOnboarding(userDataDir)
+    // Timeline ⌘→ creates/opens today's note; needs a vault root in config.
+    const vaultPath = join(userDataDir, 'vault')
+    mkdirSync(join(vaultPath, 'Atelier'), { recursive: true })
+    seedE2eConfig(userDataDir, { vault: { root: vaultPath, appNotesFolder: 'Atelier' } })
     projectPath = join(userDataDir, 'project')
     mkdirSync(projectPath, { recursive: true })
     ;({ app: electronApp, page } = await launchApp(userDataDir))
@@ -116,6 +116,7 @@ test.describe('command palette workspace tools', () => {
     await page.getByTestId('new-session-button').click()
     await page.getByTestId('host-option-devpod-us-or').click()
     await page.getByTestId('project-path').fill('/home/user')
+    await page.getByTestId('project-path').blur()
     await page.getByTestId('mode-claude-code').click()
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
