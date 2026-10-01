@@ -494,6 +494,20 @@
       ]
     },
     {
+      "id": "cortana-terminal-open-ready",
+      "paths": [
+        "src/main/sessions/manager.ts",
+        "src/main/sessions/workspace-service.ts"
+      ],
+      "changedLines": "openReadyCortana|patchFiles|cortana-terminal-open-ready|mode === 'cortana'|mode !== 'claude-code' && session.mode !== 'cortana'|refreshSessionWorkspace|workspacePath: homedir|tab-terminal",
+      "targets": [
+        {
+          "file": "e2e/terminal-pty.spec.ts",
+          "grep": "cortana"
+        }
+      ]
+    },
+    {
       "id": "remote-tmux-lifecycle",
       "paths": [
         "src/main/panels/pty.ts",
@@ -576,7 +590,7 @@
         "src/main/sessions/workspace-service.ts",
         "src/renderer/src/components/panels/FilesPanel.tsx"
       ],
-      "changedLines": "filesTree|filesList|treeError|treeReloadSeq|reloadTree|walkErrorMessage|logFilesWalkFailure",
+      "changedLines": "treeError|treeReloadSeq|reloadTree|walkErrorMessage|logFilesWalkFailure|filesTree =|filesList =",
       "targets": [
         {
           "file": "e2e/bug-files-walk-failure-visible.spec.ts"
@@ -629,6 +643,7 @@
         "src/main/panels/git-repository.ts",
         "src/main/sessions/workspace-service.ts"
       ],
+      "changedLines": "getDiffSummary|refreshWorkspace\\(|preloadSessionEssentials|completeSessionOpen|gitDeferred|mergeDiffHunks|probeGitRepo|PRELOAD_DIFF|getDiffSummaryWithHunks|onWorkingTreeUpdated|mergeCapItemsFromDiffSummary",
       "targets": [
         {
           "file": "e2e/secondary-panels.spec.ts",

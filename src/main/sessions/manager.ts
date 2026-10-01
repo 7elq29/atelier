@@ -499,7 +499,13 @@ export class SessionManager {
     opts?: { includeFiles?: boolean; skipCapRebuild?: boolean }
   ): Promise<SessionWorkspacePayload | null> {
     const session = this.getSession(sessionId)
-    if (!session || session.mode !== 'claude-code' || !this.workspace) return null
+    if (!session || !this.workspace) return null
+    // Cortana has no git/files workspace — hydrate via openReady so Terminal
+    // keep-alive remounts after relaunch / select (Features/cortana-terminal-open-ready).
+    if (session.mode === 'cortana') {
+      return this.workspace.openReadyCortana(sessionId)
+    }
+    if (session.mode !== 'claude-code') return null
     return this.workspace.refreshWorkspace(session, force, opts)
   }
 
@@ -1514,14 +1520,19 @@ export class SessionManager {
   /** Reconnects the live harness session on top of the already-rendered transcript. No-op for terminal sessions. */
   async reconnect(sessionId: string): Promise<void> {
     let session = this.store.getSession(sessionId)
-    if (!session || session.mode !== 'claude-code') return
-    session = await this.ensureSessionWorktreePath(session)
+    if (!session || (session.mode !== 'claude-code' && session.mode !== 'cortana')) return
+    if (session.mode === 'claude-code') {
+      session = await this.ensureSessionWorktreePath(session)
+    }
     // Don't race with setupWorktreeAsync — while the worktree is being created
     // the harness will be started by that path once creation completes.
     if (this.creatingWorktree.has(sessionId)) return
     if (this.connecting.has(sessionId)) return
     // Already live (e.g. connected by createSession or startupReconnect) — resync ephemeral UI.
     if (this.live.has(sessionId) || this.resolveHarness(sessionId).isActive(sessionId)) {
+      // Cortana never goes through Claude's completeSessionOpen path; re-emit
+      // openReady so Terminal keep-alive remounts after relaunch.
+      if (session.mode === 'cortana') this.workspace?.openReadyCortana(sessionId)
       this.sendBackgroundTasks(sessionId)
       this.sendSdkChrome(sessionId)
       this.sendRateLimitChrome(sessionId)
@@ -1560,10 +1571,13 @@ export class SessionManager {
       // NOT cleared here for Claude — `harness.resume()` resolving only means
       // the SDK `query()` call was constructed, not that the subprocess has
       // handshaken. `connecting` stays until `completeSessionOpen()` fires.
-      // For Cortana the REST API connects immediately, so clear it now.
+      // For Cortana the REST API connects immediately, so clear connecting now
+      // and emit openReady (pendingPanelPreload would otherwise be consumed on
+      // the first harness event — but we clear it here, so do openReady now).
       if (currentSession.mode === 'cortana') {
         this.connecting.delete(sessionId)
         this.pendingPanelPreload.delete(sessionId)
+        this.workspace?.openReadyCortana(sessionId)
       }
       this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
       this.resetHarnessUiForSession(sessionId)
@@ -2582,6 +2596,15 @@ export class SessionManager {
           this.connecting.delete(sessionId)
           this.sendStatus(sessionId)
         })
+      } else if (this.workspace && row?.mode === 'cortana') {
+        // Features/cortana-terminal-open-ready: startup/manual reconnect must
+        // re-emit openReady so the Terminal tab remounts (Claude uses
+        // completeSessionOpen; Cortana has no git preload).
+        this.workspace.openReadyCortana(sessionId)
+        if (this.connecting.has(sessionId)) {
+          this.connecting.delete(sessionId)
+          this.sendStatus(sessionId)
+        }
       } else {
         if (this.connecting.has(sessionId)) {
           this.connecting.delete(sessionId)

@@ -201,21 +201,31 @@ export class WorkspaceService {
     })
   }
 
-  /** Emit session:openReady for a Cortana session with a terminal at $HOME and no git/files workspace. */
-  openReadyCortana(sessionId: string): void {
+  /**
+   * Emit session:openReady for a Cortana session with a terminal at $HOME and
+   * no git/files workspace. Spawns the tab-terminal PTY (same as Claude
+   * essential preload) so resume/reconnect get a live shell without waiting
+   * for the Terminal tab mount.
+   */
+  openReadyCortana(sessionId: string): SessionWorkspacePayload {
     const tabTerminalPtyId = `${sessionId}:tab-terminal`
+    const workspacePath = homedir()
+    const prev = this.cache.get(sessionId)
     const payload: SessionWorkspacePayload = {
       sessionId,
-      workspacePath: homedir(),
+      workspacePath,
       hostname: null,
-      diff: { isRepo: false, branch: null, files: [] },
-      sessionChangesCap: { items: [] },
+      // Preserve artifact list from patchFiles across reopen/reconnect.
+      diff: prev?.diff ?? { isRepo: false, branch: null, files: [] },
+      sessionChangesCap: prev?.sessionChangesCap ?? { items: [] },
       filesTree: null,
       filesList: null,
       tabTerminalPtyId,
       loadedAt: Date.now()
     }
+    void this.spawnTabTerminal(sessionId, tabTerminalPtyId, workspacePath, null)
     this.sendOpenReady(payload)
+    return payload
   }
 
   /** Overwrite the diff files for a session and push a workspace update — used for Cortana artifact lists. */
@@ -223,13 +233,13 @@ export class WorkspaceService {
     const cached = this.cache.get(sessionId)
     const base: SessionWorkspacePayload = cached ?? {
       sessionId,
-      workspacePath: '',
+      workspacePath: homedir(),
       hostname: null,
       diff: { isRepo: false, branch: null, files: [] },
       sessionChangesCap: { items: [] },
       filesTree: null,
       filesList: null,
-      tabTerminalPtyId: '',
+      tabTerminalPtyId: `${sessionId}:tab-terminal`,
       loadedAt: Date.now()
     }
     this.sendUpdated({ ...base, diff: { ...base.diff, files } })

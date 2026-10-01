@@ -329,4 +329,69 @@ test.describe('terminal-pty', () => {
       await app.close().catch(() => undefined)
     }
   })
+
+  /**
+   * Cortana Terminal only got openReady at create time; after relaunch the
+   * keep-alive never remounted (Features/cortana-terminal-open-ready).
+   */
+  test('cortana: terminal works after create and after relaunch', async () => {
+    test.setTimeout(120_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-cortana-term-'))
+    seedSkipOnboarding(userDataDir)
+    let app: ElectronApplication | undefined
+    let page: Page
+
+    const marker = 'CORTANA-TERM-ALIVE'
+    try {
+      ;({ app, page } = await launchApp(userDataDir))
+
+      await page.getByTestId('new-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toBeVisible()
+      await page.getByTestId('mode-cortana').click()
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+      await expect(page.getByTestId('cortana-tag')).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByTestId('workspace-tool-rail')).toBeVisible({ timeout: 20_000 })
+
+      await page.getByTestId('tab-terminal').click()
+      const term = page.getByTestId('terminal-body')
+      const rows = term.locator('.xterm-rows')
+      await expect(term).toBeVisible({ timeout: 15_000 })
+      await term.click()
+      await expect.poll(async () => rows.textContent(), { timeout: 20_000 }).toMatch(/[%$#>]/)
+      await page.waitForTimeout(400)
+      await page.keyboard.type(`echo ${marker}`)
+      await page.keyboard.press('Enter')
+      await expect.poll(async () => rows.textContent(), { timeout: 15_000 }).toContain(marker)
+      await page.screenshot({ path: join(artifactsDir, 'cortana-terminal-after-create.png') })
+
+      const sessionId = await page
+        .locator('[data-testid="session-row"][data-active="true"]')
+        .getAttribute('data-session-id')
+      expect(sessionId).toBeTruthy()
+
+      await app.close()
+      app = undefined
+
+      ;({ app, page } = await launchApp(userDataDir))
+      await expect(page.getByTestId('session-row')).toBeVisible({ timeout: 20_000 })
+      await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
+      await expect(page.getByTestId('workspace-tool-rail')).toBeVisible({ timeout: 30_000 })
+      await page.getByTestId('tab-terminal').click()
+      const term2 = page.getByTestId('terminal-body')
+      const rows2 = term2.locator('.xterm-rows')
+      await expect(term2).toBeVisible({ timeout: 20_000 })
+      await term2.click()
+      await expect.poll(async () => rows2.textContent(), { timeout: 25_000 }).toMatch(/[%$#>]/)
+      await page.waitForTimeout(400)
+      const marker2 = 'CORTANA-TERM-RELAUNCH'
+      await page.keyboard.type(`echo ${marker2}`)
+      await page.keyboard.press('Enter')
+      await expect.poll(async () => rows2.textContent(), { timeout: 15_000 }).toContain(marker2)
+      await page.screenshot({ path: join(artifactsDir, 'cortana-terminal-after-relaunch.png') })
+    } finally {
+      await app?.close().catch(() => undefined)
+    }
+  })
 })
