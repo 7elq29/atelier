@@ -101,35 +101,32 @@ test.describe('bug-agenda-drag-time: time and ghost positioning', () => {
     console.log(`[BUG 1] heights match: ${Math.abs(overlayHeight - agendaHeight) < 2}`)
 
     // Synthesize a dragover event at a specific hour slot in the overlay grid.
-    // We want to hover at the 9am slot (index 3 in AGENDA_HOURS=[6..21]).
-    // In the overlay grid: 9am slot top = 3 * 36 = 108px from top of overlay.
-    // But the real element might map that pixel differently via hourFromClientY.
+    // We want to hover near the top of the 9am slot (index 3 in AGENDA_HOURS=[6..21])
+    // so 15-minute snap lands on 09:00 (not :15/:30/:45).
     const targetHourIndex = 3 // 9am (AGENDA_HOURS[3] = 9)
     const overlaySlotTopPx = targetHourIndex * agendaSlotPx // 108px in the overlay
 
-    // Cursor clientY that corresponds to that overlay slot:
-    // The overlay is pinned to the top of the agenda element.
-    const cursorClientY = agendaBox.y + overlaySlotTopPx + agendaSlotPx / 2
+    // Cursor just below the hour mark so snapMinutes lands on 9:00.
+    const cursorClientY = agendaBox.y + overlaySlotTopPx + 2
 
-    // What hour does hourFromClientY compute for this cursor position?
-    // Fixed algorithm: uses AGENDA_SLOT_H_PX (36px/hour), not element height.
-    const computedHour = await page.evaluate(({ clientY, agendaTop }) => {
-      const AGENDA_HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+    // What start-minute does minutesFromClientY compute for this cursor position?
+    const computedStartMin = await page.evaluate(({ clientY, agendaTop }) => {
+      const AGENDA_START_MIN = 6 * 60
       const AGENDA_SLOT_H_PX = 36
-      const relY  = Math.max(0, clientY - agendaTop)
-      const first = AGENDA_HOURS[0]!
-      const last  = AGENDA_HOURS[AGENDA_HOURS.length - 1]!
-      return Math.max(first, Math.min(last, first + Math.floor(relY / AGENDA_SLOT_H_PX)))
+      const SNAP = 15
+      const relY = Math.max(0, clientY - agendaTop)
+      const rawMin = AGENDA_START_MIN + (relY / AGENDA_SLOT_H_PX) * 60
+      return Math.round(rawMin / SNAP) * SNAP
     }, { clientY: cursorClientY, agendaTop: agendaBox.y })
 
-    console.log(`[BUG 1] cursor at overlay slot for 9am → hourFromClientY computes hour: ${computedHour}`)
-    console.log(`[BUG 1] expected hour: 9, got: ${computedHour}`)
+    console.log(`[BUG 1] cursor near 9am mark → minutesFromClientY: ${computedStartMin}`)
+    console.log(`[BUG 1] expected startMin: 540 (9:00), got: ${computedStartMin}`)
 
     // Synthesize a dragover and inspect the ghost label
     const taskId = await page.locator('[data-testid="unscheduled-task"]').first().getAttribute('data-task-id')
     if (!taskId) throw new Error('no unscheduled task with data-task-id')
 
-    await page.evaluate(({ id, clientY, agendaEl }) => {
+    await page.evaluate(({ id, clientY }) => {
       const target = document.querySelector('[data-testid="timeline-agenda"]')!
       const dt = new DataTransfer()
       dt.setData('text/task-id', id)
@@ -138,13 +135,13 @@ test.describe('bug-agenda-drag-time: time and ghost positioning', () => {
         bubbles: true, cancelable: true, dataTransfer: dt,
         clientX: 100, clientY,
       }))
-    }, { id: taskId, clientY: cursorClientY, agendaEl: null })
+    }, { id: taskId, clientY: cursorClientY })
 
     await page.waitForTimeout(100)
 
     const ghost = page.locator('[data-testid="agenda-drag-ghost"]')
     await expect(ghost).toBeVisible()
-    const ghostText = await ghost.locator('.dn-agenda-ghost-label').textContent()
+    const ghostText = await page.locator('.dn-agenda-ghost-label').textContent()
     console.log(`[BUG 1] ghost label text: "${ghostText}"`)
 
     // Also capture the ghost's position within the overlay
@@ -164,27 +161,25 @@ test.describe('bug-agenda-drag-time: time and ghost positioning', () => {
 
     await page.screenshot({ path: join(artifactsDir, 'bug-agenda-drag-time-ghost-position.png') })
 
-    // Cancel the drag
-    await page.evaluate(() => {
-      const target = document.querySelector('[data-testid="timeline-agenda"]')!
-      target.dispatchEvent(new DragEvent('dragleave', { bubbles: true }))
-    })
-
-    // Report findings
     expect({
       overlayHeight,
       agendaHeight,
       heightsMatch: Math.abs(overlayHeight - agendaHeight) < 2,
-      computedHourForCursorAt9amSlot: computedHour,
-      expectedHour: 9,
+      computedStartMinForCursorAt9amSlot: computedStartMin,
+      expectedStartMin: 540,
       ghostLabel: ghostText?.trim(),
       cursorOffsetFromAgendaTop: Math.round(cursorClientY - agendaBox.y),
       ghostOffsetInOverlay: Math.round(ghostOffsetInOverlay),
     }).toMatchObject({
-      // This will FAIL if the heights differ or the computed hour is wrong,
-      // which is exactly the bug we're diagnosing.
       heightsMatch: true,
-      computedHourForCursorAt9amSlot: 9,
+      computedStartMinForCursorAt9amSlot: 540,
+    })
+    await expect(ghost).toHaveAttribute('data-start-min', '540')
+
+    // Cancel the drag
+    await page.evaluate(() => {
+      const target = document.querySelector('[data-testid="timeline-agenda"]')!
+      target.dispatchEvent(new DragEvent('dragleave', { bubbles: true }))
     })
   })
 
@@ -262,15 +257,13 @@ test.describe('bug-agenda-drag-time: time and ghost positioning', () => {
     }
     console.log(`[BUG 2] overlay grid height: ${overlayHeight}px, real agenda height: ${Math.round(agendaHeight)}px`)
 
-    // Ghost snaps to the TOP of the hour slot. Cursor can be anywhere within the
-    // slot (0–35px below the ghost top). So ghost should be ≤0px above cursor and
-    // at most AGENDA_SLOT_H_PX (36px) above it.
-    const AGENDA_SLOT_H_PX = 36
+    // Ghost snaps to the nearest 15-minute mark. Cursor can be up to ±7.5 minutes
+    // away (half a snap interval) from the ghost top → at most slotH/8 of vertical
+    // error once the overlay has expanded to fill the agenda.
     for (const r of results) {
-      // Ghost should be AT or ABOVE the cursor (diff ≤ 0)
-      expect(r.diff, `ghost should be at or above cursor at ${Math.round(r.cursorFraction * 100)}%`).toBeLessThanOrEqual(2) // 2px tolerance for rounding
-      // Ghost should be within one slot height above cursor
-      expect(r.diff, `ghost should be within one slot height of cursor at ${Math.round(r.cursorFraction * 100)}%`).toBeGreaterThanOrEqual(-AGENDA_SLOT_H_PX)
+      const slotH = agendaBox.height / 16
+      const maxDiff = slotH / 4 + 2 // one full 15-min step in expanded px + rounding
+      expect(Math.abs(r.diff), `ghost within one 15-min step of cursor at ${Math.round(r.cursorFraction * 100)}%`).toBeLessThanOrEqual(maxDiff)
     }
   })
 })

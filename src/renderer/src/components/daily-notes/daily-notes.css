@@ -585,7 +585,7 @@
   border-radius: 10px;
   background: var(--bg-panel-raised);
   border: 1px solid var(--border-subtle);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 .dn-tag-chip-remove {
@@ -716,7 +716,7 @@
   padding: 2px 8px 16px;
   flex: 1;
   /* Must be at least AGENDA_HOURS.length * AGENDA_SLOT_H_PX (16 × 36 = 576px) so the
-     drag overlay grid aligns with hourFromClientY's AGENDA_SLOT_H_PX calculation. */
+     drag overlay grid aligns with minutesFromClientY's AGENDA_SLOT_H_PX calculation. */
   min-height: calc(16 * 36px);
   position: relative; /* anchor for the absolute-positioned drag overlay */
 }
@@ -821,14 +821,14 @@
 .dn-agenda-duration {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
 .dn-agenda-duration {
   font-family: var(--font-ui);
   font-size: 11px;
-  color: var(--text-disabled);
+  color: var(--text-secondary);
 }
 .dn-agenda-duration--hi-pri {
   color: #e5484d;
@@ -992,9 +992,20 @@
   background: rgba(91, 142, 240, .04);
   border-radius: var(--r-sm, 4px);
 }
+/* Hide list chrome under the overlay — it fights the time grid for attention. */
+.dn-agenda--drag-over .dn-agenda-empty,
+.dn-agenda--drag-over .dn-agenda-entry-wrap {
+  visibility: hidden;
+}
 
-/* ── Time grid overlay (appears while dragging into the agenda) ── */
+/* ── Time grid overlay (drag) — modeled on Google Calendar day view:
+   - Hour rail stays crisp and high-contrast
+   - Dim only the content column (lightly)
+   - Active drop time lives IN the rail + a thin snap line
+   - Ghost is a translucent band; its range label is small INSIDE the band,
+     never an opaque chip floating over the grid */
 .dn-agenda-overlay {
+  --dn-agenda-rail-w: 40px;
   position: absolute;
   left: 0;
   right: 0;
@@ -1003,66 +1014,134 @@
   display: flex;
   flex-direction: column;
   pointer-events: none;
-  /* Semi-opaque so the list behind is hidden and tasks show at correct time positions */
-  background: color-mix(in srgb, var(--bg-sidebar) 92%, transparent);
+  background: transparent;
+}
+.dn-agenda-overlay::before {
+  content: '';
+  position: absolute;
+  left: var(--dn-agenda-rail-w);
+  right: 0;
+  top: 0;
+  bottom: 0;
+  /* Light veil — grid lines must stay readable under the ghost. */
+  background: color-mix(in srgb, var(--bg-sidebar) 45%, transparent);
+  z-index: 0;
 }
 .dn-agenda-overlay-slot {
+  position: relative;
+  z-index: 1;
   flex: 0 0 36px;
-  display: flex;
-  align-items: center;
-  border-top: 1px solid var(--border-subtle, rgba(255,255,255,.06));
+  box-sizing: border-box;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
 }
 .dn-agenda-overlay-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 20;
+  transform: translateY(-50%);
   font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-tertiary);
-  width: 28px;
-  flex-shrink: 0;
-  padding-left: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-secondary);
+  width: var(--dn-agenda-rail-w);
+  padding: 2px 6px 2px 4px;
+  box-sizing: border-box;
+  background: var(--bg-sidebar);
+  border-radius: 3px;
 }
 .dn-agenda-overlay-line {
-  flex: 1;
-  height: 1px;
-  background: var(--border-subtle, rgba(255,255,255,.06));
+  display: none;
 }
-.dn-agenda-ghost {
+
+/* Snap guide: precise time in the rail + hairline across the content column. */
+.dn-agenda-snap-guide {
   position: absolute;
-  left: 32px;
-  right: 4px;
-  height: 36px;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border: 1.5px dashed var(--accent);
-  border-radius: 4px;
-  z-index: 12;
+  left: 0;
+  right: 0;
+  z-index: 14;
+  height: 0;
   display: flex;
   align-items: center;
-  padding: 0 8px;
-  transition: top 70ms ease;
+  pointer-events: none;
 }
+.dn-agenda-snap-rail {
+  flex: 0 0 var(--dn-agenda-rail-w);
+  box-sizing: border-box;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 4px;
+  background: var(--bg-sidebar);
+  border-radius: 4px;
+  z-index: 21;
+}
+.dn-agenda-snap-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+}
+/* Full range sits under the start time, still in the rail — not on the grid. */
 .dn-agenda-ghost-label {
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--accent);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-secondary);
   white-space: nowrap;
+  position: static;
+  transform: none;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  text-shadow: none;
+}
+.dn-agenda-snap-line {
+  flex: 1;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0.9;
+  border-radius: 1px;
+}
+
+.dn-agenda-ghost {
+  position: absolute;
+  left: var(--dn-agenda-rail-w);
+  right: 4px;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-top-width: 2px;
+  border-top-color: var(--accent);
+  border-radius: 3px;
+  z-index: 12;
+  /* Empty band — duration is the height; time lives in the rail. */
+  padding: 0;
+  transition: top 70ms ease;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .dn-agenda-overlay-task {
   position: absolute;
-  left: 32px;
+  left: var(--dn-agenda-rail-w);
   right: 4px;
-  background: var(--bg-panel-raised);
-  border-left: 2px solid var(--border-default);
+  background: color-mix(in srgb, var(--bg-panel-raised) 40%, transparent);
+  border-left: 2px solid var(--border-subtle);
   border-radius: 3px;
   padding: 2px 6px;
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   display: flex;
   align-items: center;
   z-index: 11;
+  opacity: 0.55;
 }
 
 /* ---- Pending drop row ---- */
@@ -1281,31 +1360,43 @@
   position: absolute;
   left: 0;
   right: 0;
-  display: flex;
-  align-items: center;
   height: 0;
   overflow: visible;
+  pointer-events: none;
+  z-index: 4; /* Above task blocks so hour labels stay readable while dragging. */
 }
 .dn-hour-label {
-  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* Optical center of the label sits on the hour mark (same Y as the line). */
+  transform: translateY(-50%);
+  width: 36px;
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
+  padding: 2px 0;
+  background: var(--bg-sidebar);
+  box-sizing: border-box;
 }
 /* Draft slot time label — same typography as .dn-hour-label (not .dn-tb-range). */
 .dn-draft-range {
   flex-shrink: 0;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   letter-spacing: 0.01em;
   line-height: 1;
   font-weight: 400;
 }
 .dn-hour-line {
-  flex: 1;
+  position: absolute;
+  left: 36px;
+  right: 0;
+  top: 0;
   height: 1px;
+  transform: translateY(-50%);
   background: var(--border-subtle);
 }
 
@@ -1324,16 +1415,53 @@
   overflow: hidden;
   user-select: none;
 }
+.dn-tblock.dn-tblock-external-ghost {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+  padding: 4px 8px;
+  display: flex;
+  align-items: flex-start;
+}
+.dn-tblock.dn-tblock-external-ghost .dn-tblock-range {
+  position: static;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--accent);
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  text-shadow:
+    0 0 4px var(--bg-sidebar),
+    0 0 8px var(--bg-sidebar);
+  white-space: nowrap;
+}
 .dn-tblock.dragging {
   cursor: grabbing;
   z-index: 5;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  opacity: 0.88;
 }
-.dn-tblock.dn-tblock-external-ghost {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border: 1.5px dashed var(--accent);
+/* Live range while dragging — inside the block, not a chip over the rail. */
+.dn-tblock.dragging::after {
+  content: attr(data-start) "–" attr(data-end);
+  position: absolute;
+  left: 8px;
+  top: 4px;
   z-index: 6;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.2;
+  color: var(--accent);
+  text-shadow:
+    0 0 4px var(--bg-sidebar),
+    0 0 8px var(--bg-sidebar);
   pointer-events: none;
+  white-space: nowrap;
 }
 .dn-tblock.renaming {
   overflow: visible;
@@ -1396,7 +1524,7 @@
 .dn-tblock .dn-tb-range {
   font-family: var(--font-mono);
   font-size: 12.5px;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   letter-spacing: 0.01em;
 }
 .dn-tblock .dn-tb-body {
@@ -1457,7 +1585,7 @@
   gap: 3px;
   margin-left: 6px;
   font-size: inherit;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 .dn-inline-tag:hover .dn-tag-chip-remove {
   opacity: 1;

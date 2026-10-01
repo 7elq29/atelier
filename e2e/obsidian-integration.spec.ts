@@ -934,8 +934,8 @@ type: daily
     // y=50px from the top of the (unscrolled) grid is well clear of every
     // seeded block (the earliest, Standup, starts at 09:00 -> top=180px).
     // Per timeline-scale.ts: TIMELINE_START_HOUR=6 (360min), HOUR_HEIGHT_PX=60
-    // (1px/min), draft creation snaps to half hours -> snapToHalfHour(360 + 50)
-    // = snapToHalfHour(410) = 420min = 07:00. Default duration is 30min -> end = 07:30.
+    // (1px/min), draft creation snaps to 15-min slots -> snapMinutes(360 + 50)
+    // = snapMinutes(410) = 405min = 06:45. Default duration is 30min -> end = 07:15.
     await timelineBody.click({ button: 'right', position: { x: 40, y: 50 } })
     const input = gridPage.locator('[data-testid="timeline-new-task-input"]')
     await expect(input).toBeVisible()
@@ -949,7 +949,7 @@ type: daily
     appendSyncLog('54a: after pixel-Y right-click creation', content)
     const line = content.split('\n').find((l) => l.includes('Pixel-Y right-click task'))
     expect(line).toBeTruthy()
-    expect(line).toMatch(/07:00[–-]07:30/)
+    expect(line).toMatch(/06:45[–-]07:15/)
   })
 
   test('drag-moving a scheduled block via HTML5 drop on the timeline shifts its on-disk time-block, duration preserved', async () => {
