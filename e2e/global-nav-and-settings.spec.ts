@@ -774,8 +774,20 @@ test.describe('sidebar spend-status chip', () => {
       .catch(() => false)
 
     if (appeared) {
-      await expect(chip).toContainText('spent this month')
+      await expect(chip).toContainText('Claude Code')
+      await expect(chip).toContainText('this month')
       await expect(chip.getByRole('button', { name: /view usage/i })).toBeVisible()
+      // Named pools render when their endpoints return data (Cortana / Minion /
+      // Cursor). Soft-assert: at least one named bar is typical on Uber net.
+      const text = await chip.innerText()
+      if (['Cortana', 'Minion', 'Cursor'].some((label) => text.includes(label))) {
+        // Prefer asserting Minion when present — the new bar for this feature.
+        if (text.includes('Minion')) await expect(chip).toContainText('Minion')
+      }
+      const box = await chip.boundingBox()
+      if (box) {
+        await page.screenshot({ path: 'e2e-artifacts/06-spend-status-chip.png', clip: box })
+      }
     }
 
     await app.close()

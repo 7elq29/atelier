@@ -224,23 +224,42 @@ async function fetchSpendStatus(email: string, forceRefresh = false): Promise<Re
   })
 }
 
-/** Fetch Cortana's separate monthly spend from genai-api. Silently returns null on failure. */
-async function fetchCortanaSpend(email: string): Promise<HarnessSpendBreakdown | null> {
+/**
+ * Named per-product spend pools (Cortana / Minion / Cursor) live beside the
+ * harness-pool endpoint and share the same `{ spend_usd, cap_usd }` shape.
+ * 204 / non-OK / network errors silently omit that bar.
+ */
+const NAMED_SPEND_POOLS: ReadonlyArray<{ harness: string; path: string }> = [
+  { harness: 'Cortana', path: 'cortana' },
+  { harness: 'Minion', path: 'minion' },
+  { harness: 'Cursor', path: 'cursor' }
+]
+
+async function fetchNamedPoolSpend(
+  email: string,
+  harness: string,
+  path: string
+): Promise<HarnessSpendBreakdown | null> {
   try {
     const token = await getGenAiToken()
     const resp = await fetch(
-      `https://genai-api.uberinternal.com/v1/spendstatus/cortana/${encodeURIComponent(email)}`,
+      `https://genai-api.uberinternal.com/v1/spendstatus/${path}/${encodeURIComponent(email)}`,
       {
-        headers: { Authorization: `Bearer ${token}`, 'rpc-caller': 'atelier', 'rpc-service': 'genai-api', Accept: 'application/json' },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'rpc-caller': 'atelier',
+          'rpc-service': 'genai-api',
+          Accept: 'application/json'
+        },
         signal: AbortSignal.timeout(SPEND_STATUS_TIMEOUT_MS)
       }
     )
     if (!resp.ok) return null
-    const data = await resp.json() as Record<string, unknown>
+    const data = (await resp.json()) as Record<string, unknown>
     const spent = typeof data.spend_usd === 'number' ? data.spend_usd : null
     if (spent == null) return null
     return {
-      harness: 'Cortana',
+      harness,
       spent,
       cap: typeof data.cap_usd === 'number' ? data.cap_usd : null
     }
@@ -271,15 +290,15 @@ export async function getSpendStatus(): Promise<SpendStatus> {
     throw new Error(`spendstatus exited ${response.status}: ${body.slice(0, 200)}`)
   }
 
-  const [status, cortana] = await Promise.all([
+  const [status, ...namedPools] = await Promise.all([
     parseSpendStatusResponse(await response.json(), email),
-    fetchCortanaSpend(email)
+    ...NAMED_SPEND_POOLS.map((pool) => fetchNamedPoolSpend(email, pool.harness, pool.path))
   ])
 
-  if (cortana) {
-    status.harnesses.push(cortana)
-    status.harnesses.sort((a, b) => b.spent - a.spent)
+  for (const entry of namedPools) {
+    if (entry) status.harnesses.push(entry)
   }
+  status.harnesses.sort((a, b) => b.spent - a.spent)
 
   return status
 }
