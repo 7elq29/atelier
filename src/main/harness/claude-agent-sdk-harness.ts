@@ -115,6 +115,11 @@ class UserMessageQueue implements AsyncIterable<SDKUserMessage> {
   private waiters: Array<(result: IteratorResult<SDKUserMessage>) => void> = []
   private closed = false
 
+  /** True after `close()` — `push()` becomes a silent no-op. */
+  get isClosed(): boolean {
+    return this.closed
+  }
+
   push(message: SDKUserMessage): void {
     if (this.closed) return
     const waiter = this.waiters.shift()
@@ -491,8 +496,18 @@ export class ClaudeAgentSdkHarness implements HarnessDriver {
     active.queue.push(sdkMessage)
   }
 
+  /**
+   * True only while the session can still accept `streamInput()`. After
+   * `interrupt()` the map entry can linger until `pump()`'s `finally` runs,
+   * but the input queue is already closed — reporting active in that window
+   * made `dispatchTurnToHarness` take the live-injection path and silently
+   * drop the drained queue message (fix-message-queue-interrupt-drain).
+   */
   isActive(sessionId: string): boolean {
-    return this.sessions.has(sessionId)
+    const active = this.sessions.get(sessionId)
+    if (!active) return false
+    if (active.interruptRequested || active.queue.isClosed) return false
+    return true
   }
 
   async respondToPrompt(sessionId: string, requestId: string, response: PromptResponse): Promise<void> {

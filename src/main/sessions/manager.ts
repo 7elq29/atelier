@@ -3096,6 +3096,16 @@ export class SessionManager {
         // Drain the turn queue before signalling idle — if a queued message
         // is dispatched here, it sets busy=true again and the renderer never
         // sees a brief idle flash between turns.
+        //
+        // fix-message-queue-interrupt-drain: when Stop already set
+        // `live.interruptRequested`, the harness still emits a normal
+        // `result` and then an `interrupted` event. Draining here would
+        // race the closed input queue (isActive still true until pump
+        // finally) and then `interrupted` would clear the new inflightId.
+        // Let `case 'interrupted'` own the drain in that path.
+        if (live.interruptRequested) {
+          return
+        }
         const q = this.turnQueues.get(sessionId)
         if (q) q.inflightId = null
         const drained = this.drainTurnQueue(sessionId)

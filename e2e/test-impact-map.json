@@ -9,6 +9,19 @@
   ],
   "rules": [
     {
+      "id": "message-queue-interrupt-drain",
+      "paths": [
+        "src/main/sessions/manager.ts",
+        "src/main/harness/claude-agent-sdk-harness.ts"
+      ],
+      "changedLines": "fix-message-queue-interrupt-drain|turnQueue: draining|interruptRequested|isClosed|isActive",
+      "targets": [
+        {
+          "file": "e2e/message-queue-interrupt-drain.spec.ts"
+        }
+      ]
+    },
+    {
       "id": "session-alert-dot",
       "paths": [
         "src/renderer/src/App.tsx",
