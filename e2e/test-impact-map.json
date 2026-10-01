@@ -541,6 +541,21 @@
       ]
     },
     {
+      "id": "cortana-poll-reattach",
+      "paths": [
+        "src/main/harness/cortana-harness.ts",
+        "src/main/sessions/manager.ts",
+        "src/main/harness/types.ts"
+      ],
+      "changedLines": "reattach|findInFlightMessageId|resolveCortanaPollReply|already polling|final_response|pollForMessage|cortana-poll-reattach|currentMessageId|Same-process|execution_events|tryReattach|completeWith|syncCompletedTurn|syncing completed turn",
+      "targets": [
+        {
+          "file": "e2e/terminal-pty.spec.ts",
+          "grep": "reattach|POLL-REATTACH|cortana: relaunch mid-turn"
+        }
+      ]
+    },
+    {
       "id": "remote-tmux-lifecycle",
       "paths": [
         "src/main/panels/pty.ts",

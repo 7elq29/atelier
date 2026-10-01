@@ -676,6 +676,13 @@ export interface HarnessDriver {
   isActive(sessionId: string): boolean
 
   /**
+   * Optional (Cortana): after resume, if the gateway finished while Atelier was
+   * dead and the local transcript still ends on a user message, emit that
+   * assistant reply so the UI is not stuck pending with no text.
+   */
+  syncCompletedTurn?(sessionId: string): Promise<void>
+
+  /**
    * Returns the current context window usage for a live session via the SDK's
    * own `getContextUsage()` query — call this after a `result` event to get
    * `totalTokens` (all in-context categories summed) and `contextWindow`

@@ -485,4 +485,127 @@ test.describe('terminal-pty', () => {
       await app.close().catch(() => undefined)
     }
   })
+
+  /**
+   * After relaunch, in-memory Cortana polls are gone. Selecting the session
+   * must reattach to the gateway turn (or finish cleanly). A mid-turn follow-up
+   * must not leave Atelier pending on a message_id that never gets an assistant
+   * twin (Features/cortana-poll-reattach).
+   */
+  test('cortana: relaunch mid-turn reattaches poll; follow-up does not hang', async () => {
+    test.setTimeout(240_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = join(artifactsDir, 'cortana-reattach-userdata')
+    // Fresh dir each run
+    execFileSync('rm', ['-rf', userDataDir])
+    mkdirSync(userDataDir, { recursive: true })
+    seedSkipOnboarding(userDataDir)
+    let app: ElectronApplication | undefined
+    let page: Page
+
+    try {
+      ;({ app, page } = await launchApp(userDataDir))
+      await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 20_000 })
+
+      await page.getByTestId('new-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toBeVisible()
+      await page.getByTestId('mode-cortana').click()
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+      await expect(page.getByTestId('cortana-tag')).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 20_000 })
+
+      const marker = 'POLL-REATTACH-DONE'
+      await page.getByTestId('composer-input').fill(
+        `Do a brief non-trivial tool investigation (about 30s), then reply with exactly the token ${marker} on its own line.`
+      )
+      await page.getByTestId('composer-input').press('Enter')
+      await expect(page.getByTestId('stop-button')).toBeVisible({ timeout: 60_000 })
+
+      const sessionId = await page
+        .locator('[data-testid="session-row"][data-active="true"]')
+        .getAttribute('data-session-id')
+      expect(sessionId).toBeTruthy()
+
+      // streamInput voids sendAndPoll — stop can show before the gateway POST.
+      // Wait until the poll is actually attached so relaunch exercises reattach.
+      const logPath = join(userDataDir, 'logs', 'main.log')
+      await expect
+        .poll(() => {
+          try {
+            const log = readFileSync(logPath, 'utf8')
+            return (
+              log.includes('cortanaHarness: message sent, polling snapshot') ||
+              log.includes('cortanaHarness: inline response received')
+            )
+          } catch {
+            return false
+          }
+        }, { timeout: 60_000 })
+        .toBe(true)
+
+      await app.close()
+      app = undefined
+
+      ;({ app, page } = await launchApp(userDataDir))
+      await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)).toBeVisible({
+        timeout: 20_000
+      })
+      await page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`).click()
+
+      // Prefer explicit reconnect so harness resume/reattach/sync always runs.
+      const gate = page.getByTestId('session-reconnect-button')
+      await expect
+        .poll(async () => {
+          if (await gate.isVisible().catch(() => false)) return 'gate'
+          if (await page.getByTestId('workspace-tool-rail').isVisible().catch(() => false)) return 'rail'
+          return 'wait'
+        }, { timeout: 45_000 })
+        .not.toBe('wait')
+      if (await gate.isVisible().catch(() => false)) {
+        await gate.click()
+      }
+      await expect(page.getByTestId('workspace-tool-rail')).toBeVisible({ timeout: 60_000 })
+      await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 20_000 })
+
+      const stopVisible = await page.getByTestId('stop-button').isVisible().catch(() => false)
+      if (stopVisible) {
+        await page.getByTestId('composer-input').fill("what's the progress and blocker")
+        await page.getByTestId('composer-input').press('Enter')
+      }
+
+      await expect
+        .poll(async () => page.getByTestId('stop-button').count(), { timeout: 150_000 })
+        .toBe(0)
+
+      await expect
+        .poll(async () => {
+          const msgs = page.locator('[data-testid="transcript-message"]')
+          const n = await msgs.count()
+          const chunks: string[] = []
+          for (let i = 0; i < n; i++) {
+            const role = await msgs.nth(i).getAttribute('data-role')
+            const text = (await msgs.nth(i).textContent()) ?? ''
+            chunks.push(`${role}:${text}`)
+          }
+          return chunks.join('\n')
+        }, { timeout: 90_000 })
+        .toMatch(/assistant:.+/i)
+
+      await page.screenshot({ path: join(artifactsDir, 'cortana-poll-reattach-after.png') })
+
+      const log = readFileSync(logPath, 'utf8')
+      const reattached = log.includes('reattaching poll to in-flight turn')
+      const synced = log.includes('syncing completed turn after resume')
+      const completedViaOtherId = log.includes('completing via final_response under different message_id')
+      const followUpWithoutNewPoll = log.includes('already polling; posting follow-up without new poll')
+      expect(
+        reattached || synced || completedViaOtherId || followUpWithoutNewPoll,
+        `expected reattach/sync/follow-up fix log; reattached=${reattached} synced=${synced} otherId=${completedViaOtherId} followUp=${followUpWithoutNewPoll}`
+      ).toBe(true)
+    } finally {
+      await app?.close().catch(() => undefined)
+    }
+  })
 })

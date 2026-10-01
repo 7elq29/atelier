@@ -1454,7 +1454,15 @@ export class SessionManager {
   ): Promise<HarnessSession> {
     // Cortana: REST API — no subprocess resume needed, just a fresh event channel.
     if (session.mode === 'cortana') {
-      return this.cortanaHarness.resume(session.id)
+      const harnessSession = await this.cortanaHarness.resume(session.id)
+      // If we died mid-turn and the gateway finished offline, local transcript
+      // still ends on a user message — pull that assistant reply in once.
+      const messages = this.store.listMessages(session.id)
+      const last = messages[messages.length - 1]
+      if (last?.role === 'user') {
+        await this.cortanaHarness.syncCompletedTurn?.(session.id)
+      }
+      return harnessSession
     }
     if (session.mode === 'minion') {
       return this.minionHarness.resume(session.id)
