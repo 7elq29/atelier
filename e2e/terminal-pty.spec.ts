@@ -4,7 +4,8 @@
  */
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import { seedSkipOnboarding } from './e2e-config'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -39,23 +40,10 @@ test.describe('terminal-pty', () => {
 
       await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 15_000 })
       const term = page.getByTestId('terminal-body')
+      const rows = term.locator('.xterm-rows')
       await term.click()
-
-      const spawnErr = await page.evaluate(async () => {
-        const id = 'e2e-terminal-pty-probe'
-        try {
-          await window.atelier.ptySpawn({ id, cwd: '/tmp', hostname: null, cols: 80, rows: 24 })
-          await window.atelier.ptyKill(id)
-          return null
-        } catch (e) {
-          return String(e)
-        }
-      })
-      if (spawnErr) {
-        const logPath = await page.evaluate(() => window.atelier.getLogFilePath())
-        writeFileSync(join(artifactsDir, 'terminal-pty-spawn-error.txt'), `${spawnErr}\nlog: ${logPath}\n`)
-      }
-      expect(spawnErr, 'ptySpawn IPC should succeed (see e2e-artifacts/terminal-pty-spawn-error.txt)').toBeNull()
+      await expect.poll(async () => rows.textContent(), { timeout: 20_000 }).toContain('%')
+      await page.waitForTimeout(500)
 
       await page.keyboard.type('echo hello-from-terminal-mode')
       await page.keyboard.press('Enter')
@@ -221,6 +209,122 @@ test.describe('terminal-pty', () => {
           clip: { x: box.x, y: box.y + box.height - 70, width: Math.min(box.width, 700), height: 70 }
         })
       }
+    } finally {
+      await app.close().catch(() => undefined)
+    }
+  })
+
+  /**
+   * Dead-terminal recovery: when the shell exits, the keep-alive TerminalPanel
+   * must respawn (create a new tmux session if the old one is gone) instead of
+   * silently swallowing keystrokes.
+   */
+  test('terminal: auto-recovers after shell exit instead of staying dead', async () => {
+    test.setTimeout(90_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-terminal-recover-'))
+    seedSkipOnboarding(userDataDir)
+    const { app, page } = await launchApp(userDataDir)
+
+    try {
+      await page.getByTestId('new-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toBeVisible()
+      await page.getByTestId('project-path').fill(projectRoot)
+      await page.getByTestId('mode-terminal').click()
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+
+      await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 15_000 })
+      const term = page.getByTestId('terminal-body')
+      const rows = term.locator('.xterm-rows')
+      await term.click()
+      await expect.poll(async () => rows.textContent(), { timeout: 20_000 }).toContain('%')
+      await page.waitForTimeout(500)
+
+      await page.keyboard.type('exit')
+      await page.keyboard.press('Enter')
+
+      // Overlay may flash briefly; wait until typing works again on a fresh shell.
+      await expect
+        .poll(async () => page.getByTestId('terminal-reconnect-overlay').count(), { timeout: 15_000 })
+        .toBe(0)
+
+      await term.click()
+      await page.waitForTimeout(800)
+      const marker = 'RECOVERED-SHELL-ALIVE'
+      await page.keyboard.type(`echo ${marker}`)
+      await page.keyboard.press('Enter')
+      await expect.poll(async () => rows.textContent(), { timeout: 15_000 }).toContain(marker)
+      await page.screenshot({ path: join(artifactsDir, 'terminal-recover-after-exit.png') })
+    } finally {
+      await app.close().catch(() => undefined)
+    }
+  })
+
+  /**
+   * Close must permanently kill the local atelier-* tmux session (not only detach).
+   */
+  test('terminal: closing a session kills its local tmux session', async () => {
+    test.setTimeout(90_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-terminal-tmux-kill-'))
+    seedSkipOnboarding(userDataDir)
+    const { app, page } = await launchApp(userDataDir)
+
+    try {
+      await page.getByTestId('new-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toBeVisible()
+      await page.getByTestId('project-path').fill(projectRoot)
+      await page.getByTestId('mode-terminal').click()
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
+      await expect(page.getByTestId('terminal-only-session')).toBeVisible({ timeout: 15_000 })
+
+      const sessionId = await page
+        .locator('[data-testid="session-row"][data-active="true"]')
+        .getAttribute('data-session-id')
+      expect(sessionId).toBeTruthy()
+      const prefix = `atelier-${sessionId!.slice(0, 8)}`
+
+      await expect
+        .poll(
+          () => {
+            try {
+              const out = execFileSync('tmux', ['list-sessions', '-F', '#{session_name}'], {
+                encoding: 'utf8',
+                stdio: ['ignore', 'pipe', 'ignore']
+              })
+              return out.split('\n').some((n) => n.startsWith(prefix))
+            } catch {
+              return false
+            }
+          },
+          { timeout: 15_000 }
+        )
+        .toBe(true)
+
+      await page
+        .locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`)
+        .getByTestId('session-menu-button')
+        .click()
+      await page.getByTestId('menu-close').click()
+
+      await expect
+        .poll(
+          () => {
+            try {
+              const out = execFileSync('tmux', ['list-sessions', '-F', '#{session_name}'], {
+                encoding: 'utf8',
+                stdio: ['ignore', 'pipe', 'ignore']
+              })
+              return out.split('\n').some((n) => n.startsWith(prefix))
+            } catch {
+              return false
+            }
+          },
+          { timeout: 15_000 }
+        )
+        .toBe(false)
     } finally {
       await app.close().catch(() => undefined)
     }

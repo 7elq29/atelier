@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, type ForwardedRef } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ForwardedRef } from 'react'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { useConfig } from '../../hooks/useConfig'
@@ -39,15 +39,20 @@ function readTheme(el: Element): ITheme {
  * `node-pty` process keyed by `ptyId` (see main/panels/pty.ts) and streams
  * its actual output through a real `@xterm/xterm` instance, which owns all
  * ANSI/VT100 parsing, cursor/erase semantics, and key encoding — this
- * component only wires it to the pty IPC bridge. Used both for creation-time
- * "Terminal-only" sessions (mounted as the session's whole main view) and
- * the companion terminal drawer — the two never share a pty id, so they're
- * genuinely independent shells.
+ * component only wires it to the pty IPC bridge. Used for creation-time
+ * "Terminal-only" sessions and the session Terminal tab.
+ *
+ * If the backing client exits while this panel stays mounted (keep-alive),
+ * we auto-respawn once (attach existing tmux, or create a new one if gone).
+ * On failure the panel shows an explicit reconnect control instead of a
+ * silent dead shell that swallows keystrokes.
  */
 export interface TerminalPanelHandle {
   injectCommand: (command: string) => void
   focus: () => void
 }
+
+type ConnState = 'connecting' | 'live' | 'reconnecting' | 'disconnected'
 
 const TerminalPanel = forwardRef(function TerminalPanel(
   {
@@ -67,10 +72,59 @@ const TerminalPanel = forwardRef(function TerminalPanel(
   const termRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const { config } = useConfig()
+  const [connState, setConnState] = useState<ConnState>('connecting')
+  const connStateRef = useRef<ConnState>('connecting')
+  const disposedRef = useRef(false)
+  const reconnectingRef = useRef(false)
+  const spawnOptsRef = useRef({ ptyId, cwd, hostname })
+  spawnOptsRef.current = { ptyId, cwd, hostname }
+
+  const setConn = useCallback((next: ConnState) => {
+    connStateRef.current = next
+    setConnState(next)
+  }, [])
+
+  const spawnPty = useCallback(async (): Promise<void> => {
+    const term = termRef.current
+    const fitAddon = fitAddonRef.current
+    const { ptyId: id, cwd: spawnCwd, hostname: spawnHost } = spawnOptsRef.current
+    const dims = fitAddon?.proposeDimensions()
+    const cols = dims?.cols || term?.cols || 100
+    const rows = dims?.rows || term?.rows || 30
+    await window.atelier.ptySpawn({
+      id,
+      cwd: spawnCwd,
+      hostname: spawnHost ?? null,
+      cols,
+      rows
+    })
+    if (term) void window.atelier.ptyResize(id, term.cols, term.rows)
+  }, [])
+
+  const reconnect = useCallback(async (): Promise<void> => {
+    if (disposedRef.current || reconnectingRef.current) return
+    reconnectingRef.current = true
+    setConn('reconnecting')
+    try {
+      await spawnPty()
+      if (disposedRef.current) return
+      setConn('live')
+      termRef.current?.focus()
+    } catch {
+      if (!disposedRef.current) setConn('disconnected')
+    } finally {
+      reconnectingRef.current = false
+    }
+  }, [setConn, spawnPty])
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
+    disposedRef.current = false
+    reconnectingRef.current = false
+    // Stay non-live until the first spawn succeeds so keystrokes are not
+    // silently dropped into a missing pty (write no-ops when no entry).
+    setConn('connecting')
 
     const term = new Terminal({
       fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim(),
@@ -90,24 +144,36 @@ const TerminalPanel = forwardRef(function TerminalPanel(
     termRef.current = term
     fitAddonRef.current = fitAddon
 
-    const dims = fitAddon.proposeDimensions()
-    const cols = dims?.cols || 100
-    const rows = dims?.rows || 30
-    void window.atelier.ptySpawn({ id: ptyId, cwd, hostname: hostname ?? null, cols, rows })
+    void spawnPty()
+      .then(() => {
+        if (disposedRef.current) return
+        setConn('live')
+        if (active) term.focus()
+      })
+      .catch(() => {
+        if (!disposedRef.current) setConn('disconnected')
+      })
 
     const dataDisposable = term.onData((data) => {
+      if (connStateRef.current !== 'live') return
       void window.atelier.ptyWrite(ptyId, data)
     })
-    const unsub = window.atelier.onPtyData(({ id, data }) => {
+    const unsubData = window.atelier.onPtyData(({ id, data }) => {
       if (id !== ptyId) return
       term.write(data)
+    })
+    const unsubExit = window.atelier.onPtyExit(({ id }) => {
+      if (id !== ptyId || disposedRef.current) return
+      void reconnect()
     })
 
     fitAddon.fit()
     void window.atelier.ptyResize(ptyId, term.cols, term.rows)
 
     return () => {
-      unsub()
+      disposedRef.current = true
+      unsubExit()
+      unsubData()
       dataDisposable.dispose()
       term.dispose()
       termRef.current = null
@@ -141,7 +207,7 @@ const TerminalPanel = forwardRef(function TerminalPanel(
       void window.atelier.ptyResize(ptyId, term.cols, term.rows)
       return
     }
-    term.focus()
+    if (connStateRef.current === 'live') term.focus()
     fitAddon.fit()
     void window.atelier.ptyResize(ptyId, term.cols, term.rows)
   }, [active, ptyId])
@@ -174,22 +240,41 @@ const TerminalPanel = forwardRef(function TerminalPanel(
   useImperativeHandle(ref, () => ({
     injectCommand(command: string) {
       const term = termRef.current
-      if (!term) return
+      if (!term || connStateRef.current !== 'live') return
       term.paste(command)
       term.focus()
     },
     focus() {
-      termRef.current?.focus()
+      if (connStateRef.current === 'live') termRef.current?.focus()
     }
   }))
 
   return (
-    <div
-      ref={containerRef}
-      className="term-body"
-      data-hint-exclude-root=""
-      data-testid={active ? 'terminal-body' : undefined}
-    />
+    <div className="term-body-wrap" data-testid={active ? 'terminal-body-wrap' : undefined}>
+      <div
+        ref={containerRef}
+        className="term-body"
+        data-hint-exclude-root=""
+        data-testid={active ? 'terminal-body' : undefined}
+      />
+      {connState === 'reconnecting' || connState === 'disconnected' ? (
+        <div className="term-reconnect-overlay" data-testid="terminal-reconnect-overlay">
+          <span className="term-reconnect-message">
+            {connState === 'reconnecting' ? 'Reconnecting…' : 'Terminal disconnected'}
+          </span>
+          {connState === 'disconnected' ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              data-testid="terminal-reconnect-button"
+              onClick={() => void reconnect()}
+            >
+              Reconnect
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   )
 })
 

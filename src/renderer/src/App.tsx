@@ -158,7 +158,7 @@ function nextTerminalSuggestedName(sessions: SessionRecord[], projectPath: strin
 }
 
 function shellHostForPty(ptyId: string, hosts: Record<string, string | null>): string | null {
-  const sessionId = ptyId.replace(/:tab-terminal$/, '').replace(/:companion$/, '')
+  const sessionId = ptyId.replace(/:tab-terminal$/, '')
   return hosts[sessionId] ?? null
 }
 
@@ -1101,7 +1101,7 @@ const allSessions = useMemo(
   }, [config.sidebarCollapsed, sessions.activeSessions, sessions.statuses, sessions.staleSessionIds, promptDotsBySession])
 
   const evictSessionRendererState = useCallback(
-    (id: string) => {
+    (id: string, hostname?: string | null) => {
       sessionWorkspace.evictSession(id)
       sessionBookmarks.evict(id)
       setModelSelectionBySession((prev) => {
@@ -1136,9 +1136,10 @@ const allSessions = useMemo(
         return next
       })
       void window.atelier.ptyKill(id)
-      void window.atelier.ptyKillTmuxSession(id)
-      void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`)
-      void window.atelier.ptyKillTmuxSession(`${id}:companion`)
+      void window.atelier.ptyKill(`${id}:tab-terminal`)
+      // Permanent tmux kill (local or remote). Hostname required for remote hosts.
+      void window.atelier.ptyKillTmuxSession(id, hostname)
+      void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`, hostname)
       setAliveChatComposers((prev) => {
         if (!prev.has(id)) return prev
         const next = new Set(prev)
@@ -1168,19 +1169,21 @@ const allSessions = useMemo(
   const performCloseSession = useCallback(
     (id: string) => {
       if (activeSessionId === id) setActiveSessionId(null)
-      evictSessionRendererState(id)
+      const hostname = allSessions.find((s) => s.id === id)?.hostname ?? null
+      evictSessionRendererState(id, hostname)
       void sessions.closeSession(id)
     },
-    [activeSessionId, evictSessionRendererState, sessions]
+    [activeSessionId, allSessions, evictSessionRendererState, sessions]
   )
 
   const performDeleteSession = useCallback(
     (id: string) => {
       if (activeSessionId === id) setActiveSessionId(null)
+      const hostname = allSessions.find((s) => s.id === id)?.hostname ?? null
       void sessions.deleteSession(id).catch(() => undefined)
-      evictSessionRendererState(id)
+      evictSessionRendererState(id, hostname)
     },
-    [activeSessionId, evictSessionRendererState, sessions]
+    [activeSessionId, allSessions, evictSessionRendererState, sessions]
   )
 
   const handleDeleteSession = useCallback(
@@ -2317,6 +2320,7 @@ const allSessions = useMemo(
 
   const reloadSessionPanelsForPathChange = useCallback((id: string) => {
     sessionWorkspace.evictSession(id)
+    const hostname = allSessions.find((s) => s.id === id)?.hostname ?? null
     setAliveTabTerminals((prev) => {
       const ptyId = `${id}:tab-terminal`
       if (!prev.has(ptyId)) return prev
@@ -2331,10 +2335,8 @@ const allSessions = useMemo(
       return next
     })
     void window.atelier.ptyKill(`${id}:tab-terminal`)
-    void window.atelier.ptyKill(`${id}:companion`)
-    void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`)
-    void window.atelier.ptyKillTmuxSession(`${id}:companion`)
-  }, [sessionWorkspace])
+    void window.atelier.ptyKillTmuxSession(`${id}:tab-terminal`, hostname)
+  }, [allSessions, sessionWorkspace])
 
   const handleSetProjectPath = useCallback(
     async (id: string, projectPath: string) => {
@@ -2761,7 +2763,8 @@ const allSessions = useMemo(
           onFork={(id) => void sessions.forkSession(id).then((forked) => void selectSession(forked))}
           onRestart={(id) =>
             void sessions.restartSession(id).then((restarted) => {
-              evictSessionRendererState(id)
+              const hostname = allSessions.find((s) => s.id === id)?.hostname ?? null
+              evictSessionRendererState(id, hostname)
               void selectSession(restarted)
             })
           }

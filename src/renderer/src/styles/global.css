@@ -4845,6 +4845,29 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 
 /* ===== Terminal tab ===== */
 .term-body { flex: 1; min-height: 0; overflow: hidden; background: var(--bg-app); }
+.term-body-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.term-reconnect-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--bg-app) 88%, transparent);
+}
+.term-reconnect-message {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
 /* The inset belongs on the xterm element, not on `.term-body`. FitAddon derives
    the row count from the *parent's* computed height — which under our global
    border-box rule includes the parent's padding — and only subtracts padding
@@ -4942,7 +4965,8 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   visibility: visible;
   pointer-events: auto;
 }
-.terminal-cache-entry .term-body {
+.terminal-cache-entry .term-body,
+.terminal-cache-entry .term-body-wrap {
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -5029,11 +5053,11 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   flex-direction: column;
   position: relative;
 }
-.term-shell-main > .term-body {
+.term-shell-main > .term-body,
+.term-shell-main > .term-body-wrap {
   box-sizing: border-box;
 }
-/* Session Terminal tab / terminal-only: overlay like the mock. Companion
-   keeps the toggle inside `.term-panel-header`, so it stays in-flow. */
+/* Session Terminal tab / terminal-only: overlay like the mock. */
 .term-shell-main > .term-toolbox-toggle {
   position: absolute;
   top: 8px;
@@ -5087,6 +5111,11 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   position: relative;
   background: rgba(0, 0, 0, 0.18);
   transition: background 0.1s;
+}
+.term-pane-wrapper > .term-body-wrap {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
 }
 .term-pane-wrapper[data-focused="true"] {
   background: transparent;

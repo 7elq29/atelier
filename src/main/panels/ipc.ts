@@ -134,8 +134,10 @@ export function registerPanelHandlers(getWindow: () => BrowserWindow | null): { 
   ipcMain.handle('panel:pty:resize', (_e, id: string, cols: number, rows: number) => ptyManager.resize(id, cols, rows))
   ipcMain.handle('panel:pty:kill', (_e, id: string) => ptyManager.kill(id))
   // Kill the tmux server session for this pty id — call on Atelier session
-  // delete (not close) so the tmux session is cleaned up permanently.
-  ipcMain.handle('panel:pty:killTmuxSession', (_e, id: string) => ptyManager.killTmuxSession(id))
+  // close/delete so the tmux session is cleaned up permanently (local or remote).
+  ipcMain.handle('panel:pty:killTmuxSession', (_e, id: string, hostname?: string | null) =>
+    ptyManager.killTmuxSession(id, hostname)
+  )
 
   // ── Ports (SSH forwards) ─────────────────────────────────────────────
   ipcMain.handle(

@@ -169,7 +169,7 @@
       "paths": [
         "src/renderer/src/styles/global.css"
       ],
-      "changedLines": "term-body|term-shell|term-panel|terminal-cache|xterm",
+      "changedLines": "term-body|term-body-wrap|term-reconnect|term-shell|term-panel|terminal-cache|xterm",
       "targets": [
         {
           "file": "e2e/terminal-pty.spec.ts"
@@ -490,10 +490,21 @@
       "targets": [
         {
           "file": "e2e/terminal-pty.spec.ts"
-        },
+        }
+      ]
+    },
+    {
+      "id": "remote-tmux-lifecycle",
+      "paths": [
+        "src/main/panels/pty.ts",
+        "src/main/panels/ipc.ts",
+        "src/preload/index.ts",
+        "src/renderer/src/App.tsx"
+      ],
+      "changedLines": "killTmuxSession|pruneOrphanedTmux|ptyKillTmuxSession|ptyKill\\(|onPtyExit|term-reconnect|Reconnect|companion|evictSessionRendererState|tab-terminal|reloadSessionPanelsForPathChange|hostname",
+      "targets": [
         {
-          "file": "e2e/secondary-panels.spec.ts",
-          "grep": "setup:|terminal|changing project path"
+          "file": "e2e/terminal-pty.spec.ts"
         }
       ]
     },
@@ -502,13 +513,12 @@
       "paths": [
         "src/renderer/src/components/panels/TerminalWithToolbox.tsx",
         "src/renderer/src/components/panels/TerminalSplitLayout.tsx",
-        "src/renderer/src/components/panels/TerminalPanelHeader.tsx",
-        "src/renderer/src/components/panels/CompanionTerminalDrawer.tsx"
+        "src/renderer/src/components/panels/CompanionTerminalDrawer.tsx",
+        "src/renderer/src/components/panels/TerminalPanelHeader.tsx"
       ],
       "targets": [
         {
-          "file": "e2e/secondary-panels.spec.ts",
-          "grep": "setup:|terminal|changing project path"
+          "file": "e2e/terminal-pty.spec.ts"
         }
       ]
     },
@@ -1455,6 +1465,7 @@
         "src/shared/config.ts",
         "src/main/config.ts"
       ],
+      "changedLines": "ThemeEditModal|theme-edit|customThemes|activeCustomThemeId|theme-add-btn|theme-dark-btn|Theme pane",
       "targets": [
         {
           "file": "e2e/theme-customization.spec.ts"

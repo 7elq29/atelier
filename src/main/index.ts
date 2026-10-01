@@ -298,9 +298,18 @@ app.whenReady().then(() => {
 
   // Prune tmux sessions left over from previous runs or crashes before
   // reattaching to live ones, so stale shells don't accumulate unboundedly.
+  // Keep only currently-open sessions; scan every hostname still on any DB
+  // row so remote orphans (including History leftovers) are found.
   if (ptyManager) {
-    const liveIds = sessionStore.listAllSessions().map((s) => s.id)
-    ptyManager.pruneOrphanedTmuxSessions(liveIds)
+    const openIds = sessionStore
+      .listActiveSessions()
+      .filter((s) => !s.deletedAt)
+      .map((s) => s.id)
+    const remoteHosts = sessionStore
+      .listAllSessions()
+      .map((s) => s.hostname)
+      .filter((h): h is string => Boolean(h))
+    ptyManager.pruneOrphanedTmuxSessions(openIds, remoteHosts)
   }
 
   // Let the renderer paint durable "Cleaning up session…" rows before

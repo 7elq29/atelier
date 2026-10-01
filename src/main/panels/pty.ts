@@ -1,10 +1,10 @@
 /**
  * Real pty-backed terminals (07-secondary-panels §5): both the
  * creation-time "Terminal-only" session mode (a plain login shell, no agent)
- * and the in-session companion terminal drawer are backed by this same
- * manager — each gets its own real `node-pty` process keyed by an opaque id
- * chosen by the caller (e.g. the session id for terminal-only mode, or
- * `${sessionId}:companion` for the drawer), so they're genuinely independent
+ * and the in-session Terminal tab are backed by this same manager — each
+ * gets its own real `node-pty` process keyed by an opaque id chosen by the
+ * caller (e.g. the session id for terminal-only mode, or
+ * `${sessionId}:tab-terminal` for the tab), so they're genuinely independent
  * shells that never share state.
  *
  * tmux session backing: when tmux is installed locally each terminal is
@@ -16,8 +16,10 @@
  * shell history and working directory are all preserved. If tmux is not
  * installed the code falls back transparently to the original plain shell.
  *
- * For remote/devpod sessions the pty spawns `ssh <host>` as a real
- * interactive login shell on the remote box instead of a local shell.
+ * For remote/devpod sessions the pty creates/attaches a named tmux session
+ * on the remote host over SSH so the shell survives app quit/relaunch.
+ * Permanent kill (session close/delete) and startup orphan prune must also
+ * run over SSH — local-only kill leaves remote `atelier-*` sessions forever.
  */
 import * as pty from 'node-pty'
 import { execFileSync, execFile } from 'child_process'
@@ -432,16 +434,28 @@ export class PtyManager {
 
   /**
    * Kill the backing tmux server session for this pty id.
-   * Call this when the Atelier session is permanently deleted — not merely
-   * when the app closes. No-op if tmux is not installed or if the session
-   * never existed (tmux exit code is ignored).
+   * Call on Atelier session close/delete — not on app quit (quit only
+   * detaches so open sessions can reattach). When `hostname` is set, kills
+   * over SSH on that host; otherwise kills the local tmux session.
    */
-  killTmuxSession(id: string): void {
-    if (!tmuxBin) return
+  killTmuxSession(id: string, hostname?: string | null): void {
     const name = tmuxSessionName(id)
+    if (hostname) {
+      try {
+        execFileSync('ssh', [...SSH_MUX_OPTS, hostname, 'tmux', 'kill-session', '-t', name], {
+          stdio: 'ignore',
+          timeout: 10_000
+        })
+        logger.info('tmux session killed', { id, name, hostname })
+      } catch {
+        // Session may not exist / host unreachable — fine to ignore
+      }
+      return
+    }
+    if (!tmuxBin) return
     try {
       execFileSync(tmuxBin, ['kill-session', '-t', name], { stdio: 'ignore' })
-      logger.info('tmux session killed', { id, name })
+      logger.info('tmux session killed', { id, name, hostname: null })
     } catch {
       // Session may not exist — fine to ignore
     }
@@ -458,12 +472,23 @@ export class PtyManager {
   }
 
   /**
-   * Kill every local `atelier-*` tmux session whose name does NOT start with
-   * any of the given live session-id prefixes. Call once at startup after the
-   * session list is loaded to evict sessions left over from previous runs or
-   * app crashes. No-op if tmux is not installed.
+   * Kill every `atelier-*` tmux session (local + remote) whose name does NOT
+   * belong to an currently-open Atelier session. Call once at startup.
+   * - `openSessionIds`: sessions with `closed_at IS NULL` — their tmux is kept.
+   * - `remoteHostnames`: hosts to scan (typically every hostname still present
+   *   on any DB row so orphans on hosts that still have History rows are found).
+   * Remote prune is fire-and-forget so a slow/unreachable host never blocks ready.
    */
-  pruneOrphanedTmuxSessions(liveSessionIds: string[]): void {
+  pruneOrphanedTmuxSessions(openSessionIds: string[], remoteHostnames: string[] = []): void {
+    const prefixes = openSessionIds.map((id) => `atelier-${id.slice(0, 8)}`)
+    this.pruneTmuxNamesLocal(prefixes)
+    const hosts = [...new Set(remoteHostnames.map((h) => h.trim()).filter(Boolean))]
+    for (const hostname of hosts) {
+      void this.pruneTmuxNamesRemote(hostname, prefixes)
+    }
+  }
+
+  private pruneTmuxNamesLocal(livePrefixes: string[]): void {
     if (!tmuxBin) return
     let allSessions: string
     try {
@@ -474,17 +499,47 @@ export class PtyManager {
     } catch {
       return // tmux server not running — nothing to prune
     }
-    const prefixes = liveSessionIds.map((id) => `atelier-${id.slice(0, 8)}`)
-    for (const name of allSessions.split('\n').map((s) => s.trim()).filter(Boolean)) {
+    for (const name of this.filterOrphanTmuxNames(allSessions, livePrefixes)) {
+      try {
+        execFileSync(tmuxBin, ['kill-session', '-t', name], { stdio: 'ignore' })
+        logger.info('tmux orphaned session pruned', { name, hostname: null })
+      } catch { /* already gone */ }
+    }
+  }
+
+  private async pruneTmuxNamesRemote(hostname: string, livePrefixes: string[]): Promise<void> {
+    let listed: string
+    try {
+      const result = await execFileAsync(
+        'ssh',
+        [...SSH_MUX_OPTS, hostname, 'tmux', 'list-sessions', '-F', '#{session_name}'],
+        { timeout: 10_000, encoding: 'utf8' }
+      )
+      listed = result.stdout
+    } catch {
+      // No tmux server / unreachable — nothing to prune on this host.
+      return
+    }
+    for (const name of this.filterOrphanTmuxNames(listed, livePrefixes)) {
+      try {
+        await execFileAsync(
+          'ssh',
+          [...SSH_MUX_OPTS, hostname, 'tmux', 'kill-session', '-t', name],
+          { timeout: 10_000 }
+        )
+        logger.info('tmux orphaned session pruned', { name, hostname })
+      } catch { /* already gone */ }
+    }
+  }
+
+  private filterOrphanTmuxNames(listed: string, livePrefixes: string[]): string[] {
+    const orphans: string[] = []
+    for (const name of listed.split('\n').map((s) => s.trim()).filter(Boolean)) {
       if (!name.startsWith('atelier-')) continue
       if (name.startsWith('atelier-pool-') || name.startsWith('atelier-e2e-')) continue
-      const isLive = prefixes.some((p) => name.startsWith(p))
-      if (!isLive) {
-        try {
-          execFileSync(tmuxBin, ['kill-session', '-t', name], { stdio: 'ignore' })
-          logger.info('tmux orphaned session pruned', { name })
-        } catch { /* already gone */ }
-      }
+      if (livePrefixes.some((p) => name.startsWith(p))) continue
+      orphans.push(name)
     }
+    return orphans
   }
 }

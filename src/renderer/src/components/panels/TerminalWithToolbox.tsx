@@ -11,7 +11,6 @@ import {
 } from '../../../../shared/terminal-split-types'
 import { useConfig } from '../../hooks/useConfig'
 import TerminalSplitLayout from './TerminalSplitLayout'
-import TerminalPanelHeader, { IconToolbox } from './TerminalPanelHeader'
 import TerminalToolboxPanel from './TerminalToolboxPanel'
 
 export interface TerminalWithToolboxHandle {
@@ -22,6 +21,16 @@ export interface TerminalWithToolboxHandle {
   closeFocused: () => void
   cycleFocusedPane: () => boolean  // returns true if it wrapped past the last pane
   hasSplit: () => boolean
+}
+
+function IconToolbox(): JSX.Element {
+  return (
+    <svg className="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 9h16v11H4z" />
+      <path d="M8 9V7a4 4 0 0 1 8 0v2" />
+      <line x1="4" y1="14" x2="20" y2="14" />
+    </svg>
+  )
 }
 
 function makeRootPane(ptyId: string): TerminalPaneNode & { type: 'pane' } {
@@ -37,18 +46,14 @@ const TerminalWithToolbox = forwardRef(function TerminalWithToolbox(
     ptyId,
     cwd,
     hostname,
-    shellRemoteHost,
-    variant = 'default',
-    active = true,
-    onClose
+    shellRemoteHost: _shellRemoteHost,
+    active = true
   }: {
     ptyId: string
     cwd: string
     hostname?: string | null
     shellRemoteHost?: string | null
-    variant?: 'default' | 'companion'
     active?: boolean
-    onClose?: () => void
   },
   ref: ForwardedRef<TerminalWithToolboxHandle>
 ): JSX.Element {
@@ -69,8 +74,6 @@ const TerminalWithToolbox = forwardRef(function TerminalWithToolbox(
   )
 
   const toggleToolbox = (): void => setToolboxOpen((o) => !o)
-
-  // ── Split operations ──────────────────────────────────────────────────────
 
   const handleSplit = useCallback((id: string, dir: 'row' | 'col'): void => {
     const newPaneId = makeSubPaneId()
@@ -98,16 +101,12 @@ const TerminalWithToolbox = forwardRef(function TerminalWithToolbox(
     setPaneTree((prev) => updateSplitRatio(prev, splitId, ratio))
   }, [])
 
-  // ── Imperative handle ─────────────────────────────────────────────────────
-
   useImperativeHandle(ref, () => ({
     injectCommand(cmd: string) {
-      // Inject into focused pane via ptyWrite
       const focusedPtyId = getFocusedPtyId(paneTree, focusedPaneId)
       if (focusedPtyId) void window.atelier.ptyWrite(focusedPtyId, cmd)
     },
     focus() {
-      // xterm renders a hidden textarea (.xterm-helper-textarea) that receives key events
       const textarea = document.querySelector<HTMLElement>(
         `[data-pane-id="${focusedPaneId}"] .xterm-helper-textarea`
       )
@@ -129,7 +128,6 @@ const TerminalWithToolbox = forwardRef(function TerminalWithToolbox(
       const next = ids[(idx + 1) % ids.length]
       setFocusedPaneId(next)
       if (!atLast) {
-        // Move DOM focus to the next pane's textarea so the user can type there
         const ta = document.querySelector<HTMLElement>(
           `[data-pane-id="${next}"] .xterm-helper-textarea`
         )
@@ -147,47 +145,33 @@ const TerminalWithToolbox = forwardRef(function TerminalWithToolbox(
   return (
     <div className="term-shell" data-cwd={cwd} data-panel="terminal">
       <div className="term-shell-main">
-        {variant === 'companion' ? (
-          <TerminalPanelHeader
-            cwd={cwd}
-            hostname={hostname}
-            shellRemoteHost={shellRemoteHost}
-            variant={variant}
-            toolboxOpen={toolboxOpen}
-            onToggleToolbox={toggleToolbox}
-            onClose={onClose}
-          />
-        ) : (
-          <>
-            <button
-              type="button"
-              className="term-toolbox-toggle"
-              data-testid="terminal-toolbox-toggle"
-              title="Command toolbox"
-              aria-label="Command toolbox"
-              aria-expanded={toolboxOpen}
-              onClick={toggleToolbox}
-            >
-              <IconToolbox />
-            </button>
-            <button
-              type="button"
-              className="term-split-btn term-split-btn--below"
-              title="Split below (^X 2)"
-              onClick={() => handleSplit(focusedPaneId, 'col')}
-            >
-              ⊟
-            </button>
-            <button
-              type="button"
-              className="term-split-btn term-split-btn--right"
-              title="Split right (^X 3)"
-              onClick={() => handleSplit(focusedPaneId, 'row')}
-            >
-              ⊞
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          className="term-toolbox-toggle"
+          data-testid="terminal-toolbox-toggle"
+          title="Command toolbox"
+          aria-label="Command toolbox"
+          aria-expanded={toolboxOpen}
+          onClick={toggleToolbox}
+        >
+          <IconToolbox />
+        </button>
+        <button
+          type="button"
+          className="term-split-btn term-split-btn--below"
+          title="Split below (^X 2)"
+          onClick={() => handleSplit(focusedPaneId, 'col')}
+        >
+          ⊟
+        </button>
+        <button
+          type="button"
+          className="term-split-btn term-split-btn--right"
+          title="Split right (^X 3)"
+          onClick={() => handleSplit(focusedPaneId, 'row')}
+        >
+          ⊞
+        </button>
         <TerminalSplitLayout
           node={paneTree}
           focusedId={focusedPaneId}
@@ -229,12 +213,9 @@ const TerminalWithToolbox = forwardRef(function TerminalWithToolbox(
   )
 })
 
-export default TerminalWithToolbox
-
-// ── Private helpers ────────────────────────────────────────────────────────
-
 function getFocusedPtyId(tree: TerminalPaneNode, focusedId: string): string {
   if (tree.type === 'pane') return tree.id === focusedId ? tree.ptyId : ''
   return getFocusedPtyId(tree.a, focusedId) || getFocusedPtyId(tree.b, focusedId)
 }
 
+export default TerminalWithToolbox
