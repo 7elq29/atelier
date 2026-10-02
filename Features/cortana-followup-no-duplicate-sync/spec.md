@@ -4,7 +4,9 @@
 
 On **Update conformance dashboard** (`885dc8d5-…`) and any Cortana session: after a turn finishes, the next follow-up reconnects via `resume()` because the in-memory poll is gone. `reconnectHarness` saw a trailing `user` row (the **new** outbound message already written to SQLite) and called `syncCompletedTurn`, which always emits the gateway’s **last** `final_response` — i.e. the previous turn’s assistant text — before the new poll starts.
 
-Reproduced in production DB: user at `22:46:45` → duplicate of prior assistant at `22:46:46` (same body as `22:45:31`) → then the real new turn tools. Log: `syncing completed turn after resume` with the **prior** `message_id` immediately before `message sent, polling snapshot` for the new id.
+Reproduced in production DB repeatedly (e.g. `17:15:20Z` “hello” → immediate re-insert of prior “All done. The production cache…”; `17:16:13Z` dashboard question → re-insert of “Hey! How can I help?”). Log: `syncing completed turn after resume` with the **prior** `message_id` immediately before `message sent, polling snapshot` for the new id.
+
+Still observed while running **packaged** `/Applications/Atelier.app` without this fix rebuilt into the app.
 
 ## Expected user flow
 
@@ -17,5 +19,5 @@ Reproduced in production DB: user at `22:46:45` → duplicate of prior assistant
 
 - [x] Outbound `dispatchTurnToHarness` reconnect sets `pullCompletedCortanaTurn: false`.
 - [x] `syncCompletedTurn` skips when trimmed final text is already in `knownAssistantContents`.
-- [x] E2E: Cortana turn → idle → follow-up → no duplicate prior assistant; no `syncing completed turn after resume` on that follow-up.
-- [x] `npm run test:e2e:affected -- --base main` for mapped targets.
+- [x] E2E: after follow-up, SQLite must not insert previous assistant text after the new user row within the sync window; no `syncing completed turn after resume`; marker tokens appear once each.
+- [ ] Packaged / main app rebuilt so production stops replaying.

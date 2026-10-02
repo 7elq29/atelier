@@ -302,9 +302,13 @@ test.describe('terminal-pty', () => {
    * Idle Cortana follow-up reconnects via resume(). Must not call
    * syncCompletedTurn for the previous final_response (that duplicated the
    * prior assistant into the transcript — Features/cortana-followup-no-duplicate-sync).
+   *
+   * Production failure mode (Update conformance dashboard): after idle send,
+   * SQLite got user → *previous* assistant text → real new turn. Assert both
+   * log (no sync) and DB order within a few seconds of the follow-up.
    */
   test('cortana: idle follow-up must not re-emit previous assistant', async () => {
-    test.setTimeout(240_000)
+    test.setTimeout(300_000)
     mkdirSync(artifactsDir, { recursive: true })
     const userDataDir = join(artifactsDir, 'cortana-followup-nodup-userdata')
     execFileSync('rm', ['-rf', userDataDir])
@@ -313,8 +317,136 @@ test.describe('terminal-pty', () => {
     let app: ElectronApplication | undefined
     let page: Page
 
-    const marker1 = 'FOLLOWUP-NO-DUP-A'
-    const marker2 = 'FOLLOWUP-NO-DUP-B'
+    const stamp = Date.now().toString(36)
+    const marker1 = `NODUP-A-${stamp}`
+    const marker2 = `NODUP-B-${stamp}`
+    const dbPath = join(userDataDir, 'data', 'atelier.sqlite')
+
+    const listTextTurns = (): Array<{ id: number; role: string; content: string }> => {
+      const raw = execFileSync(
+        'sqlite3',
+        [
+          dbPath,
+          `SELECT id || '|' || role || '|' || replace(replace(content, char(10), ' '), '|', '/')
+           FROM messages
+           WHERE session_id = (
+             SELECT id FROM sessions WHERE mode = 'cortana' ORDER BY created_at DESC LIMIT 1
+           )
+           AND role IN ('user','assistant')
+           AND content NOT LIKE '{"kind":%'
+           ORDER BY id ASC;`
+        ],
+        { encoding: 'utf8' }
+      )
+      return raw
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const [id, role, ...rest] = line.split('|')
+          return { id: Number(id), role, content: rest.join('|').trim() }
+        })
+    }
+
+    try {
+      ;({ app, page } = await launchApp(userDataDir))
+      await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 20_000 })
+
+      await page.getByTestId('new-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toBeVisible()
+      await page.getByTestId('mode-cortana').click()
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 30_000 })
+      await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 20_000 })
+
+      await page.getByTestId('composer-input').fill(
+        `Reply with exactly the token ${marker1} on its own line and nothing else.`
+      )
+      await page.getByTestId('composer-input').press('Enter')
+
+      const logPath = join(userDataDir, 'logs', 'main.log')
+      await expect
+        .poll(async () => page.getByTestId('stop-button').count(), { timeout: 180_000 })
+        .toBe(0)
+
+      await expect
+        .poll(() => listTextTurns().some((m) => m.role === 'assistant' && m.content.includes(marker1)), {
+          timeout: 120_000
+        })
+        .toBe(true)
+
+      const turnsBefore = listTextTurns()
+      const prevAssistant = [...turnsBefore].reverse().find((m) => m.role === 'assistant')
+      expect(prevAssistant, 'first turn must leave an assistant text row').toBeTruthy()
+      const prevText = prevAssistant!.content
+
+      const logBefore = readFileSync(logPath, 'utf8')
+      const syncBefore = (logBefore.match(/syncing completed turn after resume/g) ?? []).length
+      const sendBefore = (logBefore.match(/session:sendMessage invoked/g) ?? []).length
+
+      await page.getByTestId('composer-input').fill(
+        `Ignore prior tokens. Reply with exactly the token ${marker2} on its own line and nothing else.`
+      )
+      await page.getByTestId('composer-input').press('Enter')
+
+      await expect
+        .poll(() => (readFileSync(logPath, 'utf8').match(/session:sendMessage invoked/g) ?? []).length, {
+          timeout: 30_000
+        })
+        .toBeGreaterThan(sendBefore)
+
+      // Production bug re-emits the previous final within ~1s of resume+sync,
+      // before the new gateway turn lands. Watch that window tightly.
+      const deadline = Date.now() + 8_000
+      while (Date.now() < deadline) {
+        const log = readFileSync(logPath, 'utf8')
+        const syncAfter = (log.match(/syncing completed turn after resume/g) ?? []).length
+        expect(syncAfter, 'follow-up must not syncCompletedTurn the previous final_response').toBe(syncBefore)
+
+        const turns = listTextTurns()
+        const lastUserIdx = [...turns].map((t, i) => ({ t, i })).reverse().find(({ t }) => t.role === 'user')?.i
+        expect(lastUserIdx, 'follow-up user row must exist').toBeGreaterThanOrEqual(0)
+        const afterUser = turns.slice((lastUserIdx ?? 0) + 1)
+        const replayed = afterUser.filter((m) => m.role === 'assistant' && m.content === prevText)
+        expect(
+          replayed,
+          `previous assistant text must not be re-inserted after the new user message; got: ${JSON.stringify(afterUser.map((m) => m.content.slice(0, 80)))}`
+        ).toEqual([])
+
+        await page.waitForTimeout(400)
+      }
+
+      await expect
+        .poll(() => {
+          const turns = listTextTurns()
+          const a1 = turns.filter((m) => m.role === 'assistant' && m.content.includes(marker1)).length
+          const a2 = turns.some((m) => m.role === 'assistant' && m.content.includes(marker2))
+          return { a1, a2 }
+        }, { timeout: 180_000 })
+        .toEqual({ a1: 1, a2: true })
+
+      await page.screenshot({ path: join(artifactsDir, 'cortana-followup-no-duplicate.png') })
+    } finally {
+      await app?.close().catch(() => undefined)
+    }
+  })
+
+  /**
+   * Stop mid-turn then send again: must not reattach to the leftover gateway
+   * turn and swallow the outbound message as "already polling; posting
+   * follow-up" (Features/cortana-stop-resend-no-reattach).
+   */
+  test('cortana: stop then send starts a new poll (not follow-up swallow)', async () => {
+    test.setTimeout(240_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = join(artifactsDir, 'cortana-stop-resend-userdata')
+    execFileSync('rm', ['-rf', userDataDir])
+    mkdirSync(userDataDir, { recursive: true })
+    seedSkipOnboarding(userDataDir)
+    let app: ElectronApplication | undefined
+    let page: Page
+
+    const marker = 'STOP-RESEND-OK'
     try {
       ;({ app, page } = await launchApp(userDataDir))
       await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 20_000 })
@@ -327,66 +459,58 @@ test.describe('terminal-pty', () => {
       await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 20_000 })
 
       await page.getByTestId('composer-input').fill(
-        `Reply with exactly the token ${marker1} on its own line and nothing else.`
+        'Do a long non-trivial tool investigation that takes at least 60 seconds before any final answer.'
       )
       await page.getByTestId('composer-input').press('Enter')
+      await expect(page.getByTestId('stop-button')).toBeVisible({ timeout: 60_000 })
 
       const logPath = join(userDataDir, 'logs', 'main.log')
       await expect
-        .poll(async () => page.getByTestId('stop-button').count(), { timeout: 150_000 })
-        .toBe(0)
-
-      await expect
-        .poll(async () => {
-          const text = (await page.locator('[data-testid="transcript-message"]').allTextContents()).join('\n')
-          return text.includes(marker1)
-        }, { timeout: 90_000 })
+        .poll(() => {
+          try {
+            return readFileSync(logPath, 'utf8').includes('cortanaHarness: message sent, polling snapshot')
+          } catch {
+            return false
+          }
+        }, { timeout: 60_000 })
         .toBe(true)
 
-      const beforeFollowUp = readFileSync(logPath, 'utf8')
-      const syncBefore = (beforeFollowUp.match(/syncing completed turn after resume/g) ?? []).length
+      const pollsBeforeStop = (readFileSync(logPath, 'utf8').match(/message sent, polling snapshot/g) ?? []).length
+
+      await page.getByTestId('stop-button').click()
+      await expect(page.getByTestId('stop-button')).toHaveCount(0, { timeout: 30_000 })
 
       await page.getByTestId('composer-input').fill(
-        `Reply with exactly the token ${marker2} on its own line and nothing else.`
+        `Reply with exactly the token ${marker} on its own line and nothing else.`
       )
       await page.getByTestId('composer-input').press('Enter')
 
       await expect
         .poll(() => {
           const log = readFileSync(logPath, 'utf8')
-          return (
-            log.includes('message sent, polling snapshot') ||
-            log.includes('inline response received') ||
-            log.includes('live injection (streamInput')
-          )
+          const skipped = log.includes('resume skipping in-flight reattach (outbound turn)')
+          const polls = (log.match(/message sent, polling snapshot/g) ?? []).length
+          const swallowedAfter =
+            log.includes('already polling; posting follow-up without new poll') &&
+            polls <= pollsBeforeStop
+          return { skipped, polls, swallowedAfter }
         }, { timeout: 60_000 })
-        .toBe(true)
+        .toMatchObject({ skipped: true, swallowedAfter: false })
 
-      // Give syncCompletedTurn a moment if it were wrongly invoked.
-      await page.waitForTimeout(2_000)
-      const afterFollowUp = readFileSync(logPath, 'utf8')
-      const syncAfter = (afterFollowUp.match(/syncing completed turn after resume/g) ?? []).length
-      expect(
-        syncAfter,
-        'follow-up must not syncCompletedTurn the previous final_response'
-      ).toBe(syncBefore)
+      await expect
+        .poll(() => (readFileSync(logPath, 'utf8').match(/message sent, polling snapshot/g) ?? []).length, {
+          timeout: 60_000
+        })
+        .toBeGreaterThan(pollsBeforeStop)
 
       await expect
         .poll(async () => {
-          const msgs = page.locator('[data-testid="transcript-message"][data-role="assistant"]')
-          const n = await msgs.count()
-          let marker1Count = 0
-          let hasMarker2 = false
-          for (let i = 0; i < n; i++) {
-            const text = (await msgs.nth(i).textContent()) ?? ''
-            if (text.includes(marker1)) marker1Count++
-            if (text.includes(marker2)) hasMarker2 = true
-          }
-          return { marker1Count, hasMarker2 }
+          const text = (await page.locator('[data-testid="transcript-message"]').allTextContents()).join('\n')
+          return text.includes(marker)
         }, { timeout: 150_000 })
-        .toEqual({ marker1Count: 1, hasMarker2: true })
+        .toBe(true)
 
-      await page.screenshot({ path: join(artifactsDir, 'cortana-followup-no-duplicate.png') })
+      await page.screenshot({ path: join(artifactsDir, 'cortana-stop-resend-after.png') })
     } finally {
       await app?.close().catch(() => undefined)
     }

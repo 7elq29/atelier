@@ -263,7 +263,7 @@ export class CortanaHarness implements HarnessDriver {
     return this.start(prompt, opts)
   }
 
-  async resume(sessionId: string, _opts?: Partial<HarnessStartOptions>): Promise<HarnessSession> {
+  async resume(sessionId: string, opts?: Partial<HarnessStartOptions>): Promise<HarnessSession> {
     const existing = this.sessions.get(sessionId)
     // Same-process resume while a poll is live: keep the existing channel so
     // SessionManager can consume the eventual result (minion-style).
@@ -286,7 +286,14 @@ export class CortanaHarness implements HarnessDriver {
       model: 'cortana',
       cwd: ''
     })
-    await this.tryReattachInFlight(sessionId)
+    // Outbound turns after Stop must not reattach — that starts a poll on a
+    // leftover gateway turn, then streamInput hits "already polling" and the
+    // user's new message is POSTed without its own poll (send appears dead).
+    if (opts?.reattachInFlight === false) {
+      logger.info('cortanaHarness: resume skipping in-flight reattach (outbound turn)', { sessionId })
+    } else {
+      await this.tryReattachInFlight(sessionId)
+    }
     return { sessionId, events: channel[Symbol.asyncIterator]() }
   }
 
@@ -298,14 +305,17 @@ export class CortanaHarness implements HarnessDriver {
     }
     const state = this.sessions.get(sessionId)
     if (state) {
-      // Tell the backend to stop the in-flight turn.
+      // Tell the backend to stop the in-flight turn (await so the next outbound
+      // send does not race a still-running gateway job).
       if (state.currentMessageId) {
-        callRest('POST', '/api/v1/sessions/stop', {
-          session_id: state.cortanaSessionId,
-          message_id: state.currentMessageId,
-        }).catch(err => {
+        try {
+          await callRest('POST', '/api/v1/sessions/stop', {
+            session_id: state.cortanaSessionId,
+            message_id: state.currentMessageId,
+          })
+        } catch (err) {
           logger.warn('cortanaHarness: stop request failed', { sessionId, error: String(err) })
-        })
+        }
       }
       state.channel.push({ type: 'interrupted', sessionId, timestamp: new Date().toISOString() })
       state.channel.close()
@@ -471,19 +481,27 @@ export class CortanaHarness implements HarnessDriver {
       }
     }
 
-    // Already attached to a gateway turn (e.g. after resume reattach). Post the
-    // follow-up so Cortana sees it, but do not poll a new message_id — that id
-    // never gets an assistant twin when the original turn finishes.
+    // Already attached to a gateway turn (e.g. mid-turn live steer). Post the
+    // follow-up so Cortana sees it, but do not start a second poll keyed to a
+    // new message_id — that id often never gets an assistant twin when the
+    // original turn finishes. Still record the returned id for /sessions/stop.
     if (this.polls.has(sessionId)) {
       logger.info('cortanaHarness: already polling; posting follow-up without new poll', {
         sessionId,
         currentMessageId: state.currentMessageId,
       })
       try {
-        await callRest('POST', '/api/v1/chat/session/async', {
+        const sent = await callRest('POST', '/api/v1/chat/session/async', {
           session_id: cortanaSessionId,
           user_input: userInput,
-        })
+        }) as { message_id?: string }
+        if (sent.message_id) {
+          state.currentMessageId = sent.message_id
+          logger.info('cortanaHarness: follow-up accepted; stop target updated', {
+            sessionId,
+            messageId: sent.message_id,
+          })
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         logger.error('cortanaHarness: follow-up send failed', { sessionId, error: msg })
