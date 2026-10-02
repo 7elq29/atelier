@@ -85,6 +85,13 @@ export interface HarnessStartOptions {
    */
   resumeSessionId?: string
   /**
+   * Cortana only. When `false`, `resume()` does not reattach to a leftover
+   * gateway in-flight turn. Outbound follow-ups after Stop must set this so
+   * the new send is not swallowed as "already polling; posting follow-up"
+   * against a zombie turn. Default / omit = reattach (open + startup).
+   */
+  reattachInFlight?: boolean
+  /**
    * When true, the returned session's event generator stays open past its
    * first turn's `result` — waiting on further `streamInput()` calls into
    * the SAME connection/subprocess (see `ClaudeAgentSdkHarness.normalize()`)

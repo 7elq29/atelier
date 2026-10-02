@@ -1480,13 +1480,16 @@ export class SessionManager {
   ): Promise<HarnessSession> {
     // Cortana: REST API — no subprocess resume needed, just a fresh event channel.
     if (session.mode === 'cortana') {
-      const harnessSession = await this.cortanaHarness.resume(session.id)
-      // If we died mid-turn and the gateway finished offline, local transcript
-      // still ends on a user message — pull that assistant reply in once.
-      // Skip when dispatching a new follow-up (pullCompletedCortanaTurn: false):
-      // that path already appended the outbound user message, so a naive sync
-      // re-emits the previous gateway final_response as a duplicate.
-      if (opts.pullCompletedCortanaTurn !== false) {
+      // Outbound dispatch (pullCompletedCortanaTurn: false): skip both
+      // syncCompletedTurn and in-flight reattach. Reattach would start a poll
+      // on a leftover gateway turn; the subsequent streamInput then hits
+      // "already polling; posting follow-up" and the user's new send never
+      // gets its own poll — session looks dead / cannot send.
+      const forOutboundTurn = opts.pullCompletedCortanaTurn === false
+      const harnessSession = await this.cortanaHarness.resume(session.id, {
+        reattachInFlight: !forOutboundTurn
+      })
+      if (!forOutboundTurn) {
         const messages = this.store.listMessages(session.id)
         const last = messages[messages.length - 1]
         if (last?.role === 'user') {

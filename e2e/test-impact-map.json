@@ -562,11 +562,11 @@
         "src/main/sessions/manager.ts",
         "src/main/harness/types.ts"
       ],
-      "changedLines": "reattach|findInFlightMessageId|resolveCortanaPollReply|already polling|final_response|pollForMessage|cortana-poll-reattach|currentMessageId|Same-process|execution_events|tryReattach|completeWith|syncCompletedTurn|syncing completed turn|pullCompletedCortanaTurn|knownAssistantContents|syncCompletedTurn skipped|followup-no-duplicate",
+      "changedLines": "reattach|findInFlightMessageId|resolveCortanaPollReply|already polling|final_response|pollForMessage|cortana-poll-reattach|currentMessageId|Same-process|execution_events|tryReattach|completeWith|syncCompletedTurn|syncing completed turn|pullCompletedCortanaTurn|knownAssistantContents|syncCompletedTurn skipped|followup-no-duplicate|reattachInFlight|skipping in-flight reattach|STOP-RESEND|stop-resend",
       "targets": [
         {
           "file": "e2e/terminal-pty.spec.ts",
-          "grep": "reattach|POLL-REATTACH|cortana: relaunch mid-turn|FOLLOWUP-NO-DUP|follow-up must not re-emit"
+          "grep": "reattach|POLL-REATTACH|cortana: relaunch mid-turn|FOLLOWUP-NO-DUP|follow-up must not re-emit|STOP-RESEND|stop then send"
         }
       ]
     },
