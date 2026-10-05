@@ -2,7 +2,7 @@ import type { HarnessEvent } from '../harness/types'
 import type { BackgroundTaskRow } from '../../shared/harness-ui-types'
 
 export interface SdkChromeState {
-  status: 'compacting' | 'requesting' | 'minion_setup' | null
+  status: 'compacting' | 'requesting' | 'minion_setup' | 'minion_working' | null
   permissionMode?: string
   compactFailed?: boolean
   compactError?: string
@@ -127,8 +127,8 @@ export class SessionHarnessUiState {
   clearInFlightStatus(sessionId: string): void {
     const cur = this.sdkChrome.get(sessionId)
     if (!cur) return
-    // Minion SETUP card is owned by MinionHarness until it pushes status:null.
-    if (cur.status === 'minion_setup') {
+    // Minion SETUP / Working cards are owned by MinionHarness until status:null.
+    if (cur.status === 'minion_setup' || cur.status === 'minion_working') {
       if (cur.apiRetryText) {
         this.sdkChrome.set(sessionId, { ...cur, apiRetryText: null })
       }

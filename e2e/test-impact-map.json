@@ -2035,6 +2035,8 @@
       "id": "minion-session",
       "paths": [
         "src/main/harness/minion-harness.ts",
+        "src/main/harness/minion-scratch-client.ts",
+        "src/main/harness/minion-scratch-tail.ts",
         "src/main/sessions/manager.ts",
         "src/main/sessions/session-harness-ui.ts",
         "src/main/index.ts",
@@ -2047,9 +2049,10 @@
         "src/renderer/src/components/chat/ConversationStatusCard.tsx",
         "src/renderer/src/components/chat/ChatTranscript.tsx",
         "src/renderer/src/App.tsx",
-        "e2e/minion-session.spec.ts"
+        "e2e/minion-session.spec.ts",
+        "Features/minion-scratch-progress/spec.md"
       ],
-      "changedLines": "minion|Minion|minion_setup|minion-setup",
+      "changedLines": "minion|Minion|minion_setup|minion-setup|minion_working|minion-working|scratch|chat\\.jsonl",
       "targets": [
         {
           "file": "e2e/minion-session.spec.ts"

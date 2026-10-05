@@ -1138,12 +1138,12 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
         </button>
       ) : (
         <button
-          className={`send-btn${busy ? ' composer-turn-action-active' : ''}`}
+          className={`send-btn${busy && sessionMode !== 'minion' ? ' composer-turn-action-active' : ''}`}
           data-testid="send-button"
           type="button"
           disabled={harnessDisconnected || rateLimit?.sendBlocked || !hasSendableContent}
-          title={busy ? 'Queue (Enter)' : 'Send (Enter)'}
-          aria-label={busy ? 'Queue' : 'Send'}
+          title={busy && sessionMode !== 'minion' ? 'Queue (Enter)' : 'Send (Enter)'}
+          aria-label={busy && sessionMode !== 'minion' ? 'Queue' : 'Send'}
           onClick={() => void handleSend()}
         >
           <svg className="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

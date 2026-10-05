@@ -2,6 +2,10 @@
  * Minion session e2e — real `aifx mcp call minion-orchestrator` (no mocks).
  * Creates a real do-nothing Minion task, steers it, then cancels it.
  * Also covers attach via Minion web link / task UUID.
+ *
+ * Launches Electron with a Dock-like sparse env (not the developer shell PATH).
+ * Without forcing `--usso` in MinionHarness, aifx routes to muttley on
+ * localhost:5436 and createtask fails — the same failure as packaged Atelier.
  */
 import { test, expect, _electron as electron } from '@playwright/test'
 import { seedSkipOnboarding } from './e2e-config'
@@ -12,13 +16,39 @@ import { join } from 'node:path'
 const projectRoot = join(__dirname, '..')
 const artifactsDir = join(projectRoot, 'e2e-artifacts')
 
+/** macOS GUI / Dock launch env — must not inherit the login-shell PATH. */
+function guiLikeElectronEnv(): Record<string, string> {
+  const env: Record<string, string> = {
+    // Match Finder/Dock: system paths only. aifx / homebrew are restored inside
+    // the app via augmentProcessPathForGuiLaunch + subprocessEnvWithDevPath.
+    PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+    HOME: process.env.HOME ?? '',
+    USER: process.env.USER ?? '',
+    LOGNAME: process.env.LOGNAME ?? process.env.USER ?? '',
+    SHELL: process.env.SHELL ?? '/bin/zsh'
+  }
+  for (const key of ['TMPDIR', 'TMP', 'TEMP', 'SSH_AUTH_SOCK', 'ELECTRON_RUN_AS_NODE'] as const) {
+    const v = process.env[key]
+    if (v) env[key] = v
+  }
+  return env
+}
+
+async function launchMinionApp(userDataDir: string) {
+  return electron.launch({
+    args: ['.', `--user-data-dir=${userDataDir}`],
+    cwd: projectRoot,
+    env: guiLikeElectronEnv()
+  })
+}
+
 test.describe('minion-session', () => {
   test('create, steer, cancel a Minion task', async () => {
     test.setTimeout(180_000)
     mkdirSync(artifactsDir, { recursive: true })
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-'))
     seedSkipOnboarding(userDataDir)
-    const app = await electron.launch({ args: ['.', `--user-data-dir=${userDataDir}`], cwd: projectRoot })
+    const app = await launchMinionApp(userDataDir)
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
 
@@ -43,12 +73,18 @@ test.describe('minion-session', () => {
       await expect(page.getByTestId('minion-setup-steps')).toBeVisible()
       await page.screenshot({ path: join(artifactsDir, 'minion-session-created.png') })
 
+      // Composer Stop tracks remote lifetime (empty input), not each progress tick.
+      await expect(page.getByTestId('stop-button')).toBeVisible({ timeout: 60_000 })
+
       const composer = page.getByTestId('composer-input')
       await composer.click()
       await composer.fill('Please keep it minimal; no code changes needed.')
+      // Typed while remote-active: Send (steer), not Queue.
+      await expect(page.getByTestId('send-button')).toBeVisible()
+      await expect(page.getByTestId('send-button')).toHaveAttribute('aria-label', 'Send')
       await page.getByTestId('send-button').click()
       await expect(page.getByText(/Please keep it minimal/i).first()).toBeVisible({ timeout: 30_000 })
-      // Steer is in-flight via Stop chrome — no coordinator transcript ack.
+      // After steer, composer clears → Stop again while remote still active.
       await expect(page.getByTestId('stop-button')).toBeVisible({ timeout: 60_000 })
       await expect(page.getByText(/Got it — working/i)).toHaveCount(0)
       await expect(page.getByText(/Stopped\./)).toHaveCount(0)
@@ -87,12 +123,56 @@ test.describe('minion-session', () => {
     }
   })
 
+  /**
+   * Scratch chat.jsonl seed — attach a completed task that still has DevPod
+   * scratch (listScratchFiles). Fresh createtask often stays in Connect DNS
+   * for minutes before scratch is reachable; this covers the Working/tool UI.
+   */
+  test('attach seeds scratch tool timeline from chat.jsonl', async () => {
+    test.setTimeout(180_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-scratch-'))
+    seedSkipOnboarding(userDataDir)
+    const app = await launchMinionApp(userDataDir)
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    // Known completed task with ~320KB chat.jsonl (Validate SKILL / Bash tools).
+    const taskId = '2f7abb6b-1622-44f1-ae3e-1fb17f219a1b'
+
+    try {
+      await page.getByTestId('new-session-button').click()
+      await page.getByTestId('mode-minion').click()
+      await page.getByTestId('minion-attach-link').fill(`https://minion.uberinternal.com/v2?taskId=${taskId}`)
+      await expect(page.getByTestId('minion-attach-parsed')).toContainText(taskId)
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 60_000 })
+      await expect(page.getByText(/Attached to existing Minion task/i).first()).toBeVisible({ timeout: 30_000 })
+
+      // Seeded scratch → tool cards (and/or Working chrome while still active).
+      const scratchUi = page
+        .getByTestId('tool-card')
+        .or(page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-working"]'))
+      await expect(scratchUi.first()).toBeVisible({ timeout: 90_000 })
+      await page.screenshot({ path: join(artifactsDir, 'minion-session-scratch-progress.png') })
+    } finally {
+      await page.evaluate(async () => {
+        const sessions = await window.atelier.listActiveSessions()
+        for (const s of sessions.filter((x) => x.mode === 'minion')) {
+          await window.atelier.interruptSession(s.id).catch(() => undefined)
+          await window.atelier.closeSession(s.id).catch(() => undefined)
+        }
+      }).catch(() => undefined)
+      await app.close().catch(() => undefined)
+    }
+  })
+
   test('attach existing Minion task via link', async () => {
     test.setTimeout(180_000)
     mkdirSync(artifactsDir, { recursive: true })
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-attach-'))
     seedSkipOnboarding(userDataDir)
-    const app = await electron.launch({ args: ['.', `--user-data-dir=${userDataDir}`], cwd: projectRoot })
+    const app = await launchMinionApp(userDataDir)
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
 

@@ -41,7 +41,6 @@ test.describe('buffer switcher (Ctrl+X B)', () => {
     await page.getByTestId('project-path').fill(projectPath)
     await page.getByTestId('project-path').blur()
     await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('initial-prompt').fill('Reply with exactly the single word: READY')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
     await expect(page.getByTestId('workspace-tool-rail')).toBeVisible({ timeout: 20_000 })
@@ -67,8 +66,36 @@ test.describe('buffer switcher (Ctrl+X B)', () => {
   test('Sessions category shows the current session', async () => {
     await openSwitcher(page)
     // Category headers are not shown (showCategoryHeaders=false) — verify the session item is present.
-    await expect(page.getByTestId('buffer-switcher-item').filter({ hasText: 'Reply with exactly' })).toBeVisible()
+    await expect(page.getByTestId('buffer-switcher-item').filter({ hasText: 'project' })).toBeVisible()
     await page.keyboard.press('Escape')
+  })
+
+  test('Cortana and Minion active sessions appear in the buffer switcher', async () => {
+    test.setTimeout(180_000)
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId('mode-cortana').click()
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 30_000 })
+    await expect(page.getByTestId('cortana-tag').first()).toBeVisible({ timeout: 30_000 })
+
+    await page.getByTestId('new-session-button').click()
+    await page.getByTestId('mode-minion').click()
+    await page.getByTestId('initial-prompt').fill('Atelier buffer switcher e2e. Reply hi only — no code changes.')
+    await page.getByTestId('start-session-button').click()
+    await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 60_000 })
+    await expect(page.getByTestId('minion-tag').first()).toBeVisible({ timeout: 30_000 })
+
+    await openSwitcher(page)
+    await expect(page.getByTestId('buffer-switcher-item').filter({ hasText: 'Cortana' }).first()).toBeVisible()
+    await expect(page.getByTestId('buffer-switcher-item').filter({ hasText: 'Minion' }).first()).toBeVisible()
+    await page.keyboard.press('Escape')
+
+    await page.evaluate(async () => {
+      const sessions = await window.atelier.listActiveSessions()
+      for (const s of sessions.filter((x) => x.mode === 'minion' || x.mode === 'cortana')) {
+        await window.atelier.interruptSession(s.id).catch(() => undefined)
+      }
+    })
   })
 
   test('Daily Note and Weekly Plan entries are always present', async () => {
@@ -102,7 +129,7 @@ test.describe('buffer switcher (Ctrl+X B)', () => {
   test('Selecting a Session switches back to the session', async () => {
     // From the daily note view, switch back to the session via the buffer switcher.
     await openSwitcher(page)
-    await page.getByTestId('buffer-switcher-input').fill('Reply with exactly')
+    await page.getByTestId('buffer-switcher-input').fill('project')
     const items = page.getByTestId('buffer-switcher-item')
     await expect(items).toHaveCount(1)
     await page.keyboard.press('Enter')
@@ -123,7 +150,7 @@ test.describe('buffer switcher (Ctrl+X B)', () => {
     await page.keyboard.press('Escape')
     // Return to session.
     await openSwitcher(page)
-    await page.getByTestId('buffer-switcher-input').fill('Reply with exactly')
+    await page.getByTestId('buffer-switcher-input').fill('project')
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('daily-note-editor')).toHaveCount(0)
   })
@@ -135,7 +162,7 @@ test.describe('buffer switcher (Ctrl+X B)', () => {
 
     // Navigate to session (now session is most recently shown)
     await openSwitcher(page)
-    await page.getByTestId('buffer-switcher-input').fill('Reply with exactly')
+    await page.getByTestId('buffer-switcher-input').fill('project')
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('workspace-tool-rail')).toBeVisible()
 
@@ -146,7 +173,7 @@ test.describe('buffer switcher (Ctrl+X B)', () => {
     const secondLabel = await items.nth(1).textContent()
     await page.keyboard.press('Escape')
 
-    expect(firstLabel).toContain('Reply with exactly')
+    expect(firstLabel).toContain('project')
     expect(secondLabel).toContain('Daily Note')
   })
 

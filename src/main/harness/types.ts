@@ -525,11 +525,11 @@ export type HarnessEvent =
       type: 'sdk_status'
       sessionId: string
       timestamp: string
-      status: 'compacting' | 'requesting' | 'minion_setup' | null
+      status: 'compacting' | 'requesting' | 'minion_setup' | 'minion_working' | null
       permissionMode?: string
       compactResult?: 'success' | 'failed'
       compactError?: string
-      /** Minion SETUP card — same transcript slot as Cortana requesting/compacting. */
+      /** Minion SETUP / Working card — same transcript slot as Cortana requesting/compacting. */
       title?: string
       detail?: string
       setupSteps?: Array<{

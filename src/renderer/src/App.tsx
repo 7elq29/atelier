@@ -2125,9 +2125,9 @@ const allSessions = useMemo(
   const bufferSwitcherItems = useMemo<SplitPickerItem[]>(() => {
     const entries: Array<SplitPickerItem & { _t: string }> = []
 
-    // Active claude-code sessions — sorted by lastActiveAt
+    // Active agent chat sessions (claude-code, Cortana, Minion) — sorted by lastActiveAt
     for (const s of sessions.activeSessions) {
-      if (s.mode !== 'claude-code') continue
+      if (s.mode !== 'claude-code' && s.mode !== 'cortana' && s.mode !== 'minion') continue
       entries.push({
         id: `buf-session-${s.id}`,
         label: s.name,

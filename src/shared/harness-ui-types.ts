@@ -15,7 +15,7 @@ export interface SessionBackgroundTasksEvent {
   tasks: BackgroundTaskRow[]
 }
 
-export type SdkStatusKind = 'compacting' | 'requesting' | 'minion_setup'
+export type SdkStatusKind = 'compacting' | 'requesting' | 'minion_setup' | 'minion_working'
 
 export type MinionSetupStepId = 'provision' | 'boot' | 'connect'
 export type MinionSetupStepState = 'done' | 'active' | 'pending'

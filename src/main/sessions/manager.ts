@@ -396,8 +396,16 @@ export class SessionManager {
   ) {
     const minion = this.minionHarness as HarnessDriver & {
       setActivityListener?(listener: ((sessionId: string) => void) | null): void
+      isRemoteActive?(id: string): boolean
     }
-    minion.setActivityListener?.((sessionId) => this.sendStatus(sessionId))
+    // Sidebar status + composer Stop: Minion busy tracks remote task lifetime.
+    minion.setActivityListener?.((sessionId) => {
+      this.sendStatus(sessionId)
+      if (this.store.getSession(sessionId)?.mode !== 'minion') return
+      const live = this.live.get(sessionId)
+      const remote = minion.isRemoteActive?.(sessionId) === true
+      this.sendTurnState(sessionId, remote || live?.busy === true)
+    })
   }
 
   /** Return the right harness for a session, defaulting to Claude. */
@@ -2003,6 +2011,36 @@ export class SessionManager {
       return
     }
 
+    // Minion steers while the remote job is still running — never Claude-style
+    // turn-queue ("Queue"); createinteraction must fire immediately.
+    if (session.mode === 'minion') {
+      const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
+      this.sendMessage(sessionId, userMessage)
+      const item = this.makeQueuedEntry(text, attachments, override, userMessage.id)
+      const q = this.getOrCreateTurnQueue(sessionId)
+      q.inflightId = item.id
+      q.items = []
+      this.sendQueueState(sessionId)
+      logger.info('turnQueue: minion steer dispatch (no enqueue)', { sessionId, id: item.id })
+      try {
+        await this.dispatchTurnToHarness(sessionId, item)
+        // streamInput returns after createinteraction; remote work continues.
+        // Keep composer Stop via isRemoteActive — clear queue inflight so the
+        // next steer is not blocked.
+        q.inflightId = null
+        const minion = this.minionHarness as HarnessDriver & {
+          isRemoteActive?(id: string): boolean
+        }
+        const remote = minion.isRemoteActive?.(sessionId) === true
+        this.sendTurnState(sessionId, remote || this.live.get(sessionId)?.busy === true)
+      } catch (err) {
+        q.inflightId = null
+        this.reportHarnessFailure(sessionId, 'sendUserMessage', err)
+        throw err
+      }
+      return
+    }
+
     const q = this.getOrCreateTurnQueue(sessionId)
 
     if (q.inflightId === null) {
@@ -3284,7 +3322,21 @@ export class SessionManager {
         const q = this.turnQueues.get(sessionId)
         if (q) q.inflightId = null
         const drained = this.drainTurnQueue(sessionId)
-        if (!drained) this.sendTurnState(sessionId, false)
+        if (!drained) {
+          // Minion: composer Stop tracks remote task lifetime, not each progress
+          // `result`. Intermediate minion_progress / scratch text must not flip
+          // the icon back to Send while the DevPod is still working.
+          const mode = this.store.getSession(sessionId)?.mode
+          if (mode === 'minion') {
+            const minion = this.minionHarness as HarnessDriver & {
+              isRemoteActive?(id: string): boolean
+            }
+            const remote = minion.isRemoteActive?.(sessionId) === true
+            this.sendTurnState(sessionId, remote || this.live.get(sessionId)?.busy === true)
+          } else {
+            this.sendTurnState(sessionId, false)
+          }
+        }
         // Desktop notify when a gateway session finishes a user-visible reply and
         // the OS window is unfocused. Cortana: every turn. Minion: final summary
         // (`end_turn`) and real agent rows (`minion_progress`) — not create/cancel.
