@@ -956,6 +956,39 @@ export class MinionHarness implements HarnessDriver {
     })
   }
 
+  /** True when Working chrome is only the scratch-not-ready placeholder. */
+  private isScratchWaitChrome(state: MinionSessionState): boolean {
+    return state.lastWorkingKey.startsWith('Connecting to session')
+  }
+
+  /**
+   * Prefer live orchestrator status (latest_update / display_status) over the
+   * "Waiting for scratch chat.jsonl" placeholder once the job is past SETUP.
+   */
+  private pushOrchestratorWorkingChrome(
+    state: MinionSessionState,
+    sessionId: string,
+    task: Record<string, any>
+  ): void {
+    if (state.completionPosted || state.lastSetupKey !== '') return
+    const display = extractDisplayStatus(task)
+    const update = extractLatestUpdate(task)
+    if (!display && !update) return
+    // Don't clobber richer scratch-derived chrome (Running X / N× Executing…)
+    // unless we only had the wait placeholder.
+    if (
+      state.lastWorkingKey !== '' &&
+      !this.isScratchWaitChrome(state) &&
+      state.scratch.seeded
+    ) {
+      return
+    }
+    this.pushWorkingChrome(state, sessionId, {
+      title: display || 'Working…',
+      detail: update ? update.replace(/\s+/g, ' ').trim().slice(0, 220) : 'Agent is running'
+    })
+  }
+
   /**
    * Tail DevPod scratch chat.jsonl when metadata has devpodName/region.
    * Soft-degrades on API errors — orchestrator polling continues.
@@ -969,6 +1002,7 @@ export class MinionHarness implements HarnessDriver {
     const target: DevpodScratchTarget | null = extractDevpodTarget(state.remoteTaskId || sessionId, task)
     if (!target) {
       state.scratch.healthy = false
+      this.pushOrchestratorWorkingChrome(state, sessionId, task)
       return
     }
     try {
@@ -977,11 +1011,23 @@ export class MinionHarness implements HarnessDriver {
       const chat = entries.find((e) => e.path === 'chat.jsonl' || e.path.endsWith('/chat.jsonl'))
       if (!chat) {
         state.scratch.healthy = false
-        if (!state.completionPosted && state.lastSetupKey === '') {
-          this.pushWorkingChrome(state, sessionId, {
-            title: 'Connecting to session…',
-            detail: 'Waiting for scratch chat.jsonl on the DevPod.'
-          })
+        // Never re-show the wait placeholder after we've already streamed tools —
+        // that stomps real "Running Bash / N× Executing" status (Minion Task Init).
+        if (
+          !state.completionPosted &&
+          state.lastSetupKey === '' &&
+          !state.scratch.seeded &&
+          (state.lastWorkingKey === '' || this.isScratchWaitChrome(state))
+        ) {
+          this.pushOrchestratorWorkingChrome(state, sessionId, task)
+          if (state.lastWorkingKey === '' || this.isScratchWaitChrome(state)) {
+            this.pushWorkingChrome(state, sessionId, {
+              title: 'Connecting to session…',
+              detail: 'Waiting for scratch chat.jsonl on the DevPod.'
+            })
+          }
+        } else {
+          this.pushOrchestratorWorkingChrome(state, sessionId, task)
         }
         return
       }
@@ -1012,11 +1058,14 @@ export class MinionHarness implements HarnessDriver {
       // Scratch stream means the runner is live enough to leave SETUP.
       if (state.lastSetupKey !== '') state.lastSetupKey = ''
       if (chrome) this.pushWorkingChrome(state, sessionId, chrome)
-      else if (!state.completionPosted && state.lastWorkingKey === '') {
-        this.pushWorkingChrome(state, sessionId, {
-          title: 'Working…',
-          detail: 'Streaming session progress from the DevPod.'
-        })
+      else if (!state.completionPosted && (state.lastWorkingKey === '' || this.isScratchWaitChrome(state))) {
+        this.pushOrchestratorWorkingChrome(state, sessionId, task)
+        if (state.lastWorkingKey === '' || this.isScratchWaitChrome(state)) {
+          this.pushWorkingChrome(state, sessionId, {
+            title: 'Working…',
+            detail: 'Streaming session progress from the DevPod.'
+          })
+        }
       }
       this.notifyActivity(sessionId)
     } catch (err) {
@@ -1029,6 +1078,9 @@ export class MinionHarness implements HarnessDriver {
           error: msg.slice(0, 240)
         })
       }
+      // Keep orchestrator progress; never fall back to the wait placeholder after
+      // a transient scratch DNS/API blip mid-run.
+      this.pushOrchestratorWorkingChrome(state, sessionId, task)
     }
   }
 
@@ -1111,6 +1163,11 @@ export class MinionHarness implements HarnessDriver {
             // orchestrator prose when healthy so we don't double-post.
             await this.pollScratch(sessionId, state, task, abort.signal)
             if (abort.signal.aborted) return
+            // If scratch is still catching up, surface gettask status in Working
+            // chrome instead of leaving "Connecting to session…".
+            if (!state.scratch.healthy) {
+              this.pushOrchestratorWorkingChrome(state, sessionId, task)
+            }
 
             let sawNewInteraction = false
             const listed = await callTool('listinteractions', {
