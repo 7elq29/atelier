@@ -396,15 +396,19 @@ export class SessionManager {
   ) {
     const minion = this.minionHarness as HarnessDriver & {
       setActivityListener?(listener: ((sessionId: string) => void) | null): void
+      setRemoteTaskListener?(listener: ((sessionId: string, remoteTaskId: string) => void) | null): void
       isRemoteActive?(id: string): boolean
     }
     // Sidebar status + composer Stop: Minion busy tracks remote task lifetime.
     minion.setActivityListener?.((sessionId) => {
       this.sendStatus(sessionId)
       if (this.store.getSession(sessionId)?.mode !== 'minion') return
-      const live = this.live.get(sessionId)
       const remote = minion.isRemoteActive?.(sessionId) === true
-      this.sendTurnState(sessionId, remote || live?.busy === true)
+      this.sendTurnState(sessionId, remote)
+    })
+    minion.setRemoteTaskListener?.((sessionId, remoteTaskId) => {
+      if (this.store.getSession(sessionId)?.mode !== 'minion') return
+      this.store.setSdkSessionId(sessionId, remoteTaskId)
     })
   }
 
@@ -1522,7 +1526,13 @@ export class SessionManager {
       return harnessSession
     }
     if (session.mode === 'minion') {
-      return this.minionHarness.resume(session.id)
+      const activeTaskId = this.store.getSdkSessionId(session.id)
+      return this.minionHarness.resume(session.id, {
+        minion: {
+          repo: 'go-code',
+          ...(activeTaskId && activeTaskId !== session.id ? { activeTaskId } : {})
+        }
+      })
     }
     const host = this.resolveHostFromSession(session.hostname)
     const startOpts = {
@@ -1923,7 +1933,9 @@ export class SessionManager {
         await this.resolveHarness(sessionId).streamInput(sessionId, text, attachments)
         const liveEntry = this.live.get(sessionId)
         if (liveEntry) {
-          liveEntry.busy = true
+          // Minion: createinteraction / follow-up CreateTask returned; Stop tracks
+          // isRemoteActive only — sticky busy left cancelled sessions hung forever.
+          liveEntry.busy = session.mode !== 'minion'
           this.sendStatus(sessionId)
         }
         return
@@ -1935,7 +1947,7 @@ export class SessionManager {
           await this.resolveHarness(sessionId).streamInput(sessionId, text, attachments)
           const liveEntry = this.live.get(sessionId)
           if (liveEntry) {
-            liveEntry.busy = true
+            liveEntry.busy = session.mode !== 'minion'
             this.sendStatus(sessionId)
           }
           return
@@ -2022,19 +2034,29 @@ export class SessionManager {
       q.items = []
       this.sendQueueState(sessionId)
       logger.info('turnQueue: minion steer dispatch (no enqueue)', { sessionId, id: item.id })
+      const livePre = this.live.get(sessionId)
+      if (livePre) {
+        livePre.busy = true
+        this.sendStatus(sessionId)
+      }
       try {
         await this.dispatchTurnToHarness(sessionId, item)
-        // streamInput returns after createinteraction; remote work continues.
-        // Keep composer Stop via isRemoteActive — clear queue inflight so the
-        // next steer is not blocked.
+        // streamInput returns after createinteraction or follow-up CreateTask;
+        // remote work continues. Keep composer Stop via isRemoteActive only.
         q.inflightId = null
+        const live = this.live.get(sessionId)
+        if (live) live.busy = false
         const minion = this.minionHarness as HarnessDriver & {
           isRemoteActive?(id: string): boolean
         }
-        const remote = minion.isRemoteActive?.(sessionId) === true
-        this.sendTurnState(sessionId, remote || this.live.get(sessionId)?.busy === true)
+        this.sendTurnState(sessionId, minion.isRemoteActive?.(sessionId) === true)
+        this.sendStatus(sessionId)
       } catch (err) {
         q.inflightId = null
+        const live = this.live.get(sessionId)
+        if (live) live.busy = false
+        this.sendTurnState(sessionId, false)
+        this.sendStatus(sessionId)
         this.reportHarnessFailure(sessionId, 'sendUserMessage', err)
         throw err
       }
@@ -3332,7 +3354,8 @@ export class SessionManager {
               isRemoteActive?(id: string): boolean
             }
             const remote = minion.isRemoteActive?.(sessionId) === true
-            this.sendTurnState(sessionId, remote || this.live.get(sessionId)?.busy === true)
+            if (live) live.busy = false
+            this.sendTurnState(sessionId, remote)
           } else {
             this.sendTurnState(sessionId, false)
           }

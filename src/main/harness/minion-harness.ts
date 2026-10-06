@@ -89,7 +89,17 @@ class EventChannel {
 
 // ── aifx transport ──────────────────────────────────────────────────────────
 
-async function callTool(tool: string, args: Record<string, unknown>): Promise<Record<string, any>> {
+/** Default aifx MCP budget. createinteraction uses a shorter hard cap — a hung
+ *  aifx child has left the composer Stop-stuck for many minutes when Node's
+ *  execFile timeout alone failed to reap the process. */
+const AIFX_TIMEOUT_MS = 120_000
+const CREATE_INTERACTION_TIMEOUT_MS = 45_000
+
+async function callTool(
+  tool: string,
+  args: Record<string, unknown>,
+  timeoutMs: number = AIFX_TIMEOUT_MS
+): Promise<Record<string, any>> {
   const dir = await mkdtemp(join(tmpdir(), 'atelier-minion-'))
   const argsFile = join(dir, 'args.json')
   const outFile = join(dir, 'out.json')
@@ -100,7 +110,14 @@ async function callTool(tool: string, args: Record<string, unknown>): Promise<Re
     // (muttley), which is not running on a laptop. Createtask then fails
     // with connection refused before any Minion task exists.
     await new Promise<void>((resolve, reject) => {
-      execFile(
+      let settled = false
+      const finish = (fn: () => void) => {
+        if (settled) return
+        settled = true
+        clearTimeout(hardTimer)
+        fn()
+      }
+      const child = execFile(
         'aifx',
         [
           'mcp',
@@ -113,15 +130,29 @@ async function callTool(tool: string, args: Record<string, unknown>): Promise<Re
           '-o',
           outFile
         ],
-        { timeout: 120_000, env: subprocessEnvWithDevPath() },
+        { timeout: timeoutMs, killSignal: 'SIGKILL', env: subprocessEnvWithDevPath() },
         (err, _stdout, stderr) => {
           if (err) {
             const msg = `aifx ${tool} failed: ${(stderr || err.message).trim().slice(0, 400)}`
             logger.error('minionHarness: aifx call failed', { tool, error: msg })
-            reject(new Error(msg))
-          } else resolve()
+            finish(() => reject(new Error(msg)))
+          } else {
+            finish(() => resolve())
+          }
         }
       )
+      // Hard ceiling: if SIGKILL doesn't reap (zombie / stuck wait), still
+      // unblock the composer so Stop is not stuck forever.
+      const hardTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL')
+        } catch {
+          /* already exited */
+        }
+        const msg = `aifx ${tool} timed out after ${timeoutMs}ms`
+        logger.error('minionHarness: aifx call timed out', { tool, timeoutMs })
+        finish(() => reject(new Error(msg)))
+      }, timeoutMs + 2_000)
     })
     const raw = (await readFile(outFile, 'utf-8')).trim()
     return raw ? JSON.parse(raw) as Record<string, any> : {}
@@ -304,11 +335,20 @@ function isUserInitiator(v: unknown): boolean {
 
 // ── MinionHarness ───────────────────────────────────────────────────────────
 
-/** How long to keep polling for a reply after the user steers a finished task. */
+/**
+ * How long to keep polling for a reply after a steer on a still-running task.
+ * Finished tasks relaunch via CreateTask (new DevPod) instead of waiting on
+ * a dead CreateInteraction.
+ */
 const POST_STEER_POLL_MS = 3 * 60 * 1000
 
 interface MinionSessionState {
   channel: EventChannel
+  /**
+   * Minion task id we poll / steer / cancel. Equals the Atelier session id
+   * until a finished-task follow-up CreateTask returns a child task.
+   */
+  remoteTaskId: string
   lastLatestUpdate: string
   /** Last first-person provisioning/status line we already posted (dedupe). */
   lastStatusLine: string
@@ -341,6 +381,7 @@ interface MinionSessionState {
 
 /** Durable memory across soft-stop / resume so we don't re-echo old interactions. */
 interface MinionMemory {
+  remoteTaskId: string
   lastLatestUpdate: string
   lastStatusLine: string
   seenInteractionIds: Set<string>
@@ -374,10 +415,17 @@ export class MinionHarness implements HarnessDriver {
   private readonly memory = new Map<string, MinionMemory>()
   /** Fired when remote-active (pre-complete poll) starts or stops — sidebar status. */
   private activityListener: ((sessionId: string) => void) | null = null
+  /** Fired when a finished-task follow-up CreateTask returns a new child task id. */
+  private remoteTaskListener: ((sessionId: string, remoteTaskId: string) => void) | null = null
 
   /** SessionManager wires this to `sendStatus` so poll start/stop refresh the sidebar. */
   setActivityListener(listener: ((sessionId: string) => void) | null): void {
     this.activityListener = listener
+  }
+
+  /** Persist active Minion task id (sdk_session_id) across app relaunch. */
+  setRemoteTaskListener(listener: ((sessionId: string, remoteTaskId: string) => void) | null): void {
+    this.remoteTaskListener = listener
   }
 
   private notifyActivity(sessionId: string): void {
@@ -386,6 +434,18 @@ export class MinionHarness implements HarnessDriver {
     } catch (err) {
       logger.warn('minionHarness: activity listener failed', {
         sessionId,
+        error: err instanceof Error ? err.message : String(err)
+      })
+    }
+  }
+
+  private notifyRemoteTask(sessionId: string, remoteTaskId: string): void {
+    try {
+      this.remoteTaskListener?.(sessionId, remoteTaskId)
+    } catch (err) {
+      logger.warn('minionHarness: remote task listener failed', {
+        sessionId,
+        remoteTaskId,
         error: err instanceof Error ? err.message : String(err)
       })
     }
@@ -422,7 +482,7 @@ export class MinionHarness implements HarnessDriver {
     const taskId: string | undefined = created.task?.id ?? created.id
     if (!taskId) throw new Error('Minion createtask returned no task id')
 
-    const state = this.newState(taskId, { liveFromStart: true })
+    const state = this.newState(taskId, { liveFromStart: true, remoteTaskId: taskId })
     this.sessions.set(taskId, state)
     state.channel.push({
       type: 'session_started',
@@ -470,7 +530,7 @@ export class MinionHarness implements HarnessDriver {
     }
     if (existing) existing.channel.close()
 
-    const state = this.newState(id)
+    const state = this.newState(id, { remoteTaskId: id })
     this.sessions.set(id, state)
     state.channel.push({
       type: 'session_started',
@@ -491,16 +551,23 @@ export class MinionHarness implements HarnessDriver {
     return { sessionId: id, events: state.channel[Symbol.asyncIterator]() }
   }
 
-  async resume(sessionId: string, _opts?: Partial<HarnessStartOptions>): Promise<HarnessSession> {
+  async resume(sessionId: string, opts?: Partial<HarnessStartOptions>): Promise<HarnessSession> {
+    const activeFromOpts = opts?.minion?.activeTaskId?.trim()
     const existing = this.sessions.get(sessionId)
     if (existing && !existing.closing && !existing.channel.closed) {
+      if (activeFromOpts && activeFromOpts !== existing.remoteTaskId) {
+        existing.remoteTaskId = activeFromOpts
+        this.remember(sessionId, existing)
+      }
       // Already live — just return the current event stream.
       this.ensurePolling(sessionId)
       return { sessionId, events: existing.channel[Symbol.asyncIterator]() }
     }
     if (existing) existing.channel.close()
 
-    const state = this.newState(sessionId)
+    const state = this.newState(sessionId, {
+      remoteTaskId: activeFromOpts || this.memory.get(sessionId)?.remoteTaskId || sessionId
+    })
     this.sessions.set(sessionId, state)
     state.channel.push({
       type: 'session_started',
@@ -510,7 +577,7 @@ export class MinionHarness implements HarnessDriver {
       cwd: ''
     })
     // Always resume polling — even if the last run completed, a follow-up
-    // steer may still produce new interactions we need to surface.
+    // may relaunch a DevPod (CreateTask) or steer a live job.
     this.ensurePolling(sessionId)
     return { sessionId, events: state.channel[Symbol.asyncIterator]() }
   }
@@ -528,11 +595,12 @@ export class MinionHarness implements HarnessDriver {
       state.closing = true
       this.clearSetupChrome(state, sessionId)
     }
+    const cancelId = state?.remoteTaskId ?? sessionId
     let summary = 'Stopped.'
     try {
-      await callTool('canceltask', { id: sessionId })
+      await callTool('canceltask', { id: cancelId })
       try {
-        const { task } = await callTool('gettask', { id: sessionId }) as { task?: Record<string, any> }
+        const { task } = await callTool('gettask', { id: cancelId }) as { task?: Record<string, any> }
         if (task) {
           summary = formatTaskSummary(
             { ...task, status: task.status ?? 'TASK_STATUS_CANCELLED' },
@@ -543,7 +611,7 @@ export class MinionHarness implements HarnessDriver {
         /* keep default */
       }
     } catch (err) {
-      logger.warn('minionHarness: canceltask failed', { sessionId, error: String(err) })
+      logger.warn('minionHarness: canceltask failed', { sessionId, cancelId, error: String(err) })
       summary = `I tried to stop, but cancel failed: ${err instanceof Error ? err.message : String(err)}`
     }
     if (state && this.sessions.get(sessionId) === state) {
@@ -564,28 +632,59 @@ export class MinionHarness implements HarnessDriver {
       return
     }
     const text = message.trim()
+    if (!text) return
     state.steeredTexts.add(text)
     state.lastSteeredAt = Date.now()
+
+    let task: Record<string, any> | undefined
     try {
-      await callTool('createinteraction', {
-        task_id: sessionId,
-        initiator: 'INTERACTION_INITIATOR_USER',
-        message: text,
-        content: {
-          surface: 'INTERACTION_SURFACE_API',
-          type: 'INTERACTION_CONTENT_TYPE_TEXT',
-          text
-        }
+      const res = await callTool('gettask', { id: state.remoteTaskId }) as { task?: Record<string, any> }
+      task = res.task
+    } catch (err) {
+      logger.warn('minionHarness: gettask before steer failed', {
+        sessionId,
+        remoteTaskId: state.remoteTaskId,
+        error: err instanceof Error ? err.message : String(err)
       })
+    }
+
+    const status = String(task?.status ?? '')
+    if (task && isTerminalStatus(status)) {
+      try {
+        await this.relaunchFromFinishedTask(sessionId, state, task, text)
+      } catch (err) {
+        state.steeredTexts.delete(text)
+        state.lastSteeredAt = 0
+        const msg = err instanceof Error ? err.message : String(err)
+        logger.error('minionHarness: follow-up CreateTask failed', { sessionId, error: msg })
+        if (this.sessions.get(sessionId) === state && !state.closing && !state.channel.closed) {
+          state.channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: msg })
+        }
+      }
+      return
+    }
+
+    try {
+      await callTool(
+        'createinteraction',
+        {
+          task_id: state.remoteTaskId,
+          initiator: 'INTERACTION_INITIATOR_USER',
+          message: text,
+          content: {
+            surface: 'INTERACTION_SURFACE_API',
+            type: 'INTERACTION_CONTENT_TYPE_TEXT',
+            text
+          }
+        },
+        CREATE_INTERACTION_TIMEOUT_MS
+      )
     } catch (err) {
       state.steeredTexts.delete(text)
       const msg = err instanceof Error ? err.message : String(err)
       logger.error('minionHarness: createinteraction failed', { sessionId, error: msg })
       if (this.sessions.get(sessionId) === state && !state.closing && !state.channel.closed) {
-        const hint = /terminal|complet|cancel|not active|finished|closed/i.test(msg)
-          ? `That job already finished, so I can't keep chatting on it. Start a new Minion session with your question.\n\n(${msg})`
-          : msg
-        state.channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: hint })
+        state.channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: msg })
       }
       return
     }
@@ -593,6 +692,80 @@ export class MinionHarness implements HarnessDriver {
     // No transcript ack — composer busy/Stop is the in-flight signal. Real
     // Minion replies arrive via polling as progress rows.
     this.ensurePolling(sessionId)
+  }
+
+  /**
+   * Finished/cancelled job: CreateTask with parent_task_id so Minion spins a
+   * new DevPod with prior context. Same Atelier session; poll switches to the child.
+   */
+  private async relaunchFromFinishedTask(
+    sessionId: string,
+    state: MinionSessionState,
+    parent: Record<string, any>,
+    followUp: string
+  ): Promise<void> {
+    const parentId = String(parent.id ?? state.remoteTaskId)
+    const input = parent.input && typeof parent.input === 'object'
+      ? parent.input
+      : {
+          type: 'ARTIFACT_TYPE_BRANCH',
+          code: { repo: 'REPO_GO_CODE', branch: 'main', repo_name: 'go-code', org_name: 'uber-code' }
+        }
+    const created = await callTool('createtask', {
+      name: followUp.split('\n')[0]!.slice(0, 80) || String(parent.name ?? 'Minion follow-up'),
+      prompt: followUp,
+      runner: parent.runner || 'RUNNER_DEVPOD',
+      agent: parent.agent || 'claude-code',
+      parent_task_id: parentId,
+      path: typeof parent.path === 'string' && parent.path.trim() ? parent.path : '.',
+      input,
+      expected_artifact_type: parent.expected_artifact_type || 'ARTIFACT_TYPE_PR',
+      storage_path: '',
+      user_id: '',
+      jira_ids: [],
+      mcp_servers: [],
+      model: '',
+      metadata: { source: 'atelier', follow_up_of: parentId },
+      aifx_config: parent.aifx_config && typeof parent.aifx_config === 'object' ? parent.aifx_config : {},
+      execution_mode: parent.execution_mode || 'EXECUTION_MODE_INTERACTIVE',
+      planning_mode: parent.planning_mode || 'PLANNING_MODE_DIRECT',
+      devpod_overrides: {}
+    })
+    if (this.sessions.get(sessionId) !== state || state.closing || state.channel.closed) return
+    const newId: string | undefined = created.task?.id ?? created.id
+    if (!newId) throw new Error('Minion follow-up CreateTask returned no task id')
+    const childTask = (created.task as Record<string, any>) ?? {
+      id: newId,
+      status: 'TASK_STATUS_CREATED',
+      runner_url: ''
+    }
+
+    state.remoteTaskId = newId
+    state.completionPosted = false
+    state.historySeeded = true
+    state.scratch = emptyScratchWatermark()
+    state.lastSetupKey = ''
+    state.lastWorkingKey = ''
+    state.lastLatestUpdate = ''
+    state.lastScratchError = ''
+    state.startedAt = Date.now()
+    this.remember(sessionId, state)
+    this.notifyRemoteTask(sessionId, newId)
+
+    pushAssistantMessage(
+      state.channel,
+      sessionId,
+      `Relaunching a DevPod from this job’s context…\n\nNew task: \`${newId}\``,
+      'minion_relaunch'
+    )
+    this.pushSetupChrome(state, sessionId, childTask)
+    this.ensurePolling(sessionId)
+    this.notifyActivity(sessionId)
+    logger.info('minionHarness: follow-up CreateTask relaunched DevPod', {
+      sessionId,
+      parentTaskId: parentId,
+      remoteTaskId: newId
+    })
   }
 
   isActive(sessionId: string): boolean {
@@ -638,7 +811,8 @@ export class MinionHarness implements HarnessDriver {
 
   async listFiles(sessionId: string): Promise<Array<{ name: string; url: string }>> {
     try {
-      const { task } = await callTool('gettask', { id: sessionId }) as { task?: Record<string, any> }
+      const remoteId = this.sessions.get(sessionId)?.remoteTaskId ?? sessionId
+      const { task } = await callTool('gettask', { id: remoteId }) as { task?: Record<string, any> }
       const pr = task ? findPrUrl(task.output) : null
       return pr ? [{ name: 'Pull request', url: pr }] : []
     } catch {
@@ -648,10 +822,14 @@ export class MinionHarness implements HarnessDriver {
 
   // ── polling ──────────────────────────────────────────────────────────────
 
-  private newState(sessionId?: string, opts?: { liveFromStart?: boolean }): MinionSessionState {
+  private newState(
+    sessionId?: string,
+    opts?: { liveFromStart?: boolean; remoteTaskId?: string }
+  ): MinionSessionState {
     const mem = sessionId ? this.memory.get(sessionId) : undefined
     return {
       channel: new EventChannel(),
+      remoteTaskId: opts?.remoteTaskId ?? mem?.remoteTaskId ?? sessionId ?? '',
       lastLatestUpdate: mem?.lastLatestUpdate ?? '',
       lastStatusLine: mem?.lastStatusLine ?? '',
       lastSetupKey: '',
@@ -672,6 +850,7 @@ export class MinionHarness implements HarnessDriver {
 
   private remember(sessionId: string, state: MinionSessionState): void {
     this.memory.set(sessionId, {
+      remoteTaskId: state.remoteTaskId,
       lastLatestUpdate: state.lastLatestUpdate,
       lastStatusLine: state.lastStatusLine,
       seenInteractionIds: new Set(state.seenInteractionIds),
@@ -787,7 +966,7 @@ export class MinionHarness implements HarnessDriver {
     task: Record<string, any>,
     signal: AbortSignal
   ): Promise<void> {
-    const target: DevpodScratchTarget | null = extractDevpodTarget(sessionId, task)
+    const target: DevpodScratchTarget | null = extractDevpodTarget(state.remoteTaskId || sessionId, task)
     if (!target) {
       state.scratch.healthy = false
       return
@@ -871,7 +1050,8 @@ export class MinionHarness implements HarnessDriver {
     try {
       while (!abort.signal.aborted && Date.now() < deadline) {
         try {
-          const { task } = await callTool('gettask', { id: sessionId }) as { task?: Record<string, any> }
+          const taskId = state.remoteTaskId || sessionId
+          const { task } = await callTool('gettask', { id: taskId }) as { task?: Record<string, any> }
           if (abort.signal.aborted) return
           errors = 0
           if (task) {
@@ -886,7 +1066,7 @@ export class MinionHarness implements HarnessDriver {
                 state.postedTexts.add(normalizeProgressText(update))
               }
               const listed = await callTool('listinteractions', {
-                task_id: sessionId,
+                task_id: taskId,
                 after_interaction_id: '',
                 initiator_filter: 0,
                 status_filter: 0
@@ -934,7 +1114,7 @@ export class MinionHarness implements HarnessDriver {
 
             let sawNewInteraction = false
             const listed = await callTool('listinteractions', {
-              task_id: sessionId,
+              task_id: taskId,
               after_interaction_id: '',
               initiator_filter: 0,
               status_filter: 0
@@ -968,8 +1148,8 @@ export class MinionHarness implements HarnessDriver {
                 pushAssistantMessage(channel, sessionId, formatTaskSummary(task), 'end_turn', taskCost(task))
                 this.notifyActivity(sessionId)
               }
-              // After a recent steer, keep polling so the agent's reply can land
-              // even though the task status is already terminal.
+              // After a recent steer on a still-running job that just finished,
+              // keep polling briefly so the agent's reply can land.
               const awaitingReply =
                 state.lastSteeredAt > 0 && Date.now() - state.lastSteeredAt < POST_STEER_POLL_MS
               if (!awaitingReply && !sawNewInteraction) {

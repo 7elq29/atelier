@@ -167,6 +167,55 @@ test.describe('minion-session', () => {
     }
   })
 
+  /**
+   * Finished/cancelled task follow-up must CreateTask(parent) to relaunch a
+   * DevPod — not CreateInteraction alone (messages sat PENDING forever).
+   */
+  test('follow-up on cancelled task relaunches DevPod with SETUP', async () => {
+    test.setTimeout(180_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-relaunch-'))
+    seedSkipOnboarding(userDataDir)
+    const app = await launchMinionApp(userDataDir)
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    // Known CANCELLED task (DevPod gone); follow-up must mint a child task.
+    const taskId = '2f46e72a-aff3-43bc-a355-b5ff64ca763e'
+
+    try {
+      await page.getByTestId('new-session-button').click()
+      await page.getByTestId('mode-minion').click()
+      await page.getByTestId('minion-attach-link').fill(`https://minion.uberinternal.com/v2?taskId=${taskId}`)
+      await expect(page.getByTestId('minion-attach-parsed')).toContainText(taskId)
+      await page.getByTestId('start-session-button').click()
+      await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 60_000 })
+      await expect(page.getByText(/Attached to existing Minion task/i).first()).toBeVisible({ timeout: 30_000 })
+
+      const composer = page.getByTestId('composer-input')
+      await composer.click()
+      await composer.fill('Atelier e2e relaunch probe. Reply hello and stop — no code changes.')
+      await page.getByTestId('send-button').click()
+
+      await expect(page.getByText(/Relaunching a DevPod from this job/i).first()).toBeVisible({
+        timeout: 90_000
+      })
+      await expect(
+        page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-setup"]')
+      ).toBeVisible({ timeout: 60_000 })
+      await page.screenshot({ path: join(artifactsDir, 'minion-session-finished-relaunch.png') })
+    } finally {
+      await page.evaluate(async () => {
+        const sessions = await window.atelier.listActiveSessions()
+        for (const s of sessions.filter((x) => x.mode === 'minion')) {
+          await window.atelier.interruptSession(s.id).catch(() => undefined)
+          await window.atelier.closeSession(s.id).catch(() => undefined)
+        }
+      }).catch(() => undefined)
+      await app.close().catch(() => undefined)
+    }
+  })
+
   test('attach existing Minion task via link', async () => {
     test.setTimeout(180_000)
     mkdirSync(artifactsDir, { recursive: true })

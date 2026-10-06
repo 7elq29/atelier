@@ -19,6 +19,11 @@ export interface MinionCreateOptions {
    * Prefer a parsed UUID from `parseMinionTaskId` (link or bare id).
    */
   attachTaskId?: string
+  /**
+   * Active Minion task to poll/steer after a finished-task follow-up relaunch
+   * (child task id). When omitted, the Atelier session id is the task id.
+   */
+  activeTaskId?: string
 }
 
 const MINION_TASK_UUID_RE =
