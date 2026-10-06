@@ -235,7 +235,12 @@ function formatTaskSummary(task: Record<string, any>, opts?: { stopped?: boolean
         ? `I finished with status **${label}**.`
         : 'Done.'
   ]
-  const message = task.output?.message ?? task.output?.summary ?? task.status_message
+  let message = task.output?.message ?? task.output?.summary ?? task.status_message
+  if (typeof message !== 'string' || !message.trim()) {
+    // Many Minion completions put the real answer only in latest_update
+    // (output.message stays empty) — without this, Atelier shows bare "Done."
+    message = extractLatestUpdate(task)
+  }
   if (typeof message === 'string' && message.trim()) lines.push('', message.trim())
   const pr = findPrUrl(task.output)
   if (pr) lines.push('', `PR: ${pr}`)
@@ -1187,7 +1192,10 @@ export class MinionHarness implements HarnessDriver {
               const text = interactionText(i)
               if (!text) continue
               if (isUserInitiator(i.initiator) && state.steeredTexts.has(text)) continue
-              if (state.scratch.healthy) {
+              // Scratch owns tool/working chrome — but agent prose still belongs
+              // in the transcript. Skipping all interactions when scratch is
+              // healthy left only a bare "Done." after relaunch completions.
+              if (state.scratch.healthy && isUserInitiator(i.initiator)) {
                 state.postedTexts.add(normalizeProgressText(text))
                 continue
               }
