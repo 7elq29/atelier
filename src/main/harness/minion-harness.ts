@@ -630,7 +630,28 @@ export class MinionHarness implements HarnessDriver {
 
   // ── messaging ────────────────────────────────────────────────────────────
 
+  /** Serialize steers per session so a double-send cannot mint two DevPods. */
+  private readonly steerChain = new Map<string, Promise<void>>()
+
   async streamInput(sessionId: string, message: string, _attachments?: HarnessFileInput[]): Promise<void> {
+    const prev = this.steerChain.get(sessionId) ?? Promise.resolve()
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    this.steerChain.set(
+      sessionId,
+      prev.then(() => gate).catch(() => gate)
+    )
+    await prev.catch(() => undefined)
+    try {
+      await this.streamInputLocked(sessionId, message)
+    } finally {
+      release()
+    }
+  }
+
+  private async streamInputLocked(sessionId: string, message: string): Promise<void> {
     const state = this.sessions.get(sessionId)
     if (!state || state.closing || state.channel.closed) {
       logger.warn('minionHarness: streamInput for unknown/closing session', { sessionId })
@@ -640,6 +661,26 @@ export class MinionHarness implements HarnessDriver {
     if (!text) return
     state.steeredTexts.add(text)
     state.lastSteeredAt = Date.now()
+
+    // 1–2. Prefer any already-live task in this session's Minion tree over a
+    // new CreateTask (CREATED/RUNNING child while tip looks finished).
+    const live = await this.findLiveTaskInTree(state.remoteTaskId || sessionId, sessionId)
+    if (live) {
+      const liveId = String(live.id ?? '')
+      if (liveId && liveId !== state.remoteTaskId) {
+        state.remoteTaskId = liveId
+        state.completionPosted = false
+        this.remember(sessionId, state)
+        this.notifyRemoteTask(sessionId, liveId)
+        logger.info('minionHarness: reusing live Minion task instead of CreateTask', {
+          sessionId,
+          remoteTaskId: liveId,
+          status: live.status
+        })
+      }
+      await this.createInteractionOnRemote(sessionId, state, text)
+      return
+    }
 
     let task: Record<string, any> | undefined
     try {
@@ -655,6 +696,18 @@ export class MinionHarness implements HarnessDriver {
 
     const status = String(task?.status ?? '')
     if (task && isTerminalStatus(status)) {
+      // 3. Finished tip but DevPod still up → steer; don't mint another runner.
+      if (await this.isDevpodReachable(task)) {
+        logger.info('minionHarness: finished task still has live DevPod — CreateInteraction', {
+          sessionId,
+          remoteTaskId: state.remoteTaskId,
+          status
+        })
+        state.completionPosted = false
+        await this.createInteractionOnRemote(sessionId, state, text)
+        return
+      }
+      // 4. Nothing live and pod gone → CreateTask (new Minion task + DevPod).
       try {
         await this.relaunchFromFinishedTask(sessionId, state, task, text)
       } catch (err) {
@@ -669,6 +722,14 @@ export class MinionHarness implements HarnessDriver {
       return
     }
 
+    await this.createInteractionOnRemote(sessionId, state, text)
+  }
+
+  private async createInteractionOnRemote(
+    sessionId: string,
+    state: MinionSessionState,
+    text: string
+  ): Promise<void> {
     try {
       await callTool(
         'createinteraction',
@@ -694,9 +755,55 @@ export class MinionHarness implements HarnessDriver {
       return
     }
     if (this.sessions.get(sessionId) !== state || state.closing || state.channel.closed) return
-    // No transcript ack — composer busy/Stop is the in-flight signal. Real
-    // Minion replies arrive via polling as progress rows.
     this.ensurePolling(sessionId)
+  }
+
+  /**
+   * Walk preferred tip + Atelier session root for any non-terminal Minion task.
+   * Newest children first so we bind to the latest DevPod.
+   */
+  private async findLiveTaskInTree(
+    preferredId: string,
+    rootId: string
+  ): Promise<Record<string, any> | null> {
+    const seen = new Set<string>()
+    const search = async (id: string, depth: number): Promise<Record<string, any> | null> => {
+      const tid = id.trim()
+      if (!tid || depth > 8 || seen.has(tid)) return null
+      seen.add(tid)
+      let task: Record<string, any> | undefined
+      try {
+        const res = await callTool('gettask', { id: tid }) as { task?: Record<string, any> }
+        task = res.task
+      } catch {
+        return null
+      }
+      if (!task) return null
+      if (!isTerminalStatus(String(task.status ?? ''))) return task
+      const kids = Array.isArray(task.child_task_ids)
+        ? (task.child_task_ids as unknown[]).map((k) => String(k)).filter(Boolean)
+        : []
+      for (const kid of [...kids].reverse()) {
+        const found = await search(kid, depth + 1)
+        if (found) return found
+      }
+      return null
+    }
+    return (await search(preferredId, 0)) ?? (preferredId === rootId ? null : search(rootId, 0))
+  }
+
+  /** True when the task's DevPod still serves scratch (pod up even if task completed). */
+  private async isDevpodReachable(task: Record<string, any>): Promise<boolean> {
+    const id = String(task.id ?? '')
+    if (!id) return false
+    const target = extractDevpodTarget(id, task)
+    if (!target) return false
+    try {
+      await listScratchFiles(target)
+      return true
+    } catch {
+      return false
+    }
   }
 
   /**
@@ -709,6 +816,19 @@ export class MinionHarness implements HarnessDriver {
     parent: Record<string, any>,
     followUp: string
   ): Promise<void> {
+    // Last look for a live descendant before minting another DevPod.
+    const live = await this.findLiveTaskInTree(state.remoteTaskId || sessionId, sessionId)
+    if (live) {
+      const liveId = String(live.id ?? '')
+      if (liveId) {
+        state.remoteTaskId = liveId
+        state.completionPosted = false
+        this.remember(sessionId, state)
+        this.notifyRemoteTask(sessionId, liveId)
+        await this.createInteractionOnRemote(sessionId, state, followUp)
+        return
+      }
+    }
     const parentId = String(parent.id ?? state.remoteTaskId)
     const input = parent.input && typeof parent.input === 'object'
       ? parent.input
