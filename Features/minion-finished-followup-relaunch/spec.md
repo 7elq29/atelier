@@ -1,35 +1,25 @@
-# Minion — follow-up on finished task relaunches DevPod
+# Minion — follow-up on finished task (CreateInteraction, no child)
 
-## Problem
+## Problem (superseded)
 
-Sending a message on a completed/cancelled Minion job called
-`CreateInteraction` on the dead task. The message sat `PENDING`, no DevPod
-came back, and the composer stayed stuck on Stop.
+Atelier used to `CreateTask` + `parent_task_id` when scratch looked
+unreachable on a finished tip. That minted amnesiac child tasks (“subsession”)
+while Minion UI keeps the **same** task id and uses `CreateInteraction`
+(even when the DevPod is gone).
 
-## Expected user flow
+## Expected user flow (matches Minion UI)
 
-1. User has an Atelier Minion session for a finished or cancelled task
-   (attach or after the job ends).
-2. User types a follow-up and hits Send.
-3. Atelier creates a **new** Minion task with `parent_task_id` = the prior
-   task (same-artifact / context follow-up) and the follow-up text as the
-   prompt — this spins a **new DevPod**.
-4. Same Atelier chat continues; transcript shows a short relaunch note.
-5. **SETUP** card (Provision → Boot → Connect) appears while the new
-   DevPod comes up — same chrome as a fresh create.
-6. Once connected, Working / tool progress continues as usual.
-7. Stop cancels the **active** (child) task.
-
-While the remote job is still running, follow-ups stay on
-`CreateInteraction` (steer), unchanged.
+1. User has an Atelier Minion session for a tip (running or finished).
+2. Resume/reopen → same tip/active task id, history only — **no** CreateTask.
+3. User types a follow-up and hits Send → **`CreateInteraction`** on the
+   bound tip (or a not-yet-ready descendant in the tree). **No** child task.
+4. Ready/idle follows Minion `gettask` `latest_update.display_status`
+   (`COMPLETED`) or terminal `status` — not `status=RUNNING` alone, and not
+   scratch DNS.
 
 ## Done when
 
-- [x] Terminal-task Send uses `CreateTask` + `parent_task_id`, not
-      `CreateInteraction` alone
-- [x] SETUP chrome shows during relaunch
-- [x] Composer Stop tracks the new running job; clears when it finishes
-- [x] E2E: attach cancelled/completed → send → setup card (or relaunch ack)
-- [x] `npm run build` clean; minion-session e2e green
-  (`test:e2e:affected` also selects unrelated Claude specs via `manager.ts`
-  ownership — those failures are pre-existing / env, not this change)
+- [x] Steer/resume Send uses `CreateInteraction` only (no scratch→CreateTask).
+- [x] Busy/Working clears when `display_status` is COMPLETED.
+- [x] E2E: finished tip Send does **not** show “Relaunching… New task”.
+- [x] `npm run build` clean; `test:e2e:affected -- --base main` green.

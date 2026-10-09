@@ -13,8 +13,9 @@
 3. Wait-chrome detector missed “waiting for tools” placeholder.
 4. Scratch `fetch` had no timeout (could stall gettask polling).
 5. `latest_update.display_status=COMPLETED` while `task.status` still RUNNING →
-   never posted Done / never flushed scratch (e2e hung or bare Done).
-6. Scratch DNS lags name/URL/`RUNNING` → flush retries before Done so tool
+   treat as ready (Done + clear Working); do not stay busy on RUNNING alone.
+6. Scratch is for tool cards only — never gates CreateTask relaunch. Steer is
+   always CreateInteraction (Minion UI). Flush retries before Done so tool
    cards can land; dedicated scratch poll so gettask cannot starve tools.
 
 ## E2E plan (A / B / D — C parked)

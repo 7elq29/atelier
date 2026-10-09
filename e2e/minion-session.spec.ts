@@ -280,12 +280,8 @@ test.describe('minion-session', () => {
       const toolCountBefore = await toolIntermediateCount(page)
       await sendComposer(page, followUp)
 
-      const relaunched = await page
-        .getByText(/Relaunching a DevPod from this job/i)
-        .first()
-        .isVisible()
-        .catch(() => false)
-      if (relaunched) await expect(setupCard(page)).toBeVisible({ timeout: 90_000 })
+      // Must CreateInteraction on the same tip — never mint a child DevPod.
+      await expect(page.getByText(/Relaunching a DevPod from this job/i)).toHaveCount(0)
 
       await expectIntermediateBeforeDone(page, 300_000)
       await expect
