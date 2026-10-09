@@ -269,7 +269,10 @@ const api = {
     ipcRenderer.invoke('session:validateModel', sessionId, model),
   forkSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:fork', sessionId),
   restartSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:restart', sessionId),
-  closeSession: (sessionId: string): Promise<SessionRecord> => ipcRenderer.invoke('session:close', sessionId),
+  closeSession: (
+    sessionId: string,
+    opts?: { cancelRemote?: boolean }
+  ): Promise<SessionRecord> => ipcRenderer.invoke('session:close', sessionId, opts),
   linkDailyTask: (sessionId: string, noteDate: string, taskGid: string): Promise<SessionRecord> =>
     ipcRenderer.invoke('session:linkDailyTask', sessionId, noteDate, taskGid),
   completeLinkedDailyTask: (sessionId: string): Promise<void> =>

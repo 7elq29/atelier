@@ -2042,6 +2042,8 @@
         "src/main/harness/minion-scratch-client.ts",
         "src/main/harness/minion-scratch-tail.ts",
         "src/main/sessions/manager.ts",
+        "src/main/sessions/ipc.ts",
+        "src/preload/index.ts",
         "src/main/sessions/session-harness-ui.ts",
         "src/main/index.ts",
         "src/main/db.ts",
@@ -2057,7 +2059,7 @@
         "Features/minion-scratch-progress/spec.md",
         "Features/minion-working-chrome-stall/spec.md"
       ],
-      "changedLines": "minion|Minion|minion_setup|minion-setup|minion_working|minion-working|scratch|chat\\.jsonl",
+      "changedLines": "minion|Minion|minion_setup|minion-setup|minion_working|minion-working|scratch|chat\\.jsonl|cancelRemote|\\.detach\\(",
       "targets": [
         {
           "file": "e2e/minion-session.spec.ts"

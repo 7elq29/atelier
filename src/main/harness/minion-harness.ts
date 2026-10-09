@@ -363,10 +363,7 @@ const SCRATCH_POLL_INTERVAL_MS = 2_000
 
 interface MinionSessionState {
   channel: EventChannel
-  /**
-   * Minion task id we poll / steer / cancel. Equals the Atelier session id
-   * until a finished-task follow-up CreateTask returns a child task.
-   */
+  /** Minion task id we poll / steer / cancel (tip or live descendant). */
   remoteTaskId: string
   lastLatestUpdate: string
   /** Last first-person provisioning/status line we already posted (dedupe). */
@@ -583,11 +580,20 @@ export class MinionHarness implements HarnessDriver {
     const activeFromOpts = opts?.minion?.activeTaskId?.trim()
     const existing = this.sessions.get(sessionId)
     if (existing && !existing.closing && !existing.channel.closed) {
-      if (activeFromOpts && activeFromOpts !== existing.remoteTaskId) {
-        existing.remoteTaskId = activeFromOpts
+      // Re-resolve: drop finished follow-up children; keep only a live target.
+      const targetId = await this.resolveSteerTaskId(sessionId, existing)
+      if (targetId !== existing.remoteTaskId) {
+        existing.remoteTaskId = targetId
+        this.notifyRemoteTask(sessionId, targetId)
         this.remember(sessionId, existing)
+      } else if (activeFromOpts && activeFromOpts !== existing.remoteTaskId) {
+        // Only adopt persisted sdk id when it is still the live target.
+        const live = await this.findLiveTaskInTree(activeFromOpts, sessionId)
+        if (live && String(live.id) === activeFromOpts) {
+          existing.remoteTaskId = activeFromOpts
+          this.remember(sessionId, existing)
+        }
       }
-      // Already live — just return the current event stream.
       this.ensurePolling(sessionId)
       return { sessionId, events: existing.channel[Symbol.asyncIterator]() }
     }
@@ -597,6 +603,12 @@ export class MinionHarness implements HarnessDriver {
       remoteTaskId: activeFromOpts || this.memory.get(sessionId)?.remoteTaskId || sessionId
     })
     this.sessions.set(sessionId, state)
+    const targetId = await this.resolveSteerTaskId(sessionId, state)
+    if (targetId !== state.remoteTaskId) {
+      state.remoteTaskId = targetId
+      this.notifyRemoteTask(sessionId, targetId)
+      this.remember(sessionId, state)
+    }
     state.channel.push({
       type: 'session_started',
       sessionId,
@@ -604,10 +616,31 @@ export class MinionHarness implements HarnessDriver {
       model: 'minion',
       cwd: ''
     })
-    // Always resume polling — even if the last run completed, a follow-up
-    // may relaunch a DevPod (CreateTask) or steer a live job.
+    // Always resume polling — follow-ups CreateInteraction on tip/live child.
     this.ensurePolling(sessionId)
     return { sessionId, events: state.channel[Symbol.asyncIterator]() }
+  }
+
+  /**
+   * Drop local harness state without canceltask — Atelier session close that
+   * should leave the Minion DevPod/tip alive for later attach.
+   */
+  async detach(sessionId: string): Promise<void> {
+    const wasPolling = this.polls.has(sessionId)
+    this.polls.get(sessionId)?.abort()
+    this.polls.delete(sessionId)
+    this.stopScratchLoop(sessionId)
+    if (wasPolling) this.notifyActivity(sessionId)
+    const state = this.sessions.get(sessionId)
+    if (!state) return
+    this.clearSetupChrome(state, sessionId)
+    this.remember(sessionId, state)
+    state.channel.close()
+    this.sessions.delete(sessionId)
+    logger.info('minionHarness: detached (remote tip kept)', {
+      sessionId,
+      remoteTaskId: state.remoteTaskId
+    })
   }
 
   async interrupt(sessionId: string): Promise<void> {
@@ -686,31 +719,33 @@ export class MinionHarness implements HarnessDriver {
     state.steeredTexts.add(text)
     state.lastSteeredAt = Date.now()
 
-    // Same as Minion UI: always CreateInteraction on an existing task in this
-    // tree. Prefer a not-yet-ready descendant; otherwise steer the bound tip.
-    // Never CreateTask/relaunch from scratch DNS or finished status.
-    const live = await this.findLiveTaskInTree(state.remoteTaskId || sessionId, sessionId)
-    const liveId = live ? String(live.id ?? '') : ''
-    // Clear completionPosted so Working chrome can show for the new steer.
+    // Same as Minion UI: always CreateInteraction. Prefer a not-yet-ready
+    // descendant; otherwise steer the Atelier tip (session id) — never stay
+    // stuck on a finished follow-up child that has no tip history (amnesiac
+    // "new session" replies after a prior CreateTask mistake).
+    const targetId = await this.resolveSteerTaskId(sessionId, state)
     state.completionPosted = false
-    if (liveId && liveId !== state.remoteTaskId) {
-      state.remoteTaskId = liveId
-      this.remember(sessionId, state)
-      this.notifyRemoteTask(sessionId, liveId)
-      logger.info('minionHarness: CreateInteraction on live task in tree', {
-        sessionId,
-        remoteTaskId: liveId,
-        status: live?.status,
-        display: live ? extractDisplayStatus(live) : ''
-      })
-    } else {
-      this.remember(sessionId, state)
-      logger.info('minionHarness: CreateInteraction on bound task', {
-        sessionId,
-        remoteTaskId: state.remoteTaskId
-      })
+    if (targetId !== state.remoteTaskId) {
+      state.remoteTaskId = targetId
+      this.notifyRemoteTask(sessionId, targetId)
     }
+    this.remember(sessionId, state)
+    logger.info('minionHarness: CreateInteraction', {
+      sessionId,
+      remoteTaskId: state.remoteTaskId
+    })
     await this.createInteractionOnRemote(sessionId, state, text)
+  }
+
+  /** Live (not ready) child if any; else the tip (= Atelier session id). */
+  private async resolveSteerTaskId(
+    sessionId: string,
+    state: MinionSessionState
+  ): Promise<string> {
+    const live = await this.findLiveTaskInTree(state.remoteTaskId || sessionId, sessionId)
+    const liveId = live ? String(live.id ?? '').trim() : ''
+    if (liveId) return liveId
+    return sessionId
   }
 
   private async createInteractionOnRemote(
@@ -797,14 +832,36 @@ export class MinionHarness implements HarnessDriver {
 
   /**
    * Sidebar/composer "working": polling a task that is not ready yet.
-   * Ready = completionPosted or gettask display_status COMPLETED / terminal status
-   * (never treat status=RUNNING alone as working when display is COMPLETED).
+   * After CreateInteraction, stay working until a post-steer update arrives —
+   * stale display COMPLETED from the prior turn must not clear Stop.
    */
   isRemoteActive(sessionId: string): boolean {
     if (!this.polls.has(sessionId)) return false
     const state = this.sessions.get(sessionId)
     if (!state || state.closing || state.completionPosted) return false
+    if (this.awaitingSteerReply(state, state.lastTask)) return true
     if (state.lastTask && isTaskFinished(state.lastTask)) return false
+    return true
+  }
+
+  /**
+   * True while waiting for a post-CreateInteraction assistant row.
+   * Do not clear on `latest_update.updated_at` alone — the orchestrator often
+   * bumps that timestamp on interaction ack while display stays COMPLETED and
+   * the real answer has not landed yet (Case B false "Done." soft-stop).
+   */
+  private awaitingSteerReply(
+    state: MinionSessionState,
+    task: Record<string, any> | null
+  ): boolean {
+    if (state.lastSteeredAt <= 0) return false
+    if (Date.now() - state.lastSteeredAt >= POST_STEER_POLL_MS) return false
+    if (!task) return true
+    // Cancel/fail settles the tip — stop waiting. COMPLETED/SUCCESS must NOT
+    // clear the wait: finished tips stay COMPLETED across CreateInteraction
+    // until a new assistant row arrives.
+    const status = String(task.status ?? '')
+    if (/(CANCEL|FAIL|ERROR|TIMED_OUT|EXPIRED|STALE)/i.test(status)) return false
     return true
   }
 
@@ -1270,16 +1327,17 @@ export class MinionHarness implements HarnessDriver {
             }
 
             const finished = isTaskFinished(task)
+            const waitingOnSteer = this.awaitingSteerReply(state, task)
 
             // SETUP first; scratch may clear SETUP once chat.jsonl is live.
-            if (!state.scratch.healthy && !finished) {
+            if (!state.scratch.healthy && (!finished || waitingOnSteer)) {
               this.pushSetupChrome(state, sessionId, task)
               this.pushOrchestratorWorkingChrome(state, sessionId, task)
             }
 
             // Tools must land before listinteractions prose (READY/Done markers).
             // Finished: retry until chat.jsonl seeds (DNS often lags RUNNING).
-            if (finished) {
+            if (finished && !waitingOnSteer) {
               await this.flushScratchForCompletion(sessionId, state, task, abort.signal)
             } else {
               await this.pollScratch(sessionId, state, task, abort.signal)
@@ -1316,20 +1374,41 @@ export class MinionHarness implements HarnessDriver {
               sawNewInteraction = true
             }
 
-            if (finished) {
+            // After CreateInteraction, ignore stale display COMPLETED until a
+            // new assistant interaction lands (or the post-steer window ends).
+            if (waitingOnSteer && !sawNewInteraction) {
+              this.pushOrchestratorWorkingChrome(state, sessionId, task)
+            } else if (isTaskFinished(task)) {
               if (!state.completionPosted && !state.closing) {
                 state.completionPosted = true
                 this.clearStatusChrome(state, sessionId)
-                pushAssistantMessage(channel, sessionId, formatTaskSummary(task), 'end_turn', taskCost(task))
+                // Interaction prose already posted the answer — skip a second
+                // "Done." + stale latest_update summary.
+                if (!sawNewInteraction) {
+                  pushAssistantMessage(
+                    channel,
+                    sessionId,
+                    formatTaskSummary(task),
+                    'end_turn',
+                    taskCost(task)
+                  )
+                } else {
+                  channel.push({
+                    type: 'result',
+                    sessionId,
+                    timestamp: new Date().toISOString(),
+                    subtype: 'end_turn',
+                    isError: false,
+                    numTurns: 1,
+                    durationMs: 0,
+                    totalCostUsd: taskCost(task),
+                    usage: null
+                  })
+                }
                 this.notifyActivity(sessionId)
               }
-              // Ready = display_status COMPLETED (or terminal status). Soft-stop
-              // immediately — do not keep Working for the post-steer window when
-              // Minion already reports ready.
-              if (!sawNewInteraction) {
-                this.softStop(sessionId, state)
-                return
-              }
+              this.softStop(sessionId, state)
+              return
             }
           }
         } catch (err) {

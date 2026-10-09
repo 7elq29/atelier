@@ -2438,14 +2438,25 @@ export class SessionManager {
 
   // ── Close / Delete / Rename / Pin ────────────────────────────────────
 
-  async closeSession(sessionId: string): Promise<SessionRecord> {
-    logger.info('closeSession invoked', { sessionId })
+  async closeSession(
+    sessionId: string,
+    opts?: { cancelRemote?: boolean }
+  ): Promise<SessionRecord> {
+    logger.info('closeSession invoked', { sessionId, cancelRemote: opts?.cancelRemote })
     this.markInterruptedTurnNoticeIfBusy(sessionId)
     const beforeClose = this.store.getSession(sessionId)
     if (!beforeClose) throw new Error(`Unknown session: ${sessionId}`)
     // Never block Close on harness teardown — same fire-and-forget pattern as
     // the pre-async closeSession; interrupt can hang on mid-stream turns.
-    void this.resolveHarness(sessionId).interrupt(sessionId).catch(() => undefined)
+    // Minion: cancelRemote=false detaches without canceltask (pod stays for attach).
+    if (beforeClose.mode === 'minion' && opts?.cancelRemote === false) {
+      const minion = this.minionHarness as { detach?(id: string): Promise<void> }
+      void (minion.detach?.(sessionId) ?? this.resolveHarness(sessionId).interrupt(sessionId)).catch(
+        () => undefined
+      )
+    } else {
+      void this.resolveHarness(sessionId).interrupt(sessionId).catch(() => undefined)
+    }
     const live = this.live.get(sessionId)
     this.finalizeStaleRunningToolCalls(sessionId, live)
     this.live.delete(sessionId)

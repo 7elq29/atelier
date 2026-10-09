@@ -103,7 +103,11 @@ export function registerSessionHandlers(manager: SessionManager, getWindow: () =
 
   ipcMain.handle('session:restart', (_event, sessionId: string) => manager.restartSession(sessionId))
 
-  ipcMain.handle('session:close', (_event, sessionId: string) => manager.closeSession(sessionId))
+  ipcMain.handle(
+    'session:close',
+    (_event, sessionId: string, opts?: { cancelRemote?: boolean }) =>
+      manager.closeSession(sessionId, opts)
+  )
 
   ipcMain.handle(
     'session:linkDailyTask',

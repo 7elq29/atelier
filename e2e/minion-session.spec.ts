@@ -186,7 +186,7 @@ async function activeMinionTaskId(page: Page): Promise<string> {
 /** Close Atelier session without cancelling the remote Minion task (pod stays up). */
 async function closeMinionKeepRemote(page: Page, taskId: string): Promise<void> {
   await page.evaluate(async (id) => {
-    await window.atelier.closeSession(id)
+    await window.atelier.closeSession(id, { cancelRemote: false })
   }, taskId)
   // Closed rows stay in the sidebar (`.closed`); attach reopens the same UUID.
   await expect(
@@ -277,22 +277,38 @@ test.describe('minion-session', () => {
       await expectToolIntermediateVisible(page, 90_000)
       await page.screenshot({ path: join(artifactsDir, 'minion-case-b-history.png') })
 
-      const toolCountBefore = await toolIntermediateCount(page)
       await sendComposer(page, followUp)
 
       // Must CreateInteraction on the same tip — never mint a child DevPod.
       await expect(page.getByText(/Relaunching a DevPod from this job/i)).toHaveCount(0)
 
-      await expectIntermediateBeforeDone(page, 300_000)
-      await expect
-        .poll(async () => (await toolIntermediateCount(page)) >= toolCountBefore, {
-          timeout: 120_000,
-          intervals: [3_000, 8_000]
-        })
-        .toBeTruthy()
+      // Follow-up is text-only (no shell) — seed tools already satisfy "intermediate";
+      // assert the post-steer answer instead of requiring new tool cards.
       await page.screenshot({ path: join(artifactsDir, 'minion-case-b-followup-intermediate.png') })
 
-      await expectAssistantAnswerAfter(page, followUp.slice(0, 40), 300_000)
+      // After the follow-up user turn — require B-READY (not B-SEED from history).
+      await expect
+        .poll(
+          async () => {
+            const needle = normalizeTranscriptText(followUp.slice(0, 40))
+            const msgs = page.getByTestId('transcript-message')
+            const count = await msgs.count()
+            let seenUser = false
+            for (let i = 0; i < count; i++) {
+              const el = msgs.nth(i)
+              const role = await el.getAttribute('data-role')
+              const text = normalizeTranscriptText(await el.innerText())
+              if (!seenUser) {
+                if (role === 'user' && text.includes(needle)) seenUser = true
+                continue
+              }
+              if (role === 'assistant' && /\bb-ready\b/i.test(text)) return true
+            }
+            return false
+          },
+          { timeout: 300_000, intervals: [2_000, 5_000, 10_000] }
+        )
+        .toBeTruthy()
       await page.screenshot({ path: join(artifactsDir, 'minion-case-b-followup-answer.png') })
     } finally {
       await cleanupMinionSessions(page, { cancelRemote: true })
