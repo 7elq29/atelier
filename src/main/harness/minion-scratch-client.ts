@@ -13,6 +13,8 @@ import { subprocessEnvWithDevPath } from '../shell-path'
 
 const BASE = 'https://minion.uberinternal.com'
 const TOKEN_TTL_MS = 50 * 60 * 1000
+/** Bound scratch HTTP so a hung getFileContents cannot stall gettask polling. */
+export const SCRATCH_FETCH_TIMEOUT_MS = 60_000
 
 let cachedToken: { value: string; expiresAt: number } | null = null
 
@@ -21,6 +23,16 @@ export interface ScratchFileEntry {
   type?: string
   sizeBytes?: number
   modifiedTimeUnix?: number
+}
+
+/** Minion often returns numeric fields as JSON strings. */
+function asFiniteNumber(raw: unknown): number | undefined {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  if (typeof raw === 'string' && raw.trim()) {
+    const n = Number(raw)
+    if (Number.isFinite(n)) return n
+  }
+  return undefined
 }
 
 export interface DevpodScratchTarget {
@@ -65,16 +77,29 @@ async function postApi(
   retry = true
 ): Promise<Record<string, unknown>> {
   const token = await getToken()
-  const resp = await fetch(`${BASE}/api/${endpoint}`, {
-    method: 'POST',
-    headers: {
-      Authorization: authHeader(token),
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'x-csrf-token': 'x'
-    },
-    body: JSON.stringify(body)
-  })
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), SCRATCH_FETCH_TIMEOUT_MS)
+  let resp: Response
+  try {
+    resp = await fetch(`${BASE}/api/${endpoint}`, {
+      method: 'POST',
+      headers: {
+        Authorization: authHeader(token),
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'x-csrf-token': 'x'
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal
+    })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`${endpoint} timed out after ${SCRATCH_FETCH_TIMEOUT_MS}ms`)
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
   const text = await resp.text()
   if ((resp.status === 401 || resp.status === 403) && retry) {
     cachedToken = null
@@ -136,13 +161,8 @@ export async function listScratchFiles(target: DevpodScratchTarget): Promise<Scr
   return entries.map((e) => ({
     path: String(e.path ?? e.name ?? ''),
     type: typeof e.type === 'string' ? e.type : undefined,
-    sizeBytes: typeof e.sizeBytes === 'number' ? e.sizeBytes : typeof e.size === 'number' ? e.size : undefined,
-    modifiedTimeUnix:
-      typeof e.modifiedTimeUnix === 'number'
-        ? e.modifiedTimeUnix
-        : typeof e.mtime === 'number'
-          ? e.mtime
-          : undefined
+    sizeBytes: asFiniteNumber(e.sizeBytes ?? e.size),
+    modifiedTimeUnix: asFiniteNumber(e.modifiedTimeUnix ?? e.mtime)
   })).filter((e) => e.path)
 }
 

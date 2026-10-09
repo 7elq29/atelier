@@ -27,6 +27,7 @@ import {
   extractDevpodTarget,
   getFileContents,
   listScratchFiles,
+  SCRATCH_FETCH_TIMEOUT_MS,
   type DevpodScratchTarget
 } from './minion-scratch-client'
 import {
@@ -183,6 +184,17 @@ function isTerminalStatus(status: string): boolean {
   return /(COMPLETED|SUCCEEDED|SUCCESS|FAILED|CANCELLED|CANCELED|STALE|ERROR|TIMED_OUT|EXPIRED)/.test(status)
 }
 
+/**
+ * Minion often leaves `task.status` as RUNNING while `latest_update.display_status`
+ * is already COMPLETED (worker finished; orchestrator status lags). Treat that as done
+ * so we flush scratch + post Done instead of sitting on Working forever.
+ */
+function isTaskFinished(task: Record<string, any>): boolean {
+  if (isTerminalStatus(String(task.status ?? ''))) return true
+  const display = extractDisplayStatus(task)
+  return /^(COMPLETED|SUCCEEDED|SUCCESS)$/i.test(display)
+}
+
 function statusLabel(status: string): string {
   return status.replace(/^TASK_STATUS_/, '').replace(/_/g, ' ')
 }
@@ -270,9 +282,9 @@ function deriveMinionSetup(
   detail: string
   steps: Array<{ id: SetupStepId; label: string; state: SetupStepState }>
 } | null {
-  const status = String(task.status ?? '').toUpperCase()
-  if (isTerminalStatus(status)) return null
+  if (isTaskFinished(task)) return null
 
+  const status = String(task.status ?? '').toUpperCase()
   const display = extractDisplayStatus(task).toUpperCase()
   const runnerUrl = typeof task.runner_url === 'string' ? task.runner_url : ''
   const blob = `${display} ${status}`
@@ -346,6 +358,8 @@ function isUserInitiator(v: unknown): boolean {
  * a dead CreateInteraction.
  */
 const POST_STEER_POLL_MS = 3 * 60 * 1000
+/** Scratch chat.jsonl poll cadence — independent of slow gettask/listinteractions. */
+const SCRATCH_POLL_INTERVAL_MS = 2_000
 
 interface MinionSessionState {
   channel: EventChannel
@@ -382,6 +396,10 @@ interface MinionSessionState {
   lastWorkingKey: string
   /** Last scratch API error logged (dedupe warn spam). */
   lastScratchError: string
+  /** Last successful gettask payload — scratch loop uses this without waiting on aifx. */
+  lastTask: Record<string, any> | null
+  /** Prevent overlapping scratch ticks. */
+  scratchTickBusy: boolean
 }
 
 /** Durable memory across soft-stop / resume so we don't re-echo old interactions. */
@@ -416,6 +434,8 @@ function isEphemeralStatusText(text: string): boolean {
 export class MinionHarness implements HarnessDriver {
   private readonly sessions = new Map<string, MinionSessionState>()
   private readonly polls = new Map<string, AbortController>()
+  /** Fast scratch-only loop so tool cards are not starved by slow gettask. */
+  private readonly scratchLoops = new Map<string, ReturnType<typeof setInterval>>()
   /** Survives soft-stop so resume/follow-ups don't re-dump the whole transcript. */
   private readonly memory = new Map<string, MinionMemory>()
   /** Fired when remote-active (pre-complete poll) starts or stops — sidebar status. */
@@ -488,6 +508,8 @@ export class MinionHarness implements HarnessDriver {
     if (!taskId) throw new Error('Minion createtask returned no task id')
 
     const state = this.newState(taskId, { liveFromStart: true, remoteTaskId: taskId })
+    const createdTask = (created.task as Record<string, any>) ?? { id: taskId, status: 'TASK_STATUS_PENDING' }
+    state.lastTask = createdTask
     this.sessions.set(taskId, state)
     state.channel.push({
       type: 'session_started',
@@ -502,7 +524,7 @@ export class MinionHarness implements HarnessDriver {
       `On it — spinning up a DevPod on \`${repo.name}\` for this. Message me anytime while I work, or hit Stop to cancel.`,
       'minion_task_created'
     )
-    this.pushSetupChrome(state, taskId, (created.task as Record<string, any>) ?? { status: 'TASK_STATUS_PENDING' })
+    this.pushSetupChrome(state, taskId, createdTask)
     this.ensurePolling(taskId)
     return { sessionId: taskId, events: state.channel[Symbol.asyncIterator]() }
   }
@@ -536,6 +558,7 @@ export class MinionHarness implements HarnessDriver {
     if (existing) existing.channel.close()
 
     const state = this.newState(id, { remoteTaskId: id })
+    state.lastTask = task
     this.sessions.set(id, state)
     state.channel.push({
       type: 'session_started',
@@ -591,6 +614,7 @@ export class MinionHarness implements HarnessDriver {
     const wasPolling = this.polls.has(sessionId)
     this.polls.get(sessionId)?.abort()
     this.polls.delete(sessionId)
+    this.stopScratchLoop(sessionId)
     if (wasPolling) this.notifyActivity(sessionId)
     const state = this.sessions.get(sessionId)
     // Mark closed before any await so a concurrent streamInput cannot push a
@@ -667,9 +691,11 @@ export class MinionHarness implements HarnessDriver {
     const live = await this.findLiveTaskInTree(state.remoteTaskId || sessionId, sessionId)
     if (live) {
       const liveId = String(live.id ?? '')
+      // Always clear completionPosted — same-tip reuse used to leave it true
+      // after Done, which made pushWorkingChrome no-op for the whole follow-up.
+      state.completionPosted = false
       if (liveId && liveId !== state.remoteTaskId) {
         state.remoteTaskId = liveId
-        state.completionPosted = false
         this.remember(sessionId, state)
         this.notifyRemoteTask(sessionId, liveId)
         logger.info('minionHarness: reusing live Minion task instead of CreateTask', {
@@ -677,6 +703,8 @@ export class MinionHarness implements HarnessDriver {
           remoteTaskId: liveId,
           status: live.status
         })
+      } else {
+        this.remember(sessionId, state)
       }
       await this.createInteractionOnRemote(sessionId, state, text)
       return
@@ -695,13 +723,14 @@ export class MinionHarness implements HarnessDriver {
     }
 
     const status = String(task?.status ?? '')
-    if (task && isTerminalStatus(status)) {
+    if (task && isTaskFinished(task)) {
       // 3. Finished tip but DevPod still up → steer; don't mint another runner.
       if (await this.isDevpodReachable(task)) {
         logger.info('minionHarness: finished task still has live DevPod — CreateInteraction', {
           sessionId,
           remoteTaskId: state.remoteTaskId,
-          status
+          status,
+          display: extractDisplayStatus(task)
         })
         state.completionPosted = false
         await this.createInteractionOnRemote(sessionId, state, text)
@@ -779,7 +808,7 @@ export class MinionHarness implements HarnessDriver {
         return null
       }
       if (!task) return null
-      if (!isTerminalStatus(String(task.status ?? ''))) return task
+      if (!isTaskFinished(task)) return task
       const kids = Array.isArray(task.child_task_ids)
         ? (task.child_task_ids as unknown[]).map((k) => String(k)).filter(Boolean)
         : []
@@ -969,7 +998,9 @@ export class MinionHarness implements HarnessDriver {
       historySeeded: opts?.liveFromStart === true || mem != null,
       scratch: mem?.scratch ? { ...mem.scratch } : emptyScratchWatermark(),
       lastWorkingKey: '',
-      lastScratchError: ''
+      lastScratchError: '',
+      lastTask: null,
+      scratchTickBusy: false
     }
   }
 
@@ -1005,10 +1036,70 @@ export class MinionHarness implements HarnessDriver {
   private softStop(sessionId: string, state: MinionSessionState): void {
     this.clearStatusChrome(state, sessionId)
     this.remember(sessionId, state)
+    this.stopScratchLoop(sessionId)
     const wasPolling = this.polls.has(sessionId)
     this.polls.get(sessionId)?.abort()
     this.polls.delete(sessionId)
     if (wasPolling) this.notifyActivity(sessionId)
+  }
+
+  private ensureScratchLoop(sessionId: string): void {
+    if (this.scratchLoops.has(sessionId)) return
+    const handle = setInterval(() => {
+      void this.tickScratch(sessionId)
+    }, SCRATCH_POLL_INTERVAL_MS)
+    this.scratchLoops.set(sessionId, handle)
+    void this.tickScratch(sessionId)
+  }
+
+  private stopScratchLoop(sessionId: string): void {
+    const handle = this.scratchLoops.get(sessionId)
+    if (handle) clearInterval(handle)
+    this.scratchLoops.delete(sessionId)
+  }
+
+  /** Scratch-only tick — must not wait on gettask (that path starves tool cards). */
+  private async tickScratch(sessionId: string): Promise<void> {
+    const state = this.sessions.get(sessionId)
+    if (!state || state.closing || state.channel.closed || state.completionPosted) {
+      this.stopScratchLoop(sessionId)
+      return
+    }
+    const task = state.lastTask
+    if (!task) return
+    await this.pollScratch(sessionId, state, task, new AbortController().signal)
+    if (state.scratch.healthy && state.lastSetupKey !== '') {
+      state.lastSetupKey = ''
+    }
+  }
+
+  /**
+   * Before announcing Done: keep trying scratch until chat.jsonl has been seeded
+   * (or grace expires). DNS often lags name/URL/`RUNNING` by tens of seconds.
+   */
+  private async flushScratchForCompletion(
+    sessionId: string,
+    state: MinionSessionState,
+    task: Record<string, any>,
+    signal: AbortSignal
+  ): Promise<void> {
+    const deadline = Date.now() + 45_000
+    while (!signal.aborted && Date.now() < deadline) {
+      state.lastTask = task
+      await this.pollScratch(sessionId, state, task, signal, {
+        waitForBusyMs: SCRATCH_FETCH_TIMEOUT_MS
+      })
+      if (state.scratch.seeded) {
+        await this.pollScratch(sessionId, state, task, signal, {
+          waitForBusyMs: SCRATCH_FETCH_TIMEOUT_MS
+        })
+        return
+      }
+      await sleep(2_000, signal)
+    }
+    await this.pollScratch(sessionId, state, task, signal, {
+      waitForBusyMs: SCRATCH_FETCH_TIMEOUT_MS
+    })
   }
 
   private clearStatusChrome(state: MinionSessionState, sessionId: string): void {
@@ -1081,9 +1172,15 @@ export class MinionHarness implements HarnessDriver {
     })
   }
 
-  /** True when Working chrome is only the scratch-not-ready placeholder. */
+  /** True when Working chrome is only a scratch-not-ready placeholder. */
   private isScratchWaitChrome(state: MinionSessionState): boolean {
-    return state.lastWorkingKey.startsWith('Connecting to session')
+    const key = state.lastWorkingKey
+    return (
+      key.startsWith('Connecting to session') ||
+      key.includes('waiting for tools') ||
+      key.includes('Waiting for scratch') ||
+      key.includes('Streaming session progress')
+    )
   }
 
   /**
@@ -1119,6 +1216,30 @@ export class MinionHarness implements HarnessDriver {
    * Soft-degrades on API errors — orchestrator polling continues.
    */
   private async pollScratch(
+    sessionId: string,
+    state: MinionSessionState,
+    task: Record<string, any>,
+    signal: AbortSignal,
+    opts?: { waitForBusyMs?: number }
+  ): Promise<void> {
+    // Serialize gettask-path flushes with the dedicated scratch interval.
+    // Terminal flushes must wait — skipping while busy posted Done with no tools.
+    const waitMs = opts?.waitForBusyMs ?? 0
+    const waitDeadline = Date.now() + waitMs
+    while (state.scratchTickBusy) {
+      if (waitMs <= 0 || Date.now() >= waitDeadline || signal.aborted) return
+      await sleep(50, signal)
+    }
+    if (signal.aborted) return
+    state.scratchTickBusy = true
+    try {
+      await this.pollScratchBody(sessionId, state, task, signal)
+    } finally {
+      state.scratchTickBusy = false
+    }
+  }
+
+  private async pollScratchBody(
     sessionId: string,
     state: MinionSessionState,
     task: Record<string, any>,
@@ -1158,8 +1279,13 @@ export class MinionHarness implements HarnessDriver {
       }
       const sizeBytes = chat.sizeBytes ?? -1
       const mtime = chat.modifiedTimeUnix ?? 0
+      // Only skip when Minion gave real size+mtime (API often sends strings —
+      // parsed in listScratchFiles). Missing metadata used to be -1/0 forever,
+      // so after the first seed we never re-fetched growing chat.jsonl.
       if (
         state.scratch.seeded &&
+        sizeBytes >= 0 &&
+        mtime > 0 &&
         sizeBytes === state.scratch.sizeBytes &&
         mtime === state.scratch.mtime
       ) {
@@ -1210,6 +1336,7 @@ export class MinionHarness implements HarnessDriver {
   }
 
   private ensurePolling(sessionId: string): void {
+    this.ensureScratchLoop(sessionId)
     if (this.polls.has(sessionId)) return
     void this.pollUntilDone(sessionId)
   }
@@ -1219,6 +1346,7 @@ export class MinionHarness implements HarnessDriver {
     if (!state) return
     const abort = new AbortController()
     this.polls.set(sessionId, abort)
+    this.ensureScratchLoop(sessionId)
     this.notifyActivity(sessionId)
     const { channel } = state
     const deadline = Date.now() + POLL_TIMEOUT_MS
@@ -1232,6 +1360,7 @@ export class MinionHarness implements HarnessDriver {
           if (abort.signal.aborted) return
           errors = 0
           if (task) {
+            state.lastTask = task
             const status = String(task.status ?? '')
             const update = extractLatestUpdate(task)
 
@@ -1255,7 +1384,7 @@ export class MinionHarness implements HarnessDriver {
                 const text = interactionText(i)
                 if (text) state.postedTexts.add(normalizeProgressText(text))
               }
-              if (isTerminalStatus(status)) state.completionPosted = true
+              if (isTaskFinished(task)) state.completionPosted = true
               state.historySeeded = true
               this.remember(sessionId, state)
               // Terminal cold-seed: drop "working" without waiting for softStop.
@@ -1277,22 +1406,22 @@ export class MinionHarness implements HarnessDriver {
               }
             }
 
-            // SETUP first; scratch may clear SETUP once chat.jsonl is live.
-            // (Do not call pushSetupChrome after a healthy scratch poll — it
-            // would stomp Working chrome while Connect is still "in progress".)
-            if (!state.scratch.healthy) {
-              this.pushSetupChrome(state, sessionId, task)
-            }
+            const finished = isTaskFinished(task)
 
-            // Scratch Working/tool feed (append-aware). Prefer this over
-            // orchestrator prose when healthy so we don't double-post.
-            await this.pollScratch(sessionId, state, task, abort.signal)
-            if (abort.signal.aborted) return
-            // If scratch is still catching up, surface gettask status in Working
-            // chrome instead of leaving "Connecting to session…".
-            if (!state.scratch.healthy) {
+            // SETUP first; scratch may clear SETUP once chat.jsonl is live.
+            if (!state.scratch.healthy && !finished) {
+              this.pushSetupChrome(state, sessionId, task)
               this.pushOrchestratorWorkingChrome(state, sessionId, task)
             }
+
+            // Tools must land before listinteractions prose (READY/Done markers).
+            // Finished: retry until chat.jsonl seeds (DNS often lags RUNNING).
+            if (finished) {
+              await this.flushScratchForCompletion(sessionId, state, task, abort.signal)
+            } else {
+              await this.pollScratch(sessionId, state, task, abort.signal)
+            }
+            if (abort.signal.aborted) return
 
             let sawNewInteraction = false
             const listed = await callTool('listinteractions', {
@@ -1324,9 +1453,7 @@ export class MinionHarness implements HarnessDriver {
               sawNewInteraction = true
             }
 
-            if (isTerminalStatus(status)) {
-              // Final scratch flush before announcing completion.
-              await this.pollScratch(sessionId, state, task, abort.signal)
+            if (finished) {
               if (!state.completionPosted && !state.closing) {
                 state.completionPosted = true
                 this.clearStatusChrome(state, sessionId)

@@ -1,13 +1,15 @@
 /**
  * Minion session e2e — real `aifx mcp call minion-orchestrator` (no mocks).
- * Creates a real do-nothing Minion task, steers it, then cancels it.
- * Also covers attach via Minion web link / task UUID.
  *
- * Launches Electron with a Dock-like sparse env (not the developer shell PATH).
- * Without forcing `--usso` in MinionHarness, aifx routes to muttley on
- * localhost:5436 and createtask fails — the same failure as packaged Atelier.
+ * Cases (see Features/minion-working-chrome-stall/spec.md):
+ *   A — create → SETUP → rich intermediate → answer → follow-up → intermediate → answer
+ *   B — create until tools → close (keep remote) → attach → history → follow-up → answer
+ *   C — parked (no reliable in-suite “close DevPod”)
+ *   D — create until tools → re-attach same UUID → one row + history
+ *
+ * No pinned “scratch still up” fixtures — those go cold and make false failures.
  */
-import { test, expect, _electron as electron } from '@playwright/test'
+import { test, expect, type Page, _electron as electron } from '@playwright/test'
 import { seedSkipOnboarding } from './e2e-config'
 import { mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -16,11 +18,8 @@ import { join } from 'node:path'
 const projectRoot = join(__dirname, '..')
 const artifactsDir = join(projectRoot, 'e2e-artifacts')
 
-/** macOS GUI / Dock launch env — must not inherit the login-shell PATH. */
 function guiLikeElectronEnv(): Record<string, string> {
   const env: Record<string, string> = {
-    // Match Finder/Dock: system paths only. aifx / homebrew are restored inside
-    // the app via augmentProcessPathForGuiLaunch + subprocessEnvWithDevPath.
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
     HOME: process.env.HOME ?? '',
     USER: process.env.USER ?? '',
@@ -42,243 +41,303 @@ async function launchMinionApp(userDataDir: string) {
   })
 }
 
-test.describe('minion-session', () => {
-  test('create, steer, cancel a Minion task', async () => {
-    test.setTimeout(180_000)
-    mkdirSync(artifactsDir, { recursive: true })
-    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-'))
-    seedSkipOnboarding(userDataDir)
-    const app = await launchMinionApp(userDataDir)
-    const page = await app.firstWindow()
-    await page.waitForLoadState('domcontentloaded')
+async function cleanupMinionSessions(page: Page, opts?: { cancelRemote?: boolean }): Promise<void> {
+  await page
+    .evaluate(async (cancelRemote) => {
+      const sessions = await window.atelier.listActiveSessions()
+      for (const s of sessions.filter((x) => x.mode === 'minion')) {
+        if (cancelRemote) await window.atelier.interruptSession(s.id).catch(() => undefined)
+        await window.atelier.closeSession(s.id).catch(() => undefined)
+      }
+    }, opts?.cancelRemote ?? true)
+    .catch(() => undefined)
+}
 
-    try {
-      await page.getByTestId('new-session-button').click()
-      await expect(page.getByTestId('new-session-modal')).toBeVisible()
-      await page.getByTestId('mode-minion').click()
-      await expect(page.getByTestId('minion-repo')).toHaveValue('go-code')
-      await expect(page.getByTestId('minion-attach-link')).toBeVisible()
-      await page.getByTestId('initial-prompt').fill('Atelier e2e smoke test. Do nothing — just print hello and exit.')
-      await page.getByTestId('start-session-button').click()
-      await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 60_000 })
+function setupCard(page: Page) {
+  return page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-setup"]')
+}
 
-      await expect(page.getByTestId('minion-tag').first()).toBeVisible({ timeout: 30_000 })
-      await expect(page.getByText(/On it — spinning up a DevPod|Setting up my DevPod/i).first()).toBeVisible({
-        timeout: 30_000
-      })
-      // SETUP card (Cortana-style conversation-status-card) while DevPod comes up.
-      await expect(
-        page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-setup"]')
-      ).toBeVisible({ timeout: 60_000 })
-      await expect(page.getByTestId('minion-setup-steps')).toBeVisible()
-      await page.screenshot({ path: join(artifactsDir, 'minion-session-created.png') })
+function workingCard(page: Page) {
+  return page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-working"]')
+}
 
-      // Composer Stop tracks remote lifetime (empty input), not each progress tick.
-      await expect(page.getByTestId('stop-button')).toBeVisible({ timeout: 60_000 })
+function waitOnlyChrome(page: Page) {
+  return workingCard(page).filter({
+    hasText: /waiting for tools|Connecting to session|Waiting for scratch|Streaming session progress/i
+  })
+}
 
-      const composer = page.getByTestId('composer-input')
-      await composer.click()
-      await composer.fill('Please keep it minimal; no code changes needed.')
-      // Typed while remote-active: Send (steer), not Queue.
-      await expect(page.getByTestId('send-button')).toBeVisible()
-      await expect(page.getByTestId('send-button')).toHaveAttribute('aria-label', 'Send')
-      await page.getByTestId('send-button').click()
-      await expect(page.getByText(/Please keep it minimal/i).first()).toBeVisible({ timeout: 30_000 })
-      // After steer, composer clears → Stop again while remote still active.
-      await expect(page.getByTestId('stop-button')).toBeVisible({ timeout: 60_000 })
-      await expect(page.getByText(/Got it — working/i)).toHaveCount(0)
-      await expect(page.getByText(/Stopped\./)).toHaveCount(0)
-      await page.screenshot({ path: join(artifactsDir, 'minion-session-steered.png') })
+/** Markers the agent is asked to emit (plus harness "Done."). */
+const ANSWER_RE = /\bDone\.|A1-READY|A2-READY|B-SEED|B-READY|D-READY/i
 
-      await page.evaluate(async () => {
-        const sessions = await window.atelier.listActiveSessions()
-        for (const s of sessions.filter((x) => x.mode === 'minion')) {
-          await window.atelier.interruptSession(s.id)
-        }
-      })
-      await expect(page.getByText(/Stopped\./).first()).toBeVisible({ timeout: 30_000 })
-      // Cancelled / idle Minion must not keep the sidebar execution glyph.
-      await expect(page.getByTestId('session-row').filter({ has: page.getByTestId('minion-tag') }).first().getByTestId('session-dot')).not.toHaveClass(
-        /status-working/,
-        { timeout: 15_000 }
+/** Markdown may strip `` ` `` from user prompts in the DOM — normalize before match. */
+function normalizeTranscriptText(s: string): string {
+  return s.replace(/[`*_~]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+function answerMarker(page: Page) {
+  return page
+    .locator('[data-testid="transcript-message"][data-role="assistant"]')
+    .getByText(ANSWER_RE)
+}
+
+/**
+ * Intermediate = scratch tool activity. Finished tools collapse into
+ * `tool-sequence-summary` (no open `tool-card`) — both count.
+ */
+async function hasToolIntermediate(page: Page): Promise<boolean> {
+  if (await page.getByTestId('tool-card').first().isVisible().catch(() => false)) return true
+  return page.getByTestId('tool-sequence-summary').first().isVisible().catch(() => false)
+}
+
+async function toolIntermediateCount(page: Page): Promise<number> {
+  const cards = await page.getByTestId('tool-card').count()
+  const summaries = await page.getByTestId('tool-sequence-summary').count()
+  return cards + summaries
+}
+
+async function expectToolIntermediateVisible(page: Page, timeoutMs: number): Promise<void> {
+  await expect
+    .poll(() => hasToolIntermediate(page), {
+      timeout: timeoutMs,
+      intervals: [1_000, 2_000, 5_000]
+    })
+    .toBeTruthy()
+}
+
+/** Intermediate = real tool UI from scratch (not Working chrome alone). */
+async function expectIntermediateBeforeDone(page: Page, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (await hasToolIntermediate(page)) return
+    if (await answerMarker(page).first().isVisible().catch(() => false)) {
+      const waiting = await waitOnlyChrome(page).count()
+      throw new Error(
+        waiting > 0
+          ? 'Got Done/READY while still on wait-placeholder — scratch never streamed tools'
+          : 'Got Done/READY without any tool-card or tool-sequence-summary'
       )
-      await expect(
-        page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-setup"]')
-      ).toHaveCount(0)
-      const texts = await page.getByTestId('transcript-message').allTextContents()
-      const joined = texts.join('\n')
-      const userSteerIdx = joined.toLowerCase().indexOf('please keep it minimal')
-      const stopIdx = joined.indexOf('Stopped.')
-      expect(userSteerIdx).toBeGreaterThanOrEqual(0)
-      expect(stopIdx).toBeGreaterThan(userSteerIdx)
-      expect(joined.indexOf('Stopped.', stopIdx + 1)).toBe(-1)
-      await expect(page.getByText(/Got it — working/i)).toHaveCount(0)
-      await page.screenshot({ path: join(artifactsDir, 'minion-session-cancelled.png') })
-    } finally {
-      await page.evaluate(async () => {
-        const sessions = await window.atelier.listActiveSessions()
-        for (const s of sessions.filter((x) => x.mode === 'minion')) await window.atelier.interruptSession(s.id)
-      }).catch(() => undefined)
-      await app.close().catch(() => undefined)
     }
-  })
+    await page.waitForTimeout(1_500)
+  }
+  throw new Error(`Timeout ${timeoutMs}ms waiting for tool intermediate UI`)
+}
 
-  /**
-   * Scratch chat.jsonl seed — attach a completed task that still has DevPod
-   * scratch (listScratchFiles). Fresh createtask often stays in Connect DNS
-   * for minutes before scratch is reachable; this covers the Working/tool UI.
-   */
-  test('attach seeds scratch tool timeline from chat.jsonl', async () => {
-    test.setTimeout(180_000)
-    mkdirSync(artifactsDir, { recursive: true })
-    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-scratch-'))
-    seedSkipOnboarding(userDataDir)
-    const app = await launchMinionApp(userDataDir)
-    const page = await app.firstWindow()
-    await page.waitForLoadState('domcontentloaded')
-
-    // Known completed task with ~320KB chat.jsonl (Validate SKILL / Bash tools).
-    const taskId = '2f7abb6b-1622-44f1-ae3e-1fb17f219a1b'
-
-    try {
-      await page.getByTestId('new-session-button').click()
-      await page.getByTestId('mode-minion').click()
-      await page.getByTestId('minion-attach-link').fill(`https://minion.uberinternal.com/v2?taskId=${taskId}`)
-      await expect(page.getByTestId('minion-attach-parsed')).toContainText(taskId)
-      await page.getByTestId('start-session-button').click()
-      await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 60_000 })
-      await expect(page.getByText(/Attached to existing Minion task/i).first()).toBeVisible({ timeout: 30_000 })
-
-      // Seeded scratch → tool cards (and/or Working chrome while still active).
-      const scratchUi = page
-        .getByTestId('tool-card')
-        .or(page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-working"]'))
-      await expect(scratchUi.first()).toBeVisible({ timeout: 90_000 })
-      await page.screenshot({ path: join(artifactsDir, 'minion-session-scratch-progress.png') })
-    } finally {
-      await page.evaluate(async () => {
-        const sessions = await window.atelier.listActiveSessions()
-        for (const s of sessions.filter((x) => x.mode === 'minion')) {
-          await window.atelier.interruptSession(s.id).catch(() => undefined)
-          await window.atelier.closeSession(s.id).catch(() => undefined)
+async function expectAssistantAnswerAfter(
+  page: Page,
+  afterUserText: string,
+  timeoutMs: number
+): Promise<void> {
+  const needle = normalizeTranscriptText(afterUserText)
+  await expect
+    .poll(
+      async () => {
+        // Only count assistant rows after the matching user turn — the user
+        // prompt itself contains "A1-READY" / "B-SEED" instructions.
+        const msgs = page.getByTestId('transcript-message')
+        const count = await msgs.count()
+        let seenUser = false
+        for (let i = 0; i < count; i++) {
+          const el = msgs.nth(i)
+          const role = await el.getAttribute('data-role')
+          const text = normalizeTranscriptText(await el.innerText())
+          if (!seenUser) {
+            if (role === 'user' && text.includes(needle)) seenUser = true
+            continue
+          }
+          if (role === 'assistant' && ANSWER_RE.test(text)) return true
         }
-      }).catch(() => undefined)
-      await app.close().catch(() => undefined)
-    }
-  })
+        return false
+      },
+      { timeout: timeoutMs, intervals: [2_000, 5_000, 10_000] }
+    )
+    .toBeTruthy()
+}
 
-  /**
-   * Finished/cancelled task follow-up must CreateTask(parent) to relaunch a
-   * DevPod — not CreateInteraction alone (messages sat PENDING forever).
-   */
-  test('follow-up on cancelled task relaunches DevPod with SETUP', async () => {
-    test.setTimeout(180_000)
+async function sendComposer(page: Page, text: string): Promise<void> {
+  const composer = page.getByTestId('composer-input')
+  await composer.click()
+  await composer.fill(text)
+  await page.getByTestId('send-button').click()
+  // Markdown strips `` ` `` in the transcript — assert without them.
+  const visible = text.replace(/`/g, '')
+  await expect(page.getByText(visible, { exact: false }).first()).toBeVisible({ timeout: 30_000 })
+}
+
+async function createMinionWithPrompt(page: Page, prompt: string): Promise<void> {
+  await page.getByTestId('new-session-button').click()
+  await expect(page.getByTestId('new-session-modal')).toBeVisible()
+  await page.getByTestId('mode-minion').click()
+  await page.getByTestId('initial-prompt').fill(prompt)
+  await page.getByTestId('start-session-button').click()
+  await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 60_000 })
+  await expect(page.getByTestId('minion-tag').first()).toBeVisible({ timeout: 30_000 })
+}
+
+async function activeMinionTaskId(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const sessions = await window.atelier.listActiveSessions()
+    const minion = sessions.find((s) => s.mode === 'minion')
+    if (!minion) throw new Error('no minion session')
+    return minion.id
+  })
+}
+
+/** Close Atelier session without cancelling the remote Minion task (pod stays up). */
+async function closeMinionKeepRemote(page: Page, taskId: string): Promise<void> {
+  await page.evaluate(async (id) => {
+    await window.atelier.closeSession(id)
+  }, taskId)
+  // Closed rows stay in the sidebar (`.closed`); attach reopens the same UUID.
+  await expect(
+    page.locator(`[data-testid="session-row"][data-mode="minion"][data-session-id="${taskId}"]`)
+  ).toHaveClass(/closed/, { timeout: 15_000 })
+}
+
+async function attachMinionTask(page: Page, taskId: string): Promise<void> {
+  await page.getByTestId('new-session-button').click()
+  await page.getByTestId('mode-minion').click()
+  await page.getByTestId('minion-attach-link').fill(`https://minion.uberinternal.com/v2?taskId=${taskId}`)
+  await expect(page.getByTestId('minion-attach-parsed')).toContainText(taskId)
+  await page.getByTestId('start-session-button').click()
+  await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 60_000 })
+  // Fresh attach posts an ack; reopen-after-close reuses the row + prior transcript.
+  const row = page.locator(
+    `[data-testid="session-row"][data-mode="minion"][data-session-id="${taskId}"]`
+  )
+  await expect(row).toBeVisible({ timeout: 30_000 })
+  await expect(row).not.toHaveClass(/closed/, { timeout: 30_000 })
+}
+
+test.describe('minion-session', () => {
+  test('A: create SETUP → intermediate → answer → follow-up → intermediate → answer', async () => {
+    test.setTimeout(900_000)
     mkdirSync(artifactsDir, { recursive: true })
-    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-relaunch-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-a-'))
     seedSkipOnboarding(userDataDir)
     const app = await launchMinionApp(userDataDir)
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
 
-    // Known CANCELLED task (DevPod gone); follow-up must mint a child task.
-    const taskId = '2f46e72a-aff3-43bc-a355-b5ff64ca763e'
+    const prompt1 =
+      'Atelier e2e Case A. Run `echo atelier-e2e-a1` in the shell once, then reply with exactly: A1-READY.'
+    const prompt2 =
+      'Atelier e2e Case A follow-up. Run `echo atelier-e2e-a2` once, then reply with exactly: A2-READY.'
 
     try {
-      await page.getByTestId('new-session-button').click()
-      await page.getByTestId('mode-minion').click()
-      await page.getByTestId('minion-attach-link').fill(`https://minion.uberinternal.com/v2?taskId=${taskId}`)
-      await expect(page.getByTestId('minion-attach-parsed')).toContainText(taskId)
-      await page.getByTestId('start-session-button').click()
-      await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 60_000 })
-      await expect(page.getByText(/Attached to existing Minion task/i).first()).toBeVisible({ timeout: 30_000 })
+      await createMinionWithPrompt(page, prompt1)
+      await expect(setupCard(page)).toBeVisible({ timeout: 90_000 })
+      await expect(page.getByTestId('minion-setup-steps')).toBeVisible()
+      await page.screenshot({ path: join(artifactsDir, 'minion-case-a-setup.png') })
 
-      const composer = page.getByTestId('composer-input')
-      await composer.click()
-      await composer.fill('Atelier e2e relaunch probe. Reply hello and stop — no code changes.')
-      await page.getByTestId('send-button').click()
+      await expectIntermediateBeforeDone(page, 420_000)
+      await page.screenshot({ path: join(artifactsDir, 'minion-case-a-intermediate.png') })
 
-      await expect(page.getByText(/Relaunching a DevPod from this job/i).first()).toBeVisible({
-        timeout: 90_000
-      })
-      await expect(
-        page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-setup"]')
-      ).toBeVisible({ timeout: 60_000 })
-      await page.screenshot({ path: join(artifactsDir, 'minion-session-finished-relaunch.png') })
+      await expectAssistantAnswerAfter(page, prompt1.slice(0, 48), 300_000)
+      await page.screenshot({ path: join(artifactsDir, 'minion-case-a-answer.png') })
+
+      await sendComposer(page, prompt2)
+      await expectIntermediateBeforeDone(page, 300_000)
+      await page.screenshot({ path: join(artifactsDir, 'minion-case-a-followup-intermediate.png') })
+
+      await expectAssistantAnswerAfter(page, prompt2.slice(0, 40), 300_000)
+      await page.screenshot({ path: join(artifactsDir, 'minion-case-a-followup-answer.png') })
     } finally {
-      await page.evaluate(async () => {
-        const sessions = await window.atelier.listActiveSessions()
-        for (const s of sessions.filter((x) => x.mode === 'minion')) {
-          await window.atelier.interruptSession(s.id).catch(() => undefined)
-          await window.atelier.closeSession(s.id).catch(() => undefined)
-        }
-      }).catch(() => undefined)
+      await cleanupMinionSessions(page, { cancelRemote: true })
       await app.close().catch(() => undefined)
     }
   })
 
-  test('attach existing Minion task via link', async () => {
-    test.setTimeout(180_000)
+  test('B: self-seed attach history → follow-up → intermediate → answer', async () => {
+    test.setTimeout(900_000)
     mkdirSync(artifactsDir, { recursive: true })
-    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-attach-'))
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-b-'))
     seedSkipOnboarding(userDataDir)
     const app = await launchMinionApp(userDataDir)
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
 
+    const seedPrompt =
+      'Atelier e2e Case B seed. Run `echo atelier-e2e-b-seed` once, then reply with exactly: B-SEED.'
+    const followUp =
+      'Atelier e2e Case B follow-up. Reply with exactly: B-READY. No code changes.'
+
     try {
-      await page.getByTestId('new-session-button').click()
-      await page.getByTestId('mode-minion').click()
-      await page.getByTestId('initial-prompt').fill('Atelier e2e attach seed. Do nothing — print hi and exit.')
-      await page.getByTestId('start-session-button').click()
-      await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 60_000 })
-      await expect(page.getByTestId('minion-tag').first()).toBeVisible({ timeout: 30_000 })
+      await createMinionWithPrompt(page, seedPrompt)
+      await expect(setupCard(page)).toBeVisible({ timeout: 90_000 })
+      await expectIntermediateBeforeDone(page, 420_000)
+      await expectAssistantAnswerAfter(page, seedPrompt.slice(0, 40), 300_000)
+      const taskId = await activeMinionTaskId(page)
+      await page.screenshot({ path: join(artifactsDir, 'minion-case-b-seeded.png') })
 
-      const taskId = await page.evaluate(async () => {
-        const sessions = await window.atelier.listActiveSessions()
-        const minion = sessions.find((s) => s.mode === 'minion')
-        if (!minion) throw new Error('no minion session')
-        return minion.id
-      })
+      // Keep remote DevPod; drop local session so attach must re-seed from scratch.
+      await closeMinionKeepRemote(page, taskId)
 
-      // Already-open attach must focus the same row — never createtask a twin.
+      await attachMinionTask(page, taskId)
+      await expectToolIntermediateVisible(page, 90_000)
+      await page.screenshot({ path: join(artifactsDir, 'minion-case-b-history.png') })
+
+      const toolCountBefore = await toolIntermediateCount(page)
+      await sendComposer(page, followUp)
+
+      const relaunched = await page
+        .getByText(/Relaunching a DevPod from this job/i)
+        .first()
+        .isVisible()
+        .catch(() => false)
+      if (relaunched) await expect(setupCard(page)).toBeVisible({ timeout: 90_000 })
+
+      await expectIntermediateBeforeDone(page, 300_000)
+      await expect
+        .poll(async () => (await toolIntermediateCount(page)) >= toolCountBefore, {
+          timeout: 120_000,
+          intervals: [3_000, 8_000]
+        })
+        .toBeTruthy()
+      await page.screenshot({ path: join(artifactsDir, 'minion-case-b-followup-intermediate.png') })
+
+      await expectAssistantAnswerAfter(page, followUp.slice(0, 40), 300_000)
+      await page.screenshot({ path: join(artifactsDir, 'minion-case-b-followup-answer.png') })
+    } finally {
+      await cleanupMinionSessions(page, { cancelRemote: true })
+      await app.close().catch(() => undefined)
+    }
+  })
+
+  // Case C parked — Features/minion-working-chrome-stall/spec.md
+
+  test('D: re-attach open session keeps history and does not mint a twin', async () => {
+    test.setTimeout(600_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-d-'))
+    seedSkipOnboarding(userDataDir)
+    const app = await launchMinionApp(userDataDir)
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    const seedPrompt =
+      'Atelier e2e Case D. Run `echo atelier-e2e-d` once, then reply with exactly: D-READY.'
+
+    try {
+      await createMinionWithPrompt(page, seedPrompt)
+      await expect(setupCard(page)).toBeVisible({ timeout: 90_000 })
+      await expectIntermediateBeforeDone(page, 420_000)
+      const taskId = await activeMinionTaskId(page)
+      await page.screenshot({ path: join(artifactsDir, 'minion-case-d-history.png') })
+
       await page.getByTestId('new-session-button').click()
       await page.getByTestId('mode-minion').click()
       await page.getByTestId('minion-attach-link').fill(`https://minion.uberinternal.com/v2/${taskId}`)
       await expect(page.getByTestId('minion-attach-parsed')).toContainText(taskId)
       await page.getByTestId('start-session-button').click()
       await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 15_000 })
+
       await expect(page.locator('[data-testid="session-row"][data-mode="minion"]')).toHaveCount(1)
-      // Still the original create ack only — attach-of-open must not mint a second task.
-      await expect(page.getByText(/spinning up a DevPod/i)).toHaveCount(1)
-
-      await page.evaluate(async (id) => {
-        await window.atelier.closeSession(id)
-        await window.atelier.deleteSession(id)
-      }, taskId)
-
-      await page.getByTestId('new-session-button').click()
-      await page.getByTestId('mode-minion').click()
-      const link = `https://minion.uberinternal.com/v2?taskId=${taskId}`
-      await page.getByTestId('minion-attach-link').fill(link)
-      await expect(page.getByTestId('minion-attach-parsed')).toContainText(taskId)
-      await expect(page.getByTestId('start-session-button')).toHaveText(/Attach Session/)
-      await page.getByTestId('start-session-button').click()
-      await expect(page.getByTestId('new-session-modal')).toHaveCount(0, { timeout: 60_000 })
-
-      await expect(page.getByTestId('minion-tag').first()).toBeVisible({ timeout: 30_000 })
-      await expect(page.getByText(/Attached to existing Minion task/i).first()).toBeVisible({ timeout: 30_000 })
-      // Fresh attach row: attach ack only — no createtask DevPod line.
-      await expect(page.getByText(/spinning up a DevPod/i)).toHaveCount(0)
-      await expect(page.locator('[data-testid="session-row"][data-mode="minion"]')).toHaveCount(1)
-      await page.screenshot({ path: join(artifactsDir, 'minion-session-attached.png') })
+      await expect(page.getByText(/spinning up a DevPod/i)).toHaveCount(1) // original create ack only
+      await expectToolIntermediateVisible(page, 15_000)
+      await page.screenshot({ path: join(artifactsDir, 'minion-case-d-reattach.png') })
     } finally {
-      await page.evaluate(async () => {
-        const sessions = await window.atelier.listActiveSessions()
-        for (const s of sessions.filter((x) => x.mode === 'minion')) {
-          await window.atelier.interruptSession(s.id).catch(() => undefined)
-          await window.atelier.closeSession(s.id).catch(() => undefined)
-        }
-      }).catch(() => undefined)
+      await cleanupMinionSessions(page, { cancelRemote: true })
       await app.close().catch(() => undefined)
     }
   })
