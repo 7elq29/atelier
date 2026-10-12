@@ -70,27 +70,7 @@ export default function ConversationStatusCard({ chrome }: { chrome: SessionSdkC
     )
   }
 
-  if (chrome.status === 'minion_working') {
-    return (
-      <div
-        className="conversation-status-card conversation-status-card--requesting"
-        data-testid="conversation-status-card"
-        data-status-kind="minion-working"
-      >
-        <div className="conversation-status-head">
-          <span className="tool-badge other">WORKING</span>
-          <span className="conversation-status-title">{chrome.title ?? 'Working…'}</span>
-          <span className="spinner" />
-        </div>
-        <div className="conversation-status-progress conversation-status-progress--accent" aria-hidden="true">
-          <span />
-        </div>
-        <div className="conversation-status-detail">
-          {chrome.detail ?? 'Minion is running tools on the DevPod.'}
-        </div>
-      </div>
-    )
-  }
+  // minion_working renders above the composer (Composer.tsx), not in the transcript.
 
   if (chrome.status === 'compacting') {
     return (

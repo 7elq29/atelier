@@ -20,6 +20,7 @@
  */
 
 import { logger } from '../logger'
+import { parseMinionElicitation } from '../../shared/minion-elicitation'
 import type { MinionRepo } from '../../shared/session-types'
 import type { HarnessDriver, HarnessEvent, HarnessFileInput, HarnessSession, HarnessStartOptions, PromptResponse } from './types'
 import {
@@ -132,6 +133,11 @@ function isTaskFinished(task: Record<string, any>): boolean {
   if (isTerminalStatus(String(task.status ?? ''))) return true
   const display = extractDisplayStatus(task)
   return /^(COMPLETED|SUCCEEDED|SUCCESS)$/i.test(display)
+}
+
+/** Agent is blocked on a structured question — not "working". */
+function isAwaitingUserInput(task: Record<string, any>): boolean {
+  return /USER_INPUT/i.test(String(task.status ?? ''))
 }
 
 function statusLabel(status: string): string {
@@ -314,6 +320,12 @@ function deriveMinionSetup(
 function interactionText(i: Record<string, any>): string {
   const t = i.content?.text ?? i.message
   return typeof t === 'string' ? t.trim() : ''
+}
+
+function isElicitationInteraction(i: Record<string, any>): boolean {
+  const ctype = String(i.content?.type ?? '')
+  if (ctype.includes('ELICITATION')) return true
+  return parseMinionElicitation(interactionText(i)) != null
 }
 
 function isUserInitiator(v: unknown): boolean {
@@ -671,7 +683,11 @@ export class MinionHarness implements HarnessDriver {
   /** Serialize steers per session so a double-send cannot mint two DevPods. */
   private readonly steerChain = new Map<string, Promise<void>>()
 
-  async streamInput(sessionId: string, message: string, _attachments?: HarnessFileInput[]): Promise<void> {
+  async streamInput(
+    sessionId: string,
+    message: string,
+    attachments?: HarnessFileInput[]
+  ): Promise<void> {
     const prev = this.steerChain.get(sessionId) ?? Promise.resolve()
     let release!: () => void
     const gate = new Promise<void>((r) => {
@@ -683,21 +699,26 @@ export class MinionHarness implements HarnessDriver {
     )
     await prev.catch(() => undefined)
     try {
-      await this.streamInputLocked(sessionId, message)
+      await this.streamInputLocked(sessionId, message, attachments)
     } finally {
       release()
     }
   }
 
-  private async streamInputLocked(sessionId: string, message: string): Promise<void> {
+  private async streamInputLocked(
+    sessionId: string,
+    message: string,
+    attachments?: HarnessFileInput[]
+  ): Promise<void> {
     const state = this.sessions.get(sessionId)
     if (!state || state.closing || state.channel.closed) {
       logger.warn('minionHarness: streamInput for unknown/closing session', { sessionId })
       return
     }
     const text = message.trim()
-    if (!text) return
-    state.steeredTexts.add(text)
+    if (!text && !attachments?.length) return
+    // Dedup key is the user-visible text only (attachments always re-send).
+    if (text) state.steeredTexts.add(text)
     state.lastSteeredAt = Date.now()
     state.steerCreateInFlight = true
     state.completionPosted = false
@@ -712,7 +733,7 @@ export class MinionHarness implements HarnessDriver {
     this.remember(sessionId, state)
     this.ensurePolling(sessionId)
     this.notifyActivity(sessionId)
-    await this.createInteractionOnRemote(sessionId, state, text)
+    await this.createInteractionOnRemote(sessionId, state, text, attachments)
   }
 
   /** Live (not ready) child if any; else the tip (= Atelier session id). */
@@ -729,11 +750,12 @@ export class MinionHarness implements HarnessDriver {
   private async createInteractionOnRemote(
     sessionId: string,
     state: MinionSessionState,
-    text: string
+    text: string,
+    attachments?: HarnessFileInput[]
   ): Promise<void> {
     try {
       const requestedTaskId = state.remoteTaskId || sessionId
-      const { interaction } = await httpCreateInteraction(requestedTaskId, text)
+      const { interaction } = await httpCreateInteraction(requestedTaskId, text, attachments)
       const id = String(interaction.id ?? '').trim()
       const status = String(interaction.status ?? '')
       // Trust the response task id — Minion may bind the row to a different
@@ -760,10 +782,11 @@ export class MinionHarness implements HarnessDriver {
         requestedTaskId,
         responseTaskId: responseTaskId || null,
         interactionId: id,
-        status
+        status,
+        attachmentCount: attachments?.length ?? 0
       })
     } catch (err) {
-      state.steeredTexts.delete(text)
+      if (text) state.steeredTexts.delete(text)
       state.pendingSteerInteractionId = ''
       state.awaitingAgentAfterSteer = false
       state.steerCreateInFlight = false
@@ -869,7 +892,38 @@ export class MinionHarness implements HarnessDriver {
     return null
   }
 
-  async respondToPrompt(_sessionId: string, _requestId: string, _response: PromptResponse): Promise<void> {}
+  async respondToPrompt(
+    sessionId: string,
+    requestId: string,
+    response: PromptResponse
+  ): Promise<void> {
+    const state = this.sessions.get(sessionId)
+    if (!state || state.closing || state.channel.closed) return
+    if (response.kind !== 'ask_user_question') return
+    if ('cancelled' in response && response.cancelled) {
+      await this.createInteractionOnRemote(
+        sessionId,
+        state,
+        `Cancelled question ${requestId}`
+      )
+      return
+    }
+    if (!('answers' in response)) return
+    const answers = response.answers ?? {}
+    const picks = Object.values(answers)
+      .map((v) => String(v).trim())
+      .filter(Boolean)
+    const free = response.freeText?.trim()
+    const human = free || picks.join('; ') || 'OK'
+    // Include call_id so Minion can correlate with the elicitation.
+    const payload = JSON.stringify({
+      version: 1,
+      call_id: requestId,
+      answers,
+      ...(free ? { freeText: free } : {})
+    })
+    await this.createInteractionOnRemote(sessionId, state, `${human}\n\n${payload}`)
+  }
 
   async setPermissionMode(_sessionId: string, _mode: string): Promise<void> {}
 
@@ -1071,6 +1125,7 @@ export class MinionHarness implements HarnessDriver {
     chrome: ScratchProgressChrome
   ): void {
     if (state.closing || state.channel.closed || state.completionPosted) return
+    if (state.lastTask && isAwaitingUserInput(state.lastTask)) return
     // SETUP owns the slot until deriveMinionSetup clears.
     if (state.lastSetupKey !== '') return
     const key = `${chrome.title}|${chrome.detail}`
@@ -1244,8 +1299,10 @@ export class MinionHarness implements HarnessDriver {
         })
       }
       // Keep orchestrator progress; never fall back to the wait placeholder after
-      // a transient scratch DNS/API blip mid-run.
-      this.pushOrchestratorWorkingChrome(state, sessionId, task)
+      // a transient scratch DNS/API blip mid-run. Skip when waiting on the user.
+      if (!isAwaitingUserInput(task)) {
+        this.pushOrchestratorWorkingChrome(state, sessionId, task)
+      }
     }
   }
 
@@ -1394,6 +1451,27 @@ export class MinionHarness implements HarnessDriver {
               if (!isAgentInitiator(i.initiator)) continue
               const text = interactionText(i)
               if (!text) continue
+
+              // Structured AskUserQuestion — card event, not raw JSON text.
+              if (isElicitationInteraction(i)) {
+                const elicitation = parseMinionElicitation(text)
+                if (elicitation) {
+                  state.postedTexts.add(normalizeProgressText(text))
+                  state.channel.push({
+                    type: 'ask_user_question',
+                    sessionId,
+                    timestamp: new Date().toISOString(),
+                    requestId: elicitation.callId,
+                    toolUseId: elicitation.callId,
+                    questions: elicitation.questions
+                  })
+                  sawNewAgentInteraction = true
+                  if (state.awaitingAgentAfterSteer) state.awaitingAgentAfterSteer = false
+                  this.clearStatusChrome(state, sessionId)
+                  continue
+                }
+              }
+
               if (!this.pushProgressOnce(state, sessionId, text)) continue
               sawNewAgentInteraction = true
               if (state.awaitingAgentAfterSteer) {
@@ -1403,8 +1481,12 @@ export class MinionHarness implements HarnessDriver {
 
             waitingOnSteer = this.awaitingSteerReply(state)
 
-            // Still waiting on PENDING / agent answer — keep Working, no Done.
-            if (waitingOnSteer) {
+            // Waiting for the user (elicitation / USER_INPUT) — not Working.
+            if (isAwaitingUserInput(task)) {
+              this.clearStatusChrome(state, sessionId)
+              this.remember(sessionId, state)
+            } else if (waitingOnSteer) {
+              // Still waiting on PENDING / agent answer — keep Working, no Done.
               this.pushOrchestratorWorkingChrome(state, sessionId, task)
               this.remember(sessionId, state)
             } else if (isTaskFinished(task)) {

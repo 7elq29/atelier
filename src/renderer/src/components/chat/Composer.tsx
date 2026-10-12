@@ -557,6 +557,7 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
   tokenUsage,
   promptSuggestion,
   rateLimit,
+  sdkChrome, // minion_working → composer-turn-status
   onAddLocalMessage,
   onValidateModel,
   harnessDisconnected = false,
@@ -1155,9 +1156,19 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     </div>
   )
 
+  const minionWorkingText =
+    sdkChrome?.status === 'minion_working'
+      ? (sdkChrome.detail?.trim() || sdkChrome.title?.trim() || '')
+      : ''
+
   return (
     <div className="composer-wrap">
       <div className="composer-stack">
+      {minionWorkingText ? (
+        <div className="composer-turn-status" data-testid="composer-turn-status">
+          {minionWorkingText}
+        </div>
+      ) : null}
       <div
         className={`composer-box${inputMultiline ? ' composer-box--multiline' : ''}${isDragOver ? ' drag-over' : ''}${harnessDisconnected ? ' harness-disconnected' : ''}`}
         data-testid={harnessDisconnected ? 'composer-harness-disconnected' : undefined}

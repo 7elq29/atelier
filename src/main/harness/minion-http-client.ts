@@ -169,21 +169,59 @@ export async function httpListInteractions(taskId: string): Promise<{ interactio
   return { interactions: raw.map(normalizeInteraction) }
 }
 
+/**
+ * Minion's createInteraction wire format only persists TEXT — extra image/file
+ * fields are stripped server-side. Embed small images as data URLs in the
+ * message body so the remote agent can still read them.
+ */
+export function buildMinionSteerMessage(
+  text: string,
+  attachments?: Array<{ mimeType: string; data: string; name?: string }>
+): string {
+  const body = text.trim()
+  if (!attachments?.length) return body
+  const parts: string[] = []
+  if (body) parts.push(body)
+  parts.push('')
+  parts.push(
+    'The user attached the following file(s). Decode each data URL to inspect the content (for images: look at the pixels).'
+  )
+  for (const a of attachments) {
+    const name = (a.name || 'attachment').replace(/\s+/g, '_')
+    const mime = a.mimeType || 'application/octet-stream'
+    const data = a.data.replace(/\s+/g, '')
+    // Cap each attachment so a huge paste cannot blow the RPC (~4MB text).
+    const maxChars = 2_500_000
+    if (data.length > maxChars) {
+      parts.push(`- ${name} (${mime}): omitted — too large to inline (${data.length} base64 chars).`)
+      continue
+    }
+    parts.push(`- ${name} (${mime}):`)
+    parts.push(`data:${mime};base64,${data}`)
+  }
+  return parts.join('\n')
+}
+
 export async function httpCreateInteraction(
   taskId: string,
-  text: string
+  text: string,
+  attachments?: Array<{ mimeType: string; data: string; name?: string }>
 ): Promise<{ interaction: Record<string, any> }> {
+  const message = buildMinionSteerMessage(text, attachments)
+  if (!message.trim()) {
+    throw new Error('createInteraction requires text or attachments')
+  }
   const res = await postMinionApi(
     'createInteraction',
     {
       taskId,
       initiator: 'INTERACTION_INITIATOR_USER',
-      message: text,
+      message,
       content: {
         // Match Minion web resume/steer surface.
         surface: 'INTERACTION_SURFACE_WEB',
         type: 'INTERACTION_CONTENT_TYPE_TEXT',
-        text
+        text: message
       }
     },
     { timeoutMs: 45_000 }

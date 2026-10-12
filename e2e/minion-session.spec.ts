@@ -57,12 +57,13 @@ function setupCard(page: Page) {
   return page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-setup"]')
 }
 
-function workingCard(page: Page) {
-  return page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-working"]')
+/** Minion working status is plain text above the composer (not a transcript card). */
+function workingStatus(page: Page) {
+  return page.getByTestId('composer-turn-status')
 }
 
 function waitOnlyChrome(page: Page) {
-  return workingCard(page).filter({
+  return workingStatus(page).filter({
     hasText: /waiting for tools|Connecting to session|Waiting for scratch|Streaming session progress/i
   })
 }
@@ -108,7 +109,14 @@ async function expectToolIntermediateVisible(page: Page, timeoutMs: number): Pro
 /** Intermediate = real tool UI from scratch (not Working chrome alone). */
 async function expectIntermediateBeforeDone(page: Page, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs
+  const workingCard = page.locator(
+    '[data-testid="conversation-status-card"][data-status-kind="minion-working"]'
+  )
   while (Date.now() < deadline) {
+    // WORKING must never return as a transcript card.
+    if ((await workingCard.count()) > 0) {
+      throw new Error('Transcript still shows minion-working card — should be composer-turn-status only')
+    }
     if (await hasToolIntermediate(page)) return
     if (await answerMarker(page).first().isVisible().catch(() => false)) {
       const waiting = await waitOnlyChrome(page).count()
@@ -235,7 +243,15 @@ test.describe('minion-session', () => {
       await expect(setupCard(page).locator('.conversation-status-title')).toContainText(/Booting/i)
       await page.screenshot({ path: join(artifactsDir, 'minion-case-a-setup.png') })
 
+      // After SETUP, working status is plain text above the composer (not a card).
+      await expect(workingStatus(page)).toBeVisible({ timeout: 180_000 })
+      await expect(
+        page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-working"]')
+      ).toHaveCount(0)
       await expectIntermediateBeforeDone(page, 420_000)
+      await expect(
+        page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-working"]')
+      ).toHaveCount(0)
       await page.screenshot({ path: join(artifactsDir, 'minion-case-a-intermediate.png') })
 
       await expectAssistantAnswerAfter(page, prompt1.slice(0, 48), 300_000)

@@ -2,7 +2,15 @@ import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useRef, useStat
 import { createPortal } from 'react-dom'
 import type { MessageRecord } from '../../../../shared/session-types'
 import type { PromptDecision } from '../../../../shared/session-types'
-import { parseStructuredContent, type ToolCallContent, type ThinkingBlockContent, type TranscriptNoticeContent, type LocalCommandOutputContent } from '../../../../shared/chat-content'
+import {
+  parseStructuredContent,
+  type AskUserQuestionContent,
+  type ToolCallContent,
+  type ThinkingBlockContent,
+  type TranscriptNoticeContent,
+  type LocalCommandOutputContent
+} from '../../../../shared/chat-content'
+import { parseMinionElicitation } from '../../../../shared/minion-elicitation'
 import ToolCallCard, { toolHeadline } from './ToolCallCard'
 import { isToolAwaitingUserApproval } from './interactive-prompt-status'
 import ThinkingBlockInline from './ThinkingBlockInline'
@@ -33,6 +41,19 @@ const LARGE_ASSISTANT_TEXT_CHARS = 48_000
  * are attached. The trailing text sits outside the JSON object so standard
  * JSON.parse fails — we walk to the matching closing brace manually.
  */
+/** Minion elicitation JSON posted as plain assistant text → AskUserQuestion card. */
+function parseMinionElicitationCard(content: string): AskUserQuestionContent | null {
+  const elicitation = parseMinionElicitation(content)
+  if (!elicitation) return null
+  return {
+    kind: 'ask_user_question',
+    requestId: elicitation.callId,
+    toolUseId: elicitation.callId,
+    questions: elicitation.questions,
+    status: 'pending'
+  }
+}
+
 function parseFilesAttachment(content: string): { files: Array<{ mimeType: string; data: string }>; text: string } | null {
   if (!content.startsWith('{"kind":"files_attachment"')) return null
   let depth = 0
@@ -759,6 +780,17 @@ export default function ChatTranscript({
         </div>
       )
     } else {
+      const minionAsk = message.role === 'assistant' ? parseMinionElicitationCard(message.content) : null
+      if (minionAsk && onRespond) {
+        nodes.push(
+          <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
+            <AskUserQuestionCard
+              content={minionAsk}
+              onRespond={(decision) => onRespond(minionAsk.requestId, decision)}
+            />
+          </div>
+        )
+      } else {
       nodes.push(
         <div
           className={`msg-wrap${
@@ -815,6 +847,7 @@ export default function ChatTranscript({
           </div>
         </div>
       )
+      } // minion elicitation card branch
     }
 
     lastTimestamp = message.createdAt
@@ -959,9 +992,8 @@ export default function ChatTranscript({
         ) : null}
         {emptyState && messages.length === 0 ? emptyState : rows}
         {sdkChrome &&
-          (            sdkChrome.status === 'compacting' ||
+          (sdkChrome.status === 'compacting' ||
             sdkChrome.status === 'minion_setup' ||
-            sdkChrome.status === 'minion_working' ||
             sdkChrome.compactFailed) && <ConversationStatusCard chrome={sdkChrome} />}
       </div>
       {overlayHost && showScrollToEnd
