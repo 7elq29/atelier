@@ -193,7 +193,12 @@ export async function httpCreateInteraction(
   if (!interaction?.id) {
     throw new Error('createInteraction returned no interaction id')
   }
-  return { interaction: normalizeInteraction(interaction) }
+  // Normalize so callers always see task_id from the response (authoritative).
+  const normalized = normalizeInteraction(interaction)
+  if (!normalized.task_id && typeof data.taskId === 'string') {
+    normalized.task_id = data.taskId
+  }
+  return { interaction: normalized }
 }
 
 export async function httpCancelTask(id: string): Promise<void> {

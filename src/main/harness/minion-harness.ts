@@ -3,7 +3,8 @@
  *
  * Transport: Minion SPA HTTP (`POST /api/getTask`, `createInteraction`,
  * `listInteractions`, `getDevpods`, `createTask`, `cancelTask`, scratch).
- * Polling replaces streaming until the tip is idle again.
+ * After createInteraction, bind remoteTaskId from response.taskId (do not
+ * assume the request id). Polling replaces streaming until the tip is idle.
  *
  * Steer/resume: createInteraction → track PENDING → RESPONDED on that user
  * row → agent answer in AGENT `message`; do not soft-stop on tip CANCELLED /
@@ -731,9 +732,22 @@ export class MinionHarness implements HarnessDriver {
     text: string
   ): Promise<void> {
     try {
-      const { interaction } = await httpCreateInteraction(state.remoteTaskId || sessionId, text)
+      const requestedTaskId = state.remoteTaskId || sessionId
+      const { interaction } = await httpCreateInteraction(requestedTaskId, text)
       const id = String(interaction.id ?? '').trim()
       const status = String(interaction.status ?? '')
+      // Trust the response task id — Minion may bind the row to a different
+      // (e.g. relaunched) task than the one we requested. Never ignore this.
+      const responseTaskId = String(interaction.task_id ?? interaction.taskId ?? '').trim()
+      if (responseTaskId && responseTaskId !== state.remoteTaskId) {
+        logger.info('minionHarness: createInteraction rebound remoteTaskId from response', {
+          sessionId,
+          requestedTaskId,
+          responseTaskId
+        })
+        state.remoteTaskId = responseTaskId
+        this.notifyRemoteTask(sessionId, responseTaskId)
+      }
       state.pendingSteerInteractionId = id
       state.awaitingAgentAfterSteer = false
       state.steerCreateInFlight = false
@@ -743,6 +757,8 @@ export class MinionHarness implements HarnessDriver {
       logger.info('minionHarness: createInteraction ok', {
         sessionId,
         remoteTaskId: state.remoteTaskId,
+        requestedTaskId,
+        responseTaskId: responseTaskId || null,
         interactionId: id,
         status
       })
