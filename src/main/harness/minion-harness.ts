@@ -1,10 +1,13 @@
 /**
  * MinionHarness — HarnessDriver backed by the Uber Minion orchestrator.
  *
- * Transport: shells out to `aifx mcp call minion-orchestrator <tool>
- * --args-file … -o …` (USSO auth is handled by aifx). Polling replaces
- * streaming: gettask (status + latest_update) and listinteractions are polled
- * every POLL_INTERVAL_MS until the task reaches a terminal status.
+ * Transport: Minion SPA HTTP (`POST /api/getTask`, `createInteraction`,
+ * `listInteractions`, `getDevpods`, `createTask`, `cancelTask`, scratch).
+ * Polling replaces streaming until the tip is idle again.
+ *
+ * Steer/resume: createInteraction → track PENDING → RESPONDED on that user
+ * row → agent answer in AGENT `message`; do not soft-stop on tip CANCELLED /
+ * COMPLETED while the steer interaction is still PENDING.
  *
  * Session-id contract: the Minion task UUID is used directly as the Atelier
  * session id (same convention as CortanaHarness).
@@ -15,12 +18,7 @@
  * in-app notifications (create/cancel subtypes do not).
  */
 
-import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { logger } from '../logger'
-import { subprocessEnvWithDevPath } from '../shell-path'
 import type { MinionRepo } from '../../shared/session-types'
 import type { HarnessDriver, HarnessEvent, HarnessFileInput, HarnessSession, HarnessStartOptions, PromptResponse } from './types'
 import {
@@ -30,6 +28,16 @@ import {
   SCRATCH_FETCH_TIMEOUT_MS,
   type DevpodScratchTarget
 } from './minion-scratch-client'
+import {
+  findDevpodForTask,
+  httpCancelTask,
+  httpCreateInteraction,
+  httpCreateTask,
+  httpGetDevpods,
+  httpGetTask,
+  httpListInteractions,
+  isDevpodRunningState
+} from './minion-http-client'
 import {
   consumeScratchAppend,
   emptyScratchWatermark,
@@ -43,7 +51,11 @@ const EARLY_POLL_INTERVAL_MS = 2000
 const EARLY_POLL_WINDOW_MS = 90_000
 const POLL_TIMEOUT_MS = 6 * 60 * 60 * 1000
 const MAX_CONSECUTIVE_POLL_ERRORS = 3
-const SERVER = 'minion-orchestrator'
+
+const INTERACTION_PENDING = 'INTERACTION_STATUS_PENDING'
+const INTERACTION_RESPONDED = 'INTERACTION_STATUS_RESPONDED'
+const INTERACTION_EXPIRED = 'INTERACTION_STATUS_EXPIRED'
+const INTERACTION_CANCELLED = 'INTERACTION_STATUS_CANCELLED'
 
 const REPO_ENUM: Record<MinionRepo, { enum: string; name: string }> = {
   'go-code': { enum: 'REPO_GO_CODE', name: 'go-code' },
@@ -85,80 +97,6 @@ class EventChannel {
       if (this.done) return
       await new Promise<void>(r => { this.waiter = r })
     }
-  }
-}
-
-// ── aifx transport ──────────────────────────────────────────────────────────
-
-/** Default aifx MCP budget. createinteraction uses a shorter hard cap — a hung
- *  aifx child has left the composer Stop-stuck for many minutes when Node's
- *  execFile timeout alone failed to reap the process. */
-const AIFX_TIMEOUT_MS = 120_000
-const CREATE_INTERACTION_TIMEOUT_MS = 45_000
-
-async function callTool(
-  tool: string,
-  args: Record<string, unknown>,
-  timeoutMs: number = AIFX_TIMEOUT_MS
-): Promise<Record<string, any>> {
-  const dir = await mkdtemp(join(tmpdir(), 'atelier-minion-'))
-  const argsFile = join(dir, 'args.json')
-  const outFile = join(dir, 'out.json')
-  try {
-    await writeFile(argsFile, JSON.stringify(args))
-    // Force --usso: GUI-launched Electron has a sparse env that makes aifx
-    // auto-detect "service-container" mode and route to localhost:5436
-    // (muttley), which is not running on a laptop. Createtask then fails
-    // with connection refused before any Minion task exists.
-    await new Promise<void>((resolve, reject) => {
-      let settled = false
-      const finish = (fn: () => void) => {
-        if (settled) return
-        settled = true
-        clearTimeout(hardTimer)
-        fn()
-      }
-      const child = execFile(
-        'aifx',
-        [
-          'mcp',
-          'call',
-          SERVER,
-          `minionorchestrator_${tool}`,
-          '--usso',
-          '--args-file',
-          argsFile,
-          '-o',
-          outFile
-        ],
-        { timeout: timeoutMs, killSignal: 'SIGKILL', env: subprocessEnvWithDevPath() },
-        (err, _stdout, stderr) => {
-          if (err) {
-            const msg = `aifx ${tool} failed: ${(stderr || err.message).trim().slice(0, 400)}`
-            logger.error('minionHarness: aifx call failed', { tool, error: msg })
-            finish(() => reject(new Error(msg)))
-          } else {
-            finish(() => resolve())
-          }
-        }
-      )
-      // Hard ceiling: if SIGKILL doesn't reap (zombie / stuck wait), still
-      // unblock the composer so Stop is not stuck forever.
-      const hardTimer = setTimeout(() => {
-        try {
-          child.kill('SIGKILL')
-        } catch {
-          /* already exited */
-        }
-        const msg = `aifx ${tool} timed out after ${timeoutMs}ms`
-        logger.error('minionHarness: aifx call timed out', { tool, timeoutMs })
-        finish(() => reject(new Error(msg)))
-      }, timeoutMs + 2_000)
-    })
-    const raw = (await readFile(outFile, 'utf-8')).trim()
-    return raw ? JSON.parse(raw) as Record<string, any> : {}
-  } finally {
-    void rm(dir, { recursive: true, force: true }).catch(() => {})
   }
 }
 
@@ -273,9 +211,18 @@ function extractDisplayStatus(task: Record<string, any>): string {
 type SetupStepId = 'provision' | 'boot' | 'connect'
 type SetupStepState = 'done' | 'active' | 'pending'
 
-/** Map Minion gettask fields → Provision / Boot / Connect stage (Minion web UI). */
+/**
+ * Map getTask + getDevpods → Provision / Boot / Connect (Minion web UI).
+ *
+ * Live API notes (do not regress):
+ * - `runner_url` is often present from the first createTask response.
+ * - `latest_update.display_status` stays empty until COMPLETED on many jobs.
+ * - Matching `CREAT` against `TASK_STATUS_CREATED` + treating any `runner_url`
+ *   as Connect made the SETUP card stuck on "Connecting…" and never Boot.
+ */
 function deriveMinionSetup(
-  task: Record<string, any>
+  task: Record<string, any>,
+  opts?: { devpodState?: string }
 ): {
   active: SetupStepId
   title: string
@@ -286,35 +233,55 @@ function deriveMinionSetup(
 
   const status = String(task.status ?? '').toUpperCase()
   const display = extractDisplayStatus(task).toUpperCase()
-  const runnerUrl = typeof task.runner_url === 'string' ? task.runner_url : ''
-  const blob = `${display} ${status}`
+  const runnerUrl = typeof task.runner_url === 'string' ? task.runner_url.trim() : ''
+  const podState = String(opts?.devpodState ?? '').toUpperCase()
+  const podRunning = podState === 'STATE_RUNNING'
+  const meta = task.metadata && typeof task.metadata === 'object' ? task.metadata : {}
+  const hasDevpodHint = Boolean(
+    runnerUrl ||
+      meta.devpod_name ||
+      meta.devpodName ||
+      meta.devpod_region ||
+      meta.devpodRegion
+  )
+  const preAgent =
+    /TASK_STATUS_CREATED|TASK_STATUS_PENDING|TASK_STATUS_QUEUED|TASK_STATUS_UNKNOWN/.test(status) ||
+    !status
 
-  // Agent already running — no setup card.
+  // Agent already running — no setup card (unless display_status still says setup).
   if (
     /TASK_STATUS_RUNNING|TASK_STATUS_IN_PROGRESS|TASK_STATUS_ACTIVE/.test(status) &&
-    !/PROVISION|BOOT|PEND|QUEU|CREAT|START|INIT|CONNECT|ALLOC|PENDING/.test(display)
+    !/PROVISION|BOOT|PEND|QUEU|START|INIT|CONNECT|ALLOC|PENDING/.test(display)
   ) {
     return null
   }
   if (
-    /RUNN|IN_PROGRESS|ACTIVE|WORKING/.test(status) &&
-    runnerUrl &&
-    !/PROVISION|BOOT|PEND|QUEU|CREAT|START|INIT|CONNECT|ALLOC/.test(display)
+    /TASK_STATUS_RUNNING|IN_PROGRESS|ACTIVE|WORKING/.test(status) &&
+    hasDevpodHint &&
+    !/PROVISION|BOOT|PEND|QUEU|START|INIT|CONNECT|ALLOC/.test(display)
   ) {
     return null
   }
 
-  let active: SetupStepId = 'provision'
-  if (/CONNECT/.test(blob) || (runnerUrl && /BOOT|START|INIT|ALLOC|PROVISION|PEND|QUEU|CREAT/.test(blob))) {
-    active = runnerUrl ? 'connect' : 'boot'
-  } else if (/BOOT|START|INIT|ALLOC/.test(blob)) {
-    active = 'boot'
-  } else if (runnerUrl) {
+  // Prefer explicit display_status keywords when Minion sets them.
+  let active: SetupStepId
+  if (/CONNECT/.test(display)) {
     active = 'connect'
-  } else if (/PROVISION|PEND|QUEU|CREAT|UNKNOWN/.test(blob) || !status) {
-    active = 'provision'
-  } else {
+  } else if (/BOOT|START|INIT|ALLOC/.test(display)) {
     active = 'boot'
+  } else if (/PROVISION|PEND|QUEU|PENDING/.test(display)) {
+    active = 'provision'
+  } else if (!hasDevpodHint) {
+    active = 'provision'
+  } else if (!podRunning) {
+    // Unknown '' or SNAPSHOTTED/STARTING/etc. — Boot, not Connect.
+    // First paint after createTask usually has no getDevpods yet → Boot.
+    active = 'boot'
+  } else if (preAgent) {
+    // Pod is STATE_RUNNING but task still CREATED — linking the agent.
+    active = 'connect'
+  } else {
+    active = 'connect'
   }
 
   const order: SetupStepId[] = ['provision', 'boot', 'connect']
@@ -332,7 +299,9 @@ function deriveMinionSetup(
   }
   const details: Record<SetupStepId, string> = {
     provision: 'Allocating a DevPod for this task — this can take a minute.',
-    boot: 'DevPod is starting up. I will keep this card updated.',
+    boot: podState
+      ? `DevPod state ${podState.replace(/^STATE_/, '')}. Waiting until it is running.`
+      : 'DevPod is starting up. I will keep this card updated.',
     connect: runnerUrl
       ? `Almost ready — linking to the runner.\n${runnerUrl}`
       : 'Finishing the connection to the DevPod.'
@@ -350,15 +319,18 @@ function isUserInitiator(v: unknown): boolean {
   return v === 'INTERACTION_INITIATOR_USER' || v === 2
 }
 
+function isAgentInitiator(v: unknown): boolean {
+  return v === 'INTERACTION_INITIATOR_AGENT' || v === 1
+}
+
 // ── MinionHarness ───────────────────────────────────────────────────────────
 
 /**
- * How long to keep polling for a reply after a steer while the task is still
- * not ready (`display_status` / terminal status). Matches Minion UI: steer is
- * always CreateInteraction on the existing task — never CreateTask relaunch.
+ * How long to keep polling after createInteraction while the user row is
+ * still PENDING or we are waiting for the agent message.
  */
 const POST_STEER_POLL_MS = 3 * 60 * 1000
-/** Scratch chat.jsonl poll cadence — independent of slow gettask/listinteractions. */
+/** Scratch chat.jsonl poll cadence — independent of slow getTask/listInteractions. */
 const SCRATCH_POLL_INTERVAL_MS = 2_000
 
 interface MinionSessionState {
@@ -382,6 +354,14 @@ interface MinionSessionState {
   completionPosted: boolean
   /** Last time the user steered; keeps polling alive after terminal to catch the reply. */
   lastSteeredAt: number
+  /** createInteraction response id — wait until this row leaves PENDING. */
+  pendingSteerInteractionId: string
+  /** User steer row became RESPONDED; still waiting for AGENT message. */
+  awaitingAgentAfterSteer: boolean
+  /** True from Send until createInteraction returns (success or fail). */
+  steerCreateInFlight: boolean
+  /** Last observed getDevpods state for this tip (empty if unknown). */
+  lastDevpodState: string
   /**
    * False on cold resume (empty memory): first poll absorbs existing
    * latest_update/interactions as already-seen without reprinting them.
@@ -393,7 +373,7 @@ interface MinionSessionState {
   lastWorkingKey: string
   /** Last scratch API error logged (dedupe warn spam). */
   lastScratchError: string
-  /** Last successful gettask payload — scratch loop uses this without waiting on aifx. */
+  /** Last successful getTask payload — scratch loop uses this without a second fetch. */
   lastTask: Record<string, any> | null
   /** Prevent overlapping scratch ticks. */
   scratchTickBusy: boolean
@@ -478,31 +458,31 @@ export class MinionHarness implements HarnessDriver {
   async start(prompt: string, opts: HarnessStartOptions): Promise<HarnessSession> {
     const minion = opts.minion ?? { repo: 'go-code' as MinionRepo }
     const repo = REPO_ENUM[minion.repo] ?? REPO_ENUM['go-code']
-    const created = await callTool('createtask', {
+    const created = await httpCreateTask({
       name: prompt.trim().split('\n')[0].slice(0, 80) || 'Atelier Minion task',
       prompt,
       runner: 'RUNNER_DEVPOD',
       agent: 'claude-code',
-      parent_task_id: '',
+      parentTaskId: '',
       path: '.',
       input: {
         type: 'ARTIFACT_TYPE_BRANCH',
-        code: { repo: repo.enum, branch: 'main', repo_name: repo.name, org_name: 'uber-code' }
+        code: { repo: repo.enum, branch: 'main', repoName: repo.name, orgName: 'uber-code' }
       },
-      expected_artifact_type: 'ARTIFACT_TYPE_PR',
-      storage_path: '',
-      user_id: '',
-      jira_ids: [],
-      mcp_servers: [],
+      expectedArtifactType: 'ARTIFACT_TYPE_PR',
+      storagePath: '',
+      userId: '',
+      jiraIds: [],
+      mcpServers: [],
       model: '',
       metadata: { source: 'atelier' },
-      aifx_config: {},
-      execution_mode: 'EXECUTION_MODE_INTERACTIVE',
-      planning_mode: 'PLANNING_MODE_DIRECT',
-      devpod_overrides: {}
+      aifxConfig: {},
+      executionMode: 'EXECUTION_MODE_INTERACTIVE',
+      planningMode: 'PLANNING_MODE_DIRECT',
+      devpodOverrides: {}
     })
     const taskId: string | undefined = created.task?.id ?? created.id
-    if (!taskId) throw new Error('Minion createtask returned no task id')
+    if (!taskId) throw new Error('Minion createTask returned no task id')
 
     const state = this.newState(taskId, { liveFromStart: true, remoteTaskId: taskId })
     const createdTask = (created.task as Record<string, any>) ?? { id: taskId, status: 'TASK_STATUS_PENDING' }
@@ -539,7 +519,7 @@ export class MinionHarness implements HarnessDriver {
     if (!id) throw new Error('Minion attach requires a task id')
     let task: Record<string, any> | undefined
     try {
-      const res = await callTool('gettask', { id }) as { task?: Record<string, any> }
+      const res = await httpGetTask(id)
       task = res.task
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -660,9 +640,9 @@ export class MinionHarness implements HarnessDriver {
     const cancelId = state?.remoteTaskId ?? sessionId
     let summary = 'Stopped.'
     try {
-      await callTool('canceltask', { id: cancelId })
+      await httpCancelTask(cancelId)
       try {
-        const { task } = await callTool('gettask', { id: cancelId }) as { task?: Record<string, any> }
+        const { task } = await httpGetTask(cancelId)
         if (task) {
           summary = formatTaskSummary(
             { ...task, status: task.status ?? 'TASK_STATUS_CANCELLED' },
@@ -673,7 +653,7 @@ export class MinionHarness implements HarnessDriver {
         /* keep default */
       }
     } catch (err) {
-      logger.warn('minionHarness: canceltask failed', { sessionId, cancelId, error: String(err) })
+      logger.warn('minionHarness: cancelTask failed', { sessionId, cancelId, error: String(err) })
       summary = `I tried to stop, but cancel failed: ${err instanceof Error ? err.message : String(err)}`
     }
     if (state && this.sessions.get(sessionId) === state) {
@@ -718,22 +698,19 @@ export class MinionHarness implements HarnessDriver {
     if (!text) return
     state.steeredTexts.add(text)
     state.lastSteeredAt = Date.now()
-
-    // Same as Minion UI: always CreateInteraction. Prefer a not-yet-ready
-    // descendant; otherwise steer the Atelier tip (session id) — never stay
-    // stuck on a finished follow-up child that has no tip history (amnesiac
-    // "new session" replies after a prior CreateTask mistake).
-    const targetId = await this.resolveSteerTaskId(sessionId, state)
+    state.steerCreateInFlight = true
     state.completionPosted = false
+    state.awaitingAgentAfterSteer = false
+
+    // Prefer a not-yet-ready descendant; otherwise tip (= session id).
+    const targetId = await this.resolveSteerTaskId(sessionId, state)
     if (targetId !== state.remoteTaskId) {
       state.remoteTaskId = targetId
       this.notifyRemoteTask(sessionId, targetId)
     }
     this.remember(sessionId, state)
-    logger.info('minionHarness: CreateInteraction', {
-      sessionId,
-      remoteTaskId: state.remoteTaskId
-    })
+    this.ensurePolling(sessionId)
+    this.notifyActivity(sessionId)
     await this.createInteractionOnRemote(sessionId, state, text)
   }
 
@@ -754,24 +731,28 @@ export class MinionHarness implements HarnessDriver {
     text: string
   ): Promise<void> {
     try {
-      await callTool(
-        'createinteraction',
-        {
-          task_id: state.remoteTaskId,
-          initiator: 'INTERACTION_INITIATOR_USER',
-          message: text,
-          content: {
-            surface: 'INTERACTION_SURFACE_API',
-            type: 'INTERACTION_CONTENT_TYPE_TEXT',
-            text
-          }
-        },
-        CREATE_INTERACTION_TIMEOUT_MS
-      )
+      const { interaction } = await httpCreateInteraction(state.remoteTaskId || sessionId, text)
+      const id = String(interaction.id ?? '').trim()
+      const status = String(interaction.status ?? '')
+      state.pendingSteerInteractionId = id
+      state.awaitingAgentAfterSteer = false
+      state.steerCreateInFlight = false
+      state.completionPosted = false
+      state.lastSteeredAt = Date.now()
+      this.remember(sessionId, state)
+      logger.info('minionHarness: createInteraction ok', {
+        sessionId,
+        remoteTaskId: state.remoteTaskId,
+        interactionId: id,
+        status
+      })
     } catch (err) {
       state.steeredTexts.delete(text)
+      state.pendingSteerInteractionId = ''
+      state.awaitingAgentAfterSteer = false
+      state.steerCreateInFlight = false
       const msg = err instanceof Error ? err.message : String(err)
-      logger.error('minionHarness: createinteraction failed', { sessionId, error: msg })
+      logger.error('minionHarness: createInteraction failed', { sessionId, error: msg })
       if (this.sessions.get(sessionId) === state && !state.closing && !state.channel.closed) {
         state.channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: msg })
       }
@@ -798,7 +779,7 @@ export class MinionHarness implements HarnessDriver {
       seen.add(tid)
       let task: Record<string, any> | undefined
       try {
-        const res = await callTool('gettask', { id: tid }) as { task?: Record<string, any> }
+        const res = await httpGetTask(tid)
         task = res.task
       } catch {
         return null
@@ -839,30 +820,23 @@ export class MinionHarness implements HarnessDriver {
     if (!this.polls.has(sessionId)) return false
     const state = this.sessions.get(sessionId)
     if (!state || state.closing || state.completionPosted) return false
-    if (this.awaitingSteerReply(state, state.lastTask)) return true
+    if (this.awaitingSteerReply(state)) return true
     if (state.lastTask && isTaskFinished(state.lastTask)) return false
     return true
   }
 
   /**
-   * True while waiting for a post-CreateInteraction assistant row.
-   * Do not clear on `latest_update.updated_at` alone — the orchestrator often
-   * bumps that timestamp on interaction ack while display stays COMPLETED and
-   * the real answer has not landed yet (Case B false "Done." soft-stop).
+   * True while createInteraction's user row is still PENDING, or RESPONDED but
+   * we have not yet seen a new AGENT message. Tip CANCELLED/COMPLETED alone
+   * must not clear this — stale latest_update is not the steer answer.
    */
-  private awaitingSteerReply(
-    state: MinionSessionState,
-    task: Record<string, any> | null
-  ): boolean {
+  private awaitingSteerReply(state: MinionSessionState): boolean {
     if (state.lastSteeredAt <= 0) return false
     if (Date.now() - state.lastSteeredAt >= POST_STEER_POLL_MS) return false
-    if (!task) return true
-    // Cancel/fail settles the tip — stop waiting. COMPLETED/SUCCESS must NOT
-    // clear the wait: finished tips stay COMPLETED across CreateInteraction
-    // until a new assistant row arrives.
-    const status = String(task.status ?? '')
-    if (/(CANCEL|FAIL|ERROR|TIMED_OUT|EXPIRED|STALE)/i.test(status)) return false
-    return true
+    if (state.steerCreateInFlight) return true
+    if (state.pendingSteerInteractionId) return true
+    if (state.awaitingAgentAfterSteer) return true
+    return false
   }
 
   // ── stubs ────────────────────────────────────────────────────────────────
@@ -886,7 +860,7 @@ export class MinionHarness implements HarnessDriver {
   async listFiles(sessionId: string): Promise<Array<{ name: string; url: string }>> {
     try {
       const remoteId = this.sessions.get(sessionId)?.remoteTaskId ?? sessionId
-      const { task } = await callTool('gettask', { id: remoteId }) as { task?: Record<string, any> }
+      const { task } = await httpGetTask(remoteId)
       const pr = task ? findPrUrl(task.output) : null
       return pr ? [{ name: 'Pull request', url: pr }] : []
     } catch {
@@ -914,7 +888,11 @@ export class MinionHarness implements HarnessDriver {
       startedAt: Date.now(),
       completionPosted: mem?.completionPosted ?? false,
       lastSteeredAt: 0,
-      // Fresh createtask: show live updates. Cold resume with no memory: seed first.
+      pendingSteerInteractionId: '',
+      awaitingAgentAfterSteer: false,
+      steerCreateInFlight: false,
+      lastDevpodState: '',
+      // Fresh createTask: show live updates. Cold resume with no memory: seed first.
       historySeeded: opts?.liveFromStart === true || mem != null,
       scratch: mem?.scratch ? { ...mem.scratch } : emptyScratchWatermark(),
       lastWorkingKey: '',
@@ -1041,7 +1019,7 @@ export class MinionHarness implements HarnessDriver {
 
   private pushSetupChrome(state: MinionSessionState, sessionId: string, task: Record<string, any>): void {
     if (state.closing || state.channel.closed) return
-    const setup = deriveMinionSetup(task)
+    const setup = deriveMinionSetup(task, { devpodState: state.lastDevpodState })
     if (!setup) {
       // Setup done — free the slot for working chrome while remote is active.
       state.lastSetupKey = ''
@@ -1276,12 +1254,11 @@ export class MinionHarness implements HarnessDriver {
       while (!abort.signal.aborted && Date.now() < deadline) {
         try {
           const taskId = state.remoteTaskId || sessionId
-          const { task } = await callTool('gettask', { id: taskId }) as { task?: Record<string, any> }
+          const { task } = await httpGetTask(taskId)
           if (abort.signal.aborted) return
           errors = 0
           if (task) {
             state.lastTask = task
-            const status = String(task.status ?? '')
             const update = extractLatestUpdate(task)
 
             // Cold resume: mark everything currently visible as already-seen so we
@@ -1291,100 +1268,135 @@ export class MinionHarness implements HarnessDriver {
                 state.lastLatestUpdate = update
                 state.postedTexts.add(normalizeProgressText(update))
               }
-              const listed = await callTool('listinteractions', {
-                task_id: taskId,
-                after_interaction_id: '',
-                initiator_filter: 0,
-                status_filter: 0
-              })
+              const listed = await httpListInteractions(taskId)
               if (abort.signal.aborted) return
-              for (const i of (listed.interactions ?? []) as Array<Record<string, any>>) {
-                const id = String(i.id ?? i.interaction_id ?? '')
+              for (const i of listed.interactions) {
+                const id = String(i.id ?? '')
                 if (id) state.seenInteractionIds.add(id)
                 const text = interactionText(i)
                 if (text) state.postedTexts.add(normalizeProgressText(text))
               }
-              if (isTaskFinished(task)) state.completionPosted = true
+              if (isTaskFinished(task) && !state.pendingSteerInteractionId) {
+                state.completionPosted = true
+              }
               state.historySeeded = true
               this.remember(sessionId, state)
-              // Terminal cold-seed: drop "working" without waiting for softStop.
               this.notifyActivity(sessionId)
               this.pushSetupChrome(state, sessionId, task)
-              // Seed scratch tools into the transcript once (no toast storm —
-              // tool events don't notify; text goes through postedTexts).
               await this.pollScratch(sessionId, state, task, abort.signal)
               continue
             }
 
+            // DevPod state for scratch gating after resume/steer.
+            try {
+              const pods = await httpGetDevpods()
+              const target = extractDevpodTarget(taskId, task)
+              const info = findDevpodForTask(pods, taskId, target?.devpodName)
+              if (info) state.lastDevpodState = info.state
+            } catch {
+              /* getDevpods optional */
+            }
+            if (abort.signal.aborted) return
+
             if (update && update !== state.lastLatestUpdate) {
               state.lastLatestUpdate = update
-              if (!state.scratch.healthy) {
-                this.pushProgressOnce(state, sessionId, update)
-              } else {
-                // Still remember so a later fallback doesn't reprint.
-                state.postedTexts.add(normalizeProgressText(update))
+              // While waiting on a steer, never promote stale latest_update into
+              // the transcript — that was the CANCELLED + Torchlight false answer.
+              if (!this.awaitingSteerReply(state)) {
+                if (!state.scratch.healthy) {
+                  this.pushProgressOnce(state, sessionId, update)
+                } else {
+                  state.postedTexts.add(normalizeProgressText(update))
+                }
               }
             }
 
             const finished = isTaskFinished(task)
-            const waitingOnSteer = this.awaitingSteerReply(state, task)
+            let waitingOnSteer = this.awaitingSteerReply(state)
 
-            // SETUP first; scratch may clear SETUP once chat.jsonl is live.
             if (!state.scratch.healthy && (!finished || waitingOnSteer)) {
               this.pushSetupChrome(state, sessionId, task)
               this.pushOrchestratorWorkingChrome(state, sessionId, task)
             }
 
-            // Tools must land before listinteractions prose (READY/Done markers).
-            // Finished: retry until chat.jsonl seeds (DNS often lags RUNNING).
-            if (finished && !waitingOnSteer) {
-              await this.flushScratchForCompletion(sessionId, state, task, abort.signal)
-            } else {
-              await this.pollScratch(sessionId, state, task, abort.signal)
+            // Scratch tools once DevPod is running (or we are not mid-steer on a dead pod).
+            const podUp =
+              !state.lastDevpodState || isDevpodRunningState(state.lastDevpodState)
+            if (podUp || state.scratch.healthy) {
+              if (finished && !waitingOnSteer) {
+                await this.flushScratchForCompletion(sessionId, state, task, abort.signal)
+              } else {
+                await this.pollScratch(sessionId, state, task, abort.signal)
+              }
             }
             if (abort.signal.aborted) return
 
-            let sawNewInteraction = false
-            const listed = await callTool('listinteractions', {
-              task_id: taskId,
-              after_interaction_id: '',
-              initiator_filter: 0,
-              status_filter: 0
-            })
+            let sawNewAgentInteraction = false
+            const listed = await httpListInteractions(taskId)
             if (abort.signal.aborted) return
-            const interactions: Array<Record<string, any>> = listed.interactions ?? []
-            for (const i of interactions) {
-              const id = String(i.id ?? i.interaction_id ?? '')
-              if (id) {
-                if (state.seenInteractionIds.has(id)) continue
-                state.seenInteractionIds.add(id)
+            const interactions = listed.interactions
+
+            // Track createInteraction user row: PENDING → RESPONDED/EXPIRED/CANCELLED.
+            if (state.pendingSteerInteractionId) {
+              const steerRow = interactions.find(
+                (i) => String(i.id ?? '') === state.pendingSteerInteractionId
+              )
+              if (steerRow) {
+                const st = String(steerRow.status ?? '')
+                if (st === INTERACTION_RESPONDED) {
+                  state.pendingSteerInteractionId = ''
+                  state.awaitingAgentAfterSteer = true
+                  logger.info('minionHarness: steer interaction RESPONDED', {
+                    sessionId,
+                    response: String(steerRow.response ?? '').slice(0, 80)
+                  })
+                } else if (st === INTERACTION_EXPIRED || st === INTERACTION_CANCELLED) {
+                  state.pendingSteerInteractionId = ''
+                  state.awaitingAgentAfterSteer = false
+                  logger.warn('minionHarness: steer interaction settled without respond', {
+                    sessionId,
+                    status: st
+                  })
+                } else if (st && st !== INTERACTION_PENDING) {
+                  state.pendingSteerInteractionId = ''
+                }
               }
-              const text = interactionText(i)
-              if (!text) continue
-              if (isUserInitiator(i.initiator) && state.steeredTexts.has(text)) continue
-              // Scratch owns tool/working chrome — but agent prose still belongs
-              // in the transcript. Skipping all interactions when scratch is
-              // healthy left only a bare "Done." after relaunch completions.
-              if (state.scratch.healthy && isUserInitiator(i.initiator)) {
-                state.postedTexts.add(normalizeProgressText(text))
+            }
+
+            for (const i of interactions) {
+              const id = String(i.id ?? '')
+              if (id && state.seenInteractionIds.has(id)) continue
+              if (id) state.seenInteractionIds.add(id)
+
+              // User rows: skip echo of our steer text; never treat ack as answer.
+              if (isUserInitiator(i.initiator)) {
+                const text = interactionText(i)
+                if (text) state.postedTexts.add(normalizeProgressText(text))
                 continue
               }
-              // Prefer interaction id dedupe; also skip if latest_update already showed this body.
+
+              if (!isAgentInitiator(i.initiator)) continue
+              const text = interactionText(i)
+              if (!text) continue
               if (!this.pushProgressOnce(state, sessionId, text)) continue
-              sawNewInteraction = true
+              sawNewAgentInteraction = true
+              if (state.awaitingAgentAfterSteer) {
+                state.awaitingAgentAfterSteer = false
+              }
             }
 
-            // After CreateInteraction, ignore stale display COMPLETED until a
-            // new assistant interaction lands (or the post-steer window ends).
-            if (waitingOnSteer && !sawNewInteraction) {
+            waitingOnSteer = this.awaitingSteerReply(state)
+
+            // Still waiting on PENDING / agent answer — keep Working, no Done.
+            if (waitingOnSteer) {
               this.pushOrchestratorWorkingChrome(state, sessionId, task)
+              this.remember(sessionId, state)
             } else if (isTaskFinished(task)) {
               if (!state.completionPosted && !state.closing) {
                 state.completionPosted = true
                 this.clearStatusChrome(state, sessionId)
-                // Interaction prose already posted the answer — skip a second
-                // "Done." + stale latest_update summary.
-                if (!sawNewInteraction) {
+                if (!sawNewAgentInteraction && state.lastSteeredAt <= 0) {
+                  // Idle completion only — never recycle latest_update after a steer.
                   pushAssistantMessage(
                     channel,
                     sessionId,

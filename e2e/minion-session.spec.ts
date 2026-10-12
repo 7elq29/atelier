@@ -228,6 +228,11 @@ test.describe('minion-session', () => {
       await createMinionWithPrompt(page, prompt1)
       await expect(setupCard(page)).toBeVisible({ timeout: 90_000 })
       await expect(page.getByTestId('minion-setup-steps')).toBeVisible()
+      // Must actually enter Boot (not jump straight to Connect via runner_url).
+      await expect(
+        page.locator('[data-testid="minion-setup-steps"] [data-step="boot"][data-state="active"]')
+      ).toBeVisible({ timeout: 30_000 })
+      await expect(setupCard(page).locator('.conversation-status-title')).toContainText(/Booting/i)
       await page.screenshot({ path: join(artifactsDir, 'minion-case-a-setup.png') })
 
       await expectIntermediateBeforeDone(page, 420_000)

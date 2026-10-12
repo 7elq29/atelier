@@ -1,25 +1,30 @@
-# Minion — follow-up on finished task (CreateInteraction, no child)
+# Minion — follow-up / resume on finished tip (CreateInteraction)
 
 ## Problem (superseded)
 
 Atelier used to `CreateTask` + `parent_task_id` when scratch looked
 unreachable on a finished tip. That minted amnesiac child tasks (“subsession”)
-while Minion UI keeps the **same** task id and uses `CreateInteraction`
+while Minion UI keeps the **same** task id and uses HTTP `createInteraction`
 (even when the DevPod is gone).
 
 ## Expected user flow (matches Minion UI)
 
-1. User has an Atelier Minion session for a tip (running or finished).
-2. Resume/reopen → same tip/active task id, history only — **no** CreateTask.
-3. User types a follow-up and hits Send → **`CreateInteraction`** on the
-   bound tip (or a not-yet-ready descendant in the tree). **No** child task.
-4. Ready/idle follows Minion `gettask` `latest_update.display_status`
-   (`COMPLETED`) or terminal `status` — not `status=RUNNING` alone, and not
-   scratch DNS.
+1. User has an Atelier Minion session for a tip (running or finished/cancelled).
+2. Resume/reopen → same tip id, history only — **no** CreateTask.
+3. Send → **`POST /api/createInteraction`** on the tip (or live descendant).
+4. Use the response: store `interaction.id`, expect `INTERACTION_STATUS_PENDING`.
+5. Poll `listInteractions` until that user row is `RESPONDED` (ack in
+   `response` / `responseContent`).
+6. Poll `getDevpods` for the tip’s pod → e.g. `STATE_RUNNING`; then scratch
+   (`listScratchFiles` / `getFileContents`) for tools.
+7. Assistant answer = new **AGENT** row `message` / `content.text` — not the
+   user row’s `responseContent`, and not stale `getTask.latestUpdate` while
+   the steer row is still PENDING.
+8. Do **not** soft-stop on tip `CANCELLED`/`COMPLETED` alone during step 4–7.
 
 ## Done when
 
-- [x] Steer/resume Send uses `CreateInteraction` only (no scratch→CreateTask).
-- [x] Busy/Working clears when `display_status` is COMPLETED.
-- [x] E2E: finished tip Send does **not** show “Relaunching… New task”.
-- [x] `npm run build` clean; `test:e2e:affected -- --base main` green.
+- [x] Orchestrator transport is Minion HTTP (not aifx) for getTask /
+      createInteraction / listInteractions / getDevpods / createTask / cancelTask.
+- [x] Steer tracks PENDING → RESPONDED; no stale latestUpdate Done after steer.
+- [x] E2E A/B/D still green via `test:e2e:affected -- --base main`.
