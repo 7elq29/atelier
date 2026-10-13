@@ -1,22 +1,19 @@
 /**
  * MinionHarness — HarnessDriver backed by the Uber Minion orchestrator.
  *
- * Transport: Minion SPA HTTP (`POST /api/getTask`, `createInteraction`,
- * `listInteractions`, `getDevpods`, `createTask`, `cancelTask`, scratch).
- * After createInteraction, bind remoteTaskId from response.taskId (do not
- * assume the request id). Polling replaces streaming until the tip is idle.
- *
- * Steer/resume: createInteraction → track PENDING → RESPONDED on that user
- * row → agent answer in AGENT `message`; do not soft-stop on tip CANCELLED /
- * COMPLETED while the steer interaction is still PENDING.
+ * Transport (match Minion Web / uTerm):
+ * - Orchestrator HTTP: create/attach, getTask, getDevpods, SETUP; RPC send /
+ *   answer only when the worker socket is not live (wake). Never cancelTask.
+ * - DevPod worker WebSocket when pod is RUNNING: seq-keyed event fold owns the
+ *   transcript; Working = worker_state === 2; USER_MESSAGE / elicitation /
+ *   INTERRUPT when live.
+ * - Sleeping tip: fold durable chat.jsonl via getFileContents, then on wake
+ *   open WS with resetOnConnect (replace storage fold with full replay).
  *
  * Session-id contract: the Minion task UUID is used directly as the Atelier
  * session id (same convention as CortanaHarness).
  *
- * Every assistant row is pushed as text_delta + result so SessionManager
- * flushes each one as a distinct transcript message. Completion uses subtype
- * `end_turn`; live agent updates use `minion_progress`. Both trigger desktop /
- * in-app notifications (create/cancel subtypes do not).
+ * See Features/minion-websocket-session/spec.md.
  */
 
 import { logger } from '../logger'
@@ -31,14 +28,24 @@ import {
   type DevpodScratchTarget
 } from './minion-scratch-client'
 import {
+  elicitationResponseCommand,
+  interruptCommand,
+  isWorkerRunning,
+  MinionWorkerSocket,
+  userMessageCommand,
+  type MinionConnectedParams,
+  type MinionWorkerEvent
+} from './minion-worker-socket'
+import {
+  classifyDevpodPhase,
   findDevpodForTask,
-  httpCancelTask,
   httpCreateInteraction,
   httpCreateTask,
   httpGetDevpods,
   httpGetTask,
   httpListInteractions,
-  isDevpodRunningState
+  isDevpodRunningState,
+  isDevpodStartingState
 } from './minion-http-client'
 import {
   consumeScratchAppend,
@@ -46,8 +53,11 @@ import {
   type ScratchProgressChrome,
   type ScratchTailWatermark
 } from './minion-scratch-tail'
+import { MinionWorkerFold, parseChatJsonl } from './minion-worker-fold'
 
 export const POLL_INTERVAL_MS = 5000
+/** Slower orchestrator poll while the worker socket owns the transcript. */
+const POLL_INTERVAL_LIVE_MS = 15_000
 /** Faster polls while DevPod is still coming up so the transcript isn't silent. */
 const EARLY_POLL_INTERVAL_MS = 2000
 const EARLY_POLL_WINDOW_MS = 90_000
@@ -222,18 +232,18 @@ type SetupStepState = 'done' | 'active' | 'pending'
  * Map getTask + getDevpods → Provision / Boot / Connect (Minion web UI).
  *
  * Rules (do not regress):
- * - Before this tip’s pod is positively `STATE_RUNNING` → Boot (not Connect),
- *   including finished/COMPLETED tips (wake / start card). Never hide SETUP
- *   just because `isTaskFinished` — that dropped the card on Torchlight resume.
+ * - Sleeping pods (SHUTDOWN / SNAPSHOTTED / …) are idle — no SETUP unless
+ *   `wakeIntent` (user just steered). Passive restart/reattach must not stick
+ *   on “Starting DevPod…”.
+ * - Starting / restoring / unknown-while-creating → Boot (not Connect).
  * - `runner_url` / `TASK_STATUS_RUNNING` alone must not dismiss SETUP or jump
  *   to Connect.
  * - Connect only after `STATE_RUNNING` while the agent is still linking.
- * - SETUP clears only once the pod is `STATE_RUNNING` and past setup display
- *   (idle finished + pod up → no card).
+ * - SETUP clears once the pod is `STATE_RUNNING` and past setup display.
  */
 function deriveMinionSetup(
   task: Record<string, any>,
-  opts?: { devpodState?: string }
+  opts?: { devpodState?: string; wakeIntent?: boolean }
 ): {
   active: SetupStepId
   title: string
@@ -244,7 +254,9 @@ function deriveMinionSetup(
   const display = extractDisplayStatus(task).toUpperCase()
   const runnerUrl = typeof task.runner_url === 'string' ? task.runner_url.trim() : ''
   const podState = String(opts?.devpodState ?? '').toUpperCase()
-  const podRunning = podState === 'STATE_RUNNING'
+  const phase = classifyDevpodPhase(podState)
+  const podRunning = phase === 'running'
+  const wakeIntent = opts?.wakeIntent === true
   const meta = task.metadata && typeof task.metadata === 'object' ? task.metadata : {}
   const hasDevpodHint = Boolean(
     runnerUrl ||
@@ -259,9 +271,16 @@ function deriveMinionSetup(
   const displaySetup = /PROVISION|BOOT|PEND|QUEU|START|INIT|CONNECT|ALLOC|PENDING/.test(display)
   const finished = isTaskFinished(task)
 
-  // Idle + pod up + past setup → no card. Finished + pod not up → wake Boot.
+  // Idle + pod up + past setup → no card.
   if (podRunning && finished && !displaySetup) return null
   if (podRunning && !displaySetup && !preAgent && !finished) return null
+
+  // Asleep tip: stay quiet until the user steers (wake). Matches Minion Web.
+  if (phase === 'sleeping' && !wakeIntent) return null
+  // Failed / unknown with a known tip and no wake — don't fake Boot forever.
+  if ((phase === 'failed' || phase === 'unknown') && hasDevpodHint && finished && !wakeIntent) {
+    return null
+  }
 
   let active: SetupStepId
   if (/CONNECT/.test(display) && podRunning) {
@@ -273,7 +292,7 @@ function deriveMinionSetup(
   } else if (!hasDevpodHint && !finished) {
     active = 'provision'
   } else if (!podRunning) {
-    // Before STATE_RUNNING → Boot (SNAPSHOTTED/SHUTDOWN/''/absent), including wake.
+    // Starting, restoring, or waking from sleep → Boot (never Connect).
     active = 'boot'
   } else if (preAgent || /CONNECT/.test(display)) {
     active = 'connect'
@@ -289,9 +308,10 @@ function deriveMinionSetup(
     state: (i < idx ? 'done' : i === idx ? 'active' : 'pending') as SetupStepState
   }))
 
+  const waking = wakeIntent || phase === 'starting' || (finished && !podRunning)
   const titles: Record<SetupStepId, string> = {
     provision: 'Provisioning DevPod…',
-    boot: finished && !podRunning ? 'Starting DevPod…' : 'Booting environment…',
+    boot: waking ? 'Starting DevPod…' : 'Booting environment…',
     connect: 'Connecting to DevPod…'
   }
   const details: Record<SetupStepId, string> = {
@@ -382,6 +402,23 @@ interface MinionSessionState {
   lastTask: Record<string, any> | null
   /** Prevent overlapping scratch ticks. */
   scratchTickBusy: boolean
+  /** Live DevPod worker socket (opened when pod is STATE_RUNNING). */
+  workerSocket: MinionWorkerSocket | null
+  /** Last worker_state from connected / status_change (undefined until handshake). */
+  workerState: number | undefined
+  /** DevPod name|region the current socket was opened for. */
+  workerSocketKey: string
+  /** Seq-keyed fold of worker / storage events → transcript. */
+  fold: MinionWorkerFold
+  /** True once storage or WS fold has applied at least one event batch. */
+  foldHealthy: boolean
+  /** Storage chat.jsonl already folded (sleeping attach). */
+  storageFoldDone: boolean
+  /**
+   * Next WS replay should wipe SessionManager messages and rebuild from a
+   * full replay (wake after storage fold / RPC send while asleep).
+   */
+  resetOnConnect: boolean
 }
 
 /** Durable memory across soft-stop / resume so we don't re-echo old interactions. */
@@ -394,6 +431,9 @@ interface MinionMemory {
   steeredTexts: Set<string>
   completionPosted: boolean
   scratch: ScratchTailWatermark
+  lastAppliedSeq?: number
+  foldHealthy?: boolean
+  storageFoldDone?: boolean
 }
 
 function normalizeProgressText(text: string): string {
@@ -424,6 +464,8 @@ export class MinionHarness implements HarnessDriver {
   private activityListener: ((sessionId: string) => void) | null = null
   /** Fired when a finished-task follow-up CreateTask returns a new child task id. */
   private remoteTaskListener: ((sessionId: string, remoteTaskId: string) => void) | null = null
+  /** Buffered assistant text from live WS text_delta (flushed on status leave running). */
+  private readonly liveTextBySession = new Map<string, string>()
 
   /** SessionManager wires this to `sendStatus` so poll start/stop refresh the sidebar. */
   setActivityListener(listener: ((sessionId: string) => void) | null): void {
@@ -611,62 +653,71 @@ export class MinionHarness implements HarnessDriver {
    * should leave the Minion DevPod/tip alive for later attach.
    */
   async detach(sessionId: string): Promise<void> {
-    const wasPolling = this.polls.has(sessionId)
-    this.polls.get(sessionId)?.abort()
-    this.polls.delete(sessionId)
-    this.stopScratchLoop(sessionId)
-    if (wasPolling) this.notifyActivity(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state) return
+    // Tear down only this generation. If resume/attach already replaced the
+    // map entry, leave the new polls/socket alone and just close our channel.
+    const stillOurs = this.sessions.get(sessionId) === state
+    if (stillOurs) {
+      const wasPolling = this.polls.has(sessionId)
+      this.polls.get(sessionId)?.abort()
+      this.polls.delete(sessionId)
+      this.stopScratchLoop(sessionId)
+      if (wasPolling) this.notifyActivity(sessionId)
+      this.sessions.delete(sessionId)
+    }
+    this.stopWorkerSocket(state)
+    this.liveTextBySession.delete(sessionId)
     this.clearSetupChrome(state, sessionId)
     this.remember(sessionId, state)
     state.channel.close()
-    this.sessions.delete(sessionId)
     logger.info('minionHarness: detached (remote tip kept)', {
       sessionId,
-      remoteTaskId: state.remoteTaskId
+      remoteTaskId: state.remoteTaskId,
+      stillOurs
     })
   }
 
+  /**
+   * Stop button = soft interrupt only (Minion Web): WS INTERRUPT when live.
+   * There is no cancelTask path in Atelier Minion — close/delete only detaches.
+   */
   async interrupt(sessionId: string): Promise<void> {
-    const wasPolling = this.polls.has(sessionId)
-    this.polls.get(sessionId)?.abort()
-    this.polls.delete(sessionId)
-    this.stopScratchLoop(sessionId)
-    if (wasPolling) this.notifyActivity(sessionId)
     const state = this.sessions.get(sessionId)
-    // Mark closed before any await so a concurrent streamInput cannot push a
-    // steer ack after cancel once createinteraction returns.
-    if (state) {
-      if (state.closing) return
-      state.closing = true
-      this.clearSetupChrome(state, sessionId)
-    }
-    const cancelId = state?.remoteTaskId ?? sessionId
-    let summary = 'Stopped.'
-    try {
-      await httpCancelTask(cancelId)
-      try {
-        const { task } = await httpGetTask(cancelId)
-        if (task) {
-          summary = formatTaskSummary(
-            { ...task, status: task.status ?? 'TASK_STATUS_CANCELLED' },
-            { stopped: true }
-          )
-        }
-      } catch {
-        /* keep default */
+    if (!state || state.closing) return
+
+    // Clear local "waiting on steer" so Working can drop even before the next
+    // status_change; the worker still owns the real idle bit.
+    state.steerCreateInFlight = false
+    state.pendingSteerInteractionId = ''
+    state.awaitingAgentAfterSteer = false
+    state.lastSteeredAt = 0
+    this.liveTextBySession.delete(sessionId)
+
+    if (state.workerSocket?.isLive) {
+      const sent = state.workerSocket.sendCommand(interruptCommand())
+      logger.info('minionHarness: INTERRUPT via worker socket', { sessionId, sent })
+      // Optimistic idle until status_change confirms; socket stays open.
+      if (sent && state.workerState !== undefined) {
+        state.workerState = 1
+        this.syncWorkingFromWorker(sessionId, state)
       }
-    } catch (err) {
-      logger.warn('minionHarness: cancelTask failed', { sessionId, cancelId, error: String(err) })
-      summary = `I tried to stop, but cancel failed: ${err instanceof Error ? err.message : String(err)}`
+    } else {
+      // No live worker (starting / sleeping): cannot safely INTERRUPT over RPC
+      // (PENDING INTERRUPT is later replayed as a user message). Just clear chrome.
+      logger.info('minionHarness: interrupt with no live socket — clear chrome only', {
+        sessionId,
+        socketState: state.workerSocket?.state ?? 'none'
+      })
+      this.clearStatusChrome(state, sessionId)
     }
-    if (state && this.sessions.get(sessionId) === state) {
-      pushAssistantMessage(state.channel, sessionId, summary, 'minion_cancelled')
+
+    this.remember(sessionId, state)
+    this.notifyActivity(sessionId)
+    // Tell SessionManager the turn is no longer busy (gateway path also
+    // clears busy after this promise). Do not close the harness channel.
+    if (!state.channel.closed) {
       state.channel.push({ type: 'interrupted', sessionId, timestamp: new Date().toISOString() })
-      this.remember(sessionId, state)
-      state.channel.close()
-      this.sessions.delete(sessionId)
     }
   }
 
@@ -725,6 +776,30 @@ export class MinionHarness implements HarnessDriver {
     this.remember(sessionId, state)
     this.ensurePolling(sessionId)
     this.notifyActivity(sessionId)
+
+    // Prefer live worker socket (Minion Web); RPC wakes a sleeping pod.
+    const wireText = text || '(attachment)'
+    if (!attachments?.length && state.workerSocket?.isLive) {
+      const sent = state.workerSocket.sendCommand(userMessageCommand(wireText))
+      if (sent) {
+        state.steerCreateInFlight = false
+        state.awaitingAgentAfterSteer = true
+        state.pendingSteerInteractionId = ''
+        state.lastSteeredAt = Date.now()
+        this.remember(sessionId, state)
+        logger.info('minionHarness: USER_MESSAGE via worker socket', {
+          sessionId,
+          remoteTaskId: state.remoteTaskId
+        })
+        // Optimistic Working until status_change arrives.
+        if (state.workerState !== undefined) {
+          state.workerState = 2
+          this.syncWorkingFromWorker(sessionId, state)
+          this.notifyActivity(sessionId)
+        }
+        return
+      }
+    }
     await this.createInteractionOnRemote(sessionId, state, text, attachments)
   }
 
@@ -767,6 +842,11 @@ export class MinionHarness implements HarnessDriver {
       state.steerCreateInFlight = false
       state.completionPosted = false
       state.lastSteeredAt = Date.now()
+      // RPC path (pod asleep / socket not live): next WS catch-up replaces
+      // any storage-built transcript (Minion Web resetOnConnect).
+      if (!state.workerSocket?.isLive) {
+        state.resetOnConnect = true
+      }
       this.remember(sessionId, state)
       logger.info('minionHarness: createInteraction ok', {
         sessionId,
@@ -775,7 +855,8 @@ export class MinionHarness implements HarnessDriver {
         responseTaskId: responseTaskId || null,
         interactionId: id,
         status,
-        attachmentCount: attachments?.length ?? 0
+        attachmentCount: attachments?.length ?? 0,
+        resetOnConnect: state.resetOnConnect
       })
     } catch (err) {
       if (text) state.steeredTexts.delete(text)
@@ -843,17 +924,16 @@ export class MinionHarness implements HarnessDriver {
   }
 
   /**
-   * Sidebar/composer "working": polling a task that is not ready yet.
-   * After CreateInteraction, stay working until a post-steer update arrives —
-   * stale display COMPLETED from the prior turn must not clear Stop.
+   * Sidebar/composer "working" — Minion Web rule: worker_state === 2 only.
+   * SETUP (starting/wake) is a separate card; do not invent Working from poll.
    */
   isRemoteActive(sessionId: string): boolean {
-    if (!this.polls.has(sessionId)) return false
     const state = this.sessions.get(sessionId)
     if (!state || state.closing || state.completionPosted) return false
-    if (this.awaitingSteerReply(state)) return true
-    if (state.lastTask && isTaskFinished(state.lastTask)) return false
-    return true
+    if (state.workerState !== undefined) {
+      return isWorkerRunning(state.workerState)
+    }
+    return false
   }
 
   /**
@@ -907,7 +987,18 @@ export class MinionHarness implements HarnessDriver {
       .filter(Boolean)
     const free = response.freeText?.trim()
     const human = free || picks.join('; ') || 'OK'
-    // Include call_id so Minion can correlate with the elicitation.
+    // Live socket: ELICITATION_RESPONSE (Minion Web). Else RPC with call_id payload.
+    if (state.workerSocket?.isLive) {
+      const wireAnswers: Record<string, string | readonly string[]> = { ...answers }
+      if (free) wireAnswers.freeText = free
+      const sent = state.workerSocket.sendCommand(elicitationResponseCommand(requestId, wireAnswers))
+      if (sent) {
+        state.lastSteeredAt = Date.now()
+        state.awaitingAgentAfterSteer = true
+        logger.info('minionHarness: ELICITATION_RESPONSE via worker socket', { sessionId, requestId })
+        return
+      }
+    }
     const payload = JSON.stringify({
       version: 1,
       call_id: requestId,
@@ -937,6 +1028,8 @@ export class MinionHarness implements HarnessDriver {
     opts?: { liveFromStart?: boolean; remoteTaskId?: string }
   ): MinionSessionState {
     const mem = sessionId ? this.memory.get(sessionId) : undefined
+    const fold = new MinionWorkerFold()
+    if (mem?.lastAppliedSeq !== undefined) fold.restoreLastSeq(mem.lastAppliedSeq)
     return {
       channel: new EventChannel(),
       remoteTaskId: opts?.remoteTaskId ?? mem?.remoteTaskId ?? sessionId ?? '',
@@ -960,7 +1053,14 @@ export class MinionHarness implements HarnessDriver {
       lastWorkingKey: '',
       lastScratchError: '',
       lastTask: null,
-      scratchTickBusy: false
+      scratchTickBusy: false,
+      workerSocket: null,
+      workerState: undefined,
+      workerSocketKey: '',
+      fold,
+      foldHealthy: mem?.foldHealthy ?? false,
+      storageFoldDone: mem?.storageFoldDone ?? false,
+      resetOnConnect: false
     }
   }
 
@@ -973,7 +1073,10 @@ export class MinionHarness implements HarnessDriver {
       postedTexts: new Set(state.postedTexts),
       steeredTexts: new Set(state.steeredTexts),
       completionPosted: state.completionPosted,
-      scratch: { ...state.scratch }
+      scratch: { ...state.scratch },
+      lastAppliedSeq: state.fold.lastSeq,
+      foldHealthy: state.foldHealthy,
+      storageFoldDone: state.storageFoldDone
     })
   }
 
@@ -994,13 +1097,16 @@ export class MinionHarness implements HarnessDriver {
 
   /** Soft-stop polling but keep memory so follow-ups don't re-echo history. */
   private softStop(sessionId: string, state: MinionSessionState): void {
-    // Keep wake/Boot SETUP when the tip’s pod is not RUNNING — clearing chrome
-    // was why the start card vanished on finished tips.
-    const wake =
-      state.lastTask &&
-      !isDevpodRunningState(state.lastDevpodState) &&
-      deriveMinionSetup(state.lastTask, { devpodState: state.lastDevpodState })
-    if (wake) {
+    // Keep Boot only while the pod is still coming up (starting/restoring) or
+    // we are mid-wake. Sleeping SHUTDOWN/SNAPSHOTTED → clear (not stuck SETUP).
+    const keepSetup =
+      !!state.lastTask &&
+      (isDevpodStartingState(state.lastDevpodState) || this.awaitingSteerReply(state)) &&
+      !!deriveMinionSetup(state.lastTask, {
+        devpodState: state.lastDevpodState,
+        wakeIntent: this.awaitingSteerReply(state)
+      })
+    if (keepSetup) {
       state.lastWorkingKey = ''
       state.lastSetupKey = ''
       this.pushSetupChrome(state, sessionId, state.lastTask!)
@@ -1008,11 +1114,252 @@ export class MinionHarness implements HarnessDriver {
       this.clearStatusChrome(state, sessionId)
     }
     this.remember(sessionId, state)
+    this.stopWorkerSocket(state)
     this.stopScratchLoop(sessionId)
+    this.liveTextBySession.delete(sessionId)
     const wasPolling = this.polls.has(sessionId)
     this.polls.get(sessionId)?.abort()
     this.polls.delete(sessionId)
     if (wasPolling) this.notifyActivity(sessionId)
+  }
+
+  private stopWorkerSocket(state: MinionSessionState): void {
+    state.workerSocket?.stop()
+    state.workerSocket = null
+    state.workerSocketKey = ''
+    state.workerState = undefined
+  }
+
+  /**
+   * Open (or keep) the worker WebSocket when the tip’s DevPod is RUNNING and
+   * we know name+region. Closes it when the pod is no longer up.
+   */
+  private syncWorkerSocket(sessionId: string, state: MinionSessionState, task: Record<string, any>): void {
+    if (state.closing || state.channel.closed) {
+      this.stopWorkerSocket(state)
+      return
+    }
+    const target = extractDevpodTarget(state.remoteTaskId || sessionId, task)
+    if (!target || !isDevpodRunningState(state.lastDevpodState)) {
+      if (state.workerSocket) {
+        logger.info('minionHarness: closing worker socket (pod not running)', { sessionId })
+        this.stopWorkerSocket(state)
+        this.syncWorkingFromWorker(sessionId, state)
+        this.notifyActivity(sessionId)
+      }
+      return
+    }
+    const key = `${target.devpodName}|${target.region}|${target.taskId}`
+    if (state.workerSocket && state.workerSocketKey === key) return
+    this.stopWorkerSocket(state)
+    state.workerSocketKey = key
+    const reset = state.resetOnConnect
+    // Full replay after storage/wake; otherwise resume from fold cursor.
+    const initialSince = reset ? undefined : state.fold.lastSeq
+    logger.info('minionHarness: opening worker socket', {
+      sessionId,
+      taskId: target.taskId,
+      devpodName: target.devpodName,
+      region: target.region,
+      resetOnConnect: reset,
+      initialSince
+    })
+    const socket = new MinionWorkerSocket({
+      taskId: target.taskId,
+      devpodName: target.devpodName,
+      region: target.region,
+      ...(initialSince !== undefined ? { initialSince } : {}),
+      onConnected: (params) => this.onWorkerConnected(sessionId, params),
+      onWorkerState: (ws) => this.onWorkerState(sessionId, ws),
+      onEvents: (events, phase) => this.onWorkerEvents(sessionId, events, phase),
+      onReset: () => {
+        const s = this.sessions.get(sessionId)
+        if (!s) return
+        this.liveTextBySession.delete(sessionId)
+        s.workerState = undefined
+        s.fold.reset()
+        s.resetOnConnect = true
+      },
+      onDisconnect: (reason, attempt) => {
+        logger.warn('minionHarness: worker socket disconnect', { sessionId, reason, attempt })
+        // Keep reconnecting while the pod is still RUNNING; syncWorkerSocket
+        // will tear the socket down on the next poll if the pod sleeps.
+        return isDevpodRunningState(this.sessions.get(sessionId)?.lastDevpodState ?? '')
+      }
+    })
+    state.workerSocket = socket
+    socket.start()
+  }
+
+  private onWorkerConnected(sessionId: string, params: MinionConnectedParams): void {
+    const state = this.sessions.get(sessionId)
+    if (!state || state.closing) return
+    if (params.workerState !== undefined) state.workerState = params.workerState
+    logger.info('minionHarness: worker connected', {
+      sessionId,
+      workerState: params.workerState,
+      lastSeq: params.lastSeq
+    })
+    if (params.pendingElicitation?.callId && Array.isArray(params.pendingElicitation.questions)) {
+      this.pushElicitationFromWorker(sessionId, state, params.pendingElicitation.callId, params.pendingElicitation.questions)
+    }
+    this.syncWorkingFromWorker(sessionId, state)
+    this.notifyActivity(sessionId)
+  }
+
+  private onWorkerState(sessionId: string, workerState: number | undefined): void {
+    const state = this.sessions.get(sessionId)
+    if (!state || state.closing) return
+    const prev = state.workerState
+    state.workerState = workerState
+    if (prev !== workerState) {
+      logger.info('minionHarness: worker_state', { sessionId, workerState })
+    }
+    // Leaving RUNNING: flush any buffered live text as a progress row.
+    if (isWorkerRunning(prev) && !isWorkerRunning(workerState)) {
+      this.flushLiveText(sessionId, state)
+      if (state.awaitingAgentAfterSteer) state.awaitingAgentAfterSteer = false
+      state.pendingSteerInteractionId = ''
+      state.steerCreateInFlight = false
+    }
+    this.syncWorkingFromWorker(sessionId, state)
+    this.notifyActivity(sessionId)
+  }
+
+  private onWorkerEvents(
+    sessionId: string,
+    events: MinionWorkerEvent[],
+    phase: 'replay' | 'live'
+  ): void {
+    const state = this.sessions.get(sessionId)
+    if (!state || state.closing || state.channel.closed) return
+
+    // Wake / storage → full replay: wipe Atelier rows then rebuild from fold.
+    if (phase === 'replay' && state.resetOnConnect) {
+      state.fold.reset()
+      state.channel.push({
+        type: 'conversation_reset',
+        sessionId,
+        timestamp: new Date().toISOString(),
+        newConversationId: state.remoteTaskId || sessionId
+      })
+      state.resetOnConnect = false
+      state.postedTexts.clear()
+      logger.info('minionHarness: resetOnConnect — replacing transcript with WS replay', {
+        sessionId,
+        eventCount: events.length
+      })
+    }
+
+    for (const ev of events) {
+      if (ev.type === 'elicitation_request' && ev.call_id && ev.questions) {
+        this.pushElicitationFromWorker(sessionId, state, ev.call_id, ev.questions)
+      }
+      if (phase === 'live' && ev.type === 'user_message' && ev.message) {
+        state.steerCreateInFlight = false
+        state.pendingSteerInteractionId = ''
+        state.awaitingAgentAfterSteer = false
+      }
+    }
+
+    const folded = state.fold.apply(sessionId, events, phase)
+    for (const harnessEv of folded.events) {
+      if (state.closing || state.channel.closed) break
+      if (harnessEv.type === 'text_delta') {
+        state.postedTexts.add(normalizeProgressText(harnessEv.text))
+      }
+      state.channel.push(harnessEv)
+    }
+    if (folded.events.length > 0) {
+      state.foldHealthy = true
+      // Scratch is backup only when fold never connected.
+      this.stopScratchLoop(sessionId)
+    }
+    if (folded.chrome && state.lastSetupKey === '' && isWorkerRunning(state.workerState)) {
+      this.pushWorkingChrome(state, sessionId, folded.chrome)
+    }
+    if (folded.sawAssistantText) {
+      state.awaitingAgentAfterSteer = false
+      state.pendingSteerInteractionId = ''
+      state.steerCreateInFlight = false
+      if (phase === 'live') {
+        this.liveTextBySession.set(sessionId, '1')
+        // Text can arrive after status already left RUNNING — flush + clear now.
+        if (!isWorkerRunning(state.workerState)) {
+          this.flushLiveText(sessionId, state)
+        }
+      }
+    }
+    this.remember(sessionId, state)
+    if (folded.events.length > 0) this.notifyActivity(sessionId)
+  }
+
+  private flushLiveText(sessionId: string, state: MinionSessionState): void {
+    const had = this.liveTextBySession.get(sessionId)
+    this.liveTextBySession.delete(sessionId)
+    // Live fold streams text_delta into SessionManager's buffer — close the turn
+    // only when we actually streamed assistant text this RUNNING interval.
+    if (had !== '1') return
+    state.channel.push({
+      type: 'result',
+      sessionId,
+      timestamp: new Date().toISOString(),
+      isError: false,
+      subtype: 'minion_progress',
+      numTurns: 1,
+      durationMs: 0,
+      totalCostUsd: 0,
+      usage: null
+    })
+    state.awaitingAgentAfterSteer = false
+    if (!isWorkerRunning(state.workerState)) {
+      this.clearStatusChrome(state, sessionId)
+    }
+  }
+
+  private pushElicitationFromWorker(
+    sessionId: string,
+    state: MinionSessionState,
+    callId: string,
+    questionsRaw: unknown
+  ): void {
+    const wire = JSON.stringify({
+      version: 1,
+      call_id: callId,
+      questions: questionsRaw
+    })
+    const elicitation = parseMinionElicitation(wire)
+    if (!elicitation) return
+    if (state.seenInteractionIds.has(`elic:${callId}`)) return
+    state.seenInteractionIds.add(`elic:${callId}`)
+    state.channel.push({
+      type: 'ask_user_question',
+      sessionId,
+      timestamp: new Date().toISOString(),
+      requestId: elicitation.callId,
+      toolUseId: elicitation.callId,
+      questions: elicitation.questions
+    })
+    state.awaitingAgentAfterSteer = false
+    this.clearStatusChrome(state, sessionId)
+    this.notifyActivity(sessionId)
+  }
+
+  /** Drive composer Working chrome from worker_state (Minion Web). */
+  private syncWorkingFromWorker(sessionId: string, state: MinionSessionState): void {
+    if (state.closing || state.channel.closed || state.completionPosted) return
+    if (state.lastSetupKey !== '') return
+    if (state.workerState === undefined) return
+    if (isWorkerRunning(state.workerState)) {
+      const detail =
+        (state.lastTask && extractDisplayStatus(state.lastTask)) ||
+        (state.lastTask && extractLatestUpdate(state.lastTask)) ||
+        'Agent is running'
+      this.pushWorkingChrome(state, sessionId, { title: 'Working…', detail: String(detail).slice(0, 120) })
+    } else {
+      // Idle / waiting-for-input / error — clear Working immediately.
+      if (state.lastWorkingKey !== '') this.clearStatusChrome(state, sessionId)
+    }
   }
 
   /** Live transcript work only when pod is STATE_RUNNING (steer answer exempt). */
@@ -1026,7 +1373,72 @@ export class MinionHarness implements HarnessDriver {
     if (key) state.postedTexts.add(key)
   }
 
+  /**
+   * When the pod is sleeping (or unknown with pod identity), fold durable
+   * chat.jsonl once — same decoder as the worker socket. On wake, WS opens
+   * with resetOnConnect so replay replaces this fold.
+   */
+  private async maybeFoldStorage(
+    sessionId: string,
+    state: MinionSessionState,
+    task: Record<string, any>,
+    signal: AbortSignal
+  ): Promise<void> {
+    if (state.storageFoldDone || state.closing || state.channel.closed) return
+    if (isDevpodRunningState(state.lastDevpodState)) return
+    const phase = classifyDevpodPhase(state.lastDevpodState)
+    if (phase === 'starting') return
+    const target = extractDevpodTarget(state.remoteTaskId || sessionId, task)
+    if (!target) return
+    if (phase !== 'sleeping' && phase !== 'unknown' && phase !== 'failed') return
+    try {
+      const content = await getFileContents(target, 'chat.jsonl')
+      if (signal.aborted || state.closing || state.channel.closed) return
+      const events = parseChatJsonl(content)
+      state.storageFoldDone = true
+      if (events.length === 0) {
+        logger.info('minionHarness: storage fold empty', { sessionId, taskId: target.taskId })
+        this.remember(sessionId, state)
+        return
+      }
+      const folded = state.fold.apply(sessionId, events, 'storage')
+      for (const harnessEv of folded.events) {
+        if (state.closing || state.channel.closed) break
+        if (harnessEv.type === 'text_delta') {
+          state.postedTexts.add(normalizeProgressText(harnessEv.text))
+        }
+        state.channel.push(harnessEv)
+      }
+      state.foldHealthy = folded.events.length > 0 || state.foldHealthy
+      state.resetOnConnect = true
+      this.stopScratchLoop(sessionId)
+      logger.info('minionHarness: storage fold applied', {
+        sessionId,
+        taskId: target.taskId,
+        eventCount: events.length,
+        harnessEvents: folded.events.length,
+        lastSeq: state.fold.lastSeq
+      })
+      this.remember(sessionId, state)
+      this.notifyActivity(sessionId)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.warn('minionHarness: storage fold failed', { sessionId, error: msg.slice(0, 240) })
+      // Retry next poll — leave storageFoldDone false.
+    }
+  }
+
+  /** Scratch is backup only when the seq fold has never been healthy. */
+  private scratchAllowed(state: MinionSessionState): boolean {
+    return !state.foldHealthy && !state.workerSocket?.isLive
+  }
+
   private ensureScratchLoop(sessionId: string): void {
+    const state = this.sessions.get(sessionId)
+    if (state && !this.scratchAllowed(state)) {
+      this.stopScratchLoop(sessionId)
+      return
+    }
     if (this.scratchLoops.has(sessionId)) return
     const handle = setInterval(() => {
       void this.tickScratch(sessionId)
@@ -1045,6 +1457,10 @@ export class MinionHarness implements HarnessDriver {
   private async tickScratch(sessionId: string): Promise<void> {
     const state = this.sessions.get(sessionId)
     if (!state || state.closing || state.channel.closed || state.completionPosted) {
+      this.stopScratchLoop(sessionId)
+      return
+    }
+    if (!this.scratchAllowed(state)) {
       this.stopScratchLoop(sessionId)
       return
     }
@@ -1104,18 +1520,22 @@ export class MinionHarness implements HarnessDriver {
 
   private pushSetupChrome(state: MinionSessionState, sessionId: string, task: Record<string, any>): void {
     if (state.closing || state.channel.closed) return
-    const setup = deriveMinionSetup(task, { devpodState: state.lastDevpodState })
+    const wakeIntent =
+      this.awaitingSteerReply(state) ||
+      state.steerCreateInFlight ||
+      state.awaitingAgentAfterSteer
+    const setup = deriveMinionSetup(task, {
+      devpodState: state.lastDevpodState,
+      wakeIntent
+    })
     if (!setup) {
-      // Setup done — free the slot for working chrome while remote is active.
-      state.lastSetupKey = ''
-      if (state.completionPosted) {
+      // Setup done — clear SETUP chrome. Working comes only from worker_state
+      // (syncWorkingFromWorker), never re-seeded from poll while the pod is up.
+      if (state.lastSetupKey !== '') {
+        state.lastSetupKey = ''
         this.clearStatusChrome(state, sessionId)
-      } else if (state.lastWorkingKey === '' && this.podAllowsLiveWork(state)) {
-        // Only seed Working when the pod is actually RUNNING.
-        this.pushWorkingChrome(state, sessionId, {
-          title: 'Working…',
-          detail: extractDisplayStatus(task) || 'Waiting for tools…'
-        })
+      } else if (state.completionPosted && state.lastWorkingKey !== '') {
+        this.clearStatusChrome(state, sessionId)
       }
       return
     }
@@ -1327,7 +1747,8 @@ export class MinionHarness implements HarnessDriver {
   }
 
   private ensurePolling(sessionId: string): void {
-    this.ensureScratchLoop(sessionId)
+    const state = this.sessions.get(sessionId)
+    if (state && this.scratchAllowed(state)) this.ensureScratchLoop(sessionId)
     if (this.polls.has(sessionId)) return
     void this.pollUntilDone(sessionId)
   }
@@ -1337,7 +1758,7 @@ export class MinionHarness implements HarnessDriver {
     if (!state) return
     const abort = new AbortController()
     this.polls.set(sessionId, abort)
-    this.ensureScratchLoop(sessionId)
+    if (this.scratchAllowed(state)) this.ensureScratchLoop(sessionId)
     this.notifyActivity(sessionId)
     const { channel } = state
     const deadline = Date.now() + POLL_TIMEOUT_MS
@@ -1365,9 +1786,15 @@ export class MinionHarness implements HarnessDriver {
             }
             if (abort.signal.aborted) return
             const podUp = this.podAllowsLiveWork(state)
+            // Sleeping tip: durable chat.jsonl fold (before WS).
+            if (!podUp) {
+              await this.maybeFoldStorage(sessionId, state, task, abort.signal)
+            }
+            // Open / refresh worker WebSocket once the pod is RUNNING.
+            this.syncWorkerSocket(sessionId, state, task)
 
-            // Cold resume: mark everything currently visible as already-seen so we
-            // don't reprint the whole transcript, then wait for genuinely new rows.
+            // Cold resume: absorb orchestrator rows into dedupe only — transcript
+            // comes from storage fold or WS replay, never listInteractions.
             if (!state.historySeeded) {
               if (update) {
                 state.lastLatestUpdate = update
@@ -1388,21 +1815,13 @@ export class MinionHarness implements HarnessDriver {
               this.remember(sessionId, state)
               this.notifyActivity(sessionId)
               this.pushSetupChrome(state, sessionId, task)
-              if (podUp || state.scratch.healthy) {
-                await this.pollScratch(sessionId, state, task, abort.signal)
-              }
               continue
             }
 
+            // latest_update is never a transcript owner once fold/WS is active.
             if (update && update !== state.lastLatestUpdate) {
               state.lastLatestUpdate = update
-              // No live latest_update work without STATE_RUNNING, and never while
-              // awaiting a steer (stale COMPLETED / Torchlight false answer).
-              if (this.awaitingSteerReply(state) || !podUp || state.scratch.healthy) {
-                this.absorbProgressText(state, update)
-              } else {
-                this.pushProgressOnce(state, sessionId, update)
-              }
+              this.absorbProgressText(state, update)
             }
 
             const finished = isTaskFinished(task)
@@ -1410,17 +1829,21 @@ export class MinionHarness implements HarnessDriver {
 
             // SETUP/Boot whenever pod is not RUNNING (including finished wake).
             this.pushSetupChrome(state, sessionId, task)
-            if (state.lastSetupKey === '' && podUp && (!finished || waitingOnSteer)) {
-              this.pushOrchestratorWorkingChrome(state, sessionId, task)
+            // Working chrome: worker_state only (no orchestrator invent).
+            if (state.workerState !== undefined) {
+              this.syncWorkingFromWorker(sessionId, state)
             }
 
-            // Scratch tools only when pod is positively RUNNING.
-            if (podUp || state.scratch.healthy) {
+            // Scratch backup only when fold never connected.
+            if (this.scratchAllowed(state) && (podUp || state.scratch.healthy)) {
+              this.ensureScratchLoop(sessionId)
               if (finished && !waitingOnSteer) {
                 await this.flushScratchForCompletion(sessionId, state, task, abort.signal)
               } else {
                 await this.pollScratch(sessionId, state, task, abort.signal)
               }
+            } else {
+              this.stopScratchLoop(sessionId)
             }
             if (abort.signal.aborted) return
 
@@ -1456,11 +1879,12 @@ export class MinionHarness implements HarnessDriver {
               }
             }
 
+            // listInteractions: seed elicitation only when fold is not healthy;
+            // never post agent answers (fold owns transcript).
             for (const i of interactions) {
               const id = String(i.id ?? '')
               if (id && state.seenInteractionIds.has(id)) continue
 
-              // User rows: skip echo of our steer text; never treat ack as answer.
               if (isUserInitiator(i.initiator)) {
                 if (id) state.seenInteractionIds.add(id)
                 const text = interactionText(i)
@@ -1478,14 +1902,9 @@ export class MinionHarness implements HarnessDriver {
                 continue
               }
 
-              // Post-steer AGENT answer (or elicitation): always surface — even if
-              // pod is not RUNNING yet. All other agent rows require STATE_RUNNING.
-              const steerAnswer = state.awaitingAgentAfterSteer
-              const allowPost = steerAnswer || podUp
-
-              if (isElicitationInteraction(i)) {
+              if (isElicitationInteraction(i) && !state.foldHealthy) {
                 const elicitation = parseMinionElicitation(text)
-                if (elicitation && allowPost) {
+                if (elicitation) {
                   if (id) state.seenInteractionIds.add(id)
                   state.postedTexts.add(normalizeProgressText(text))
                   state.channel.push({
@@ -1503,35 +1922,53 @@ export class MinionHarness implements HarnessDriver {
                 }
               }
 
-              if (!allowPost) {
-                // Absorb without transcript so a later pod-up does not dump Boot-time work.
-                if (id) state.seenInteractionIds.add(id)
-                this.absorbProgressText(state, text)
-                continue
-              }
-
+              // Absorb — fold/WS will surface the real answer by seq.
               if (id) state.seenInteractionIds.add(id)
-              if (!this.pushProgressOnce(state, sessionId, text)) continue
-              sawNewAgentInteraction = true
-              if (state.awaitingAgentAfterSteer) {
-                state.awaitingAgentAfterSteer = false
-              }
+              this.absorbProgressText(state, text)
             }
 
             waitingOnSteer = this.awaitingSteerReply(state)
 
             // Waiting for the user (elicitation / USER_INPUT) — not Working.
-            if (isAwaitingUserInput(task)) {
-              this.clearStatusChrome(state, sessionId)
+            if (isAwaitingUserInput(task) || (state.workerState !== undefined && !isWorkerRunning(state.workerState))) {
+              if (state.workerState !== undefined) this.syncWorkingFromWorker(sessionId, state)
+              else this.clearStatusChrome(state, sessionId)
               this.remember(sessionId, state)
-            } else if (waitingOnSteer) {
-              // Still waiting on PENDING / new AGENT answer — never Done on stale COMPLETED.
-              this.pushSetupChrome(state, sessionId, task)
-              if (state.lastSetupKey === '' && podUp) {
-                this.pushOrchestratorWorkingChrome(state, sessionId, task)
+              // Idle worker with a finished task → soft-stop; else keep polling for follow-ups.
+              if (finished && state.workerState !== undefined && !isWorkerRunning(state.workerState) && !waitingOnSteer) {
+                if (!state.completionPosted && !state.closing) {
+                  state.completionPosted = true
+                  if (!sawNewAgentInteraction && state.lastSteeredAt <= 0) {
+                    pushAssistantMessage(
+                      channel,
+                      sessionId,
+                      formatTaskSummary(task),
+                      'end_turn',
+                      taskCost(task)
+                    )
+                  } else {
+                    channel.push({
+                      type: 'result',
+                      sessionId,
+                      timestamp: new Date().toISOString(),
+                      subtype: 'end_turn',
+                      isError: false,
+                      numTurns: 1,
+                      durationMs: 0,
+                      totalCostUsd: taskCost(task),
+                      usage: null
+                    })
+                  }
+                  this.notifyActivity(sessionId)
+                }
+                this.softStop(sessionId, state)
+                return
               }
+            } else if (waitingOnSteer && state.workerState === undefined) {
+              // Still waiting on PENDING / wake — SETUP only; Working from worker_state.
+              this.pushSetupChrome(state, sessionId, task)
               this.remember(sessionId, state)
-            } else if (finished) {
+            } else if (finished && state.workerState === undefined) {
               if (!state.completionPosted && !state.closing) {
                 state.completionPosted = true
                 if (!sawNewAgentInteraction && state.lastSteeredAt <= 0) {
@@ -1577,12 +2014,16 @@ export class MinionHarness implements HarnessDriver {
           logger.warn('minionHarness: poll error (retrying)', { sessionId, error: msg })
         }
         const early = Date.now() - state.startedAt < EARLY_POLL_WINDOW_MS
-        // Fast poll while steer is outstanding; also for a short window after
-        // lastSteeredAt so we catch the first RESPONDED/AGENT ticks quickly.
         const steerFast =
           this.awaitingSteerReply(state) ||
           (state.lastSteeredAt > 0 && Date.now() - state.lastSteeredAt < STEER_FAST_POLL_MS)
-        await sleep(early || steerFast ? EARLY_POLL_INTERVAL_MS : POLL_INTERVAL_MS, abort.signal)
+        const socketLive = state.workerSocket?.isLive === true
+        const interval = socketLive
+          ? POLL_INTERVAL_LIVE_MS
+          : early || steerFast
+            ? EARLY_POLL_INTERVAL_MS
+            : POLL_INTERVAL_MS
+        await sleep(interval, abort.signal)
       }
     } finally {
       if (this.polls.get(sessionId) === abort) {

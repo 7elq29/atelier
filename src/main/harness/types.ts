@@ -227,6 +227,16 @@ export type HarnessEvent =
       text: string
       parentToolUseId?: string | null
     }
+  /**
+   * Historical / remote user turn folded from Minion worker replay or storage
+   * chat.jsonl (attach / sleep). Not used for live Atelier composer sends.
+   */
+  | {
+      type: 'transcript_user_message'
+      sessionId: string
+      timestamp: string
+      text: string
+    }
   | {
       type: 'thinking_block_start'
       sessionId: string

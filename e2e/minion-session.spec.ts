@@ -262,6 +262,19 @@ test.describe('minion-session', () => {
       await page.screenshot({ path: join(artifactsDir, 'minion-case-a-followup-intermediate.png') })
 
       await expectAssistantAnswerAfter(page, prompt2.slice(0, 40), 300_000)
+      // Fold owns transcript — prior A1-READY must not reappear as a twin row.
+      await expect(
+        page
+          .locator('[data-testid="transcript-message"][data-role="assistant"]')
+          .filter({ hasText: /\bA1-READY\b/i })
+      ).toHaveCount(1)
+      await expect(
+        page
+          .locator('[data-testid="transcript-message"][data-role="assistant"]')
+          .filter({ hasText: /\bA2-READY\b/i })
+      ).toHaveCount(1)
+      // Working clears from worker_state (not stuck after answer).
+      await expect(workingStatus(page)).toHaveCount(0, { timeout: 60_000 })
       await page.screenshot({ path: join(artifactsDir, 'minion-case-a-followup-answer.png') })
     } finally {
       await cleanupMinionSessions(page, { cancelRemote: true })

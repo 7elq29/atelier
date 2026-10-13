@@ -1173,8 +1173,12 @@ export class SessionManager {
           throw new Error('That Minion session is still cleaning up. Try Attach again in a moment.')
         }
         if (existing && !existing.closedAt) {
-          // Already open — return the same row so the modal just focuses it.
-          // Never createtask a twin session for the same task UUID.
+          // Already open — same row (never mint a twin). If the harness was
+          // detached (close/relaunch race, failed startup reconnect), wire it
+          // back before the modal focuses the session.
+          if (!this.live.has(attachId) || !this.minionHarness.isActive(attachId)) {
+            await this.reconnect(attachId)
+          }
           return this.decorate(existing)
         }
         if (existing?.closedAt) {
@@ -2448,8 +2452,9 @@ export class SessionManager {
     if (!beforeClose) throw new Error(`Unknown session: ${sessionId}`)
     // Never block Close on harness teardown — same fire-and-forget pattern as
     // the pre-async closeSession; interrupt can hang on mid-stream turns.
-    // Minion: cancelRemote=false detaches without canceltask (pod stays for attach).
-    if (beforeClose.mode === 'minion' && opts?.cancelRemote === false) {
+    // Minion: never cancelTask — Stop is WS INTERRUPT; close/delete only detaches
+    // (remote tip stays for re-attach). cancelRemote is ignored for Minion.
+    if (beforeClose.mode === 'minion') {
       const minion = this.minionHarness as { detach?(id: string): Promise<void> }
       void (minion.detach?.(sessionId) ?? this.resolveHarness(sessionId).interrupt(sessionId)).catch(
         () => undefined
@@ -2947,6 +2952,20 @@ export class SessionManager {
           rawEvent: event,
         })
         if (updated) this.sendMessage(sessionId, updated)
+        return
+      }
+
+      case 'transcript_user_message': {
+        // Minion worker/storage history fold — seed a user row without going
+        // through the composer send path.
+        this.flushBuffer(sessionId, live)
+        const text = event.text.trim()
+        if (!text) return
+        const messages = this.store.listMessages(sessionId)
+        const last = messages[messages.length - 1]
+        if (last?.role === 'user' && last.content.trim() === text) return
+        const row = this.store.addMessage({ sessionId, role: 'user', content: text })
+        this.sendMessage(sessionId, row)
         return
       }
 

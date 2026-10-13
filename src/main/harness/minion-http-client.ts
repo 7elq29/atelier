@@ -41,6 +41,16 @@ async function getToken(): Promise<string> {
   return value
 }
 
+/** USSO token for Minion HTTP (Basic) and worker WebSocket (Bearer). */
+export async function getMinionBearerToken(): Promise<string> {
+  return getToken()
+}
+
+/** Drop cached USSO token after a 401 (HTTP or WebSocket). */
+export function invalidateMinionToken(): void {
+  cachedToken = null
+}
+
 function authHeader(token: string): string {
   return `Basic ${Buffer.from(`:${token}`, 'utf8').toString('base64')}`
 }
@@ -79,7 +89,7 @@ export async function postMinionApi(
   }
   const text = await resp.text()
   if ((resp.status === 401 || resp.status === 403) && retry) {
-    cachedToken = null
+    invalidateMinionToken()
     return postMinionApi(endpoint, body, { ...opts, retry: false })
   }
   let parsed: Record<string, unknown> = {}
@@ -297,4 +307,42 @@ export function findDevpodForTask(pods: DevpodInfo[], taskId: string, devpodName
 
 export function isDevpodRunningState(state: string): boolean {
   return state === 'STATE_RUNNING'
+}
+
+/** uTerm / Minion Web pod phase classes (see Features/minion-websocket-session). */
+export type DevpodPhaseClass = 'running' | 'starting' | 'sleeping' | 'failed' | 'unknown'
+
+export function classifyDevpodPhase(state: string): DevpodPhaseClass {
+  const s = String(state ?? '').toUpperCase().replace(/^STATE_/, '')
+  if (!s) return 'unknown'
+  if (s === 'RUNNING') return 'running'
+  if (
+    s === 'PENDING' ||
+    s === 'INITIATING' ||
+    s === 'STARTING' ||
+    s === 'CREATING' ||
+    s === 'RESTORING' ||
+    s === 'BOOTING'
+  ) {
+    return 'starting'
+  }
+  if (
+    s === 'SNAPSHOTTED' ||
+    s === 'SHUTDOWN' ||
+    s === 'STOPPED' ||
+    s === 'SUSPENDED' ||
+    s === 'TERMINATED'
+  ) {
+    return 'sleeping'
+  }
+  if (s === 'FAILED' || s === 'ERROR') return 'failed'
+  return 'unknown'
+}
+
+export function isDevpodSleepingState(state: string): boolean {
+  return classifyDevpodPhase(state) === 'sleeping'
+}
+
+export function isDevpodStartingState(state: string): boolean {
+  return classifyDevpodPhase(state) === 'starting'
 }

@@ -2040,8 +2040,11 @@
       "paths": [
         "src/main/harness/minion-harness.ts",
         "src/main/harness/minion-http-client.ts",
+        "src/main/harness/minion-worker-socket.ts",
+        "src/main/harness/minion-worker-fold.ts",
         "src/main/harness/minion-scratch-client.ts",
         "src/main/harness/minion-scratch-tail.ts",
+        "Features/minion-websocket-session/spec.md",
         "src/main/sessions/manager.ts",
         "src/main/sessions/ipc.ts",
         "src/preload/index.ts",
@@ -2063,7 +2066,7 @@
         "Features/minion-elicitation-attachments/spec.md",
         "Features/minion-working-composer-status/spec.md"
       ],
-      "changedLines": "minion|Minion|minion_setup|minion-setup|minion_working|minion-working|composer-turn-status|scratch|chat\\.jsonl|cancelRemote|\\.detach\\(|createInteraction|getDevpods|listInteractions|pendingSteer|awaitingSteer|deriveMinionSetup|STATE_RUNNING|elicit|ask_user|attachment|buildMinionSteer",
+      "changedLines": "minion|Minion|minion_setup|minion-setup|minion_working|minion-working|composer-turn-status|scratch|chat\\.jsonl|cancelRemote|\\.detach\\(|createInteraction|getDevpods|listInteractions|pendingSteer|awaitingSteer|deriveMinionSetup|STATE_RUNNING|elicit|ask_user|attachment|buildMinionSteer|worker_state|workerSocket|MinionWorkerSocket|MinionWorkerFold|resetOnConnect|USER_MESSAGE|storage fold|transcript_user_message",
       "targets": [
         {
           "file": "e2e/minion-session.spec.ts"
