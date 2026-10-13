@@ -1,31 +1,31 @@
-# Minion SETUP / steer — Boot until RUNNING + event-driven reply
+# Minion SETUP / steer — pod-gated work + wake Boot card
 
-## Bugs (Torchlight `951e7488`)
+## Bugs (Torchlight / Minion Task Init)
 
-1. Live work chrome / progress treated as current while environment still booting.
-2. SETUP card dropped too early (`RUNNING` + `runner_url` ⇒ no card).
-3. Connect language / Connect step before pod is `STATE_RUNNING`.
-4. Post-steer soft-stop after a 3‑minute timer on stale `COMPLETED`, before the
-   new AGENT interaction exists.
+1. Live work rows (`listInteractions` / `latest_update`) while tip pod is not
+   `STATE_RUNNING`.
+2. SETUP / start card missing on resume or finished tip when pod is
+   snapshotted / absent (`isTaskFinished` → no card).
+3. Connect before pod is `STATE_RUNNING`.
+4. Soft-stop before the post-steer AGENT answer is posted.
 
 ## Correct flow
 
-1. **SETUP** stays until `getDevpods` reports this tip’s pod as
-   `STATE_RUNNING` (positive). Before that → **Boot** (or Provision if no
-   DevPod hint yet). `displayStatus` keywords still win when Minion sets them.
-2. **Connect** only after `STATE_RUNNING` while the agent is still linking
-   (pre-agent / CONNECT display). Never map unknown/`runner_url` alone → Connect.
-3. While SETUP is active: no Working “Connecting…” chrome; do not promote
-   `latest_update` into the transcript as live work (history seed unchanged).
-4. After `createInteraction`: wait on that user row `PENDING` → `RESPONDED`,
-   then on a **new** AGENT interaction (id not yet seen). No wall-clock success
-   timer. Stale tip `COMPLETED` must not soft-stop that wait. Post the agent
-   text, then Done / clear chrome.
+1. **SETUP / Boot** whenever tip pod is not positively `STATE_RUNNING`
+   (including finished/COMPLETED tips that need a wake) — Provision only when
+   there is no DevPod hint yet. Connect only after `STATE_RUNNING` while linking.
+2. **No new live work** unless pod is `STATE_RUNNING`: absorb
+   `latest_update` + agent interaction text into dedupe sets without transcript
+   rows. Exception: the AGENT answer (or elicitation) for the in-flight steer
+   after user row `RESPONDED` — always post that.
+3. Scratch tools only when `STATE_RUNNING` (or scratch already healthy).
+4. Soft-stop only when not awaiting a steer reply. If soft-stopping while pod
+   is not running, **keep** the Boot SETUP card (do not clear chrome).
 
 ## Done
 
-- [x] `deriveMinionSetup` Boot until `STATE_RUNNING`; no early SETUP dismiss
-- [x] `awaitingSteerReply` event-driven (no wall-clock success gate)
-- [x] Absent tip after `getDevpods` clears stale `lastDevpodState`
-- [x] Scratch poll only when pod `STATE_RUNNING` (or scratch already healthy)
+- [x] `deriveMinionSetup` shows Boot when pod not `STATE_RUNNING` even if tip finished
+- [x] Live work gated on `STATE_RUNNING`; steer answer exempt
+- [x] softStop preserves wake Boot card
+- [x] Cold seed fetches `getDevpods` before SETUP chrome
 - [x] `npm run build` + `npm run test:e2e:affected -- --base main` (A/B/D green)

@@ -222,11 +222,14 @@ type SetupStepState = 'done' | 'active' | 'pending'
  * Map getTask + getDevpods → Provision / Boot / Connect (Minion web UI).
  *
  * Rules (do not regress):
- * - Before this tip’s pod is positively `STATE_RUNNING` → Boot (not Connect).
- *   `runner_url` / `TASK_STATUS_RUNNING` alone must not dismiss SETUP or jump
- *   to Connect — that stuck Torchlight on Connect while Minion still showed Boot.
+ * - Before this tip’s pod is positively `STATE_RUNNING` → Boot (not Connect),
+ *   including finished/COMPLETED tips (wake / start card). Never hide SETUP
+ *   just because `isTaskFinished` — that dropped the card on Torchlight resume.
+ * - `runner_url` / `TASK_STATUS_RUNNING` alone must not dismiss SETUP or jump
+ *   to Connect.
  * - Connect only after `STATE_RUNNING` while the agent is still linking.
- * - SETUP clears only once the pod is `STATE_RUNNING` and display is past setup.
+ * - SETUP clears only once the pod is `STATE_RUNNING` and past setup display
+ *   (idle finished + pod up → no card).
  */
 function deriveMinionSetup(
   task: Record<string, any>,
@@ -237,8 +240,6 @@ function deriveMinionSetup(
   detail: string
   steps: Array<{ id: SetupStepId; label: string; state: SetupStepState }>
 } | null {
-  if (isTaskFinished(task)) return null
-
   const status = String(task.status ?? '').toUpperCase()
   const display = extractDisplayStatus(task).toUpperCase()
   const runnerUrl = typeof task.runner_url === 'string' ? task.runner_url.trim() : ''
@@ -256,27 +257,25 @@ function deriveMinionSetup(
     /TASK_STATUS_CREATED|TASK_STATUS_PENDING|TASK_STATUS_QUEUED|TASK_STATUS_UNKNOWN/.test(status) ||
     !status
   const displaySetup = /PROVISION|BOOT|PEND|QUEU|START|INIT|CONNECT|ALLOC|PENDING/.test(display)
+  const finished = isTaskFinished(task)
 
-  // SETUP done only when pod is positively RUNNING and Minion is past setup display.
-  if (podRunning && !displaySetup && !preAgent) {
-    return null
-  }
+  // Idle + pod up + past setup → no card. Finished + pod not up → wake Boot.
+  if (podRunning && finished && !displaySetup) return null
+  if (podRunning && !displaySetup && !preAgent && !finished) return null
 
-  // Prefer explicit display_status keywords when Minion sets them.
   let active: SetupStepId
   if (/CONNECT/.test(display) && podRunning) {
     active = 'connect'
   } else if (/BOOT|START|INIT|ALLOC/.test(display)) {
     active = 'boot'
-  } else if (/PROVISION|PEND|QUEU|PENDING/.test(display)) {
+  } else if (/PROVISION|PEND|QUEU|PENDING/.test(display) && !finished) {
     active = 'provision'
-  } else if (!hasDevpodHint) {
+  } else if (!hasDevpodHint && !finished) {
     active = 'provision'
   } else if (!podRunning) {
-    // Before STATE_RUNNING → Boot (SNAPSHOTTED/SHUTDOWN/''/not listed yet).
+    // Before STATE_RUNNING → Boot (SNAPSHOTTED/SHUTDOWN/''/absent), including wake.
     active = 'boot'
   } else if (preAgent || /CONNECT/.test(display)) {
-    // Pod RUNNING; agent still linking.
     active = 'connect'
   } else {
     active = 'connect'
@@ -292,14 +291,16 @@ function deriveMinionSetup(
 
   const titles: Record<SetupStepId, string> = {
     provision: 'Provisioning DevPod…',
-    boot: 'Booting environment…',
+    boot: finished && !podRunning ? 'Starting DevPod…' : 'Booting environment…',
     connect: 'Connecting to DevPod…'
   }
   const details: Record<SetupStepId, string> = {
     provision: 'Allocating a DevPod for this task — this can take a minute.',
     boot: podState
       ? `DevPod state ${podState.replace(/^STATE_/, '')}. Waiting until it is running.`
-      : 'DevPod is starting up. I will keep this card updated.',
+      : finished
+        ? 'DevPod is not running. Waiting for it to start for this tip.'
+        : 'DevPod is starting up. I will keep this card updated.',
     connect: runnerUrl
       ? `Almost ready — linking to the runner.\n${runnerUrl}`
       : 'Finishing the connection to the DevPod.'
@@ -993,13 +994,36 @@ export class MinionHarness implements HarnessDriver {
 
   /** Soft-stop polling but keep memory so follow-ups don't re-echo history. */
   private softStop(sessionId: string, state: MinionSessionState): void {
-    this.clearStatusChrome(state, sessionId)
+    // Keep wake/Boot SETUP when the tip’s pod is not RUNNING — clearing chrome
+    // was why the start card vanished on finished tips.
+    const wake =
+      state.lastTask &&
+      !isDevpodRunningState(state.lastDevpodState) &&
+      deriveMinionSetup(state.lastTask, { devpodState: state.lastDevpodState })
+    if (wake) {
+      state.lastWorkingKey = ''
+      state.lastSetupKey = ''
+      this.pushSetupChrome(state, sessionId, state.lastTask!)
+    } else {
+      this.clearStatusChrome(state, sessionId)
+    }
     this.remember(sessionId, state)
     this.stopScratchLoop(sessionId)
     const wasPolling = this.polls.has(sessionId)
     this.polls.get(sessionId)?.abort()
     this.polls.delete(sessionId)
     if (wasPolling) this.notifyActivity(sessionId)
+  }
+
+  /** Live transcript work only when pod is STATE_RUNNING (steer answer exempt). */
+  private podAllowsLiveWork(state: MinionSessionState): boolean {
+    return isDevpodRunningState(state.lastDevpodState)
+  }
+
+  /** Absorb text into dedupe sets without a transcript row. */
+  private absorbProgressText(state: MinionSessionState, text: string): void {
+    const key = normalizeProgressText(text)
+    if (key) state.postedTexts.add(key)
   }
 
   private ensureScratchLoop(sessionId: string): void {
@@ -1086,8 +1110,8 @@ export class MinionHarness implements HarnessDriver {
       state.lastSetupKey = ''
       if (state.completionPosted) {
         this.clearStatusChrome(state, sessionId)
-      } else if (state.lastWorkingKey === '') {
-        // Only seed a generic Working card when scratch hasn't set one yet.
+      } else if (state.lastWorkingKey === '' && this.podAllowsLiveWork(state)) {
+        // Only seed Working when the pod is actually RUNNING.
         this.pushWorkingChrome(state, sessionId, {
           title: 'Working…',
           detail: extractDisplayStatus(task) || 'Waiting for tools…'
@@ -1209,7 +1233,9 @@ export class MinionHarness implements HarnessDriver {
     const target: DevpodScratchTarget | null = extractDevpodTarget(state.remoteTaskId || sessionId, task)
     if (!target) {
       state.scratch.healthy = false
-      this.pushOrchestratorWorkingChrome(state, sessionId, task)
+      if (this.podAllowsLiveWork(state) && state.lastSetupKey === '') {
+        this.pushOrchestratorWorkingChrome(state, sessionId, task)
+      }
       return
     }
     try {
@@ -1220,9 +1246,9 @@ export class MinionHarness implements HarnessDriver {
         state.scratch.healthy = false
         // Never re-show the wait placeholder after we've already streamed tools —
         // that stomps real "Running Bash / N× Executing" status (Minion Task Init).
+        if (!this.podAllowsLiveWork(state) || state.lastSetupKey !== '') return
         if (
           !state.completionPosted &&
-          state.lastSetupKey === '' &&
           !state.scratch.seeded &&
           (state.lastWorkingKey === '' || this.isScratchWaitChrome(state))
         ) {
@@ -1292,9 +1318,9 @@ export class MinionHarness implements HarnessDriver {
           error: msg.slice(0, 240)
         })
       }
-      // Keep orchestrator progress; never fall back to the wait placeholder after
-      // a transient scratch DNS/API blip mid-run. Skip when waiting on the user.
-      if (!isAwaitingUserInput(task)) {
+      // Keep orchestrator progress only when pod is RUNNING; never invent Working
+      // from a scratch DNS miss while Boot owns the stage.
+      if (!isAwaitingUserInput(task) && this.podAllowsLiveWork(state) && state.lastSetupKey === '') {
         this.pushOrchestratorWorkingChrome(state, sessionId, task)
       }
     }
@@ -1328,6 +1354,18 @@ export class MinionHarness implements HarnessDriver {
             state.lastTask = task
             const update = extractLatestUpdate(task)
 
+            // DevPod state before SETUP / work gating (cold seed needs it too).
+            try {
+              const pods = await httpGetDevpods()
+              const target = extractDevpodTarget(taskId, task)
+              const info = findDevpodForTask(pods, taskId, target?.devpodName)
+              state.lastDevpodState = info ? info.state : ''
+            } catch {
+              /* getDevpods optional — leave lastDevpodState unchanged */
+            }
+            if (abort.signal.aborted) return
+            const podUp = this.podAllowsLiveWork(state)
+
             // Cold resume: mark everything currently visible as already-seen so we
             // don't reprint the whole transcript, then wait for genuinely new rows.
             if (!state.historySeeded) {
@@ -1350,54 +1388,33 @@ export class MinionHarness implements HarnessDriver {
               this.remember(sessionId, state)
               this.notifyActivity(sessionId)
               this.pushSetupChrome(state, sessionId, task)
-              await this.pollScratch(sessionId, state, task, abort.signal)
+              if (podUp || state.scratch.healthy) {
+                await this.pollScratch(sessionId, state, task, abort.signal)
+              }
               continue
             }
 
-            // DevPod state for SETUP + scratch gating after resume/steer.
-            try {
-              const pods = await httpGetDevpods()
-              const target = extractDevpodTarget(taskId, task)
-              const info = findDevpodForTask(pods, taskId, target?.devpodName)
-              // Clear stale RUNNING when the tip is absent from a successful list.
-              state.lastDevpodState = info ? info.state : ''
-            } catch {
-              /* getDevpods optional — leave lastDevpodState unchanged */
-            }
-            if (abort.signal.aborted) return
-
             if (update && update !== state.lastLatestUpdate) {
               state.lastLatestUpdate = update
-              // While waiting on a steer, never promote stale latest_update into
-              // the transcript — that was the CANCELLED + Torchlight false answer.
-              // While SETUP/Boot is active, do not treat latest_update as live work.
-              const setupActive = Boolean(
-                deriveMinionSetup(task, { devpodState: state.lastDevpodState })
-              )
-              if (!this.awaitingSteerReply(state) && !setupActive) {
-                if (!state.scratch.healthy) {
-                  this.pushProgressOnce(state, sessionId, update)
-                } else {
-                  state.postedTexts.add(normalizeProgressText(update))
-                }
-              } else if (update) {
-                state.postedTexts.add(normalizeProgressText(update))
+              // No live latest_update work without STATE_RUNNING, and never while
+              // awaiting a steer (stale COMPLETED / Torchlight false answer).
+              if (this.awaitingSteerReply(state) || !podUp || state.scratch.healthy) {
+                this.absorbProgressText(state, update)
+              } else {
+                this.pushProgressOnce(state, sessionId, update)
               }
             }
 
             const finished = isTaskFinished(task)
             let waitingOnSteer = this.awaitingSteerReply(state)
 
-            if (!state.scratch.healthy && (!finished || waitingOnSteer)) {
-              this.pushSetupChrome(state, sessionId, task)
-              // Working chrome only after SETUP clears (Boot owns the slot).
-              if (state.lastSetupKey === '') {
-                this.pushOrchestratorWorkingChrome(state, sessionId, task)
-              }
+            // SETUP/Boot whenever pod is not RUNNING (including finished wake).
+            this.pushSetupChrome(state, sessionId, task)
+            if (state.lastSetupKey === '' && podUp && (!finished || waitingOnSteer)) {
+              this.pushOrchestratorWorkingChrome(state, sessionId, task)
             }
 
-            // Scratch tools only when pod is positively RUNNING (unknown ≠ up).
-            const podUp = isDevpodRunningState(state.lastDevpodState)
+            // Scratch tools only when pod is positively RUNNING.
             if (podUp || state.scratch.healthy) {
               if (finished && !waitingOnSteer) {
                 await this.flushScratchForCompletion(sessionId, state, task, abort.signal)
@@ -1442,23 +1459,34 @@ export class MinionHarness implements HarnessDriver {
             for (const i of interactions) {
               const id = String(i.id ?? '')
               if (id && state.seenInteractionIds.has(id)) continue
-              if (id) state.seenInteractionIds.add(id)
 
               // User rows: skip echo of our steer text; never treat ack as answer.
               if (isUserInitiator(i.initiator)) {
+                if (id) state.seenInteractionIds.add(id)
                 const text = interactionText(i)
                 if (text) state.postedTexts.add(normalizeProgressText(text))
                 continue
               }
 
-              if (!isAgentInitiator(i.initiator)) continue
+              if (!isAgentInitiator(i.initiator)) {
+                if (id) state.seenInteractionIds.add(id)
+                continue
+              }
               const text = interactionText(i)
-              if (!text) continue
+              if (!text) {
+                if (id) state.seenInteractionIds.add(id)
+                continue
+              }
 
-              // Structured AskUserQuestion — card event, not raw JSON text.
+              // Post-steer AGENT answer (or elicitation): always surface — even if
+              // pod is not RUNNING yet. All other agent rows require STATE_RUNNING.
+              const steerAnswer = state.awaitingAgentAfterSteer
+              const allowPost = steerAnswer || podUp
+
               if (isElicitationInteraction(i)) {
                 const elicitation = parseMinionElicitation(text)
-                if (elicitation) {
+                if (elicitation && allowPost) {
+                  if (id) state.seenInteractionIds.add(id)
                   state.postedTexts.add(normalizeProgressText(text))
                   state.channel.push({
                     type: 'ask_user_question',
@@ -1475,6 +1503,14 @@ export class MinionHarness implements HarnessDriver {
                 }
               }
 
+              if (!allowPost) {
+                // Absorb without transcript so a later pod-up does not dump Boot-time work.
+                if (id) state.seenInteractionIds.add(id)
+                this.absorbProgressText(state, text)
+                continue
+              }
+
+              if (id) state.seenInteractionIds.add(id)
               if (!this.pushProgressOnce(state, sessionId, text)) continue
               sawNewAgentInteraction = true
               if (state.awaitingAgentAfterSteer) {
@@ -1491,14 +1527,13 @@ export class MinionHarness implements HarnessDriver {
             } else if (waitingOnSteer) {
               // Still waiting on PENDING / new AGENT answer — never Done on stale COMPLETED.
               this.pushSetupChrome(state, sessionId, task)
-              if (state.lastSetupKey === '') {
+              if (state.lastSetupKey === '' && podUp) {
                 this.pushOrchestratorWorkingChrome(state, sessionId, task)
               }
               this.remember(sessionId, state)
-            } else if (isTaskFinished(task)) {
+            } else if (finished) {
               if (!state.completionPosted && !state.closing) {
                 state.completionPosted = true
-                this.clearStatusChrome(state, sessionId)
                 if (!sawNewAgentInteraction && state.lastSteeredAt <= 0) {
                   // Idle completion only — never recycle latest_update after a steer.
                   pushAssistantMessage(
@@ -1508,7 +1543,7 @@ export class MinionHarness implements HarnessDriver {
                     'end_turn',
                     taskCost(task)
                   )
-                } else {
+                } else if (sawNewAgentInteraction || state.lastSteeredAt > 0) {
                   channel.push({
                     type: 'result',
                     sessionId,
@@ -1523,6 +1558,7 @@ export class MinionHarness implements HarnessDriver {
                 }
                 this.notifyActivity(sessionId)
               }
+              // softStop keeps Boot SETUP when pod is not RUNNING.
               this.softStop(sessionId, state)
               return
             }
