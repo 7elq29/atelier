@@ -228,7 +228,7 @@ Renderer: ideally **no new transcript component** — only status-card branch fo
 | Phase | Chrome | Transcript | Sidebar | Composer icon |
 |---|---|---|---|---|
 | Provisioning | `minion_setup` steps | — | working | **Stop** |
-| Runner up, waiting for first scratch line | `minion_working` “Connecting to session…” | — | working | **Stop** |
+| Runner up, waiting for first scratch line | `minion_working` “Waiting for session…” | — | working | **Stop** |
 | Tools running | `minion_working` current tool/step | tool cards + text | working | **Stop** (empty) / **Send=steer** (typed) |
 | Between tools, task still RUNNING | `minion_working` latest step or “Working…” | settled cards | working | same |
 | COMPLETED / FAILED / CANCELLED | chrome clear | final text + settled cards | idle | **Send** |

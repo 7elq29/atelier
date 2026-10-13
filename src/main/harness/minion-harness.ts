@@ -221,11 +221,12 @@ type SetupStepState = 'done' | 'active' | 'pending'
 /**
  * Map getTask + getDevpods → Provision / Boot / Connect (Minion web UI).
  *
- * Live API notes (do not regress):
- * - `runner_url` is often present from the first createTask response.
- * - `latest_update.display_status` stays empty until COMPLETED on many jobs.
- * - Matching `CREAT` against `TASK_STATUS_CREATED` + treating any `runner_url`
- *   as Connect made the SETUP card stuck on "Connecting…" and never Boot.
+ * Rules (do not regress):
+ * - Before this tip’s pod is positively `STATE_RUNNING` → Boot (not Connect).
+ *   `runner_url` / `TASK_STATUS_RUNNING` alone must not dismiss SETUP or jump
+ *   to Connect — that stuck Torchlight on Connect while Minion still showed Boot.
+ * - Connect only after `STATE_RUNNING` while the agent is still linking.
+ * - SETUP clears only once the pod is `STATE_RUNNING` and display is past setup.
  */
 function deriveMinionSetup(
   task: Record<string, any>,
@@ -254,25 +255,16 @@ function deriveMinionSetup(
   const preAgent =
     /TASK_STATUS_CREATED|TASK_STATUS_PENDING|TASK_STATUS_QUEUED|TASK_STATUS_UNKNOWN/.test(status) ||
     !status
+  const displaySetup = /PROVISION|BOOT|PEND|QUEU|START|INIT|CONNECT|ALLOC|PENDING/.test(display)
 
-  // Agent already running — no setup card (unless display_status still says setup).
-  if (
-    /TASK_STATUS_RUNNING|TASK_STATUS_IN_PROGRESS|TASK_STATUS_ACTIVE/.test(status) &&
-    !/PROVISION|BOOT|PEND|QUEU|START|INIT|CONNECT|ALLOC|PENDING/.test(display)
-  ) {
-    return null
-  }
-  if (
-    /TASK_STATUS_RUNNING|IN_PROGRESS|ACTIVE|WORKING/.test(status) &&
-    hasDevpodHint &&
-    !/PROVISION|BOOT|PEND|QUEU|START|INIT|CONNECT|ALLOC/.test(display)
-  ) {
+  // SETUP done only when pod is positively RUNNING and Minion is past setup display.
+  if (podRunning && !displaySetup && !preAgent) {
     return null
   }
 
   // Prefer explicit display_status keywords when Minion sets them.
   let active: SetupStepId
-  if (/CONNECT/.test(display)) {
+  if (/CONNECT/.test(display) && podRunning) {
     active = 'connect'
   } else if (/BOOT|START|INIT|ALLOC/.test(display)) {
     active = 'boot'
@@ -281,11 +273,10 @@ function deriveMinionSetup(
   } else if (!hasDevpodHint) {
     active = 'provision'
   } else if (!podRunning) {
-    // Unknown '' or SNAPSHOTTED/STARTING/etc. — Boot, not Connect.
-    // First paint after createTask usually has no getDevpods yet → Boot.
+    // Before STATE_RUNNING → Boot (SNAPSHOTTED/SHUTDOWN/''/not listed yet).
     active = 'boot'
-  } else if (preAgent) {
-    // Pod is STATE_RUNNING but task still CREATED — linking the agent.
+  } else if (preAgent || /CONNECT/.test(display)) {
+    // Pod RUNNING; agent still linking.
     active = 'connect'
   } else {
     active = 'connect'
@@ -339,10 +330,10 @@ function isAgentInitiator(v: unknown): boolean {
 // ── MinionHarness ───────────────────────────────────────────────────────────
 
 /**
- * How long to keep polling after createInteraction while the user row is
- * still PENDING or we are waiting for the agent message.
+ * Fast poll while a steer is in flight (PENDING user row or waiting on AGENT).
+ * Success is event-driven — not a wall-clock timeout (see awaitingSteerReply).
  */
-const POST_STEER_POLL_MS = 3 * 60 * 1000
+const STEER_FAST_POLL_MS = 3 * 60 * 1000
 /** Scratch chat.jsonl poll cadence — independent of slow getTask/listInteractions. */
 const SCRATCH_POLL_INTERVAL_MS = 2_000
 
@@ -866,12 +857,12 @@ export class MinionHarness implements HarnessDriver {
 
   /**
    * True while createInteraction's user row is still PENDING, or RESPONDED but
-   * we have not yet seen a new AGENT message. Tip CANCELLED/COMPLETED alone
-   * must not clear this — stale latest_update is not the steer answer.
+   * we have not yet seen a new AGENT message. Event-driven only — tip
+   * CANCELLED/COMPLETED and wall-clock must not clear this (stale COMPLETED
+   * after a 3‑minute timer soft-stopped Torchlight before the agent reply).
    */
   private awaitingSteerReply(state: MinionSessionState): boolean {
     if (state.lastSteeredAt <= 0) return false
-    if (Date.now() - state.lastSteeredAt >= POST_STEER_POLL_MS) return false
     if (state.steerCreateInFlight) return true
     if (state.pendingSteerInteractionId) return true
     if (state.awaitingAgentAfterSteer) return true
@@ -1099,7 +1090,7 @@ export class MinionHarness implements HarnessDriver {
         // Only seed a generic Working card when scratch hasn't set one yet.
         this.pushWorkingChrome(state, sessionId, {
           title: 'Working…',
-          detail: extractDisplayStatus(task) || 'Connected to DevPod — waiting for tools.'
+          detail: extractDisplayStatus(task) || 'Waiting for tools…'
         })
       }
       return
@@ -1145,7 +1136,8 @@ export class MinionHarness implements HarnessDriver {
   private isScratchWaitChrome(state: MinionSessionState): boolean {
     const key = state.lastWorkingKey
     return (
-      key.startsWith('Connecting to session') ||
+      key.startsWith('Waiting for session') ||
+      key.startsWith('Connecting to session') || // legacy fingerprint
       key.includes('waiting for tools') ||
       key.includes('Waiting for scratch') ||
       key.includes('Streaming session progress')
@@ -1237,7 +1229,7 @@ export class MinionHarness implements HarnessDriver {
           this.pushOrchestratorWorkingChrome(state, sessionId, task)
           if (state.lastWorkingKey === '' || this.isScratchWaitChrome(state)) {
             this.pushWorkingChrome(state, sessionId, {
-              title: 'Connecting to session…',
+              title: 'Waiting for session…',
               detail: 'Waiting for scratch chat.jsonl on the DevPod.'
             })
           }
@@ -1275,8 +1267,10 @@ export class MinionHarness implements HarnessDriver {
         if (state.closing || state.channel.closed || signal.aborted) break
         state.channel.push(ev)
       }
-      // Scratch stream means the runner is live enough to leave SETUP.
-      if (state.lastSetupKey !== '') state.lastSetupKey = ''
+      // Scratch only after STATE_RUNNING — free SETUP so Working chrome can land.
+      if (state.lastSetupKey !== '' && isDevpodRunningState(state.lastDevpodState)) {
+        state.lastSetupKey = ''
+      }
       if (chrome) this.pushWorkingChrome(state, sessionId, chrome)
       else if (!state.completionPosted && (state.lastWorkingKey === '' || this.isScratchWaitChrome(state))) {
         this.pushOrchestratorWorkingChrome(state, sessionId, task)
@@ -1360,14 +1354,15 @@ export class MinionHarness implements HarnessDriver {
               continue
             }
 
-            // DevPod state for scratch gating after resume/steer.
+            // DevPod state for SETUP + scratch gating after resume/steer.
             try {
               const pods = await httpGetDevpods()
               const target = extractDevpodTarget(taskId, task)
               const info = findDevpodForTask(pods, taskId, target?.devpodName)
-              if (info) state.lastDevpodState = info.state
+              // Clear stale RUNNING when the tip is absent from a successful list.
+              state.lastDevpodState = info ? info.state : ''
             } catch {
-              /* getDevpods optional */
+              /* getDevpods optional — leave lastDevpodState unchanged */
             }
             if (abort.signal.aborted) return
 
@@ -1375,12 +1370,18 @@ export class MinionHarness implements HarnessDriver {
               state.lastLatestUpdate = update
               // While waiting on a steer, never promote stale latest_update into
               // the transcript — that was the CANCELLED + Torchlight false answer.
-              if (!this.awaitingSteerReply(state)) {
+              // While SETUP/Boot is active, do not treat latest_update as live work.
+              const setupActive = Boolean(
+                deriveMinionSetup(task, { devpodState: state.lastDevpodState })
+              )
+              if (!this.awaitingSteerReply(state) && !setupActive) {
                 if (!state.scratch.healthy) {
                   this.pushProgressOnce(state, sessionId, update)
                 } else {
                   state.postedTexts.add(normalizeProgressText(update))
                 }
+              } else if (update) {
+                state.postedTexts.add(normalizeProgressText(update))
               }
             }
 
@@ -1389,12 +1390,14 @@ export class MinionHarness implements HarnessDriver {
 
             if (!state.scratch.healthy && (!finished || waitingOnSteer)) {
               this.pushSetupChrome(state, sessionId, task)
-              this.pushOrchestratorWorkingChrome(state, sessionId, task)
+              // Working chrome only after SETUP clears (Boot owns the slot).
+              if (state.lastSetupKey === '') {
+                this.pushOrchestratorWorkingChrome(state, sessionId, task)
+              }
             }
 
-            // Scratch tools once DevPod is running (or we are not mid-steer on a dead pod).
-            const podUp =
-              !state.lastDevpodState || isDevpodRunningState(state.lastDevpodState)
+            // Scratch tools only when pod is positively RUNNING (unknown ≠ up).
+            const podUp = isDevpodRunningState(state.lastDevpodState)
             if (podUp || state.scratch.healthy) {
               if (finished && !waitingOnSteer) {
                 await this.flushScratchForCompletion(sessionId, state, task, abort.signal)
@@ -1486,8 +1489,11 @@ export class MinionHarness implements HarnessDriver {
               this.clearStatusChrome(state, sessionId)
               this.remember(sessionId, state)
             } else if (waitingOnSteer) {
-              // Still waiting on PENDING / agent answer — keep Working, no Done.
-              this.pushOrchestratorWorkingChrome(state, sessionId, task)
+              // Still waiting on PENDING / new AGENT answer — never Done on stale COMPLETED.
+              this.pushSetupChrome(state, sessionId, task)
+              if (state.lastSetupKey === '') {
+                this.pushOrchestratorWorkingChrome(state, sessionId, task)
+              }
               this.remember(sessionId, state)
             } else if (isTaskFinished(task)) {
               if (!state.completionPosted && !state.closing) {
@@ -1535,8 +1541,12 @@ export class MinionHarness implements HarnessDriver {
           logger.warn('minionHarness: poll error (retrying)', { sessionId, error: msg })
         }
         const early = Date.now() - state.startedAt < EARLY_POLL_WINDOW_MS
-        const postSteer = state.lastSteeredAt > 0 && Date.now() - state.lastSteeredAt < POST_STEER_POLL_MS
-        await sleep(early || postSteer ? EARLY_POLL_INTERVAL_MS : POLL_INTERVAL_MS, abort.signal)
+        // Fast poll while steer is outstanding; also for a short window after
+        // lastSteeredAt so we catch the first RESPONDED/AGENT ticks quickly.
+        const steerFast =
+          this.awaitingSteerReply(state) ||
+          (state.lastSteeredAt > 0 && Date.now() - state.lastSteeredAt < STEER_FAST_POLL_MS)
+        await sleep(early || steerFast ? EARLY_POLL_INTERVAL_MS : POLL_INTERVAL_MS, abort.signal)
       }
     } finally {
       if (this.polls.get(sessionId) === abort) {

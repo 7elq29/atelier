@@ -2063,7 +2063,7 @@
         "Features/minion-elicitation-attachments/spec.md",
         "Features/minion-working-composer-status/spec.md"
       ],
-      "changedLines": "minion|Minion|minion_setup|minion-setup|minion_working|minion-working|composer-turn-status|scratch|chat\\.jsonl|cancelRemote|\\.detach\\(|createInteraction|getDevpods|listInteractions|pendingSteer|elicit|ask_user|attachment|buildMinionSteer",
+      "changedLines": "minion|Minion|minion_setup|minion-setup|minion_working|minion-working|composer-turn-status|scratch|chat\\.jsonl|cancelRemote|\\.detach\\(|createInteraction|getDevpods|listInteractions|pendingSteer|awaitingSteer|deriveMinionSetup|STATE_RUNNING|elicit|ask_user|attachment|buildMinionSteer",
       "targets": [
         {
           "file": "e2e/minion-session.spec.ts"

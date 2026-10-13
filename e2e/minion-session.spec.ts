@@ -64,7 +64,7 @@ function workingStatus(page: Page) {
 
 function waitOnlyChrome(page: Page) {
   return workingStatus(page).filter({
-    hasText: /waiting for tools|Connecting to session|Waiting for scratch|Streaming session progress/i
+    hasText: /waiting for tools|Waiting for session|Connecting to session|Waiting for scratch|Streaming session progress/i
   })
 }
 
