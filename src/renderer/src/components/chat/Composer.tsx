@@ -174,7 +174,8 @@ function ModelPicker({
   liveModels: ModelInfo[]
 }): JSX.Element {
   const modelOptions = resolveModelPickerOptions(liveModels)
-  const currentModel = selection?.model ?? modelOptions[0]?.id ?? 'claude-sonnet-5'
+  // Live /model list supplies options; 'default' matches SDK alias fallback.
+  const currentModel = selection?.model ?? modelOptions[0]?.id ?? 'default'
   const currentEffort = selection?.effort ?? EFFORT_OPTIONS[2].id
 
   useEffect(() => {
@@ -864,8 +865,8 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     // real that the backend otherwise silently substitutes the default
     // model for an unrecognized id instead of erroring on it, so a static
     // list can't tell a typo from a legitimate uncurated override (e.g. an
-    // older family deliberately left out of `MODEL_OPTIONS`, see its doc
-    // comment). `setModel()`'s own error text is shown verbatim.
+    // older family left out of the live `/model` picker). `setModel()`'s
+    // own error text is shown verbatim.
     if (text.startsWith('/model ')) {
       const arg = text.slice('/model '.length).trim()
       if (arg) {

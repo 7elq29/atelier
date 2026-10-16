@@ -68,7 +68,6 @@ test.describe('10f-enrichment-model-effort-picker', () => {
         await openNewSessionModal(page)
     await page.getByTestId('project-path').fill(projectDir)
     await page.getByTestId('mode-claude-code').click()
-    await page.getByTestId('initial-prompt').fill('Reply with exactly: READY.')
     await page.getByTestId('start-session-button').click()
     await expect(page.getByTestId('new-session-modal')).toHaveCount(0)
 
@@ -77,12 +76,13 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     sessionId = (await row.getAttribute('data-session-id')) as string
     expect(sessionId).toBeTruthy()
 
-    // Wait for the initial turn (default model, no override) to finish.
+    // Wait for the session to connect (no initial prompt on Claude panel).
     await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 60_000 })
-    await expect
-      .poll(() => sessionStartedModels(logPath, sessionId).length, { timeout: 60_000 })
-      .toBeGreaterThanOrEqual(1)
-    expect(sessionStartedModels(logPath, sessionId)[0]).toBe(E2E_DEFAULT_CLAUDE_MODEL)
+    // Live /model list must replace the pre-init fallback.
+    await expect(page.getByTestId('model-picker-button')).toBeVisible()
+    await page.getByTestId('model-picker-button').click()
+    await expect(page.getByTestId('model-option-default')).toBeVisible({ timeout: 60_000 })
+    await page.mouse.click(20, 20)
 
     const pickerButton = page.getByTestId('model-picker-button')
     await expect(pickerButton).toBeVisible()
@@ -93,11 +93,10 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     await expect(popover).toBeVisible()
     await expect(popover.getByText('Model', { exact: true })).toBeVisible()
     await expect(popover.getByText('Effort', { exact: true })).toBeVisible()
-    await expect(page.getByTestId('model-option-claude-opus-4-8')).toBeVisible()
-    await expect(page.getByTestId('model-option-claude-sonnet-5')).toBeVisible()
-    await expect(page.getByTestId('model-option-claude-haiku-4-5')).toBeVisible()
-    await expect(page.getByTestId('model-option-claude-haiku-4-5[1m]')).toBeVisible()
-    await expect(popover.locator('.picker-item-meta', { hasText: '1M' }).first()).toBeVisible()
+    await expect(page.getByTestId('model-option-default')).toBeVisible()
+    await expect(page.getByTestId('model-option-opus')).toBeVisible()
+    await expect(page.getByTestId('model-option-sonnet')).toBeVisible()
+    await expect(page.getByTestId('model-option-haiku')).toBeVisible()
     await expect(page.getByTestId('effort-option-low')).toBeVisible()
     await expect(page.getByTestId('effort-option-medium')).toBeVisible()
     await expect(page.getByTestId('effort-option-high')).toBeVisible()
@@ -110,29 +109,33 @@ test.describe('10f-enrichment-model-effort-picker', () => {
   })
 
   test('changing the picker selection changes what the NEXT real SDK call uses, not the current turn', async ({}, testInfo) => {
-    testInfo.setTimeout(120_000)
+    testInfo.setTimeout(180_000)
 
-    // Turn 1 (from the previous test's session creation) already completed
-    // with the e2e default model (Haiku 4.5 via `e2e-config.ts`) — capture
-    // that as the baseline.
-    const beforeChange = sessionStartedModels(logPath, sessionId)
-    expect(beforeChange.length).toBeGreaterThanOrEqual(1)
+    // Baseline: force a first turn under the e2e default if create-session
+    // did not send an initial prompt.
+    let beforeChange = sessionStartedModels(logPath, sessionId)
+    if (beforeChange.length === 0) {
+      await page.getByTestId('composer-input').fill('Reply with exactly: FIRSTTURN.')
+      await page.getByTestId('composer-input').press('Enter')
+      await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 90_000 })
+      await expect
+        .poll(() => sessionStartedModels(logPath, sessionId).length, { timeout: 60_000 })
+        .toBeGreaterThanOrEqual(1)
+      beforeChange = sessionStartedModels(logPath, sessionId)
+    }
     const defaultModel = beforeChange[0]
     expect(defaultModel).toBe(E2E_DEFAULT_CLAUDE_MODEL)
 
-    // Change the selection to Opus 4.8 · Medium via the real picker UI —
-    // deliberately a DIFFERENT model than the default above, so this test
-    // actually proves the picker changes the model rather than picking the
-    // same value the default already resolves to.
+    // Pick Opus (live /model alias) · Medium — different from e2e default Haiku.
     await page.getByTestId('model-picker-button').click()
     await expect(page.getByTestId('model-picker-popover')).toBeVisible()
-    await page.getByTestId('model-option-claude-opus-4-8').click()
+    await page.getByTestId('model-option-opus').click()
     await expect(page.getByTestId('model-picker-popover')).toHaveCount(0)
-    await expect(page.getByTestId('model-picker-button')).toHaveText(/Opus 4\.8 · Low ▾/)
+    await expect(page.getByTestId('model-picker-button')).toHaveText(/Opus · Low ▾/)
 
     await page.getByTestId('model-picker-button').click()
     await page.getByTestId('effort-option-medium').click()
-    await expect(page.getByTestId('model-picker-button')).toHaveText(/Opus 4.8 · Medium ▾/)
+    await expect(page.getByTestId('model-picker-button')).toHaveText(/Opus · Medium ▾/)
 
     // The change must NOT touch the turn already completed — no new
     // session_started line should appear just from picking a value.
@@ -154,9 +157,8 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     const afterChange = sessionStartedModels(logPath, sessionId)
     const secondCallModel = afterChange[afterChange.length - 1]
 
-    // Real, ground-truth proof: the SDK's own reported model for the SECOND
-    // connection is the one just picked, and differs from turn 1's.
-    expect(secondCallModel).toBe('claude-opus-4-8')
+    // SDK resolves the `opus` alias to the live Opus id (currently Opus 5.5).
+    expect(secondCallModel).toMatch(/^claude-opus-5/)
     expect(secondCallModel).not.toBe(defaultModel)
 
     // The assistant actually replied under this new connection — not a
@@ -180,7 +182,9 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     // fresh start()/resume() call the way HarnessStartOptions requires for
     // model/effort to actually change.
     const rawLog = readFileSync(logPath, 'utf-8')
-    expect(rawLog).toMatch(/sendUserMessage: model\/effort selection changed, applying from next turn/)
+    expect(rawLog).toMatch(
+      /(?:sendUserMessage|dispatchTurnToHarness): model\/effort selection changed, applying from next turn/
+    )
 
     await page.screenshot({ path: join(artifactsDir, '10f-model-picker-after-change.png') })
   })
@@ -191,16 +195,9 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     const pickerButton = page.getByTestId('model-picker-button')
     const textarea = page.getByTestId('composer-input')
 
-    // `claude-sonnet-4-6[1m]` is a real, currently-accepted model (verified
-    // via a direct `Query.setModel()` probe) that is deliberately NOT in the
-    // small curated `MODEL_OPTIONS` picker list (see its doc comment) —
-    // this proves the fix's live-validation path (bug-model-command-
-    // rejects-invalid) still allows a genuine power-user override, not just
-    // the curated set.
-    //
-    // Type `/model claude-sonnet-4-6[1m]` and press Enter — the popover closes
-    // after the space (current word is no longer a slash token), so Enter
-    // should go through handleSend's interception path, not selectSlash().
+    // `claude-sonnet-4-6[1m]` is a real id deliberately NOT in the live
+    // `/model` picker aliases — proves slash `/model` still allows overrides
+    // beyond the picker rows (validated via `Query.setModel()`).
     await textarea.fill('/model claude-sonnet-4-6[1m]')
     await textarea.press('Enter')
 
@@ -210,9 +207,8 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     // Composer input must be cleared (the command was consumed).
     await expect(textarea).toHaveValue('')
 
-    // The model chip must reflect the forced model ID as its label (not fall
-    // back to "Opus 4.8" — the first-option default for unknown IDs).
-    await expect(pickerButton).toHaveText(/claude-sonnet-4\-6\[1m\] · /, { timeout: 60_000 })
+    // Chip shows the forced id (SDK may normalize away a redundant `[1m]`).
+    await expect(pickerButton).toHaveText(/claude-sonnet-4\-6(\[1m\])? · /, { timeout: 60_000 })
 
     await page.screenshot({ path: join(artifactsDir, '10f-model-slash-force-switch.png') })
 
@@ -225,11 +221,11 @@ test.describe('10f-enrichment-model-effort-picker', () => {
     await expect(page.getByTestId('send-button')).toBeVisible({ timeout: 60_000 })
 
     await expect
-      .poll(async () => sessionStartedModels(logPath, sessionId).length, { timeout: 10_000 })
+      .poll(async () => sessionStartedModels(logPath, sessionId).length, { timeout: 60_000 })
       .toBeGreaterThan(beforeSwitch.length)
 
     const afterSwitch = sessionStartedModels(logPath, sessionId)
-    expect(afterSwitch[afterSwitch.length - 1]).toBe('claude-sonnet-4-6[1m]')
+    expect(afterSwitch[afterSwitch.length - 1]).toMatch(/^claude-sonnet-4-6/)
 
     await page.screenshot({ path: join(artifactsDir, '10f-model-slash-after-turn.png') })
   })

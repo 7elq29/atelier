@@ -1029,6 +1029,26 @@
       ]
     },
     {
+      "id": "model-picker-live-sdk",
+      "paths": [
+        "src/shared/model-picker-catalog.ts",
+        "src/renderer/src/components/chat/model-picker-options.ts",
+        "src/renderer/src/components/chat/Composer.tsx",
+        "Features/model-picker-live-sdk/spec.md",
+        "e2e/bug-model-picker-option-list.spec.ts",
+        "e2e/model-effort-picker.spec.ts"
+      ],
+      "changedLines": "resolveModelPickerOptions|defaultModelPickerOptions|FALLBACK_ENTRIES|ModelPickerOption|displayNameForModelId|contextLabelForModelId|formatContextWindow|NATIVE_1M_EFFECTIVE_WINDOW|model-option-|models_updated|liveModels|/model|model-picker-live|model-option-opus|Default \\(recommended\\)|claude-fable-5\\[1m\\]",
+      "targets": [
+        {
+          "file": "e2e/bug-model-picker-option-list.spec.ts"
+        },
+        {
+          "file": "e2e/model-effort-picker.spec.ts"
+        }
+      ]
+    },
+    {
       "id": "composer",
       "paths": [
         "src/renderer/src/components/chat/Composer.tsx",
@@ -1511,7 +1531,7 @@
         },
         {
           "file": "e2e/terminal-pty.spec.ts",
-          "grep": "cortana: .*⌘T|cortana:.*Meta"
+          "grep": "cortana: .*\u2318T|cortana:.*Meta"
         },
         {
           "file": "e2e/app-shell.spec.ts",

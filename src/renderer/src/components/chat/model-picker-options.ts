@@ -6,19 +6,29 @@ import {
   type ModelPickerOption
 } from '../../../../shared/model-picker-catalog'
 
-/** Prefer catalog context variants; overlay live SDK display names when init completes. */
+/**
+ * Prefer the live SDK `/model` list (`initializationResult().models`) as the
+ * full picker. Fallback catalog is only used before that list arrives.
+ */
 export function resolveModelPickerOptions(liveModels: ModelInfo[] | undefined): ModelPickerOption[] {
-  const catalog = defaultModelPickerOptions()
-  if (!liveModels?.length) return catalog
-  const liveByValue = new Map(liveModels.map((model) => [model.value, model]))
-  return catalog.map((opt) => {
-    const live = liveByValue.get(opt.id)
-    return live ? { ...opt, displayName: live.displayName } : opt
-  })
+  if (liveModels?.length) {
+    return liveModels.map((model) => {
+      const contextLabel =
+        contextLabelForModelId(model.value) ??
+        (model.resolvedModel ? contextLabelForModelId(model.resolvedModel) : undefined) ??
+        ''
+      return {
+        id: model.value,
+        displayName: model.displayName,
+        contextLabel
+      }
+    })
+  }
+  return defaultModelPickerOptions()
 }
 
 export function modelLabelForSelection(modelId: string | undefined, options: ModelPickerOption[]): string {
-  if (!modelId) return options[0]?.displayName ?? 'Sonnet 5'
+  if (!modelId) return options[0]?.displayName ?? 'Default'
   const match = options.find((opt) => opt.id === modelId)
   if (match) return match.displayName
   return displayNameForModelId(modelId)
