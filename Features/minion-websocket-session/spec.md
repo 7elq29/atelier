@@ -187,16 +187,26 @@ picks them like this (same idea as Atelier’s `deriveMinionSetup`):
 | Stage | When |
 | --- | --- |
 | **Provision** | We do not yet have a pod name/region on the task (Orchestrator has not assigned a DevPod). |
-| **Boot** | We have a pod identity, but `getDevpods` says it is **not** `running` yet (still starting / restoring / etc.). |
-| **Connect** | Pod phase is **`running`**, but we are not finished linking to the worker yet (opening socket / waiting for first useful traffic). |
+| **Boot** | We have a pod identity, but the worker has **not** completed the JSON-RPC `connected` handshake yet (pod may still be starting, or already `STATE_RUNNING` but unreachable / dialing). |
+| **Connect** | Worker socket `onConnected` / uTerm `moveStartup('connect')` — handshake received; waiting for replay / first turn before SETUP dismisses. |
 
-Then SETUP **ends** (“ready”) once the worker has taken the first turn (or,
-on a reattach that already has history, the card is dismissed without
-fanfare).
+Then SETUP **ends** exactly like uTerm `completeStartup` — **not** merely
+when the socket reaches `live`:
+
+| Path | SETUP dismissed when |
+| --- | --- |
+| **Create** (`justCreated`) | First `user_message` arrives (replay or live) — the worker took the first turn. |
+| **Attach / reattach / wake** | Replay finishes (`replay` phase, including empty), i.e. past Connect. |
+
+Not when `getDevpods` alone says RUNNING, and not when scratch/`latest_update`
+look “done.” Detach/resume must **not** restore `setupComplete` from memory and
+must **not** pre-complete SETUP because the tip already has history — reattach
+re-runs syncStartup (Boot or Connect) until `completeStartup`.
 
 So: Provision/Boot come from **task metadata + getDevpods**. Connect means
 **pod running, worker link in progress**. Working (composer strip) is a
-*later* concern and only follows `worker_state === 2`, not these stages.
+*later* concern and only follows `worker_state === 2`, with a short label
+only — never `latest_update` / answer prose.
 
 ### First message on connect — what it is and what we do with it
 
@@ -238,6 +248,12 @@ Think of the conversation as a **fold of numbered events**. Every event has
 a monotonic `seq`. The UI is “apply events in order into one in-memory
 thread.” You never append the same `seq` twice.
 
+**Order (Minion UI):** previous history (prompt N + answer N) → current prompt
+→ intermediate cards → current answer. User rows and assistant rows share that
+one fold clock. Atelier must **not** insert composer/create user rows on a
+parallel SessionManager clock — that is what produced
+`prompt N+1 → answer N → answer N+1`.
+
 **Fresh connect (no prior cursor)**
 
 1. Dial without `since`.
@@ -266,7 +282,7 @@ Same machinery, two cases:
 | Pod state on attach | What we show first | Then |
 | --- | --- | --- |
 | **Running** | Open socket → `connected` + full/partial replay builds the transcript | Live updates; Working from `worker_state` |
-| **Sleeping / no pod** | Download durable `chat.jsonl` from task storage (same event decoder as the socket) and fold it | Poll `getDevpods` until `running`, then open socket with `resetOnConnect` so the live replay **replaces** the storage fold (no double-merge of the same history) |
+| **Sleeping / no pod** | Minion web HTTP has no TaskStorage RPC; scratch `getFileContents` fails without DevPod DNS. On attach, call `devpodStart` once, paint SETUP Boot (wake intent), then open the worker socket when `RUNNING` | Poll `getDevpods` until `running`, open socket with `resetOnConnect` so replay builds the transcript. Do **not** soft-stop a finished tip while the socket is still dialing or attach-wake is in flight (that tore down reconnect and left reattach empty). |
 
 uTerm also seeds open AskQuestion cards from `ListInteractions` when needed,
 keyed by request id, and skips ids already resolved.
@@ -404,8 +420,9 @@ before the full streaming rewrite.
 - [x] Close socket when pod leaves RUNNING; reconnect on next RUNNING poll
 - [x] Sleeping (`SHUTDOWN` / `SNAPSHOTTED` / …): no stuck SETUP on cold
       resume; Boot only with wake intent / starting phase
-- [x] Storage `chat.jsonl` fold via `getFileContents` when sleeping; wake →
-      WS with `resetOnConnect` (full replay replaces storage fold)
+- [x] Sleeping attach: `devpodStart` + SETUP Boot wake intent; skip soft-stop
+      while dialing / catch-up; scratch `getFileContents` only when pod DNS
+      exists; WS `resetOnConnect` owns history after wake
 
 ### Phase 6 — Delete the old guesses
 

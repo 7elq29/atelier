@@ -293,15 +293,21 @@ export async function httpGetDevpods(): Promise<DevpodInfo[]> {
 }
 
 export function findDevpodForTask(pods: DevpodInfo[], taskId: string, devpodName?: string): DevpodInfo | null {
-  const short = taskId.slice(0, 8)
+  const short = taskId.slice(0, 8).toLowerCase()
+  // Prefer the task's own pod name. If it is named but not listed yet, return
+  // null — do NOT fuzzy-match another tip's RUNNING pod (that jumps SETUP
+  // Boot → Connect while Minion UI correctly stays on Boot).
   if (devpodName) {
-    const byName = pods.find((p) => p.name === devpodName)
-    if (byName) return byName
+    return pods.find((p) => p.name === devpodName) ?? null
   }
+  const byTaskId = pods.find((p) => p.taskId === taskId)
+  if (byTaskId) return byTaskId
+  // Names look like `…-minion-<shortId>`; require that marker (not bare UUID).
   return (
-    pods.find((p) => p.taskId === taskId) ??
-    pods.find((p) => p.name.includes(short)) ??
-    null
+    pods.find((p) => {
+      const n = p.name.toLowerCase()
+      return n.includes(`minion-${short}`) || n.endsWith(`-${short}`)
+    }) ?? null
   )
 }
 
@@ -345,4 +351,15 @@ export function isDevpodSleepingState(state: string): boolean {
 
 export function isDevpodStartingState(state: string): boolean {
   return classifyDevpodPhase(state) === 'starting'
+}
+
+/**
+ * Restore a snapshotted / shutdown DevPod (Minion web `devpodStart`).
+ * Body shape: `{ devpodName, region }` — verified against the live RPC.
+ */
+export async function httpDevpodStart(devpodName: string, region: string): Promise<void> {
+  const name = devpodName.trim()
+  const reg = region.trim()
+  if (!name || !reg) throw new Error('devpodStart requires devpodName and region')
+  await postMinionApi('devpodStart', { devpodName: name, region: reg }, { timeoutMs: 45_000 })
 }

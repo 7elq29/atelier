@@ -2,8 +2,8 @@
  * Seq-keyed Minion worker / storage event fold → Atelier harness events.
  *
  * Clone of Minion Web / uTerm: apply events in order, never apply the same
- * seq twice. Source may be the live worker WebSocket or durable chat.jsonl
- * from getFileContents (works for sleeping tips with known devpod name/region).
+ * seq twice. Source may be the live worker WebSocket or scratch chat.jsonl
+ * via getFileContents when the DevPod still has DNS (not SNAPSHOTTED).
  */
 
 import type { HarnessEvent } from './types'
@@ -201,11 +201,9 @@ export class MinionWorkerFold {
     }
 
     if (ev.type === 'user_message' && ev.message?.trim()) {
-      // History / remote user turns — SessionManager maps this to a user row.
-      // Skip live echoes of Atelier steers (harness sets skipLiveUserEcho).
-      if (phase === 'live') {
-        return { events, sawAssistantText }
-      }
+      // Minion UI: one seq-ordered thread. User turns come from the fold for
+      // storage, replay, AND live — never from a parallel SessionManager clock.
+      // (Manager dedupes an identical trailing user row if one was already seeded.)
       events.push({
         type: 'transcript_user_message',
         sessionId,

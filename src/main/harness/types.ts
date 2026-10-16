@@ -228,8 +228,9 @@ export type HarnessEvent =
       parentToolUseId?: string | null
     }
   /**
-   * Historical / remote user turn folded from Minion worker replay or storage
-   * chat.jsonl (attach / sleep). Not used for live Atelier composer sends.
+   * User turn from the Minion worker fold (storage / replay / live).
+   * Minion transcript order is fold-seq only — composer sends must not insert
+   * a parallel user row ahead of earlier assistant events.
    */
   | {
       type: 'transcript_user_message'

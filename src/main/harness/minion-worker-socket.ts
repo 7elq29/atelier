@@ -454,7 +454,9 @@ export class MinionWorkerSocket {
     this.applyStatusFromEvents(events)
     this.attempt = 0
     this.setState('live')
-    if (events.length) this.opts.onEvents?.(events, 'replay')
+    // Always deliver replay phase (even empty) so harness can completeStartup
+    // on attach the way uTerm does — dismiss Connect when replay finishes.
+    this.opts.onEvents?.(events, 'replay')
     this.schedulePing()
   }
 
