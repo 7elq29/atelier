@@ -12,13 +12,16 @@
    setup can take a minute.
 3. Chat opens speaking **as Minion**. While DevPod comes up, an ephemeral
    **SETUP** transcript card (same `.conversation-status-card` pattern as Cortana’s
-   requesting/compacting cards) tracks **Provision → Boot → Connect**. Boot
-   stays active until `getDevpods` reports this tip’s pod as `STATE_RUNNING`
-   (`runner_url` / task RUNNING alone must not jump to Connect or dismiss SETUP).
-   The card clears once the pod is running and past setup display (or terminal).
-   Real agent updates stay as assistant rows; ephemeral “Processing…” lines stay
-   out of the transcript. Follow-up steers wait for the new AGENT interaction
-   (event-driven) — not a wall-clock timer on stale COMPLETED.
+   requesting/compacting cards) tracks **Provision → Boot → Connect** (uTerm
+   SETUP: no pod → Provision; worker not linked → Boot; worker `connected`
+   handshake → Connect). Boot stays active until the worker socket handshake,
+   not merely until `getDevpods` reports `STATE_RUNNING`
+   (`runner_url` / task RUNNING alone must not jump to Connect). The card clears
+   via uTerm `completeStartup`: first `user_message` on create, or replay finish
+   on attach/wake — not merely socket-live or `latest_update`. Real agent updates
+   stay as assistant rows; ephemeral “Processing…” lines stay out of the
+   transcript. Follow-up steers wait for the new AGENT interaction (event-driven)
+   — not a wall-clock timer on stale COMPLETED.
 4. Composer follow-ups go to Minion with no transcript ack (Stop/working chrome
    is the in-flight signal).
 5. Completion is announced **once**. Follow-ups after complete must not re-dump old

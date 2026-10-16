@@ -11,7 +11,7 @@
  */
 import { test, expect, type Page, _electron as electron } from '@playwright/test'
 import { seedSkipOnboarding } from './e2e-config'
-import { mkdtempSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -19,8 +19,18 @@ const projectRoot = join(__dirname, '..')
 const artifactsDir = join(projectRoot, 'e2e-artifacts')
 
 function guiLikeElectronEnv(): Record<string, string> {
+  // Keep a GUI-like base PATH, but prepend Homebrew / Uber bins so `usso` and
+  // friends resolve the same way as a Dock-launched app after shell-path augment.
   const env: Record<string, string> = {
-    PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+    PATH: [
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      '/opt/uber/bin',
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin'
+    ].join(':'),
     HOME: process.env.HOME ?? '',
     USER: process.env.USER ?? '',
     LOGNAME: process.env.LOGNAME ?? process.env.USER ?? '',
@@ -217,7 +227,129 @@ async function attachMinionTask(page: Page, taskId: string): Promise<void> {
   await expect(row).not.toHaveClass(/closed/, { timeout: 30_000 })
 }
 
+/** Parse instrumented SETUP lines from this e2e userData main.log. */
+function setupLogLines(userDataDir: string): string[] {
+  const logPath = join(userDataDir, 'logs', 'main.log')
+  let raw = ''
+  try {
+    raw = readFileSync(logPath, 'utf8')
+  } catch {
+    return []
+  }
+  return raw
+    .split('\n')
+    .filter((line) => line.includes('minionHarness: setup paint') || line.includes('minionHarness: setup decide') || line.includes('minionHarness: attach pre-complete') || line.includes('minionHarness: startup complete'))
+}
+
 test.describe('minion-session', () => {
+  test('SETUP evidence: create must paint boot before connect (log + UI)', async () => {
+    test.setTimeout(300_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-setup-log-'))
+    seedSkipOnboarding(userDataDir)
+    const app = await launchMinionApp(userDataDir)
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    const prompt =
+      'Atelier e2e SETUP-log. Run `echo atelier-e2e-setup` once, then reply with exactly: SETUP-LOG-READY.'
+    try {
+      await createMinionWithPrompt(page, prompt)
+      await expect(
+        page.locator('[data-testid="minion-setup-steps"] [data-step="boot"][data-state="active"]')
+      ).toBeVisible({ timeout: 60_000 })
+      await page.screenshot({ path: join(artifactsDir, 'minion-setup-boot-active.png') })
+
+      // Wait until Connect paints or SETUP is dismissed — then dump the decide/paint trail.
+      await expect
+        .poll(() => {
+          const lines = setupLogLines(userDataDir)
+          const joined = lines.join('\n')
+          return (
+            joined.includes('"active":"connect"') ||
+            joined.includes('startup complete') ||
+            joined.includes('complete_via_foldHealthy')
+          )
+        }, { timeout: 180_000, intervals: [1_000, 2_000] })
+        .toBeTruthy()
+
+      const lines = setupLogLines(userDataDir)
+      writeFileSync(join(artifactsDir, 'minion-setup-paint-sequence.txt'), lines.join('\n') + '\n')
+      const paintActives = lines
+        .filter((l) => l.includes('minionHarness: setup paint'))
+        .map((l) => {
+          try {
+            return String((JSON.parse(l) as { active?: string }).active ?? '')
+          } catch {
+            return ''
+          }
+        })
+        .filter(Boolean)
+      // Evidence assertion: Boot must appear in the paint trail before Connect (if Connect paints).
+      expect(paintActives, `paint trail: ${paintActives.join('→')}`).toContain('boot')
+      const bootIdx = paintActives.indexOf('boot')
+      const connectIdx = paintActives.indexOf('connect')
+      if (connectIdx >= 0) {
+        expect(bootIdx, `boot before connect; trail=${paintActives.join('→')}`).toBeGreaterThanOrEqual(0)
+        expect(bootIdx, `boot before connect; trail=${paintActives.join('→')}`).toBeLessThan(connectIdx)
+      }
+    } finally {
+      await cleanupMinionSessions(page, { cancelRemote: true })
+      await app.close().catch(() => undefined)
+    }
+  })
+
+  test('SETUP evidence: reattach paints Boot until worker linked (not Connect on RUNNING alone)', async () => {
+    test.setTimeout(600_000)
+    mkdirSync(artifactsDir, { recursive: true })
+    const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-minion-attach-setup-'))
+    seedSkipOnboarding(userDataDir)
+    const app = await launchMinionApp(userDataDir)
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    const seed =
+      'Atelier e2e attach-SETUP. Run `echo atelier-e2e-attach-setup` once, then reply with exactly: ATTACH-SETUP-SEED.'
+    try {
+      await createMinionWithPrompt(page, seed)
+      await expectAssistantAnswerAfter(page, seed.slice(0, 40), 420_000)
+      const taskId = await activeMinionTaskId(page)
+      await closeMinionKeepRemote(page, taskId)
+      const linesBeforeAttach = setupLogLines(userDataDir).length
+      await attachMinionTask(page, taskId)
+
+      // Minion UI: Boot while pod may already be RUNNING but worker not linked yet.
+      await expect
+        .poll(() => {
+          const lines = setupLogLines(userDataDir).slice(linesBeforeAttach)
+          return lines.some(
+            (l) => l.includes('minionHarness: setup paint') && l.includes('"active":"boot"')
+          )
+        }, { timeout: 60_000, intervals: [200, 500, 1_000] })
+        .toBeTruthy()
+
+      await page.screenshot({ path: join(artifactsDir, 'minion-setup-attach.png') })
+      const lines = setupLogLines(userDataDir)
+      writeFileSync(join(artifactsDir, 'minion-setup-attach-sequence.txt'), lines.join('\n') + '\n')
+      const after = lines.slice(linesBeforeAttach)
+      const paintActives = after
+        .filter((l) => l.includes('minionHarness: setup paint'))
+        .map((l) => {
+          try {
+            return String((JSON.parse(l) as { active?: string }).active ?? '')
+          } catch {
+            return ''
+          }
+        })
+        .filter(Boolean)
+      expect(paintActives, `reattach paint trail: ${paintActives.join('→') || '(none)'}`).toContain('boot')
+      // Connect may follow after worker handshake — never as the first reattach paint.
+      const first = paintActives[0]
+      expect(first, `first reattach paint must be boot; trail=${paintActives.join('→')}`).toBe('boot')
+    } finally {
+      await cleanupMinionSessions(page, { cancelRemote: true })
+      await app.close().catch(() => undefined)
+    }
+  })
+
   test('A: create SETUP → intermediate → answer → follow-up → intermediate → answer', async () => {
     test.setTimeout(900_000)
     mkdirSync(artifactsDir, { recursive: true })
@@ -240,7 +372,10 @@ test.describe('minion-session', () => {
       await expect(
         page.locator('[data-testid="minion-setup-steps"] [data-step="boot"][data-state="active"]')
       ).toBeVisible({ timeout: 30_000 })
-      await expect(setupCard(page).locator('.conversation-status-title')).toContainText(/Booting/i)
+      // Boot title is "Booting environment…" until wake/RUNNING, then "Starting DevPod…".
+      await expect(setupCard(page).locator('.conversation-status-title')).toContainText(
+        /Booting|Starting DevPod/i
+      )
       await page.screenshot({ path: join(artifactsDir, 'minion-case-a-setup.png') })
 
       // After SETUP, working status is plain text above the composer (not a card).
@@ -262,6 +397,40 @@ test.describe('minion-session', () => {
       await page.screenshot({ path: join(artifactsDir, 'minion-case-a-followup-intermediate.png') })
 
       await expectAssistantAnswerAfter(page, prompt2.slice(0, 40), 300_000)
+      // Fold owns transcript — prior A1-READY must not reappear as a twin row.
+      await expect(
+        page
+          .locator('[data-testid="transcript-message"][data-role="assistant"]')
+          .filter({ hasText: /\bA1-READY\b/i })
+      ).toHaveCount(1)
+      await expect(
+        page
+          .locator('[data-testid="transcript-message"][data-role="assistant"]')
+          .filter({ hasText: /\bA2-READY\b/i })
+      ).toHaveCount(1)
+      // Minion UI order: … A1-READY … prompt2 … A2-READY (never prompt2 then A1).
+      await expect
+        .poll(async () => {
+          const msgs = page.getByTestId('transcript-message')
+          const n = await msgs.count()
+          let i1 = -1
+          let iPrompt2 = -1
+          let i2 = -1
+          for (let i = 0; i < n; i++) {
+            const el = msgs.nth(i)
+            const role = await el.getAttribute('data-role')
+            const text = normalizeTranscriptText(await el.innerText())
+            if (role === 'assistant' && /\ba1-ready\b/.test(text) && i1 < 0) i1 = i
+            if (role === 'user' && text.includes(normalizeTranscriptText(prompt2.slice(0, 40))) && iPrompt2 < 0) {
+              iPrompt2 = i
+            }
+            if (role === 'assistant' && /\ba2-ready\b/.test(text) && i2 < 0) i2 = i
+          }
+          return i1 >= 0 && iPrompt2 > i1 && i2 > iPrompt2
+        }, { timeout: 30_000, intervals: [1_000, 2_000] })
+        .toBeTruthy()
+      // Working clears from worker_state (not stuck after answer).
+      await expect(workingStatus(page)).toHaveCount(0, { timeout: 60_000 })
       await page.screenshot({ path: join(artifactsDir, 'minion-case-a-followup-answer.png') })
     } finally {
       await cleanupMinionSessions(page, { cancelRemote: true })

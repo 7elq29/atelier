@@ -1157,10 +1157,15 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     </div>
   )
 
-  const minionWorkingText =
-    sdkChrome?.status === 'minion_working'
-      ? (sdkChrome.detail?.trim() || sdkChrome.title?.trim() || '')
-      : ''
+  // Prefer short title ("Working…"); only show detail when it is a short tool
+  // label — never paint answer-length latest_update prose above the composer.
+  const minionWorkingText = (() => {
+    if (sdkChrome?.status !== 'minion_working') return ''
+    const title = sdkChrome.title?.trim() || 'Working…'
+    const detail = sdkChrome.detail?.trim() || ''
+    if (detail && detail.length <= 80 && !/[.!?]\s/.test(detail)) return detail
+    return title
+  })()
 
   return (
     <div className="composer-wrap">

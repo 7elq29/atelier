@@ -1173,8 +1173,12 @@ export class SessionManager {
           throw new Error('That Minion session is still cleaning up. Try Attach again in a moment.')
         }
         if (existing && !existing.closedAt) {
-          // Already open — return the same row so the modal just focuses it.
-          // Never createtask a twin session for the same task UUID.
+          // Already open — same row (never mint a twin). If the harness was
+          // detached (close/relaunch race, failed startup reconnect), wire it
+          // back before the modal focuses the session.
+          if (!this.live.has(attachId) || !this.minionHarness.isActive(attachId)) {
+            await this.reconnect(attachId)
+          }
           return this.decorate(existing)
         }
         if (existing?.closedAt) {
@@ -1225,10 +1229,13 @@ export class SessionManager {
           profileId: null
         })
       )
-      const userMessage = this.store.addMessage({ sessionId: session.id, role: 'user', content: opts.prompt })
-      this.sendMessage(session.id, userMessage)
-      this.beginPendingUserTurn(session.id, userMessage.id)
+      // Do NOT insert the prompt as a user row here. Minion UI builds the
+      // transcript from worker fold seq only — local insert races ahead of
+      // earlier assistant events and yields: prompt2 → previous answer → answer2.
       this.live.set(session.id, newLiveStream())
+      this.live.get(session.id)!.busy = true
+      this.sendStatus(session.id)
+      this.sendTurnState(session.id, true)
       this.sendLifecycle({ type: 'session.created', session })
       this.workspace?.openReadyCortana(session.id)
       void this.consume(session.id, harnessSession.events, this.bumpConsumeGeneration(session.id))
@@ -1868,6 +1875,60 @@ export class SessionManager {
   }
 
   /**
+   * Minion follow-up: steer the remote task without inserting a user transcript
+   * row. The worker `user_message` event (fold) owns placement in seq order.
+   */
+  private async dispatchMinionSteer(sessionId: string, item: QueueEntry): Promise<void> {
+    this.sendTurnState(sessionId, true)
+    const { text, attachments } = item
+    if (this.resolveHarness(sessionId).isActive(sessionId)) {
+      logger.info('dispatchMinionSteer: streamInput (fold owns user row)', { sessionId })
+      await this.resolveHarness(sessionId).streamInput(sessionId, text, attachments)
+      const liveEntry = this.live.get(sessionId)
+      if (liveEntry) {
+        liveEntry.busy = false
+        this.sendStatus(sessionId)
+      }
+      return
+    }
+    if (this.connecting.has(sessionId)) {
+      await this.waitUntilNotConnecting(sessionId)
+      if (this.resolveHarness(sessionId).isActive(sessionId)) {
+        logger.info('dispatchMinionSteer: streamInput after reconnect wait', { sessionId })
+        await this.resolveHarness(sessionId).streamInput(sessionId, text, attachments)
+        const liveEntry = this.live.get(sessionId)
+        if (liveEntry) {
+          liveEntry.busy = false
+          this.sendStatus(sessionId)
+        }
+        return
+      }
+    }
+    logger.info('dispatchMinionSteer: resume then streamInput', { sessionId })
+    const session = this.store.getSession(sessionId)
+    if (!session) return
+    const sessionForReconnect = await this.ensureSessionWorktreePath(session)
+    const permissionMode = this.permissionModes.get(sessionId) ?? sessionForReconnect.permissionMode
+    const modelSelection = this.modelSelections.get(sessionId) ?? sessionForReconnect.modelSelection ?? undefined
+    const harnessSession = await this.reconnectHarness(sessionForReconnect, {
+      permissionMode,
+      model: modelSelection?.model,
+      effort: modelSelection?.effort,
+      pullCompletedCortanaTurn: false
+    })
+    await this.resolveHarness(sessionId).streamInput(sessionId, text, attachments)
+    const previousTurnCount = this.live.get(sessionId)?.turnCount ?? 0
+    const previousLive = this.live.get(sessionId)
+    this.finalizeStaleRunningToolCalls(sessionId, previousLive)
+    this.live.set(sessionId, newLiveStream(previousTurnCount))
+    this.resetHarnessUiForSession(sessionId)
+    const liveEntry = this.live.get(sessionId)!
+    liveEntry.busy = false
+    this.sendStatus(sessionId)
+    void this.consume(sessionId, harnessSession.events, this.bumpConsumeGeneration(sessionId))
+  }
+
+  /**
    * Actual harness dispatch for one queued turn. Mirrors the former body of
    * `sendUserMessage` from `beginPendingUserTurn` onward. Safe to call for
    * both immediately-dispatched (inflightId already set) and drain-triggered
@@ -2025,10 +2086,12 @@ export class SessionManager {
 
     // Minion steers while the remote job is still running — never Claude-style
     // turn-queue ("Queue"); createinteraction must fire immediately.
+    // Transcript user rows come from the worker fold (seq order), not here —
+    // inserting locally lets prompt N+1 jump ahead of answer N.
     if (session.mode === 'minion') {
-      const userMessage = this.store.addMessage({ sessionId, role: 'user', content })
-      this.sendMessage(sessionId, userMessage)
-      const item = this.makeQueuedEntry(text, attachments, override, userMessage.id)
+      const liveFlush = this.live.get(sessionId)
+      if (liveFlush) this.flushBuffer(sessionId, liveFlush)
+      const item = this.makeQueuedEntry(text, attachments, override)
       const q = this.getOrCreateTurnQueue(sessionId)
       q.inflightId = item.id
       q.items = []
@@ -2040,9 +2103,9 @@ export class SessionManager {
         this.sendStatus(sessionId)
       }
       try {
-        await this.dispatchTurnToHarness(sessionId, item)
-        // streamInput returns after createinteraction or follow-up CreateTask;
-        // remote work continues. Keep composer Stop via isRemoteActive only.
+        // dispatchTurnToHarness adds a user row when userMessageId is null —
+        // skip that for Minion by passing a sentinel path below.
+        await this.dispatchMinionSteer(sessionId, item)
         q.inflightId = null
         const live = this.live.get(sessionId)
         if (live) live.busy = false
@@ -2448,8 +2511,9 @@ export class SessionManager {
     if (!beforeClose) throw new Error(`Unknown session: ${sessionId}`)
     // Never block Close on harness teardown — same fire-and-forget pattern as
     // the pre-async closeSession; interrupt can hang on mid-stream turns.
-    // Minion: cancelRemote=false detaches without canceltask (pod stays for attach).
-    if (beforeClose.mode === 'minion' && opts?.cancelRemote === false) {
+    // Minion: never cancelTask — Stop is WS INTERRUPT; close/delete only detaches
+    // (remote tip stays for re-attach). cancelRemote is ignored for Minion.
+    if (beforeClose.mode === 'minion') {
       const minion = this.minionHarness as { detach?(id: string): Promise<void> }
       void (minion.detach?.(sessionId) ?? this.resolveHarness(sessionId).interrupt(sessionId)).catch(
         () => undefined
@@ -2950,9 +3014,40 @@ export class SessionManager {
         return
       }
 
+      case 'transcript_user_message': {
+        // Minion fold (storage / replay / live) — sole owner of user-row order.
+        this.flushBuffer(sessionId, live)
+        const text = event.text.trim()
+        if (!text) return
+        const messages = this.store.listMessages(sessionId)
+        // Dedupe any identical user row already present (not only trailing) so a
+        // partial merge cannot stack req N again after history.
+        const existingUser = [...messages].reverse().find(
+          (m) => m.role === 'user' && m.content.trim() === text
+        )
+        if (existingUser) {
+          this.beginPendingUserTurn(sessionId, existingUser.id)
+          return
+        }
+        const row = this.store.addMessage({ sessionId, role: 'user', content: text })
+        this.sendMessage(sessionId, row)
+        this.beginPendingUserTurn(sessionId, row.id)
+        return
+      }
+
       case 'text_delta': {
         this.markTurnExecutionStarted(live)
         this.finishThinkingBlock(sessionId, live, 'completed')
+        const incoming = event.text
+        // Guard against history re-echo: if this exact assistant text already
+        // exists as a finished row and we are starting a new buffer, skip.
+        if (live.bufferMessageId == null && incoming.trim()) {
+          const messages = this.store.listMessages(sessionId)
+          const dup = messages.some(
+            (m) => m.role === 'assistant' && m.content.trim() === incoming.trim()
+          )
+          if (dup) return
+        }
         // First delta of a segment: persist an (initially empty) placeholder
         // row immediately so the renderer has a stable message id to attach
         // progressive `session:streamDelta` pushes to — token-level

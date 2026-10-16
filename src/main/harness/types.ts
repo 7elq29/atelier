@@ -227,6 +227,17 @@ export type HarnessEvent =
       text: string
       parentToolUseId?: string | null
     }
+  /**
+   * User turn from the Minion worker fold (storage / replay / live).
+   * Minion transcript order is fold-seq only — composer sends must not insert
+   * a parallel user row ahead of earlier assistant events.
+   */
+  | {
+      type: 'transcript_user_message'
+      sessionId: string
+      timestamp: string
+      text: string
+    }
   | {
       type: 'thinking_block_start'
       sessionId: string
