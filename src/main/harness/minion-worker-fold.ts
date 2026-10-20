@@ -168,15 +168,86 @@ export class MinionWorkerFold {
     let sawAssistantText = false
     const sorted = [...events].sort((a, b) => a.seq - b.seq)
 
+    // WS catch-up / chat.jsonl often store streaming token text_deltas, not one
+    // row per finished answer. Live leaves them open for SessionManager's buffer;
+    // storage/replay must coalesce consecutive deltas into one message or each
+    // chunk becomes its own bubble (Vibe dashboard shred).
+    let pendingText = ''
+    let pendingTs = ''
+
+    const flushPendingText = (closeTurn: boolean): void => {
+      if (!pendingText) return
+      if (!pendingText.trim()) {
+        pendingText = ''
+        return
+      }
+      out.push({
+        type: 'text_delta',
+        sessionId,
+        timestamp: pendingTs || new Date().toISOString(),
+        text: pendingText
+      })
+      if (closeTurn && phase !== 'live') {
+        out.push({
+          type: 'result',
+          sessionId,
+          timestamp: pendingTs || new Date().toISOString(),
+          isError: false,
+          subtype: 'end_turn',
+          numTurns: 1,
+          durationMs: 0,
+          totalCostUsd: 0,
+          usage: null
+        })
+      }
+      pendingText = ''
+    }
+
     for (const ev of sorted) {
       if (this.lastAppliedSeq !== undefined && ev.seq <= this.lastAppliedSeq) continue
       this.lastAppliedSeq = ev.seq
       const timestamp = tsIso(ev.timestamp)
+
+      if (ev.type === 'text_delta' && ev.text) {
+        const role = (ev.role || 'assistant').toLowerCase()
+        if (role && role !== 'assistant') continue
+        if (phase === 'live') {
+          // Stream token-by-token; harness flushes on leave-RUNNING.
+          out.push({ type: 'text_delta', sessionId, timestamp, text: ev.text })
+          sawAssistantText = true
+          continue
+        }
+        // Preserve inter-token whitespace — never trim each chunk.
+        pendingText += ev.text
+        pendingTs = timestamp
+        sawAssistantText = true
+        continue
+      }
+
+      if (phase !== 'live' && pendingText) {
+        // Close the assistant segment before the next transcript boundary.
+        // tool_start: text only (SessionManager flushBuffer on tool_call_start);
+        // user_message / session_end: text + end_turn.
+        if (
+          ev.type === 'user_message' ||
+          ev.type === 'session_end' ||
+          ev.type === 'tool_start' ||
+          ev.type === 'tool_result' ||
+          ev.type === 'elicitation_request'
+        ) {
+          const closeTurn = ev.type === 'user_message' || ev.type === 'session_end'
+          flushPendingText(closeTurn)
+        }
+      }
+
       const mapped = this.mapOne(sessionId, ev, timestamp, phase)
       out.push(...mapped.events)
       if (mapped.chrome) chrome = mapped.chrome
       if (mapped.sawAssistantText) sawAssistantText = true
     }
+
+    // Final segment of a storage/replay batch — one message, one end_turn.
+    flushPendingText(phase !== 'live')
 
     return { events: out, chrome, sawAssistantText }
   }
@@ -185,7 +256,7 @@ export class MinionWorkerFold {
     sessionId: string,
     ev: MinionWorkerEvent,
     timestamp: string,
-    phase: FoldPhase
+    _phase: FoldPhase
   ): FoldApplyResult {
     const events: HarnessEvent[] = []
     let chrome: FoldChrome | undefined
@@ -214,30 +285,8 @@ export class MinionWorkerFold {
     }
 
     if (ev.type === 'text_delta' && ev.text) {
-      const role = (ev.role || 'assistant').toLowerCase()
-      if (role && role !== 'assistant') {
-        return { events, sawAssistantText }
-      }
-      const text = phase === 'live' ? ev.text : ev.text.trim()
-      if (!text) return { events, sawAssistantText }
-      events.push({ type: 'text_delta', sessionId, timestamp, text })
-      // Live tokens stream into SessionManager's buffer; flush on leave-RUNNING.
-      // Storage/replay rows are complete messages — close them immediately.
-      if (phase !== 'live') {
-        events.push({
-          type: 'result',
-          sessionId,
-          timestamp,
-          isError: false,
-          subtype: 'end_turn',
-          numTurns: 1,
-          durationMs: 0,
-          totalCostUsd: 0,
-          usage: null
-        })
-      }
-      sawAssistantText = true
-      return { events, chrome, sawAssistantText }
+      // Handled in apply() (live stream vs storage/replay coalesce).
+      return { events, sawAssistantText }
     }
 
     if (ev.type === 'tool_start') {

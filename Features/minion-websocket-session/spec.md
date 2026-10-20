@@ -406,6 +406,9 @@ before the full streaming rewrite.
 - [x] `elicitation_request` / `connected.pending_elicitation` → AskQuestion
 - [x] Seq-keyed `MinionWorkerFold` (replay + live) → harness events; tools /
       messages / workflow chrome. `listInteractions` no longer posts answers.
+- [x] Storage/replay coalesce consecutive `text_delta`s into one message + one
+      `end_turn` (WS catch-up is token stream — per-delta `end_turn` shredded
+      the Vibe dashboard transcript into dozens of bubbles)
 
 ### Phase 4 — Send / answer / stop like Web
 
