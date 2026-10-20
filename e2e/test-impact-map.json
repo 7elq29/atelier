@@ -2081,11 +2081,13 @@
       "paths": [
         "src/main/harness/minion-harness.ts",
         "src/main/harness/minion-http-client.ts",
+        "src/main/harness/minion-attachments.ts",
         "src/main/harness/minion-worker-socket.ts",
         "src/main/harness/minion-worker-fold.ts",
         "src/main/harness/minion-scratch-client.ts",
         "src/main/harness/minion-scratch-tail.ts",
         "Features/minion-websocket-session/spec.md",
+        "Features/minion-elicitation-attachments/spec.md",
         "src/main/sessions/manager.ts",
         "src/main/sessions/ipc.ts",
         "src/preload/index.ts",

@@ -180,9 +180,18 @@ export async function httpListInteractions(taskId: string): Promise<{ interactio
 }
 
 /**
+ * MySQL `message` column on createInteraction is TEXT (64KiB). Stay under that
+ * so we fail client-side with a clear error instead of Error 1406.
+ */
+export const MINION_CREATE_INTERACTION_MESSAGE_MAX = 60_000
+
+/**
  * Minion's createInteraction wire format only persists TEXT — extra image/file
  * fields are stripped server-side. Embed small images as data URLs in the
  * message body so the remote agent can still read them.
+ *
+ * Prefer the live worker `USER_MESSAGE` path for attachments when the socket is
+ * up — inlining into RPC hits the 64KiB column limit on typical screenshots.
  */
 export function buildMinionSteerMessage(
   text: string,
@@ -196,18 +205,25 @@ export function buildMinionSteerMessage(
   parts.push(
     'The user attached the following file(s). Decode each data URL to inspect the content (for images: look at the pixels).'
   )
+  // Budget for labels + data URLs inside the TEXT column.
+  let remaining = MINION_CREATE_INTERACTION_MESSAGE_MAX - parts.join('\n').length - 32
   for (const a of attachments) {
     const name = (a.name || 'attachment').replace(/\s+/g, '_')
     const mime = a.mimeType || 'application/octet-stream'
     const data = a.data.replace(/\s+/g, '')
-    // Cap each attachment so a huge paste cannot blow the RPC (~4MB text).
-    const maxChars = 2_500_000
-    if (data.length > maxChars) {
-      parts.push(`- ${name} (${mime}): omitted — too large to inline (${data.length} base64 chars).`)
+    const header = `- ${name} (${mime}):`
+    const dataUrl = `data:${mime};base64,${data}`
+    const cost = header.length + dataUrl.length + 2
+    if (cost > remaining) {
+      parts.push(
+        `- ${name} (${mime}): omitted — too large to inline for offline Minion send (${data.length} base64 chars). Re-send once the worker is linked, or use a smaller image.`
+      )
+      remaining -= 120
       continue
     }
-    parts.push(`- ${name} (${mime}):`)
-    parts.push(`data:${mime};base64,${data}`)
+    parts.push(header)
+    parts.push(dataUrl)
+    remaining -= cost
   }
   return parts.join('\n')
 }
@@ -220,6 +236,22 @@ export async function httpCreateInteraction(
   const message = buildMinionSteerMessage(text, attachments)
   if (!message.trim()) {
     throw new Error('createInteraction requires text or attachments')
+  }
+  if (message.length > MINION_CREATE_INTERACTION_MESSAGE_MAX) {
+    throw new Error(
+      `Message too large for Minion offline send (${message.length} chars; max ${MINION_CREATE_INTERACTION_MESSAGE_MAX}). ` +
+        `Wait until the worker is linked (then attachments go over the socket), or send text only / a smaller image.`
+    )
+  }
+  // Still too big after omit stubs → attachment couldn't fit at all.
+  if (
+    attachments?.length &&
+    message.includes('omitted — too large') &&
+    !message.includes('data:')
+  ) {
+    throw new Error(
+      'Attachment too large for Minion offline send. Wait until the worker is linked, or send a smaller image / text only.'
+    )
   }
   const res = await postMinionApi(
     'createInteraction',
