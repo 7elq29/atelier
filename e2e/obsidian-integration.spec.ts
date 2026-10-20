@@ -400,7 +400,7 @@ test('dragging a task from Unscheduled onto the timeline updates the on-disk tim
   expect(line).toMatch(/^\s*-\s*\[.]\s*\d{1,2}:\d{2}[–-]\d{1,2}:\d{2}\s+Write PR description/)
 })
 
-test('dragging a task from the timeline back onto Unscheduled clears its time-block and updates the on-disk section', async () => {
+test('dragging a task from the timeline back onto Unscheduled moves it under Backlog', async () => {
   const block = page.locator('[data-testid="timeline-task"]', { hasText: 'Prep for oncall handoff' })
   const taskId = await block.getAttribute('data-task-id')
   expect(taskId).toBeTruthy()
@@ -427,15 +427,18 @@ test('dragging a task from the timeline back onto Unscheduled clears its time-bl
   const content = readFileSync(notePath, 'utf-8')
   appendSyncLog('after drag timeline -> unscheduled', content)
 
-  // The task's gid line should now live under Backlog with no time-block
-  // prefix.
+  // Lives under Backlog. timeBlock is intentionally preserved on unschedule
+  // (useDailyNote.moveTask) so a later drag-back can restore duration.
   const lines = content.split('\n')
   const backlogHeaderIdx = lines.findIndex((l) => /^###\s+.*Backlog/i.test(l))
+  const tasksHeaderIdx = lines.findIndex((l) => /^##\s+.*Tasks/i.test(l))
   const line = lines.find((l) => l.includes(GID_ONCALL_HANDOFF))
   expect(line).toBeTruthy()
-  expect(line).toMatch(/^\s*-\s*\[.]\s*Prep for oncall handoff/)
-  expect(line).not.toMatch(/\d{1,2}:\d{2}[–-]\d{1,2}:\d{2}/)
-  expect(lines.indexOf(line!)).toBeGreaterThan(backlogHeaderIdx)
+  expect(line).toMatch(/Prep for oncall handoff/)
+  const lineIdx = lines.indexOf(line!)
+  expect(lineIdx).toBeGreaterThan(backlogHeaderIdx)
+  // Not still listed under the day-plan Tasks block (before Backlog).
+  expect(lineIdx).toBeGreaterThan(tasksHeaderIdx)
 })
 
 test('resizing sections keeps independent scroll and persists weights', async () => {
@@ -451,7 +454,7 @@ test('resizing sections keeps independent scroll and persists weights', async ()
   // Weight object is the source of truth (drives flex-grow); pixel height is
   // also checked but with tolerance since flex rounding/min-height can blur
   // an exact px delta.
-  const storedWeights = await page.evaluate(() => localStorage.getItem('atelier.dailyNotes.sectionWeights'))
+  const storedWeights = await page.evaluate(() => localStorage.getItem('atelier.dailyNotes.sectionWeights.v2'))
   expect(storedWeights).toBeTruthy()
   const weights = JSON.parse(storedWeights!)
   expect(weights.timeline).toBeGreaterThan(2) // grew from the default weight of 2

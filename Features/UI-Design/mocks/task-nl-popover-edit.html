@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<title>Task NL — time popover + edit existing</title>
+<link rel="stylesheet" href="shared.css" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    padding: 40px 48px 80px;
+  }
+  .page-head { max-width: 1100px; margin: 0 auto 32px; }
+  .page-head h1 {
+    margin: 0 0 8px;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .page-head p {
+    margin: 0;
+    max-width: 62ch;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+  .gallery {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 48px;
+  }
+  .mock-block {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .mock-block { grid-template-columns: 1fr; }
+  }
+  .mock-meta .num {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-disabled);
+    margin-bottom: 8px;
+  }
+  .mock-meta h2 {
+    margin: 0 0 8px;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .mock-meta .tagline {
+    margin: 0 0 12px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+  }
+  .mock-meta ul {
+    margin: 0;
+    padding: 0 0 0 16px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--text-tertiary);
+  }
+  .mock-meta li + li { margin-top: 4px; }
+
+  .stage {
+    border-radius: 16px;
+    padding: 36px 28px;
+    min-height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a1814;
+    border: 1px solid var(--border-subtle);
+    position: relative;
+  }
+
+  /* ── Shared sentence field ── */
+  .anno-card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    padding: 16px;
+    position: relative;
+  }
+  .anno-field {
+    background: var(--bg-input);
+    border: 1px solid var(--border-default);
+    border-radius: 10px;
+    padding: 14px;
+    min-height: 52px;
+  }
+  .anno-line {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-primary);
+  }
+  .anno-line .t-plain { color: var(--text-primary); }
+  .anno-line .t-entity {
+    padding: 0 1px;
+    border-bottom: 2px solid;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .anno-line .t-entity:hover {
+    background: rgba(255,255,255,.04);
+  }
+  .anno-line .t-entity.is-open {
+    background: rgba(143,193,127,.12);
+  }
+  .anno-line .t-time {
+    color: #b8d9a8;
+    border-bottom-color: #8fc17f;
+  }
+  .anno-line .t-dur {
+    color: #e6c894;
+    border-bottom-color: #d9b374;
+  }
+  .anno-line .t-tag {
+    color: #a8c8dc;
+    border-bottom-color: #7fa8c1;
+  }
+  .anno-foot {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--text-disabled);
+  }
+  .anno-foot kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border-default);
+    color: var(--text-tertiary);
+  }
+
+  /* ── Time popover ── */
+  .anchor-wrap {
+    position: relative;
+    display: inline;
+  }
+  .time-pop {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 200px;
+    background: var(--bg-panel-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    padding: 12px 12px 10px;
+    box-shadow:
+      0 16px 40px rgba(0,0,0,.45),
+      0 0 0 1px rgba(143,193,127,.12);
+    z-index: 5;
+  }
+  .time-pop::before {
+    content: "";
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 9px;
+    height: 9px;
+    background: var(--bg-panel-raised);
+    border-left: 1px solid var(--border-strong);
+    border-top: 1px solid var(--border-strong);
+  }
+  .time-pop-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-disabled);
+    margin-bottom: 10px;
+  }
+  .time-pop-clock {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .time-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .time-col button {
+    all: unset;
+    cursor: pointer;
+    width: 28px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    color: var(--text-tertiary);
+    font-size: 10px;
+    border-radius: 4px;
+  }
+  .time-col button:hover {
+    color: var(--accent-strong);
+    background: var(--accent-dim);
+  }
+  .time-col .val {
+    font-variant-numeric: tabular-nums;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    min-width: 1.4em;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .time-sep {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    padding-bottom: 2px;
+  }
+  .time-ampm {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-left: 4px;
+  }
+  .time-ampm button {
+    all: unset;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 7px;
+    border-radius: 5px;
+    color: var(--text-tertiary);
+    text-align: center;
+  }
+  .time-ampm button.on {
+    background: var(--accent-dim);
+    color: var(--accent-strong);
+  }
+  .time-ampm button:hover:not(.on) {
+    color: var(--text-secondary);
+  }
+  .time-input {
+    width: 100%;
+    margin-bottom: 10px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text-primary);
+    outline: none;
+  }
+  .time-input:focus {
+    border-color: rgba(143,193,127,.5);
+  }
+  .time-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 10px;
+  }
+  .time-chips button {
+    all: unset;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border-default);
+    color: var(--text-tertiary);
+  }
+  .time-chips button:hover {
+    border-color: rgba(143,193,127,.45);
+    color: var(--accent-strong);
+  }
+  .time-pop-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10.5px;
+    color: var(--text-disabled);
+    padding-top: 2px;
+  }
+  .time-pop-foot kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--border-default);
+  }
+
+  /* Duration popover (for completeness) */
+  .dur-pop {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 180px;
+    background: var(--bg-panel-raised);
+    border: 1px solid rgba(217,179,116,.35);
+    border-radius: 12px;
+    padding: 10px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.45);
+    z-index: 5;
+  }
+  .dur-pop::before {
+    content: "";
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 9px;
+    height: 9px;
+    background: var(--bg-panel-raised);
+    border-left: 1px solid rgba(217,179,116,.35);
+    border-top: 1px solid rgba(217,179,116,.35);
+  }
+  .dur-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .dur-list button {
+    all: unset;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    padding: 7px 9px;
+    border-radius: 7px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .dur-list button:hover { background: rgba(255,255,255,.04); }
+  .dur-list button.on {
+    background: rgba(217,179,116,.14);
+    color: #f0d9a8;
+    font-weight: 560;
+  }
+
+  /* ── Agenda panel for edit flow ── */
+  .agenda-panel {
+    width: 100%;
+    max-width: 340px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .agenda-head {
+    padding: 12px 14px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-disabled);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .agenda-row {
+    display: grid;
+    grid-template-columns: 52px 1fr auto;
+    gap: 8px;
+    align-items: baseline;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 13.5px;
+  }
+  .agenda-row .t { color: var(--text-tertiary); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .agenda-row .l { color: var(--text-primary); }
+  .agenda-row .d { color: var(--text-disabled); font-size: 11.5px; }
+  .agenda-row.is-editing {
+    background: rgba(143,193,127,.06);
+    padding: 12px 12px 14px;
+    grid-template-columns: 1fr;
+  }
+  .agenda-row .hint-click {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    color: var(--text-disabled);
+    margin-top: -2px;
+  }
+  .flow-steps {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .flow-step {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 8px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--text-secondary);
+  }
+  .flow-step .n {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--bg-hover);
+    border: 1px solid var(--border-default);
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+  }
+
+  .stage-wide {
+    flex-direction: column;
+    gap: 20px;
+    align-items: stretch;
+  }
+  .stage-wide .pair {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .pair-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-disabled);
+    margin-bottom: 8px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Time popover + edit existing task</h1>
+  <p>
+    Quiet-underline create/edit: click a start-time span to open a compact popover.
+    Updating an existing task reuses the same sentence editor — no separate dial card.
+  </p>
+</div>
+
+<div class="gallery">
+
+  <!-- ── A. Time popover ── -->
+  <section class="mock-block" id="popover-time">
+    <aside class="mock-meta">
+      <div class="num">A · Create / edit</div>
+      <h2>Start-time popover</h2>
+      <p class="tagline">
+        Anchored under the underlined <em>at 9:00 am</em>.
+        Changing the clock rewrites that phrase in the sentence.
+      </p>
+      <ul>
+        <li>↑↓ / scroll nudges hour &amp; minute (±15 on minute)</li>
+        <li>Type <code>9:30 am</code> in the field</li>
+        <li>Quick chips: −15 / +15 / Now</li>
+        <li>Enter or click outside commits · Esc cancels</li>
+      </ul>
+    </aside>
+    <div class="stage">
+      <div class="anno-card">
+        <div class="anno-field">
+          <div class="anno-line">
+            <span class="t-plain">Logging Team Sync </span>
+            <span class="t-entity t-tag">#meeting</span>
+            <span class="t-plain"> </span>
+            <span class="anchor-wrap">
+              <span class="t-entity t-time is-open">at 9:15 am</span>
+              <div class="time-pop" role="dialog" aria-label="Adjust start time">
+                <div class="time-pop-label">Start time</div>
+                <div class="time-pop-clock">
+                  <div class="time-col">
+                    <button type="button" aria-label="Hour up">▲</button>
+                    <span class="val">9</span>
+                    <button type="button" aria-label="Hour down">▼</button>
+                  </div>
+                  <span class="time-sep">:</span>
+                  <div class="time-col">
+                    <button type="button" aria-label="Minute up">▲</button>
+                    <span class="val">15</span>
+                    <button type="button" aria-label="Minute down">▼</button>
+                  </div>
+                  <div class="time-ampm">
+                    <button type="button" class="on">am</button>
+                    <button type="button">pm</button>
+                  </div>
+                </div>
+                <input class="time-input" value="9:15 am" aria-label="Type a time" />
+                <div class="time-chips">
+                  <button type="button">−15</button>
+                  <button type="button">+15</button>
+                  <button type="button">Now</button>
+                  <button type="button">Clear</button>
+                </div>
+                <div class="time-pop-foot">
+                  <span>Scroll to nudge</span>
+                  <span><kbd>↵</kbd> done</span>
+                </div>
+              </div>
+            </span>
+            <span class="t-plain"> </span>
+            <span class="t-entity t-dur">for 1 h</span>
+          </div>
+        </div>
+        <div class="anno-foot"><span><kbd>↵</kbd> Add</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── B. Duration popover ── -->
+  <section class="mock-block" id="popover-dur">
+    <aside class="mock-meta">
+      <div class="num">B · Same pattern</div>
+      <h2>Duration popover</h2>
+      <p class="tagline">
+        Click <em>for 1 h</em> → amber-tinted list. Picking a value rewrites the duration phrase
+        (<code>1 h</code> / <code>30 minutes</code> / …).
+      </p>
+      <ul>
+        <li>Replaces the old circular dial</li>
+        <li>Keeps flexible wording in the sentence</li>
+      </ul>
+    </aside>
+    <div class="stage">
+      <div class="anno-card">
+        <div class="anno-field">
+          <div class="anno-line">
+            <span class="t-plain">Chen 1:1 </span>
+            <span class="t-entity t-tag">#1on1</span>
+            <span class="t-plain"> </span>
+            <span class="t-entity t-time">at 2:00 pm</span>
+            <span class="t-plain"> </span>
+            <span class="anchor-wrap">
+              <span class="t-entity t-dur is-open" style="background: rgba(217,179,116,.12)">for 30 minutes</span>
+              <div class="dur-pop" role="dialog" aria-label="Adjust duration">
+                <div class="time-pop-label" style="color: #c4a878">Duration</div>
+                <div class="dur-list">
+                  <button type="button">15 min</button>
+                  <button type="button" class="on">30 min</button>
+                  <button type="button">45 min</button>
+                  <button type="button">1 hour</button>
+                  <button type="button">1.5 hours</button>
+                  <button type="button">2 hours</button>
+                </div>
+              </div>
+            </span>
+          </div>
+        </div>
+        <div class="anno-foot"><span><kbd>↵</kbd> Save</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── C. Edit existing ── -->
+  <section class="mock-block" id="edit-existing">
+    <aside class="mock-meta">
+      <div class="num">C · Update existing</div>
+      <h2>Edit = reopen the sentence</h2>
+      <p class="tagline">
+        Same editor as create. No separate “time-edit dial” card.
+        Agenda row expands (or opens inline) into the annotated sentence.
+      </p>
+      <ul>
+        <li>Click row label → edit full sentence</li>
+        <li>Click time on row → time popover only (fast nudge)</li>
+        <li>Drag on timeline still reschedules</li>
+        <li>Enter / blur saves · Esc reverts</li>
+      </ul>
+      <div class="flow-steps">
+        <div class="flow-step"><span class="n">1</span><span>Idle agenda row shows clock · title · duration</span></div>
+        <div class="flow-step"><span class="n">2</span><span>Activate → reconstruct NL sentence from stored fields</span></div>
+        <div class="flow-step"><span class="n">3</span><span>Edit text or click underlines (same popovers as create)</span></div>
+        <div class="flow-step"><span class="n">4</span><span>Commit → row updates; underlines go away until next edit</span></div>
+      </div>
+    </aside>
+    <div class="stage stage-wide">
+      <div class="pair">
+        <div>
+          <div class="pair-label">1 · Idle</div>
+          <div class="agenda-panel">
+            <div class="agenda-head">Agenda</div>
+            <div class="agenda-row">
+              <span class="t">9:00</span>
+              <span class="l">Logging Team Sync</span>
+              <span class="d">1h</span>
+            </div>
+            <div class="agenda-row">
+              <span class="t">2:00</span>
+              <span class="l">Chen 1:1</span>
+              <span class="d">30m</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="pair-label">2 · Editing (click title)</div>
+          <div class="agenda-panel">
+            <div class="agenda-head">Agenda</div>
+            <div class="agenda-row is-editing">
+              <div class="anno-field" style="margin:0">
+                <div class="anno-line">
+                  <span class="t-plain">Logging Team Sync </span>
+                  <span class="t-entity t-tag">#meeting</span>
+                  <span class="t-plain"> </span>
+                  <span class="t-entity t-time">at 9:00 am</span>
+                  <span class="t-plain"> </span>
+                  <span class="t-entity t-dur">for 1 h</span>
+                </div>
+              </div>
+              <div class="hint-click" style="margin-top:8px;padding:0 2px">
+                Click underline → popover · <kbd style="font-family:var(--font-mono);font-size:10px;border:1px solid var(--border-default);padding:1px 4px;border-radius:3px">↵</kbd> save
+              </div>
+            </div>
+            <div class="agenda-row">
+              <span class="t">2:00</span>
+              <span class="l">Chen 1:1</span>
+              <span class="d">30m</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="pair-label">3 · Fast path (click row time)</div>
+          <div class="agenda-panel" style="position:relative">
+            <div class="agenda-head">Agenda</div>
+            <div class="agenda-row" style="position:relative">
+              <span class="t" style="color:#b8d9a8;border-bottom:2px solid #8fc17f;cursor:pointer">9:00</span>
+              <span class="l">Logging Team Sync</span>
+              <span class="d">1h</span>
+              <div class="time-pop" style="left:40px;transform:none;top:36px">
+                <div class="time-pop-label">Start time</div>
+                <div class="time-pop-clock">
+                  <div class="time-col">
+                    <button type="button">▲</button>
+                    <span class="val">9</span>
+                    <button type="button">▼</button>
+                  </div>
+                  <span class="time-sep">:</span>
+                  <div class="time-col">
+                    <button type="button">▲</button>
+                    <span class="val">00</span>
+                    <button type="button">▼</button>
+                  </div>
+                  <div class="time-ampm">
+                    <button type="button" class="on">am</button>
+                    <button type="button">pm</button>
+                  </div>
+                </div>
+                <div class="time-chips">
+                  <button type="button">−15</button>
+                  <button type="button">+15</button>
+                </div>
+                <div class="time-pop-foot">
+                  <span>Nudge only</span>
+                  <span><kbd>↵</kbd></span>
+                </div>
+              </div>
+            </div>
+            <div class="agenda-row">
+              <span class="t">2:00</span>
+              <span class="l">Chen 1:1</span>
+              <span class="d">30m</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+</body>
+</html>
