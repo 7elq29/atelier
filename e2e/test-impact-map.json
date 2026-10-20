@@ -1665,6 +1665,20 @@
       ]
     },
     {
+      "id": "app-note-rename-space-key",
+      "paths": [
+        "src/renderer/src/components/Sidebar.tsx",
+        "Features/app-note-rename-space/spec.md"
+      ],
+      "changedLines": "app-note-rename-input|if \\(editing\\) return|stopPropagation|role=button|Space must insert|Hello world",
+      "targets": [
+        {
+          "file": "e2e/obsidian-app-notes.spec.ts",
+          "grep": "space key|Space must insert|Hello world"
+        }
+      ]
+    },
+    {
       "id": "bookmarks",
       "paths": [
         "src/renderer/src/components/BookmarkEditModal.tsx",

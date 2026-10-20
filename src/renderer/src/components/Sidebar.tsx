@@ -413,6 +413,9 @@ function AppNoteRow({
         setMenuOpen(true)
       }}
       onKeyDown={(e) => {
+        // While renaming, Space/Enter must reach the input — role=button
+        // activation otherwise preventDefault's Space (dropped char / ". ").
+        if (editing) return
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           onSelect()
@@ -435,6 +438,7 @@ function AppNoteRow({
             onChange={(e) => setDraftTitle(e.target.value)}
             onBlur={commitRename}
             onKeyDown={(e) => {
+              e.stopPropagation()
               if (e.key === 'Enter') commitRename()
               if (e.key === 'Escape') {
                 setDraftTitle(note.title)
