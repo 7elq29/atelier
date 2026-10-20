@@ -59,6 +59,11 @@ import {
   type ScratchTailWatermark
 } from './minion-scratch-tail'
 import { MinionWorkerFold, parseChatJsonl } from './minion-worker-fold'
+import {
+  attachmentToDataUrl,
+  minionRpcAttachmentsFit,
+  prepareAttachmentsForMinionRpc
+} from './minion-attachments'
 
 export const POLL_INTERVAL_MS = 5000
 /** Slower orchestrator poll while the worker socket owns the transcript. */
@@ -794,9 +799,20 @@ export class MinionHarness implements HarnessDriver {
     this.notifyActivity(sessionId)
 
     // Prefer live worker socket (Minion Web); RPC wakes a sleeping pod.
+    // Screenshots: WS accepts data-URL attachments (verified ~200KB). Offline
+    // createInteraction inlines into MySQL TEXT — compress images first.
     const wireText = text || '(attachment)'
-    if (!attachments?.length && state.workerSocket?.isLive) {
-      const sent = state.workerSocket.sendCommand(userMessageCommand(wireText))
+    const wireAttachments = (attachments ?? []).map(attachmentToDataUrl)
+    const hasAttachments = wireAttachments.length > 0
+    if (!state.workerSocket?.isLive && isDevpodRunningState(state.lastDevpodState)) {
+      // Nudge dial + wait — resume often steers before handshake finishes.
+      if (state.lastTask) this.syncWorkerSocket(sessionId, state, state.lastTask)
+      await this.waitForLiveWorkerSocket(state, hasAttachments ? 10_000 : 3_000)
+    }
+    if (state.workerSocket?.isLive) {
+      const sent = state.workerSocket.sendCommand(
+        userMessageCommand(wireText, wireAttachments)
+      )
       if (sent) {
         state.steerCreateInFlight = false
         state.awaitingAgentAfterSteer = true
@@ -805,7 +821,9 @@ export class MinionHarness implements HarnessDriver {
         this.remember(sessionId, state)
         logger.info('minionHarness: USER_MESSAGE via worker socket', {
           sessionId,
-          remoteTaskId: state.remoteTaskId
+          remoteTaskId: state.remoteTaskId,
+          attachmentCount: wireAttachments.length,
+          attachmentChars: wireAttachments.reduce((n, s) => n + s.length, 0)
         })
         // Optimistic Working until status_change arrives.
         if (state.workerState !== undefined) {
@@ -816,7 +834,48 @@ export class MinionHarness implements HarnessDriver {
         return
       }
     }
-    await this.createInteractionOnRemote(sessionId, state, text, attachments)
+    const rpcAttachments = hasAttachments
+      ? prepareAttachmentsForMinionRpc(attachments)
+      : attachments
+    if (hasAttachments && !minionRpcAttachmentsFit(text, rpcAttachments)) {
+      const msg =
+        'Screenshot is too large to send while the Minion worker is offline. Wait until the session is linked, then resend.'
+      logger.error('minionHarness: attachment too large for offline RPC', {
+        sessionId,
+        attachmentCount: attachments?.length ?? 0
+      })
+      if (text) state.steeredTexts.delete(text)
+      state.steerCreateInFlight = false
+      state.channel.push({
+        type: 'error',
+        sessionId,
+        timestamp: new Date().toISOString(),
+        message: msg
+      })
+      return
+    }
+    if (hasAttachments) {
+      logger.info('minionHarness: offline createInteraction with compressed attachments', {
+        sessionId,
+        attachmentCount: rpcAttachments?.length ?? 0
+      })
+    }
+    await this.createInteractionOnRemote(sessionId, state, text, rpcAttachments)
+  }
+
+  /** Poll until the worker socket is live or `budgetMs` elapses. */
+  private async waitForLiveWorkerSocket(
+    state: MinionSessionState,
+    budgetMs: number
+  ): Promise<boolean> {
+    if (state.workerSocket?.isLive) return true
+    const deadline = Date.now() + budgetMs
+    while (Date.now() < deadline) {
+      if (state.closing || state.channel.closed) return false
+      if (state.workerSocket?.isLive) return true
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    return state.workerSocket?.isLive === true
   }
 
   /** Live (not ready) child if any; else the tip (= Atelier session id). */
@@ -886,8 +945,11 @@ export class MinionHarness implements HarnessDriver {
       state.pendingSteerInteractionId = ''
       state.awaitingAgentAfterSteer = false
       state.steerCreateInFlight = false
-      const msg = err instanceof Error ? err.message : String(err)
-      logger.error('minionHarness: createInteraction failed', { sessionId, error: msg })
+      const raw = err instanceof Error ? err.message : String(err)
+      const msg = /Data too long for column 'message'|too large for Minion offline/i.test(raw)
+        ? 'Could not send: attachment is too large for Minion while the worker is offline. Wait until the session is linked, or send text only / a smaller image.'
+        : raw
+      logger.error('minionHarness: createInteraction failed', { sessionId, error: raw })
       if (this.sessions.get(sessionId) === state && !state.closing && !state.channel.closed) {
         state.channel.push({ type: 'error', sessionId, timestamp: new Date().toISOString(), message: msg })
       }
