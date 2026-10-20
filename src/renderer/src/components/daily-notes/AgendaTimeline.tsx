@@ -1,7 +1,22 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { DailyTask } from '../../../../shared/daily-note-types'
+import { isDailyNoteBulletFromTags, parseInlineTagsFromTaskText } from '../../../../shared/daily-note-tags'
+import {
+  formatDurationPhrase,
+  formatStartPhrase,
+  formatTaskNl,
+  nearestDurIdx,
+  NL_DUR_STEPS_MIN,
+  parseTaskNl,
+  replaceNlEntity,
+  type NlEntityKind,
+} from '../../../../shared/task-nl-parse'
 import { formatTaskEditBuffer } from '../../../../shared/task-priority'
 import { priorityTimelineAccentClass } from '../../../../shared/task-priority'
+import AgendaNlCreateCard from './AgendaNlCreateCard'
+import NlAnnotatedInput from './NlAnnotatedInput'
+import NlDurationPopover from './NlDurationPopover'
+import NlTimePopover from './NlTimePopover'
 import TaskMoveContextMenu from './TaskMoveContextMenu'
 import type { MoveDateOptions } from './move-date-options'
 import { buildTaskEditPatch, TaskEditInput } from './task-priority-ui'
@@ -17,16 +32,29 @@ const AGENDA_END_MIN = (AGENDA_HOURS[AGENDA_HOURS.length - 1]! + 1) * 60
 const AGENDA_SLOT_H_PX = 36 // px per hour slot in the drag overlay grid
 const AGENDA_SNAP_MIN = 15
 
-interface TimeEditState {
+/** Fast path: time/duration popover on an agenda row without opening the NL editor. */
+interface FastPopState {
   taskId: string
-  taskLabel: string
-  startMin: number  // total minutes from midnight, snapped to 15
+  kind: 'time' | 'duration'
+  startMin: number
   durIdx: number
-  x: number
-  y: number
+  /** Snapshot for Esc cancel */
+  origStartMin: number
+  origDurIdx: number
+  anchor: DOMRect
 }
-const DUR_STEPS_MIN = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240]
-const DUR_MAX_MIN = DUR_STEPS_MIN[DUR_STEPS_MIN.length - 1]
+
+/** Full NL sentence edit for an existing scheduled task. */
+interface NlEditState {
+  taskId: string
+  text: string
+  startMin: number
+  durIdx: number
+  entityPop: { kind: NlEntityKind; anchor: DOMRect } | null
+}
+
+const DUR_STEPS_MIN = [...NL_DUR_STEPS_MIN]
+const DUR_MAX_MIN = DUR_STEPS_MIN[DUR_STEPS_MIN.length - 1]!
 const DEFAULT_DUR_IDX = 1 // 30 min
 
 interface AgendaTimelineProps {
@@ -90,39 +118,6 @@ function durDisplayParts(min: number): { num: string; unit: string } {
   return { num: m ? `${h}:${String(m).padStart(2, '0')}` : String(h), unit: 'hr' }
 }
 
-/** Parse a human-typed time string into total minutes from midnight, or null on failure. */
-function parseTimeInput(raw: string): number | null {
-  const s = raw.trim().toLowerCase().replace(/\s+/g, ' ')
-  // "3:30 pm" / "3:30pm"
-  const m12 = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/)
-  if (m12) {
-    let h = parseInt(m12[1]!, 10)
-    const min = parseInt(m12[2]!, 10)
-    if (m12[3] === 'pm' && h < 12) h += 12
-    if (m12[3] === 'am' && h === 12) h = 0
-    if (h < 0 || h > 23 || min < 0 || min > 59) return null
-    return h * 60 + min
-  }
-  // "15:30" (24-hour)
-  const m24 = s.match(/^(\d{1,2}):(\d{2})$/)
-  if (m24) {
-    const h = parseInt(m24[1]!, 10)
-    const min = parseInt(m24[2]!, 10)
-    if (h < 0 || h > 23 || min < 0 || min > 59) return null
-    return h * 60 + min
-  }
-  // "3 pm" / "3pm"
-  const mHour = s.match(/^(\d{1,2})\s*(am|pm)$/)
-  if (mHour) {
-    let h = parseInt(mHour[1]!, 10)
-    if (mHour[2] === 'pm' && h < 12) h += 12
-    if (mHour[2] === 'am' && h === 12) h = 0
-    if (h < 0 || h > 23) return null
-    return h * 60
-  }
-  return null
-}
-
 function hourLabel(h: number): string {
   if (h === 12) return '12p'
   if (h === 0)  return '12a'
@@ -176,22 +171,22 @@ export default function AgendaTimeline({
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null)
   const dropStartRef = useRef<HTMLDivElement>(null)
 
-  // Right-click create draft
+  // Right-click create draft (NL sentence card)
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(null)
-  const [createStartText, setCreateStartText] = useState<string | null>(null)
-  const createCardRef       = useRef<HTMLDivElement>(null)
-  const createInputRef      = useRef<HTMLTextAreaElement | null>(null)
-  const createStartInputRef = useRef<HTMLInputElement>(null)
-  const createStartRef      = useRef<HTMLDivElement>(null)
+  const createCardRef = useRef<HTMLDivElement>(null)
 
-  // Time-edit popover (click on time label)
-  const [timeEdit, setTimeEdit] = useState<TimeEditState | null>(null)
-  const [timeEditStartText, setTimeEditStartText] = useState<string | null>(null)
-  const timeEditRef = useRef<HTMLDivElement>(null)
-  const timeEditStartRef = useRef<HTMLDivElement>(null)
-  const timeEditStartInputRef = useRef<HTMLInputElement>(null)
-  // Stable ref to commitTimeEdit — always current, safe to call from stale closures.
-  const commitTimeEditRef = useRef<() => void>(() => {})
+  // Fast time/duration popover on agenda row
+  const [fastPop, setFastPop] = useState<FastPopState | null>(null)
+  /** Brief shield after popover close so a trailing click cannot hit Delete. */
+  const [rowClickShield, setRowClickShield] = useState(false)
+  const rowClickShieldRef = useRef(false)
+  const rowClickShieldTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const commitFastPopRef = useRef<() => void>(() => {})
+
+  // Full NL edit of existing task (double-click title)
+  const [nlEdit, setNlEdit] = useState<NlEditState | null>(null)
+  const nlEditRef = useRef<NlEditState | null>(null)
+  nlEditRef.current = nlEdit
 
   const agendaRef = useRef<HTMLDivElement>(null)
   const cardRef   = useRef<HTMLDivElement>(null)
@@ -256,47 +251,25 @@ export default function AgendaTimeline({
     }
   }, [pendingOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Wheel + click-outside for create draft card
+  // Click-outside dismisses empty create draft (non-empty kept until Enter / Esc)
   const createOpen = pendingCreate !== null
   useEffect(() => {
     if (!createOpen) return
-    function onWheel(e: WheelEvent): void {
-      e.preventDefault()
-      if (createStartRef.current?.contains(e.target as Node)) {
-        // Scroll on "starting" → adjust start time ±15 min
-        setPendingCreate((prev) => {
-          if (!prev) return null
-          const next = Math.max(0, Math.min(23 * 60 + 45, prev.startMin + (e.deltaY < 0 ? 15 : -15)))
-          return { ...prev, startMin: next }
-        })
-      } else {
-        setPendingCreate((prev) => {
-          if (!prev) return null
-          const next = Math.max(0, Math.min(DUR_STEPS_MIN.length - 1, prev.durIdx + (e.deltaY < 0 ? 1 : -1)))
-          return { ...prev, durIdx: next }
-        })
-      }
-    }
-    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
-    return () => window.removeEventListener('wheel', onWheel, { capture: true })
-  }, [createOpen])
-
-  useEffect(() => {
-    if (!createOpen) return
     function onClick(e: MouseEvent): void {
-      if (createCardRef.current?.contains(e.target as Node)) return
+      const t = e.target as Node
+      if (createCardRef.current?.contains(t)) return
+      if ((t as Element).closest?.('.dn-nl-time-pop, .dn-nl-dur-pop')) return
       setPendingCreate(null)
-      setCreateStartText(null)
     }
-    const t = setTimeout(
-      () => document.addEventListener('click', onClick, { capture: true }),
+    const timer = setTimeout(
+      () => document.addEventListener('mousedown', onClick, { capture: true }),
       80
     )
     return () => {
-      clearTimeout(t)
-      document.removeEventListener('click', onClick, { capture: true })
+      clearTimeout(timer)
+      document.removeEventListener('mousedown', onClick, { capture: true })
     }
-  }, [createOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [createOpen])
 
   // Open create card when triggered from command palette
   useEffect(() => {
@@ -304,14 +277,15 @@ export default function AgendaTimeline({
     const currentHour: number = new Date().getHours()
     const nowH = Math.max(6, Math.min(21, currentHour))
     setPendingDrop(null)
+    setFastPop(null)
+    setNlEdit(null)
     setPendingCreate({
       startMin: nowH * 60,
       durIdx: DEFAULT_DUR_IDX,
       text: '',
-      cardX: Math.max(8, window.innerWidth / 2 - 110),
-      cardY: Math.max(8, window.innerHeight / 2 - 140),
+      cardX: Math.max(8, window.innerWidth / 2 - 200),
+      cardY: Math.max(8, window.innerHeight / 2 - 80),
     })
-    requestAnimationFrame(() => createInputRef.current?.focus())
   }, [requestCreate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function minutesFromClientY(clientY: number): number {
@@ -375,94 +349,109 @@ export default function AgendaTimeline({
     setPendingDrop(null)
   }
 
-  // ── Time-edit popover ────────────────────────────────────────────────────
+  // ── Fast time / duration popover on agenda row ───────────────────────────
 
-  const timeEditOpen = timeEdit !== null
-  useEffect(() => {
-    if (!timeEditOpen) return
-    function onClick(e: MouseEvent): void {
-      if (timeEditRef.current?.contains(e.target as Node)) return
-      // Commit (save) the current time-edit on click-outside, same as the
-      // drop and create cards do. Use the stable ref so we always call the
-      // latest commitTimeEdit (avoids stale-closure capturing old durIdx).
-      commitTimeEditRef.current()
-    }
-    const t = setTimeout(() => document.addEventListener('click', onClick, { capture: true }), 80)
-    return () => { clearTimeout(t); document.removeEventListener('click', onClick, { capture: true }) }
-  }, [timeEditOpen])
+  const fastPopRef = useRef<FastPopState | null>(null)
+  fastPopRef.current = fastPop
 
-  useEffect(() => {
-    if (!timeEditOpen) return
-    function onWheel(e: WheelEvent): void {
-      e.preventDefault()
-      if (timeEditStartRef.current?.contains(e.target as Node)) {
-        // Scroll on "starting" text → adjust start time ±15 min
-        setTimeEdit((t) => {
-          if (!t) return t
-          const next = Math.max(0, Math.min(23 * 60 + 45, t.startMin + (e.deltaY < 0 ? 15 : -15)))
-          return { ...t, startMin: next }
-        })
-      } else {
-        // Scroll elsewhere in card → adjust duration
-        setTimeEdit((t) =>
-          t ? { ...t, durIdx: Math.max(0, Math.min(DUR_STEPS_MIN.length - 1, t.durIdx + (e.deltaY < 0 ? 1 : -1))) } : t
-        )
-      }
-    }
-    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
-    return () => window.removeEventListener('wheel', onWheel, { capture: true })
-  }, [timeEditOpen])
+  function armRowClickShield(): void {
+    rowClickShieldRef.current = true
+    setRowClickShield(true)
+    if (rowClickShieldTimer.current) clearTimeout(rowClickShieldTimer.current)
+    rowClickShieldTimer.current = setTimeout(() => {
+      rowClickShieldRef.current = false
+      setRowClickShield(false)
+      rowClickShieldTimer.current = null
+    }, 400)
+  }
 
-  function openTimeEdit(event: React.MouseEvent, task: DailyTask, start: number, end: number): void {
+  function commitFastPop(): void {
+    const pop = fastPopRef.current
+    if (!pop) return
+    // Arm before clearing so a same-tick fallthrough click cannot Delete.
+    armRowClickShield()
+    fastPopRef.current = null
+    const durMin = DUR_STEPS_MIN[pop.durIdx]!
+    const endMin = pop.startMin + durMin
+    onUpdateTask(pop.taskId, {
+      timeBlock: `${minutesToTime(pop.startMin)}-${minutesToTime(endMin)}`,
+    })
+    setFastPop(null)
+  }
+  commitFastPopRef.current = commitFastPop
+
+  function cancelFastPop(): void {
+    armRowClickShield()
+    fastPopRef.current = null
+    setFastPop(null)
+  }
+
+  function openFastPop(
+    event: React.MouseEvent,
+    task: DailyTask,
+    start: number,
+    end: number,
+    kind: 'time' | 'duration'
+  ): void {
     event.stopPropagation()
     const snappedStart = Math.round(start / 15) * 15
-    const durMin = end - start
-    const durIdx = DUR_STEPS_MIN.reduce(
-      (best, v, i) => Math.abs(v - durMin) < Math.abs(DUR_STEPS_MIN[best]! - durMin) ? i : best,
-      DEFAULT_DUR_IDX
-    )
+    const durIdx = nearestDurIdx(end - start, DUR_STEPS_MIN)
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    setTimeEditStartText(null)
-    setTimeEdit({ taskId: task.id, taskLabel: task.text, startMin: snappedStart, durIdx, x: rect.left, y: rect.bottom + 6 })
     setPendingDrop(null)
     setPendingCreate(null)
+    setNlEdit(null)
+    setFastPop({
+      taskId: task.id,
+      kind,
+      startMin: snappedStart,
+      durIdx,
+      origStartMin: snappedStart,
+      origDurIdx: durIdx,
+      anchor: rect,
+    })
   }
 
-  function commitTimeEdit(): void {
-    if (!timeEdit) return
-    const durMin = DUR_STEPS_MIN[timeEdit.durIdx]!
-    const endMin = timeEdit.startMin + durMin
-    onUpdateTask(timeEdit.taskId, { timeBlock: `${minutesToTime(timeEdit.startMin)}-${minutesToTime(endMin)}` })
-    setTimeEdit(null)
-    setTimeEditStartText(null)
-  }
-  // Keep ref current so the click-outside handler (a stale closure) always
-  // calls the latest commitTimeEdit (which captures the latest timeEdit).
-  commitTimeEditRef.current = commitTimeEdit
-
-  function commitStartText(): void {
-    if (timeEditStartText === null) return
-    const parsed = parseTimeInput(timeEditStartText)
-    if (parsed !== null) {
-      setTimeEdit((t) => t ? { ...t, startMin: parsed } : t)
-    }
-    setTimeEditStartText(null)
-  }
-
-  function commitCreate(parsed?: { text: string }): void {
-    if (!pendingCreate || !onCreate) return
-    const text = (parsed?.text ?? pendingCreate.text).trim()
-    if (text) {
-      if (pendingCreate.noTime) {
-        onCreate(text, '')
-      } else {
-        const durMin = DUR_STEPS_MIN[pendingCreate.durIdx]!
-        const endMin = pendingCreate.startMin + durMin
-        onCreate(text, `${minutesToTime(pendingCreate.startMin)}-${minutesToTime(endMin)}`)
-      }
-    }
+  function startNlEdit(task: DailyTask, start: number, end: number): void {
+    const durMin = end - start
+    const durIdx = nearestDurIdx(durMin, DUR_STEPS_MIN)
+    setFastPop(null)
     setPendingCreate(null)
-    setCreateStartText(null)
+    setPendingDrop(null)
+    setRenamingTaskId(null)
+    setNlEdit({
+      taskId: task.id,
+      text: formatTaskNl({
+        title: task.text,
+        tags: task.tags,
+        startMin: start,
+        durationMin: durMin,
+      }),
+      startMin: Math.round(start / 15) * 15,
+      durIdx,
+      entityPop: null,
+    })
+  }
+
+  function commitNlEdit(): void {
+    if (!nlEdit) return
+    const parsed = parseTaskNl(nlEdit.text)
+    const content = parsed.content.trim()
+    if (!content) {
+      setNlEdit(null)
+      return
+    }
+    const tagParsed = parseInlineTagsFromTaskText(content)
+    const startMin = parsed.startMin ?? nlEdit.startMin
+    const durMin = parsed.durationMin ?? DUR_STEPS_MIN[nlEdit.durIdx]!
+    const endMin = startMin + durMin
+    const task = tasks.find((t) => t.id === nlEdit.taskId)
+    onUpdateTask(nlEdit.taskId, {
+      text: tagParsed.text.trim() || content,
+      tags: tagParsed.tags.length ? tagParsed.tags : (task?.tags ?? []),
+      isNote: isDailyNoteBulletFromTags(tagParsed.tags.length ? tagParsed.tags : (task?.tags ?? [])),
+      timeBlock: `${minutesToTime(startMin)}-${minutesToTime(endMin)}`,
+    })
+    setNlEdit(null)
   }
 
   function handleContextMenu(e: React.MouseEvent): void {
@@ -470,8 +459,16 @@ export default function AgendaTimeline({
     e.preventDefault()
     if ((e.target as Element).closest('.dn-agenda-entry')) return
     setPendingDrop(null)
+    setFastPop(null)
+    setNlEdit(null)
     const startMin = minutesFromClientY(e.clientY)
-    setPendingCreate({ startMin, durIdx: DEFAULT_DUR_IDX, text: '', cardX: e.clientX, cardY: e.clientY })
+    setPendingCreate({
+      startMin,
+      durIdx: DEFAULT_DUR_IDX,
+      text: '',
+      cardX: e.clientX,
+      cardY: e.clientY,
+    })
   }
 
   // ── Render helpers ────────────────────────────────────────────────────────
@@ -534,58 +531,12 @@ export default function AgendaTimeline({
     cardTop  = Math.max(8, Math.min(pendingDrop.cardY - 80,  window.innerHeight - 300))
   }
 
-  // Create card derived values (separate durIdx from drop)
-  const createDurMin = pendingCreate ? DUR_STEPS_MIN[pendingCreate.durIdx]! : 30
-  const { num: createDurNum, unit: createDurUnit } = durDisplayParts(createDurMin)
-  const createPct        = createDurMin / DUR_MAX_MIN
-  const createDashOffset = CIRC * (1 - createPct)
-  const createIsLong     = createPct > 0.75
-  let createCardLeft = 0, createCardTop = 0
-  if (pendingCreate) {
-    createCardLeft = Math.min(pendingCreate.cardX + 16, window.innerWidth  - 220)
-    createCardTop  = Math.max(8, Math.min(pendingCreate.cardY - 80,  window.innerHeight - 340))
-  }
-  // Create card start time display
-  const createSM     = pendingCreate?.startMin ?? 0
-  const createHour   = Math.floor(createSM / 60)
-  const createHour12 = (createHour % 12) || 12
-  const createMinute = createSM % 60
-  const createSuffix = createHour < 12 ? 'am' : 'pm'
-
-  function commitCreateStartText(): void {
-    if (createStartText === null) return
-    const trimmed = createStartText.trim()
-    if (trimmed === '') {
-      // User cleared the time → create as unscheduled
-      setPendingCreate((p) => p ? { ...p, noTime: true } : p)
-    } else {
-      const parsed = parseTimeInput(trimmed)
-      if (parsed !== null) {
-        setPendingCreate((p) => p ? { ...p, startMin: parsed, noTime: false } : p)
-      }
-    }
-    setCreateStartText(null)
-    // Return focus to the task name input
-    requestAnimationFrame(() => createInputRef.current?.focus())
-  }
-
-  // Time-edit card derived values
-  const teDurMin      = timeEdit ? DUR_STEPS_MIN[timeEdit.durIdx]! : 30
-  const { num: teDurNum, unit: teDurUnit } = durDisplayParts(teDurMin)
-  const tePct         = teDurMin / DUR_MAX_MIN
-  const teDashOffset  = CIRC * (1 - tePct)
-  const teIsLong      = tePct > 0.75
-  const teHour        = timeEdit ? Math.floor(timeEdit.startMin / 60) : 0
-  const teHour12      = (teHour % 12) || 12
-  const teMinute      = timeEdit ? timeEdit.startMin % 60 : 0
-  const teSuffix      = teHour < 12 ? 'am' : 'pm'
-
   let nowPlaced = false
 
   return (
     <div
       ref={agendaRef}
-      className={`dn-agenda${isDragOver ? ' dn-agenda--drag-over' : ''}`}
+      className={`dn-agenda${isDragOver ? ' dn-agenda--drag-over' : ''}${fastPop || nlEdit || rowClickShield ? ' dn-agenda--popover-open' : ''}`}
       data-testid="timeline-agenda"
       onContextMenu={onCreate ? handleContextMenu : undefined}
       onDragOver={onDropExisting ? handleDragOver : undefined}
@@ -665,7 +616,10 @@ export default function AgendaTimeline({
         const gapMinutes = next ? next.start - end : 0
 
         return (
-          <div className="dn-agenda-entry-wrap" key={task.id}>
+          <div
+            className={`dn-agenda-entry-wrap${nlEdit?.taskId === task.id ? ' dn-agenda-entry-wrap--nl-editing' : ''}`}
+            key={task.id}
+          >
             {showNowBefore && (
               <div className="dn-agenda-now" data-testid="agenda-current-time">
                 <span>Now · {formatClock(nowMinutes)}</span>
@@ -678,7 +632,7 @@ export default function AgendaTimeline({
               }${priorityTimelineAccentClass(task.priority)}`}
               data-testid="agenda-task"
               data-task-id={task.id}
-              draggable={renamingTaskId !== task.id}
+              draggable={renamingTaskId !== task.id && nlEdit?.taskId !== task.id}
               onDragStart={(event) => {
                 event.dataTransfer.setData('text/task-id', task.id)
                 event.dataTransfer.setData('text/task-label', task.text)
@@ -689,57 +643,104 @@ export default function AgendaTimeline({
                 setMoveMenu({ x: event.clientX, y: event.clientY, taskId: task.id })
               }}
             >
-              <span
-                className="dn-agenda-time dn-agenda-time--editable"
-                title="Click to edit time"
-                onClick={(e) => openTimeEdit(e, task, start, end)}
-              >{formatClock(start)}</span>
-              {task.isNote
-                ? <span aria-hidden="true" />
-                : (
-                  <button
-                    type="button"
-                    className="dn-tbox"
-                    data-testid="agenda-task-toggle"
-                    onClick={(event) => { event.stopPropagation(); onToggle(task.id) }}
-                    aria-label={task.status === 'done' ? 'Mark task incomplete' : 'Mark task complete'}
+              {nlEdit?.taskId === task.id ? (
+                <div className="dn-task-input-wrap" onMouseDown={(event) => event.stopPropagation()}>
+                  <NlAnnotatedInput
+                    value={nlEdit.text}
+                    autoFocus
+                    testId="agenda-task-nl-edit"
+                    openKind={nlEdit.entityPop?.kind ?? null}
+                    onChange={(raw, parsed) => {
+                      setNlEdit((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              text: raw,
+                              startMin: parsed.startMin ?? prev.startMin,
+                              durIdx:
+                                parsed.durationMin != null
+                                  ? nearestDurIdx(parsed.durationMin, DUR_STEPS_MIN)
+                                  : prev.durIdx,
+                            }
+                          : prev
+                      )
+                    }}
+                    onCommit={() => commitNlEdit()}
+                    onCancel={() => setNlEdit(null)}
+                    onEntityClick={(kind, rect) => {
+                      if (kind === 'tag') return
+                      setNlEdit((prev) => (prev ? { ...prev, entityPop: { kind, anchor: rect } } : prev))
+                    }}
                   />
-                )
-              }
-              <div
-                className="dn-agenda-task-main"
-                onDoubleClick={(event) => { event.stopPropagation(); startRename(task) }}
-              >
-                {renamingTaskId === task.id ? (
-                  <div className="dn-task-input-wrap" onMouseDown={(event) => event.stopPropagation()}>
-                    <TaskEditInput
-                      autoFocus
-                      deferFocus
-                      value={renameText}
-                      onChange={setRenameText}
-                      onCommit={(parsed) => commitRename(task.id, parsed)}
-                      onCancel={() => setRenamingTaskId(null)}
-                      inputRef={renameInputRef}
-                      className="dn-task-edit-input"
-                      testId="agenda-task-edit-input"
-                    />
+                </div>
+              ) : (
+                <>
+                  <span
+                    className="dn-agenda-time dn-agenda-time--editable"
+                    title="Click to edit start time"
+                    onClick={(e) => openFastPop(e, task, start, end, 'time')}
+                  >{formatClock(start)}</span>
+                  {task.isNote
+                    ? <span aria-hidden="true" />
+                    : (
+                      <button
+                        type="button"
+                        className="dn-tbox"
+                        data-testid="agenda-task-toggle"
+                        onClick={(event) => { event.stopPropagation(); onToggle(task.id) }}
+                        aria-label={task.status === 'done' ? 'Mark task incomplete' : 'Mark task complete'}
+                      />
+                    )
+                  }
+                  <div
+                    className="dn-agenda-task-main"
+                    onDoubleClick={(event) => {
+                      event.stopPropagation()
+                      startNlEdit(task, start, end)
+                    }}
+                  >
+                    {renamingTaskId === task.id ? (
+                      <div className="dn-task-input-wrap" onMouseDown={(event) => event.stopPropagation()}>
+                        <TaskEditInput
+                          autoFocus
+                          deferFocus
+                          value={renameText}
+                          onChange={setRenameText}
+                          onCommit={(parsed) => commitRename(task.id, parsed)}
+                          onCancel={() => setRenamingTaskId(null)}
+                          inputRef={renameInputRef}
+                          className="dn-task-edit-input"
+                          testId="agenda-task-edit-input"
+                        />
+                      </div>
+                    ) : (
+                      <span className="dn-agenda-label">
+                        <TaskTextDisplay task={task} />
+                      </span>
+                    )}
                   </div>
-                ) : (
-                  <span className="dn-agenda-label">
-                    <TaskTextDisplay task={task} />
-                  </span>
-                )}
-              </div>
-              <span className={`dn-agenda-duration${priorityTimelineAccentClass(task.priority) ? ' dn-agenda-duration--hi-pri' : ''}`}>{formatDuration(end - start)}</span>
-              <button
-                type="button"
-                className="btn btn-icon btn-sm dn-agenda-delete"
-                data-testid="agenda-task-delete"
-                title="Delete task"
-                onClick={(event) => { event.stopPropagation(); onDelete(task.id) }}
-              >
-                ×
-              </button>
+                  <span
+                    className={`dn-agenda-duration dn-agenda-duration--editable${priorityTimelineAccentClass(task.priority) ? ' dn-agenda-duration--hi-pri' : ''}`}
+                    title="Click to edit duration"
+                    onClick={(e) => openFastPop(e, task, start, end, 'duration')}
+                  >{formatDuration(end - start)}</span>
+                  {!(fastPop || nlEdit || rowClickShield) && (
+                    <button
+                      type="button"
+                      className="btn btn-icon btn-sm dn-agenda-delete"
+                      data-testid="agenda-task-delete"
+                      title="Delete task"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (rowClickShieldRef.current || fastPopRef.current || nlEditRef.current) return
+                        onDelete(task.id)
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </>
+              )}
             </div>
             {gapMinutes >= MEANINGFUL_GAP_MINUTES && (
               <div className="dn-agenda-gap" data-testid="agenda-free-gap">
@@ -857,193 +858,91 @@ export default function AgendaTimeline({
         </div>
       )}
 
-      {/* ── Right-click create card ── */}
-      {pendingCreate && (
-        <div
-          ref={createCardRef}
-          className="dn-dur-card dn-create-card"
-          style={{ left: createCardLeft, top: createCardTop }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') { e.preventDefault(); setPendingCreate(null) }
-            if (e.key === 'ArrowUp')   { e.preventDefault(); setPendingCreate(p => p ? { ...p, durIdx: Math.min(DUR_STEPS_MIN.length - 1, p.durIdx + 1) } : p) }
-            if (e.key === 'ArrowDown') { e.preventDefault(); setPendingCreate(p => p ? { ...p, durIdx: Math.max(0, p.durIdx - 1) } : p) }
+      {/* ── NL create card ── */}
+      {pendingCreate && onCreate && (
+        <AgendaNlCreateCard
+          draft={pendingCreate}
+          cardRef={createCardRef}
+          onDraftChange={setPendingCreate}
+          onCancel={() => setPendingCreate(null)}
+          onCommit={(content, timeBlock) => {
+            onCreate(content, timeBlock)
+            setPendingCreate(null)
           }}
-        >
-          <div className="dn-create-card-input-wrap">
-            <TaskEditInput
-              autoFocus
-              deferFocus
-              inputRef={createInputRef}
-              className="dn-create-card-input"
-              testId="agenda-create-input"
-              value={pendingCreate.text}
-              onChange={(text) => setPendingCreate(p => p ? { ...p, text } : p)}
-              onCommit={commitCreate}
-              onCancel={() => { setPendingCreate(null); setCreateStartText(null) }}
-              blurPolicy="nonEmpty"
-              onTab={() => {
-                const h12 = createHour12
-                const m   = String(createMinute).padStart(2, '0')
-                setCreateStartText(`${h12}:${m} ${createSuffix}`)
-                requestAnimationFrame(() => {
-                  createStartInputRef.current?.select()
-                  createStartInputRef.current?.focus()
-                })
-              }}
-            />
-          </div>
-          {/* "starting X:XX pm" — Tab from task input jumps here; click or scroll to adjust */}
-          {createStartText !== null ? (
-            <input
-              ref={createStartInputRef}
-              className="dn-dur-card-start-input"
-              value={createStartText}
-              onChange={(e) => setCreateStartText(e.target.value)}
-              onKeyDown={(e) => {
-                e.stopPropagation()
-                if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); commitCreateStartText() }
-                if (e.key === 'Escape') { e.preventDefault(); setCreateStartText(null); requestAnimationFrame(() => createInputRef.current?.focus()) }
-              }}
-              onBlur={commitCreateStartText}
-              onFocus={(e) => e.currentTarget.select()}
-              // eslint-disable-next-line jsx-a11y/no-autofocus
-              autoFocus
-            />
-          ) : pendingCreate.noTime ? (
-            <div
-              className="dn-dur-card-at dn-dur-card-at--editable dn-dur-card-at--no-time"
-              title="Click to add a start time"
-              onClick={() => setCreateStartText('')}
-            >
-              no start time
-            </div>
-          ) : (
-            <div
-              ref={createStartRef}
-              className="dn-dur-card-at dn-dur-card-at--editable"
-              title="Click to type or scroll to nudge ±15 min"
-              onClick={() => {
-                setCreateStartText(`${createHour12}:${String(createMinute).padStart(2, '0')} ${createSuffix}`)
-              }}
-            >
-              {`starting ${createHour12}:${String(createMinute).padStart(2, '0')} ${createSuffix}`}
-            </div>
-          )}
-
-          {!pendingCreate.noTime && (<>
-          <svg
-            className="dn-dur-card-ring"
-            width="68" height="68" viewBox="0 0 68 68"
-            aria-hidden="true"
-          >
-            <circle cx="34" cy="34" r={R} className="dn-dur-ring-bg" />
-            <circle
-              cx="34" cy="34" r={R}
-              className="dn-dur-ring-fill"
-              style={{
-                stroke: createIsLong ? 'var(--warning, #f0a05b)' : 'var(--accent)',
-                strokeDasharray: CIRC,
-                strokeDashoffset: createDashOffset,
-                transform: 'rotate(-90deg)',
-                transformOrigin: '34px 34px',
-              }}
-            />
-          </svg>
-
-          <div className="dn-dur-card-value">
-            <span
-              className="dn-dur-card-num"
-              style={{ color: createIsLong ? 'var(--warning, #f0a05b)' : undefined }}
-            >
-              {createDurNum}
-            </span>
-            <span className="dn-dur-card-unit">{createDurUnit}</span>
-          </div>
-          </>)}
-
-        </div>
+        />
       )}
 
-      {/* ── Time-edit card (same visual as drop/create cards) ── */}
-      {timeEdit && (
-        <div
-          ref={timeEditRef}
-          className="dn-dur-card"
-          style={{
-            left: Math.min(timeEdit.x, window.innerWidth - 220),
-            top: Math.min(timeEdit.y, window.innerHeight - 320),
+      {/* ── Fast time / duration popover on agenda row ── */}
+      {fastPop?.kind === 'time' && (
+        <NlTimePopover
+          startMin={fastPop.startMin}
+          anchor={fastPop.anchor}
+          onChange={(startMin) => {
+            const next = fastPopRef.current
+            if (!next) return
+            fastPopRef.current = { ...next, startMin }
+            setFastPop(fastPopRef.current)
           }}
-          tabIndex={-1}
-          // eslint-disable-next-line jsx-a11y/no-autofocus
-          autoFocus
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') { e.preventDefault(); setTimeEdit(null) }
-            if (e.key === 'Enter')  { e.preventDefault(); commitTimeEdit() }
+          onCommit={() => commitFastPopRef.current()}
+          onCancel={cancelFastPop}
+        />
+      )}
+      {fastPop?.kind === 'duration' && (
+        <NlDurationPopover
+          durationMin={DUR_STEPS_MIN[fastPop.durIdx]!}
+          anchor={fastPop.anchor}
+          onArmShield={armRowClickShield}
+          onChange={(durationMin) => {
+            const next = fastPopRef.current
+            if (!next) return
+            const durIdx = nearestDurIdx(durationMin, DUR_STEPS_MIN)
+            fastPopRef.current = { ...next, durIdx }
+            setFastPop(fastPopRef.current)
           }}
-        >
-          <div className="dn-dur-card-task">{timeEdit.taskLabel}</div>
+          onCommit={() => commitFastPopRef.current()}
+          onCancel={cancelFastPop}
+        />
+      )}
 
-          {/* "starting X:XX pm" — click to type, scroll to nudge ±15 min */}
-          {timeEditStartText !== null ? (
-            <input
-              ref={timeEditStartInputRef}
-              className="dn-dur-card-start-input"
-              value={timeEditStartText}
-              // eslint-disable-next-line jsx-a11y/no-autofocus
-              autoFocus
-              onChange={(e) => setTimeEditStartText(e.target.value)}
-              onKeyDown={(e) => {
-                e.stopPropagation()
-                if (e.key === 'Enter')  { e.preventDefault(); commitStartText() }
-                if (e.key === 'Escape') { e.preventDefault(); setTimeEditStartText(null) }
-              }}
-              onBlur={commitStartText}
-              onFocus={(e) => e.currentTarget.select()}
-            />
-          ) : (
-            <div
-              ref={timeEditStartRef}
-              className="dn-dur-card-at dn-dur-card-at--editable"
-              title="Click to type or scroll to nudge ±15 min"
-              onClick={() =>
-                setTimeEditStartText(`${teHour12}:${String(teMinute).padStart(2, '0')} ${teSuffix}`)
-              }
-            >
-              {`starting ${teHour12}:${String(teMinute).padStart(2, '0')} ${teSuffix}`}
-            </div>
-          )}
-
-          {/* Arc ring (duration) */}
-          <svg
-            className="dn-dur-card-ring"
-            width="68" height="68" viewBox="0 0 68 68"
-            aria-hidden="true"
-          >
-            <circle cx="34" cy="34" r={R} className="dn-dur-ring-bg" />
-            <circle
-              cx="34" cy="34" r={R}
-              className="dn-dur-ring-fill"
-              style={{
-                stroke: teIsLong ? 'var(--warning, #f0a05b)' : 'var(--accent)',
-                strokeDasharray: CIRC,
-                strokeDashoffset: teDashOffset,
-                transform: 'rotate(-90deg)',
-                transformOrigin: '34px 34px',
-              }}
-            />
-          </svg>
-
-          <div className="dn-dur-card-value">
-            <span
-              className="dn-dur-card-num"
-              style={{ color: teIsLong ? 'var(--warning, #f0a05b)' : undefined }}
-            >
-              {teDurNum}
-            </span>
-            <span className="dn-dur-card-unit">{teDurUnit}</span>
-          </div>
-
-        </div>
+      {/* ── Entity popovers while NL-editing an existing task ── */}
+      {nlEdit?.entityPop?.kind === 'time' && (
+        <NlTimePopover
+          startMin={nlEdit.startMin}
+          anchor={nlEdit.entityPop.anchor}
+          onChange={(startMin) => {
+            setNlEdit((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    startMin,
+                    text: replaceNlEntity(prev.text, 'time', formatStartPhrase(startMin)),
+                  }
+                : prev
+            )
+          }}
+          onCommit={() => setNlEdit((prev) => (prev ? { ...prev, entityPop: null } : prev))}
+          onCancel={() => setNlEdit((prev) => (prev ? { ...prev, entityPop: null } : prev))}
+        />
+      )}
+      {nlEdit?.entityPop?.kind === 'duration' && (
+        <NlDurationPopover
+          durationMin={DUR_STEPS_MIN[nlEdit.durIdx]!}
+          anchor={nlEdit.entityPop.anchor}
+          onChange={(durationMin) => {
+            const durIdx = nearestDurIdx(durationMin, DUR_STEPS_MIN)
+            setNlEdit((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    durIdx,
+                    text: replaceNlEntity(prev.text, 'duration', formatDurationPhrase(durationMin)),
+                  }
+                : prev
+            )
+          }}
+          onCommit={() => setNlEdit((prev) => (prev ? { ...prev, entityPop: null } : prev))}
+          onCancel={() => setNlEdit((prev) => (prev ? { ...prev, entityPop: null } : prev))}
+        />
       )}
     </div>
   )

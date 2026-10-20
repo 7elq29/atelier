@@ -335,6 +335,27 @@
       ]
     },
     {
+      "id": "agenda-nl-task-create",
+      "paths": [
+        "src/renderer/src/components/daily-notes/AgendaTimeline.tsx",
+        "src/renderer/src/components/daily-notes/AgendaNlCreateCard.tsx",
+        "src/renderer/src/components/daily-notes/NlAnnotatedInput.tsx",
+        "src/renderer/src/components/daily-notes/NlTimePopover.tsx",
+        "src/renderer/src/components/daily-notes/NlDurationPopover.tsx",
+        "src/renderer/src/components/daily-notes/daily-notes.css",
+        "src/shared/task-nl-parse.ts"
+      ],
+      "changedLines": "nl-|parseTaskNl|agenda-create|dn-nl|NlTime|NlDuration|NlAnnotated",
+      "targets": [
+        {
+          "file": "e2e/agenda-nl-task-create.spec.ts"
+        },
+        {
+          "file": "e2e/bug-agenda-duration-save.spec.ts"
+        }
+      ]
+    },
+    {
       "id": "daily-timeline-editing",
       "paths": [
         "src/renderer/src/components/daily-notes/Timeline.tsx",

@@ -306,6 +306,25 @@ export function notifyDailyNoteChanged(getMainWindow: () => BrowserWindow | null
  */
 export function persistMintedGids(path: string, note: DailyNote, raw: RawSections, mintedIds: string[]): void {
   if (mintedIds.length === 0) return
+  // Concurrent reads of a gid-less file each mint their own ids. If another
+  // caller already persisted gids, do not overwrite — that clobber is what
+  // makes the renderer's id diverge from disk and get tombstoned on write.
+  if (existsSync(path)) {
+    try {
+      const disk = readFileSync(path, 'utf-8')
+      const reparsed = parseDailyNote(disk, note.date)
+      if (reparsed.mintedIds.length === 0) {
+        recordKnownIds(path, getTaskIds(reparsed.note))
+        logger.info('daily-note: skip gid persist; disk already has stable gids', {
+          path,
+          skippedMintedIds: mintedIds
+        })
+        return
+      }
+    } catch {
+      // Fall through and write our mint.
+    }
+  }
   const serialized = serializeDailyNote(note, raw)
   mkdirSync(dirname(path), { recursive: true })
   const tmpPath = `${path}.tmp`
@@ -871,12 +890,49 @@ export function registerDailyNoteHandlers(
     // wouldn't contain them yet, so they can't be mistaken for a delete.)
     const tombstoned = [...everKnown].filter((id) => !freshIds.has(id))
     const tombstonedSet = new Set(tombstoned)
-    const survivingTasks = incoming.tasks.filter((t) => !tombstonedSet.has(t.id))
+
+    // Gid-remint race: renderer still holds id A while disk was rewritten with
+    // id B for the same line. Treat that as a remap, not a delete.
+    const claimedFresh = new Set<string>()
+    const survivingTasks: DailyTask[] = []
+    const remapped: string[] = []
+    const dropped: string[] = []
+    for (const t of incoming.tasks) {
+      if (!tombstonedSet.has(t.id)) {
+        survivingTasks.push(t)
+        claimedFresh.add(t.id)
+        continue
+      }
+      const freshMatch = freshNote.tasks.find(
+        (f) =>
+          !claimedFresh.has(f.id) &&
+          f.text === t.text &&
+          f.section === t.section &&
+          (f.timeBlock ?? '') === (t.timeBlock ?? '')
+      )
+      // Relax timeBlock match: local edit may have changed it (duration save).
+      const freshMatchLoose =
+        freshMatch ??
+        freshNote.tasks.find(
+          (f) => !claimedFresh.has(f.id) && f.text === t.text && f.section === t.section
+        )
+      if (freshMatchLoose) {
+        claimedFresh.add(freshMatchLoose.id)
+        remapped.push(`${t.id}->${freshMatchLoose.id}`)
+        survivingTasks.push({ ...t, id: freshMatchLoose.id, gid: freshMatchLoose.gid })
+      } else {
+        dropped.push(t.id)
+      }
+    }
 
     if (tombstoned.length > 0) {
+      // Keep the historical msg string — e2e asserts on it. `remapped` /
+      // `dropped` distinguish gid-remint races from true external deletes.
       logger.info('daily-note tombstone diff: dropping externally-deleted tasks', {
         path,
         tombstoned,
+        remapped,
+        dropped,
         incomingIds: [...incomingIds],
         freshIds: [...freshIds]
       })

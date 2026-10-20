@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<title>Task create — natural-language redesign (5 mocks)</title>
+<link rel="stylesheet" href="shared.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    padding: 40px 48px 80px;
+  }
+
+  .page-head { max-width: 1180px; margin: 0 auto 36px; }
+  .page-head h1 {
+    margin: 0 0 8px;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .page-head p {
+    margin: 0;
+    max-width: 62ch;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+  .page-head .examples {
+    margin-top: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .page-head .examples code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    color: var(--text-secondary);
+  }
+
+  .gallery {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  .mock-block { display: grid; grid-template-columns: 280px 1fr; gap: 28px; align-items: start; }
+  @media (max-width: 900px) {
+    .mock-block { grid-template-columns: 1fr; }
+  }
+
+  .mock-meta .num {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-disabled);
+    margin-bottom: 8px;
+  }
+  .mock-meta h2 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .mock-meta .tagline {
+    margin: 0 0 12px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+  }
+  .mock-meta ul {
+    margin: 0;
+    padding: 0 0 0 16px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--text-tertiary);
+  }
+  .mock-meta li + li { margin-top: 4px; }
+
+  .stage {
+    border-radius: 16px;
+    padding: 28px;
+    min-height: 320px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ═══════════════════════════════════════════
+     1 — Annotated sentence (Fantastical-grade)
+     Research: Fantastical pairs a freeform sentence with
+     live structured fields (not a color legend). Tokens are
+     quiet; the event preview teaches syntax. See leancrew /
+     MacStories / Flexibits NL docs.
+     ═══════════════════════════════════════════ */
+  /* Quiet underline only — inspired by Horizon Calendar (MacStories):
+     different entity colors in the sentence; no duplicate field list below. */
+  .stage-1 {
+    background: #1a1814;
+    border: 1px solid var(--border-subtle);
+    padding: 40px 28px;
+    justify-content: center;
+  }
+  .anno-card {
+    width: 100%;
+    max-width: 440px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 1px 0 rgba(255,255,255,.04) inset;
+  }
+  .anno-empty {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin: 0 0 12px;
+  }
+  .anno-field {
+    background: var(--bg-input);
+    border: 1px solid var(--border-default);
+    border-radius: 10px;
+    padding: 14px 14px 16px;
+    min-height: 56px;
+  }
+  .anno-field:focus-within {
+    border-color: rgba(143,193,127,.4);
+  }
+  .anno-line {
+    font-family: var(--font-ui);
+    font-size: 15px;
+    line-height: 1.6;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+  }
+  .anno-line .t-plain { color: var(--text-primary); }
+
+  /* Colored underlines + tinted text (Horizon / Todoist pattern) */
+  .anno-line .t-entity {
+    padding: 0 1px;
+    border-bottom: 2px solid;
+    border-radius: 0;
+    background: transparent;
+  }
+  /* start time — sage */
+  .anno-line .t-time {
+    color: #b8d9a8;
+    border-bottom-color: #8fc17f;
+  }
+  /* duration — amber (distinct from start) */
+  .anno-line .t-dur {
+    color: #e6c894;
+    border-bottom-color: #d9b374;
+  }
+  /* tag — cool blue */
+  .anno-line .t-tag {
+    color: #a8c8dc;
+    border-bottom-color: #7fa8c1;
+  }
+  .anno-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--text-disabled);
+  }
+  .anno-foot kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border-default);
+    color: var(--text-tertiary);
+    background: transparent;
+  }
+
+  /* Internet references gallery */
+  .refs {
+    max-width: 1180px;
+    margin: 0 auto 48px;
+    padding: 20px 20px 8px;
+    border-radius: 14px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+  }
+  .refs h2 {
+    margin: 0 0 6px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .refs > p {
+    margin: 0 0 16px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    max-width: 70ch;
+  }
+  .refs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 900px) {
+    .refs-grid { grid-template-columns: 1fr; }
+  }
+  .ref-card {
+    background: #141210;
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .ref-card img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 280px;
+    object-fit: contain;
+    object-position: top center;
+    background: #0e0d0b;
+  }
+  .ref-card figcaption {
+    padding: 10px 12px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-tertiary);
+  }
+  .ref-card figcaption strong {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 12.5px;
+    margin-bottom: 4px;
+  }
+  .ref-card a { color: var(--info); }
+
+  /* ═══════════════════════════════════════════
+     2 — Command palette (terminal / Raycast)
+     ═══════════════════════════════════════════ */
+  .stage-2 {
+    background:
+      repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,255,140,.015) 2px,
+        rgba(0,255,140,.015) 3px
+      ),
+      radial-gradient(circle at 50% 120%, rgba(0,255,140,.08), transparent 50%),
+      #0b0f0c;
+    border: 1px solid #1a2a1e;
+  }
+  .cmd-card {
+    width: 100%;
+    max-width: 440px;
+    background: #0e1410;
+    border: 1px solid #243328;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(0,255,140,.06),
+      0 24px 48px rgba(0,0,0,.55),
+      inset 0 1px 0 rgba(255,255,255,.04);
+    font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
+  }
+  .cmd-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid #1e2c22;
+  }
+  .cmd-prompt {
+    color: #3dff9a;
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .cmd-input {
+    flex: 1;
+    font: inherit;
+    font-size: 13.5px;
+    color: #d8ffe8;
+    background: transparent;
+    border: none;
+    outline: none;
+    min-width: 0;
+  }
+  .cmd-input::placeholder { color: #3a5644; }
+  .cmd-results { padding: 8px; }
+  .cmd-row {
+    display: grid;
+    grid-template-columns: 88px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+  .cmd-row.active {
+    background: rgba(61,255,154,.1);
+    outline: 1px solid rgba(61,255,154,.25);
+  }
+  .cmd-key {
+    color: #5a7a66;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .cmd-val { color: #e6fff0; }
+  .cmd-val.muted { color: #8fb9a0; }
+  .cmd-badge {
+    font-size: 10px;
+    color: #0b0f0c;
+    background: #3dff9a;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-weight: 600;
+  }
+  .cmd-foot {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 14px 12px;
+    border-top: 1px solid #1e2c22;
+    font-size: 10.5px;
+    color: #4a6a56;
+  }
+  .cmd-foot span b { color: #7ecf9a; font-weight: 500; }
+
+  /* ═══════════════════════════════════════════
+     3 — Thermal ticket (receipt / stamp)
+     ═══════════════════════════════════════════ */
+  .stage-3 {
+    background:
+      radial-gradient(circle at 70% 30%, #3a2a18 0%, transparent 40%),
+      linear-gradient(180deg, #1a1410 0%, #0f0c0a 100%);
+    border: 1px solid #3a2a1c;
+  }
+  .ticket-wrap {
+    width: 100%;
+    max-width: 300px;
+    filter: drop-shadow(0 16px 28px rgba(0,0,0,.5));
+  }
+  .ticket-input {
+    background: #2a2218;
+    border: 1px dashed #6a5238;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    color: #e8d4b8;
+    line-height: 1.45;
+  }
+  .ticket {
+    background: #f3ead7;
+    color: #1a120c;
+    font-family: "IBM Plex Mono", monospace;
+    border-radius: 2px 2px 0 0;
+    position: relative;
+  }
+  .ticket::after {
+    content: "";
+    display: block;
+    height: 14px;
+    background:
+      linear-gradient(135deg, #f3ead7 50%, transparent 50%) 0 0 / 12px 14px repeat-x,
+      linear-gradient(225deg, #f3ead7 50%, transparent 50%) 6px 0 / 12px 14px repeat-x;
+    margin-bottom: -1px;
+  }
+  .ticket-inner { padding: 16px 18px 8px; }
+  .ticket-brand {
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: #6a5540;
+    margin-bottom: 10px;
+  }
+  .ticket-title {
+    font-family: "Instrument Serif", Georgia, serif;
+    font-size: 22px;
+    line-height: 1.2;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .ticket-rule {
+    border: none;
+    border-top: 1px dashed #b8a488;
+    margin: 10px 0;
+  }
+  .ticket-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11.5px;
+    padding: 3px 0;
+  }
+  .ticket-row .k { color: #6a5540; }
+  .ticket-row .v { font-weight: 600; }
+  .ticket-stamps {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 14px 0 6px;
+  }
+  .stamp {
+    width: 64px;
+    height: 64px;
+    border: 2.5px solid;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    transform: rotate(-8deg);
+    opacity: 0.9;
+  }
+  .stamp.when { border-color: #2d6a3e; color: #2d6a3e; transform: rotate(-12deg); }
+  .stamp.len { border-color: #8a4a1a; color: #8a4a1a; transform: rotate(6deg); }
+  .stamp.tag { border-color: #5a3a7a; color: #5a3a7a; transform: rotate(-4deg); }
+  .stamp strong { font-size: 12px; letter-spacing: 0; margin-top: 2px; text-transform: none; }
+  .ticket-ok {
+    text-align: center;
+    font-size: 10px;
+    color: #6a5540;
+    padding-bottom: 4px;
+  }
+
+  /* ═══════════════════════════════════════════
+     4 — Timeline ribbon (spatial calendar)
+     ═══════════════════════════════════════════ */
+  .stage-4 {
+    background:
+      linear-gradient(90deg, rgba(127,163,201,.06) 1px, transparent 1px) 0 0 / 40px 100%,
+      #161820;
+    border: 1px solid #2a3040;
+  }
+  .ribbon-card {
+    width: 100%;
+    max-width: 460px;
+    background: #1c2030;
+    border: 1px solid #343c54;
+    border-radius: 16px;
+    padding: 18px;
+    box-shadow: 0 20px 40px rgba(0,0,0,.4);
+    font-family: "Space Grotesk", var(--font-ui), sans-serif;
+  }
+  .ribbon-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #7a849e;
+    margin-bottom: 10px;
+  }
+  .ribbon-field {
+    background: #12151f;
+    border: 1px solid #3a4460;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 14.5px;
+    line-height: 1.45;
+    color: #e8ecf8;
+    margin-bottom: 16px;
+  }
+  .ribbon-field .hl-time {
+    color: #7fd0ff;
+    background: rgba(127,208,255,.12);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+  .ribbon-field .hl-dur {
+    color: #ffc48a;
+    background: rgba(255,196,138,.12);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+  .ribbon-field .hl-tag {
+    color: #c4a8ff;
+    background: rgba(196,168,255,.12);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+  .ribbon-day {
+    position: relative;
+    height: 72px;
+    background: #12151f;
+    border-radius: 10px;
+    border: 1px solid #2a3348;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .ribbon-hours {
+    position: absolute;
+    inset: 0;
+    display: flex;
+  }
+  .ribbon-hours span {
+    flex: 1;
+    border-right: 1px solid rgba(255,255,255,.05);
+    font-size: 9px;
+    color: #4a556e;
+    padding: 4px 0 0 4px;
+  }
+  .ribbon-block {
+    position: absolute;
+    top: 22px;
+    left: 12.5%; /* 9:00 on 8–16 strip */
+    width: 12.5%; /* 1h of 8h */
+    height: 38px;
+    background: linear-gradient(135deg, #4aa3ff, #6b7cff);
+    border-radius: 8px;
+    box-shadow: 0 0 0 2px rgba(106,140,255,.35), 0 8px 16px rgba(74,163,255,.25);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .ribbon-block small { font-weight: 500; opacity: 0.85; font-size: 9px; }
+  .ribbon-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .ribbon-pill {
+    font-size: 11.5px;
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 8px;
+    background: #12151f;
+    border: 1px solid #343c54;
+    color: #c8d0e8;
+  }
+  .ribbon-pill em {
+    font-style: normal;
+    color: #7a849e;
+    margin-right: 6px;
+  }
+  .ribbon-hint {
+    margin-top: 12px;
+    font-size: 11px;
+    color: #5a6480;
+  }
+
+  /* ═══════════════════════════════════════════
+     5 — Understood reply (chat / assistant)
+     ═══════════════════════════════════════════ */
+  .stage-5 {
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(201,143,160,.1), transparent 50%),
+      linear-gradient(160deg, #221c1e 0%, #181416 100%);
+    border: 1px solid #3a3032;
+  }
+  .chat-card {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .chat-bubble {
+    align-self: flex-end;
+    max-width: 92%;
+    background: #3a3034;
+    color: #f2e8ea;
+    padding: 12px 14px;
+    border-radius: 16px 16px 4px 16px;
+    font-size: 14px;
+    line-height: 1.45;
+    box-shadow: 0 8px 20px rgba(0,0,0,.25);
+  }
+  .chat-reply {
+    align-self: flex-start;
+    max-width: 96%;
+    background: #2a2224;
+    border: 1px solid #4a3a3e;
+    border-radius: 16px 16px 16px 4px;
+    padding: 14px 14px 12px;
+    box-shadow: 0 8px 20px rgba(0,0,0,.2);
+  }
+  .chat-reply-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #c98fa0;
+    margin-bottom: 8px;
+  }
+  .chat-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #f5ecee;
+    margin-bottom: 10px;
+  }
+  .chat-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .chat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: default;
+    border: 1px solid transparent;
+  }
+  .chat-chip button {
+    all: unset;
+    cursor: pointer;
+    opacity: 0.55;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .chat-chip.time { background: rgba(143,193,127,.18); color: #c5e6b8; border-color: rgba(143,193,127,.35); }
+  .chat-chip.dur { background: rgba(217,179,116,.18); color: #f0d9a8; border-color: rgba(217,179,116,.35); }
+  .chat-chip.tag { background: rgba(201,143,160,.2); color: #f0c4d0; border-color: rgba(201,143,160,.4); }
+  .chat-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .chat-actions button {
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    border: none;
+    border-radius: 999px;
+    padding: 7px 14px;
+    cursor: pointer;
+  }
+  .chat-actions .primary {
+    background: #c98fa0;
+    color: #1a1012;
+  }
+  .chat-actions .ghost {
+    background: transparent;
+    color: #a8989c;
+    border: 1px solid #4a3a3e;
+  }
+  .chat-composer {
+    margin-top: 4px;
+    background: #2a2224;
+    border: 1px solid #4a3a3e;
+    border-radius: 20px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #8a7a7e;
+    font-size: 13px;
+  }
+  .chat-composer .send {
+    margin-left: auto;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #c98fa0;
+    color: #1a1012;
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .current-note {
+    max-width: 1180px;
+    margin: 0 auto 40px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+  }
+  .current-note strong { color: var(--text-primary); }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Task create — natural language (5 design languages)</h1>
+  <p>
+    Replace the tab/arrow Start + Duration widgets with one plain-text sentence.
+    Parser detects start time, duration, and tags across flexible forms
+    (<code>1h</code>, <code>1 h</code>, <code>1 hour</code>, <code>30 minutes</code>, <code>14:00</code>, <code>9:00 am</code>, <code>#meeting</code>).
+  </p>
+  <div class="examples">
+    <code>Logging Team Sync #meeting at 9:00 am for 1 h</code>
+    <code>Chen 1:1 at 14:00 for 30 minutes</code>
+  </div>
+</div>
+
+<div class="current-note">
+  <strong>Current (pain):</strong> title field + “starting …” + circular duration dial — requires Tab/arrow between components.
+  Preferred direction: quiet colored underlines in the sentence only (no redundant field list underneath).
+</div>
+
+<!-- Real product examples pulled from the web -->
+<section class="refs" id="refs">
+  <h2>Examples from the internet</h2>
+  <p>
+    Quiet multi-color annotation in the sentence itself — not a second form under the input.
+    Sources: Todoist Quick Add (Screenrove capture), Horizon Calendar 2.0 (MacStories review).
+  </p>
+  <div class="refs-grid">
+    <figure class="ref-card">
+      <img src="nl-refs/todoist-quick-add.jpg" alt="Todoist Quick Add with next friday and #project highlighted inline" />
+      <figcaption>
+        <strong>Todoist Quick Add</strong>
+        Date phrase and <code>#project</code> highlighted in the same text field.
+        Chips below are optional mirrors — recognition happens in-sentence.
+        <a href="https://screenrove.com/todoist/product/todoist-product-quick-add" target="_blank" rel="noopener">screenrove.com</a>
+        ·
+        <a href="https://www.todoist.com/help/todoist/features/schedule-a-date-and-time-for-your-todoist-tasks-q7VobO" target="_blank" rel="noopener">Todoist help</a>
+      </figcaption>
+    </figure>
+    <figure class="ref-card">
+      <img src="nl-refs/horizon-2.jpeg" alt="Horizon Calendar New Event with multi-color natural language tokens" />
+      <figcaption>
+        <strong>Horizon Calendar 2.0</strong>
+        MacStories: locations green, times blue, titles darker, prepositions gray —
+        different colors per entity type, all inside one sentence. No legend strip.
+        <a href="https://www.macstories.net/reviews/horizon-calendar-2-0-adds-natural-language-parsing-check-the-weather-integration/" target="_blank" rel="noopener">macstories.net</a>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<div class="gallery">
+
+  <!-- 1 -->
+  <section class="mock-block" id="mock-1">
+    <aside class="mock-meta">
+      <div class="num">Mock 01 · quiet underline</div>
+      <h2>Annotated sentence</h2>
+      <p class="tagline">
+        One field. Colored underlines mark tag / start / duration.
+        Nothing duplicated below the sentence.
+      </p>
+      <ul>
+        <li><span style="color:#a8c8dc">#tag</span> — cool blue underline</li>
+        <li><span style="color:#b8d9a8">start time</span> — sage underline</li>
+        <li><span style="color:#e6c894">duration</span> — amber underline</li>
+        <li>Enter to create — no When/Length/Tag list</li>
+      </ul>
+    </aside>
+    <div class="stage stage-1">
+      <div class="anno-card">
+        <div class="anno-field">
+          <div class="anno-line">
+            <span class="t-plain">Logging Team Sync </span>
+            <span class="t-entity t-tag">#meeting</span>
+            <span class="t-plain"> </span>
+            <span class="t-entity t-time">at 9:00 am</span>
+            <span class="t-plain"> </span>
+            <span class="t-entity t-dur">for 1 h</span>
+          </div>
+        </div>
+        <div class="anno-foot">
+          <span><kbd>↵</kbd> Add</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section class="mock-block" id="mock-2">
+    <aside class="mock-meta">
+      <div class="num">Mock 02</div>
+      <h2>Command palette</h2>
+      <p class="tagline">Terminal / launcher language. Input is a command; parse results are a key–value hit list.</p>
+      <ul>
+        <li>Monospace, neon-on-void, keyboard-first</li>
+        <li>Structured rows: TITLE / TIME / DURATION / TAG</li>
+        <li>Enter commits the highlighted parse</li>
+      </ul>
+    </aside>
+    <div class="stage stage-2">
+      <div class="cmd-card">
+        <div class="cmd-bar">
+          <span class="cmd-prompt">&gt;</span>
+          <div class="cmd-input">Chen 1:1 at 14:00 for 30 minutes</div>
+        </div>
+        <div class="cmd-results">
+          <div class="cmd-row active">
+            <span class="cmd-key">Title</span>
+            <span class="cmd-val">Chen 1:1</span>
+            <span class="cmd-badge">ready</span>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-key">Time</span>
+            <span class="cmd-val muted">14:00 → 2:00 pm</span>
+            <span></span>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-key">Duration</span>
+            <span class="cmd-val muted">30 minutes</span>
+            <span></span>
+          </div>
+          <div class="cmd-row">
+            <span class="cmd-key">Tag</span>
+            <span class="cmd-val muted">— none —</span>
+            <span></span>
+          </div>
+        </div>
+        <div class="cmd-foot">
+          <span><b>↵</b> create task</span>
+          <span><b>esc</b> dismiss</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section class="mock-block" id="mock-3">
+    <aside class="mock-meta">
+      <div class="num">Mock 03</div>
+      <h2>Thermal ticket</h2>
+      <p class="tagline">Physical receipt language. Typing “prints” a stub; detections become ink stamps.</p>
+      <ul>
+        <li>Cream paper vs dark stage — high contrast metaphor</li>
+        <li>WHEN / LENGTH / TAG as circular stamps</li>
+        <li>Serif title + mono metadata</li>
+      </ul>
+    </aside>
+    <div class="stage stage-3">
+      <div class="ticket-wrap">
+        <div class="ticket-input">Logging Team Sync #meeting at 9:00 am for 1 h</div>
+        <div class="ticket">
+          <div class="ticket-inner">
+            <div class="ticket-brand">Atelier · Agenda</div>
+            <div class="ticket-title">Logging Team Sync</div>
+            <hr class="ticket-rule" />
+            <div class="ticket-row"><span class="k">WHEN</span><span class="v">9:00 AM</span></div>
+            <div class="ticket-row"><span class="k">LENGTH</span><span class="v">1 HOUR</span></div>
+            <div class="ticket-row"><span class="k">TAG</span><span class="v">#MEETING</span></div>
+            <div class="ticket-stamps">
+              <div class="stamp when">When<strong>9:00</strong></div>
+              <div class="stamp len">Len<strong>1h</strong></div>
+              <div class="stamp tag">Tag<strong>#mtg</strong></div>
+            </div>
+            <div class="ticket-ok">*** DETECTED · PRESS ENTER ***</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section class="mock-block" id="mock-4">
+    <aside class="mock-meta">
+      <div class="num">Mock 04</div>
+      <h2>Timeline ribbon</h2>
+      <p class="tagline">Spatial calendar language. Words map onto a day strip — start = position, duration = width.</p>
+      <ul>
+        <li>Cool blue night UI, geometric type</li>
+        <li>Highlighted spans feed a live block preview</li>
+        <li>Best when agenda is already on-screen</li>
+      </ul>
+    </aside>
+    <div class="stage stage-4">
+      <div class="ribbon-card">
+        <div class="ribbon-label">New task</div>
+        <div class="ribbon-field">
+          Logging Team Sync <span class="hl-tag">#meeting</span>
+          <span class="hl-time">at 9:00 am</span>
+          <span class="hl-dur">for 1 h</span>
+        </div>
+        <div class="ribbon-day" aria-hidden="true">
+          <div class="ribbon-hours">
+            <span>8</span><span>9</span><span>10</span><span>11</span><span>12</span><span>13</span><span>14</span><span>15</span>
+          </div>
+          <div class="ribbon-block">9:00<small>1h</small></div>
+        </div>
+        <div class="ribbon-meta">
+          <div class="ribbon-pill"><em>start</em>9:00 am</div>
+          <div class="ribbon-pill"><em>dur</em>1 hour</div>
+          <div class="ribbon-pill"><em>tag</em>#meeting</div>
+        </div>
+        <div class="ribbon-hint">Drag the block to nudge start · edges resize duration</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section class="mock-block" id="mock-5">
+    <aside class="mock-meta">
+      <div class="num">Mock 05</div>
+      <h2>Understood reply</h2>
+      <p class="tagline">Chat / assistant language. You speak; the UI answers with editable confirmation chips.</p>
+      <ul>
+        <li>Message bubble → system reply with chips</li>
+        <li>× on a chip removes that detection</li>
+        <li>Softest learning curve for NL syntax</li>
+      </ul>
+    </aside>
+    <div class="stage stage-5">
+      <div class="chat-card">
+        <div class="chat-bubble">Chen 1:1 at 14:00 for 30 minutes</div>
+        <div class="chat-reply">
+          <div class="chat-reply-label">Understood</div>
+          <div class="chat-title">Chen 1:1</div>
+          <div class="chat-chips">
+            <span class="chat-chip time">2:00 pm <button type="button" aria-label="remove">×</button></span>
+            <span class="chat-chip dur">30 min <button type="button" aria-label="remove">×</button></span>
+          </div>
+          <div class="chat-actions">
+            <button type="button" class="primary">Add to agenda</button>
+            <button type="button" class="ghost">Edit text</button>
+          </div>
+        </div>
+        <div class="chat-composer">
+          <span>Add another…</span>
+          <span class="send">↑</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+</body>
+</html>
