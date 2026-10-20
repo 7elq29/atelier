@@ -14,13 +14,19 @@
 
 ## Screenshot send path
 
-1. **Worker linked (preferred):** `USER_MESSAGE` over the DevPod socket with
-   data-URL `attachments[]` (full-resolution; WS accepts ~200KB+ screenshots).
+Verified bug (Vibe dashboard): putting a `data:` URL in
+`USER_MESSAGE.attachments[]` makes the worker treat it as a **file path** under
+`attachments/` — every `/` in the base64 becomes an empty directory, and the
+agent reports it cannot see the image.
+
+1. **Worker linked:** `USER_MESSAGE` with the screenshot **inlined in the
+   message body** (data URL + decode instructions). `attachments[]` stays
+   empty until we implement real DevPod upload → filename. JPEG keep quality
+   high (~450KB budget) so UI text stays readable.
 2. **Pod RUNNING but socket not live yet:** wait up to ~10s (and nudge dial)
    before falling back.
-3. **Offline RPC:** JPEG-compress/resize the image so the inlined
-   `createInteraction` body fits MySQL TEXT (~64KiB). If it still cannot fit,
-   surface a clear error — do not hit Error 1406.
+3. **Offline RPC:** same message-body inline via `createInteraction`, compressed
+   to fit MySQL TEXT (~64KiB). Clear error if it still cannot fit.
 
 ## Done
 
@@ -28,6 +34,8 @@
       parses legacy raw JSON assistant rows into the card).
 - [ ] `respondToPrompt` steers the selected answers to Minion.
 - [ ] WORKING chrome clears on elicitation / `USER_INPUT_REQUESTED`.
-- [x] `streamInput` forwards image attachments over live `USER_MESSAGE`
-      (data URLs). Offline path JPEG-compresses screenshots into TEXT budget.
+- [x] Screenshots deliver via message-body data URLs (not path-like
+      `attachments[]`). Live WS uses a higher JPEG budget; offline fits TEXT.
+- [ ] Real DevPod `attachments/<name>` upload + `attachments: [name]` (Minion
+      Web parity) — follow-up when the write RPC is known.
 - [ ] `npm run build` + `npm run test:e2e:affected -- --base main`.

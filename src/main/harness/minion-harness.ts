@@ -47,6 +47,7 @@ import {
   httpDevpodStart,
   httpGetDevpods,
   httpGetTask,
+  buildMinionSteerMessage,
   httpListInteractions,
   isDevpodRunningState,
   isDevpodSleepingState,
@@ -60,9 +61,9 @@ import {
 } from './minion-scratch-tail'
 import { MinionWorkerFold, parseChatJsonl } from './minion-worker-fold'
 import {
-  attachmentToDataUrl,
   minionRpcAttachmentsFit,
-  prepareAttachmentsForMinionRpc
+  prepareAttachmentsForMinionRpc,
+  prepareAttachmentsForMinionWs
 } from './minion-attachments'
 
 export const POLL_INTERVAL_MS = 5000
@@ -799,20 +800,26 @@ export class MinionHarness implements HarnessDriver {
     this.notifyActivity(sessionId)
 
     // Prefer live worker socket (Minion Web); RPC wakes a sleeping pod.
-    // Screenshots: WS accepts data-URL attachments (verified ~200KB). Offline
-    // createInteraction inlines into MySQL TEXT — compress images first.
-    const wireText = text || '(attachment)'
-    const wireAttachments = (attachments ?? []).map(attachmentToDataUrl)
-    const hasAttachments = wireAttachments.length > 0
+    //
+    // Screenshots: NEVER put data URLs in USER_MESSAGE.attachments[] — the
+    // worker treats each string as a path under attachments/ and mkdir's every
+    // `/` in the base64 (empty dirs, agent says it cannot see the image).
+    // Until a real upload RPC exists, inline data URLs in the message body
+    // (same shape as offline createInteraction) so the agent can decode them.
+    const hasAttachments = Boolean(attachments?.length)
     if (!state.workerSocket?.isLive && isDevpodRunningState(state.lastDevpodState)) {
-      // Nudge dial + wait — resume often steers before handshake finishes.
       if (state.lastTask) this.syncWorkerSocket(sessionId, state, state.lastTask)
       await this.waitForLiveWorkerSocket(state, hasAttachments ? 10_000 : 3_000)
     }
     if (state.workerSocket?.isLive) {
-      const sent = state.workerSocket.sendCommand(
-        userMessageCommand(wireText, wireAttachments)
-      )
+      const wsAttachments = hasAttachments
+        ? prepareAttachmentsForMinionWs(attachments)
+        : undefined
+      const wireText = hasAttachments
+        ? buildMinionSteerMessage(text || '(attachment)', wsAttachments)
+        : text || '(attachment)'
+      // Empty attachments[] — filenames only after a real DevPod upload.
+      const sent = state.workerSocket.sendCommand(userMessageCommand(wireText, []))
       if (sent) {
         state.steerCreateInFlight = false
         state.awaitingAgentAfterSteer = true
@@ -822,10 +829,10 @@ export class MinionHarness implements HarnessDriver {
         logger.info('minionHarness: USER_MESSAGE via worker socket', {
           sessionId,
           remoteTaskId: state.remoteTaskId,
-          attachmentCount: wireAttachments.length,
-          attachmentChars: wireAttachments.reduce((n, s) => n + s.length, 0)
+          attachmentCount: wsAttachments?.length ?? 0,
+          messageChars: wireText.length,
+          inlinedInMessage: hasAttachments
         })
-        // Optimistic Working until status_change arrives.
         if (state.workerState !== undefined) {
           state.workerState = 2
           this.syncWorkingFromWorker(sessionId, state)

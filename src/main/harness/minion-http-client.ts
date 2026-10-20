@@ -203,7 +203,8 @@ export function buildMinionSteerMessage(
   if (body) parts.push(body)
   parts.push('')
   parts.push(
-    'The user attached the following file(s). Decode each data URL to inspect the content (for images: look at the pixels).'
+    'The user attached the following file(s) as data URLs in this message (not under attachments/).',
+    'Decode each data URL to a local file (e.g. probe/attN.png) and inspect it with Read — for images, look at the pixels and describe what you see.'
   )
   // Budget for labels + data URLs inside the TEXT column.
   let remaining = MINION_CREATE_INTERACTION_MESSAGE_MAX - parts.join('\n').length - 32
