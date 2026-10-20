@@ -5700,7 +5700,8 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   font-size: 12.5px;
   line-height: 1.35;
   color: var(--text-tertiary);
-  padding: 8px 14px 0;
+  /* Space above the composer box so Working… doesn’t sit on the input edge. */
+  padding: 8px 14px 12px;
 }
 
 .tool-card.tool-denied { border-color: rgba(210, 70, 70, 0.28); background: rgba(210, 70, 70, 0.04); opacity: 0.95; }
