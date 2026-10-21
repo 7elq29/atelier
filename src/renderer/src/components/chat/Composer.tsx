@@ -682,6 +682,15 @@ export default forwardRef<ComposerHandle, ComposerProps>(function Composer({
     return () => cancelAnimationFrame(frame)
   }, [active])
 
+  // Composers stay mounted across session switches (draft cache). Drop file
+  // attachments when leaving so a screenshot from "many sessions ago" cannot
+  // silently ride along on the next Minion send (Vibe dashboard Error 1406).
+  useEffect(() => {
+    if (active) return
+    setAttachedFiles((prev) => (prev.length === 0 ? prev : []))
+    setPendingAppNotes((prev) => (prev.length === 0 ? prev : []))
+  }, [active])
+
   useEffect(() => {
     return () => {
       if (typingTimer.current) clearTimeout(typingTimer.current)

@@ -12,6 +12,12 @@
    (idle `worker_state`) but **before** WS replay finished — tore down the
    socket + poll loop so history never arrived. Also: attach reused
    `foldHealthy` from memory and skipped `devpodStart` on a snapshotted tip.
+6. **Empty Ready-to-chat while Minion Connecting:** WS `replay_complete` with
+   `resetOnConnect` wiped the transcript (and SETUP chrome via
+   `conversation_reset`) even when the replay batch was **empty**, so create
+   seeds disappeared and the SETUP card never re-painted (`lastSetupKey`
+   dedupe). The empty pane showed "Ready to chat" while Minion UI was still
+   Connecting.
 
 ## Correct flow
 
@@ -52,3 +58,5 @@
 - [x] Defer softStop until fold/SETUP complete; don't kill mid-replay socket
 - [x] Attach clears stale foldHealthy; wake sleeping tip even if memory says folded
 - [x] Minion e2e A/B/D + SETUP evidence green
+- [x] Empty replay must not wipe; preserve/re-paint SETUP across conversation_reset
+- [x] Suppress SessionReadyHint while `minion_setup` chrome is active

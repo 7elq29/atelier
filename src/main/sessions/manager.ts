@@ -2220,7 +2220,28 @@ export class SessionManager {
       this.sendTurnState(sessionId, false)
       this.sendStatus(sessionId)
     }
+    // Minion WS full-replay uses conversation_reset to replace messages only.
+    // Keep SETUP / Working chrome — clearing it raced empty Ready-to-chat while
+    // the DevPod was still Connecting.
+    const priorChrome = this.harnessUi.getSdkChrome(sessionId)
+    const keepMinionChrome =
+      priorChrome &&
+      (priorChrome.status === 'minion_setup' || priorChrome.status === 'minion_working')
+        ? priorChrome
+        : null
     this.resetHarnessUiForSession(sessionId)
+    if (keepMinionChrome) {
+      const restore: Extract<HarnessEvent, { type: 'sdk_status' }> = {
+        type: 'sdk_status',
+        sessionId,
+        timestamp: new Date().toISOString(),
+        status: keepMinionChrome.status,
+        title: keepMinionChrome.title,
+        detail: keepMinionChrome.detail,
+        setupSteps: keepMinionChrome.setupSteps
+      }
+      this.harnessUi.apply(restore)
+    }
     this.sendBackgroundTasks(sessionId)
     this.sendSdkChrome(sessionId)
     this.sendTokenUsage(sessionId, 0, 0)

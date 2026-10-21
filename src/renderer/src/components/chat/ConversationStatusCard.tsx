@@ -34,9 +34,12 @@ export default function ConversationStatusCard({ chrome }: { chrome: SessionSdkC
   }
 
   if (chrome.status === 'minion_setup') {
+    // Approved: Features/UI-Design/mocks/minion-setup-card-options.html option C
+    // (segmented bar; amber cue — not sage accent chips).
+    const steps = chrome.setupSteps ?? []
     return (
       <div
-        className="conversation-status-card conversation-status-card--requesting"
+        className="conversation-status-card conversation-status-card--minion-setup"
         data-testid="conversation-status-card"
         data-status-kind="minion-setup"
       >
@@ -45,24 +48,48 @@ export default function ConversationStatusCard({ chrome }: { chrome: SessionSdkC
           <span className="conversation-status-title">{chrome.title ?? 'Setting up environment…'}</span>
           <span className="spinner" />
         </div>
-        {chrome.setupSteps && chrome.setupSteps.length > 0 ? (
+        {steps.length > 0 ? (
           <div className="minion-setup-steps" data-testid="minion-setup-steps">
-            {chrome.setupSteps.map((step) => (
-              <span
-                key={step.id}
-                className={`minion-setup-step minion-setup-step--${step.state}`}
-                data-step={step.id}
-                data-state={step.state}
-              >
-                {step.label}
-                {step.state === 'active' ? ' · IN PROGRESS' : step.state === 'done' ? ' ✓' : ''}
-              </span>
-            ))}
+            <div
+              className="minion-setup-bar"
+              style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }}
+              aria-hidden="true"
+            >
+              {steps.map((step) => (
+                <span
+                  key={`seg-${step.id}`}
+                  className={`minion-setup-seg minion-setup-seg--${step.state}`}
+                />
+              ))}
+            </div>
+            <div
+              className="minion-setup-labels"
+              style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }}
+            >
+              {steps.map((step, i) => (
+                <span
+                  key={step.id}
+                  className={`minion-setup-step minion-setup-step--${step.state}`}
+                  data-step={step.id}
+                  data-state={step.state}
+                  style={
+                    i === 0
+                      ? undefined
+                      : i === steps.length - 1
+                        ? { textAlign: 'right' }
+                        : { textAlign: 'center' }
+                  }
+                >
+                  {step.label}
+                </span>
+              ))}
+            </div>
           </div>
-        ) : null}
-        <div className="conversation-status-progress conversation-status-progress--accent" aria-hidden="true">
-          <span />
-        </div>
+        ) : (
+          <div className="conversation-status-progress" aria-hidden="true">
+            <span />
+          </div>
+        )}
         <div className="conversation-status-detail">
           {chrome.detail ?? 'DevPod is coming up — this can take a minute.'}
         </div>
