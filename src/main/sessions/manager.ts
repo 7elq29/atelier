@@ -1719,6 +1719,9 @@ export class SessionManager {
       // Cortana never goes through Claude's completeSessionOpen path; re-emit
       // openReady so Terminal keep-alive remounts after relaunch.
       if (isGatewayMode(session.mode)) this.workspace?.openReadyCortana(sessionId)
+      // Drop a stale startup `connecting` bit — Minion may be live with no new
+      // harness events until the user steers (empty WS replay no longer wipes).
+      if (this.connecting.delete(sessionId)) this.sendStatus(sessionId)
       this.sendBackgroundTasks(sessionId)
       this.sendSdkChrome(sessionId)
       this.sendRateLimitChrome(sessionId)
@@ -3840,9 +3843,27 @@ export class SessionManager {
             model: modelSelection?.model,
             effort: modelSelection?.effort
           })
+          // closeSession during the await — don't resurrect.
+          const current = this.store.getSession(sessionId)
+          if (!current || current.closedAt) {
+            this.connecting.delete(sessionId)
+            this.pendingPanelPreload.delete(sessionId)
+            this.workspacePreloadInFlight.delete(sessionId)
+            this.startupAutoReconnect.delete(sessionId)
+            this.sendStatus(sessionId)
+            return
+          }
           this.finalizeStaleRunningToolCalls(sessionId)
           this.live.set(sessionId, newLiveStream(this.initialTurnCountForReconnect(sessionId)))
           this.resetHarnessUiForSession(sessionId)
+          // Match reconnect(): Cortana/Minion are live once resume() returns.
+          // Waiting for the first harness event left Minion stuck on Connecting…
+          // when empty WS replay emitted nothing until the user sent a message.
+          if (isGatewayMode(current.mode)) {
+            this.connecting.delete(sessionId)
+            this.pendingPanelPreload.delete(sessionId)
+            this.workspace?.openReadyCortana(sessionId)
+          }
           this.sendStatus(sessionId)
           void this.consume(sessionId, harnessSession.events, this.bumpConsumeGeneration(sessionId))
         } catch {
