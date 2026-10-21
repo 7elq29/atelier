@@ -98,6 +98,7 @@ export function SessionChatSurface({
         <div className="chat-main-col">
           <ChatTranscript
             messages={messages}
+            sessionMode={session.mode}
             transcriptTruncated={truncation?.transcriptTruncated}
             hiddenTurnCount={truncation?.hiddenTurnCount ?? 0}
             onRespond={(requestId, decision) => onRespondToPrompt(requestId, decision)}

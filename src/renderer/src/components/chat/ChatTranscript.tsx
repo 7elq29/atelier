@@ -1,7 +1,6 @@
 import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { MessageRecord } from '../../../../shared/session-types'
-import type { PromptDecision } from '../../../../shared/session-types'
+import type { MessageRecord, PromptDecision, SessionMode } from '../../../../shared/session-types'
 import {
   parseStructuredContent,
   type AskUserQuestionContent,
@@ -15,7 +14,7 @@ import ToolCallCard, { toolHeadline } from './ToolCallCard'
 import { isToolAwaitingUserApproval } from './interactive-prompt-status'
 import ThinkingBlockInline from './ThinkingBlockInline'
 import ToolCallSequence, { type SidecarSequenceEntry, type ToolCallSequenceEntry } from './ToolCallSequence'
-import AskUserQuestionCard from './AskUserQuestionCard'
+import AskUserQuestionCard, { type AskUserAskerName } from './AskUserQuestionCard'
 import PermissionRequestCard from './PermissionRequestCard'
 import PlanProposedCard from './PlanProposedCard'
 import { promptFoldSummary } from './resolved-prompt-fold'
@@ -52,6 +51,12 @@ function parseMinionElicitationCard(content: string): AskUserQuestionContent | n
     questions: elicitation.questions,
     status: 'pending'
   }
+}
+
+function askerNameForMode(mode: SessionMode | undefined): AskUserAskerName {
+  if (mode === 'cortana') return 'Cortana'
+  if (mode === 'minion') return 'Minion'
+  return 'Claude'
 }
 
 function parseFilesAttachment(content: string): { files: Array<{ mimeType: string; data: string }>; text: string } | null {
@@ -203,8 +208,11 @@ export default function ChatTranscript({
   busy = false,
   emptyState = null,
   onRetryTurn,
+  sessionMode,
 }: {
   messages: MessageRecord[]
+  /** Session agent — drives AskUserQuestion head ("Claude/Cortana/Minion is asking…"). */
+  sessionMode?: SessionMode
   /** Resolves a permission/AskUserQuestion/plan card by requestId (05-interactive-prompts). */
   onRespond: (requestId: string, decision: PromptDecision) => void
   /** Opens a plan file on disk in the Files tab (plan card header). */
@@ -243,6 +251,8 @@ export default function ChatTranscript({
   /** Re-dispatches the last user turn after a retryable error. */
   onRetryTurn?: () => void
 }): JSX.Element {
+  const askerName = askerNameForMode(sessionMode)
+
   function findPreviousPlanMarkdown(currentMessageId: number): string | undefined {
     const idx = messages.findIndex((m) => m.id === currentMessageId)
     if (idx <= 0) return undefined
@@ -461,6 +471,7 @@ export default function ChatTranscript({
           <AskUserQuestionCard
             content={parsed}
             embedded={embedded}
+            askerName={askerName}
             onRespond={(decision) => onRespond(parsed.requestId, decision)}
           />
         </div>
@@ -707,7 +718,11 @@ export default function ChatTranscript({
       if (parsed.status === 'pending') {
         nodes.push(
           <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
-            <AskUserQuestionCard content={parsed} onRespond={(decision) => onRespond(parsed.requestId, decision)} />
+            <AskUserQuestionCard
+              content={parsed}
+              askerName={askerName}
+              onRespond={(decision) => onRespond(parsed.requestId, decision)}
+            />
           </div>
         )
       } else {
@@ -786,6 +801,7 @@ export default function ChatTranscript({
           <div data-testid="transcript-message" data-role={message.role} data-message-id={message.id} key={message.id}>
             <AskUserQuestionCard
               content={minionAsk}
+              askerName={askerName}
               onRespond={(decision) => onRespond(minionAsk.requestId, decision)}
             />
           </div>
