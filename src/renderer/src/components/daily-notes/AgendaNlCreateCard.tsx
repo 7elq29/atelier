@@ -120,7 +120,10 @@ export default function AgendaNlCreateCard({
           onEntityClick={onEntityClick}
         />
         <div className="dn-nl-card-foot">
-          <span><kbd>↵</kbd> Add</span>
+          <span className="dn-nl-card-hint">
+            <kbd>↵</kbd>
+            <span>Add</span>
+          </span>
         </div>
       </div>
 

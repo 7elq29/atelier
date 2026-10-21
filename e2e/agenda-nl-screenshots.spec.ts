@@ -83,9 +83,10 @@ test.describe('agenda-nl-screenshots', () => {
     // 3. Typed sentence with quiet underlines
     await input.locator('textarea').click()
     await page.keyboard.type('Logging Team Sync #meeting at 10:00 am for 1 h', { delay: 12 })
-    await expect(input.locator('.dn-nl-entity--tag')).toBeVisible()
-    await expect(input.locator('.dn-nl-entity--time')).toBeVisible()
-    await expect(input.locator('.dn-nl-entity--duration')).toBeVisible()
+    // Backdrop is aria-hidden (mirror layer) — assert attached, not visible.
+    await expect(input.locator('.dn-nl-entity--tag')).toHaveCount(1)
+    await expect(input.locator('.dn-nl-entity--time')).toHaveCount(1)
+    await expect(input.locator('.dn-nl-entity--duration')).toHaveCount(1)
     await shot(page, '03-create-typed-underlines')
 
     // 4. Commit create

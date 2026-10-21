@@ -343,15 +343,19 @@
         "src/renderer/src/components/daily-notes/NlTimePopover.tsx",
         "src/renderer/src/components/daily-notes/NlDurationPopover.tsx",
         "src/renderer/src/components/daily-notes/daily-notes.css",
-        "src/shared/task-nl-parse.ts"
+        "src/shared/task-nl-parse.ts",
+        "Features/agenda-nl-create-polish/spec.md"
       ],
-      "changedLines": "nl-|parseTaskNl|agenda-create|dn-nl|NlTime|NlDuration|NlAnnotated",
+      "changedLines": "nl-|parseTaskNl|agenda-create|dn-nl|NlTime|NlDuration|NlAnnotated|steel|violet|Proposal A|dn-nl-card-hint|caret-color|#7f9bb0|#c4ced8|Cool slate|never theme green",
       "targets": [
         {
           "file": "e2e/agenda-nl-task-create.spec.ts"
         },
         {
           "file": "e2e/bug-agenda-duration-save.spec.ts"
+        },
+        {
+          "file": "e2e/agenda-nl-screenshots.spec.ts"
         }
       ]
     },

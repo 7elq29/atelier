@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<title>Agenda NL create — design proposals (review only)</title>
+<link rel="stylesheet" href="shared.css" />
+<style>
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    padding: 36px 40px 72px;
+  }
+  .page { max-width: 1100px; margin: 0 auto; }
+  h1 {
+    margin: 0 0 8px;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .lede {
+    margin: 0 0 28px;
+    max-width: 62ch;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .block {
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px;
+    overflow: hidden;
+    background: #1a1814;
+  }
+  .meta {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .meta .label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-disabled);
+    margin-bottom: 6px;
+  }
+  .meta h2 {
+    margin: 0 0 6px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .meta p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-tertiary);
+  }
+  .stage {
+    min-height: 220px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 36px 24px;
+  }
+
+  /* ── Shared sentence chrome ── */
+  .line {
+    font-size: 15px;
+    line-height: 1.55;
+    letter-spacing: -0.01em;
+  }
+  .ent {
+    padding: 0 1px;
+    border-bottom: 1.5px solid;
+  }
+  .foot {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+  }
+  .foot kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 5px;
+    border: 1px solid var(--border-default);
+    color: var(--text-secondary);
+  }
+
+  /* ── Current (shipped) ── */
+  .cur-card {
+    width: min(420px, 100%);
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  }
+  .cur-field {
+    min-height: 52px;
+    padding: 12px 14px;
+    background: var(--bg-input);
+    border: 1px solid rgba(143, 193, 127, 0.45);
+    border-radius: 10px;
+  }
+  .cur-field .ph { color: var(--text-disabled); }
+  .cur-time { color: #b8d9a8; border-bottom-color: #8fc17f; }
+  .cur-dur { color: #e6c894; border-bottom-color: #d9b374; }
+  .cur-tag { color: #a8c8dc; border-bottom-color: #7fa8c1; }
+  .cur-foot { color: var(--text-disabled); font-weight: 400; }
+  .cur-foot kbd {
+    background: transparent;
+    color: var(--text-tertiary);
+  }
+
+  /* ── A: single surface, slate focus, steel/amber/violet ── */
+  .a-card {
+    width: min(400px, 100%);
+    background: color-mix(in srgb, var(--bg-panel) 92%, var(--bg-panel-raised));
+    border: 1px solid color-mix(in srgb, #9aa8b8 40%, var(--border-default));
+    border-radius: 14px;
+    padding: 16px 16px 12px;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+      0 0 0 3px color-mix(in srgb, #8a9aab 18%, transparent),
+      0 18px 48px rgba(0, 0, 0, 0.42);
+  }
+  .a-field { padding: 4px 2px 2px; }
+  .a-field .ph { color: var(--text-disabled); }
+  .a-time { color: #b7c9d8; border-bottom-color: #7f9bb0; }
+  .a-dur { color: #e6c894; border-bottom-color: #d9b374; }
+  .a-tag { color: #c4b6d9; border-bottom-color: #9b87b5; }
+  .a-foot {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid color-mix(in srgb, var(--border-default) 70%, transparent);
+  }
+  .a-foot kbd {
+    background: color-mix(in srgb, var(--bg-input) 80%, transparent);
+  }
+
+  /* ── B: underline field only ── */
+  .b-card {
+    width: min(400px, 100%);
+    background: transparent;
+    border: none;
+    padding: 8px 4px;
+  }
+  .b-field {
+    padding: 10px 2px 12px;
+    border-bottom: 1.5px solid color-mix(in srgb, #9aa8b8 55%, var(--border-default));
+  }
+  .b-field .ph { color: var(--text-disabled); }
+  .b-time { color: #b7c9d8; border-bottom-color: #7f9bb0; }
+  .b-dur { color: #e6c894; border-bottom-color: #d9b374; }
+  .b-tag { color: #c4b6d9; border-bottom-color: #9b87b5; }
+  .b-foot { justify-content: flex-end; border-top: none; padding-top: 0; }
+
+  /* ── C: nested field, recolor only ── */
+  .c-card {
+    width: min(420px, 100%);
+    background: var(--bg-panel);
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  }
+  .c-field {
+    min-height: 52px;
+    padding: 12px 14px;
+    background: var(--bg-input);
+    border: 1px solid color-mix(in srgb, #9aa8b8 45%, var(--border-default));
+    border-radius: 10px;
+  }
+  .c-field .ph { color: var(--text-disabled); }
+  .c-time { color: #b7c9d8; border-bottom-color: #7f9bb0; }
+  .c-dur { color: #e6c894; border-bottom-color: #d9b374; }
+  .c-tag { color: #c4b6d9; border-bottom-color: #9b87b5; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <h1>Agenda task create — proposals</h1>
+    <p class="lede">
+      Review only — nothing applied to the app. Current uses theme green.
+      A/B/C replace green with steel / amber / violet underlines and slate focus.
+    </p>
+
+    <div class="grid">
+      <!-- Current -->
+      <section class="block">
+        <div class="meta">
+          <div class="label">Current · shipped</div>
+          <h2>Nested field + green focus</h2>
+          <p>Card + inner bordered box; focus/caret/time use sage accent.</p>
+        </div>
+        <div class="stage">
+          <div class="cur-card">
+            <div class="cur-field">
+              <div class="line">
+                Logging Team Sync <span class="ent cur-tag">#meeting</span>
+                <span class="ent cur-time">at 10:00 am</span>
+                <span class="ent cur-dur">for 1 h</span>
+              </div>
+            </div>
+            <div class="foot cur-foot"><kbd>↵</kbd> Add</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- A -->
+      <section class="block">
+        <div class="meta">
+          <div class="label">Proposal A · recommended</div>
+          <h2>Single surface + slate focus</h2>
+          <p>One card, flush sentence, hairline foot. No green.</p>
+        </div>
+        <div class="stage">
+          <div class="a-card">
+            <div class="a-field">
+              <div class="line">
+                Logging Team Sync <span class="ent a-tag">#meeting</span>
+                <span class="ent a-time">at 10:00 am</span>
+                <span class="ent a-dur">for 1 h</span>
+              </div>
+            </div>
+            <div class="foot a-foot"><kbd>↵</kbd> <span>Add</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- B -->
+      <section class="block">
+        <div class="meta">
+          <div class="label">Proposal B</div>
+          <h2>Underline field only</h2>
+          <p>No card fill — sentence on a bottom rule (more Fantastical).</p>
+        </div>
+        <div class="stage">
+          <div class="b-card">
+            <div class="b-field">
+              <div class="line">
+                Logging Team Sync <span class="ent b-tag">#meeting</span>
+                <span class="ent b-time">at 10:00 am</span>
+                <span class="ent b-dur">for 1 h</span>
+              </div>
+            </div>
+            <div class="foot b-foot"><kbd>↵</kbd> <span>Add</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C -->
+      <section class="block">
+        <div class="meta">
+          <div class="label">Proposal C</div>
+          <h2>Same layout, recolor only</h2>
+          <p>Keep nested field; swap green → slate focus + steel/amber/violet.</p>
+        </div>
+        <div class="stage">
+          <div class="c-card">
+            <div class="c-field">
+              <div class="line">
+                Logging Team Sync <span class="ent c-tag">#meeting</span>
+                <span class="ent c-time">at 10:00 am</span>
+                <span class="ent c-dur">for 1 h</span>
+              </div>
+            </div>
+            <div class="foot"><kbd>↵</kbd> Add</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
