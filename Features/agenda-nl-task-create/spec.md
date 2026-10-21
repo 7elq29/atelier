@@ -6,8 +6,9 @@
 1. Right-click agenda (or command-palette create) → floating NL card.
 2. Type a sentence, e.g. `Logging Team Sync #meeting at 9:00 am for 1 h`.
 3. As you type, `#tag` / start / duration get quiet colored underlines.
-4. Click an underline → compact popover (time steppers/chips, or duration list). Popover edits rewrite the phrase in the sentence.
-5. Enter → create scheduled task (`timeBlock` + title/`#tags` via existing `addTask` parse). Esc / click-outside dismisses without create if empty.
+4. Typing `#` (or a partial tag) shows the same predefined tag autocomplete as other task fields; Tab applies the first suggestion; click applies a pick.
+5. Click an underline → compact popover (time steppers/chips, or duration list). Popover edits rewrite the phrase in the sentence. Tag underlines do not open a popover.
+6. Enter → create scheduled task (`timeBlock` + title/`#tags` via existing `addTask` parse). Esc / click-outside dismisses without create if empty.
 
 ### Edit existing
 1. Double-click title → row expands to same NL sentence (reconstructed from text, tags, timeBlock).

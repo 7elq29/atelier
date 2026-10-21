@@ -1,4 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  extractInlineTagsFromText,
+  filterDailyNoteTagSuggestions,
+  inlineTagQueryAtCursor,
+} from '../../../../shared/daily-note-tags'
 import {
   parseTaskNl,
   type NlEntityKind,
@@ -22,6 +27,7 @@ interface NlAnnotatedInputProps {
 /**
  * Quiet-underline NL field: a transparent textarea over a mirrored backdrop
  * of annotated spans. Avoids contenteditable re-render corruption while typing.
+ * Also offers `#` tag autocomplete (same list as DailyNoteTaskInput).
  */
 export default function NlAnnotatedInput({
   value,
@@ -39,8 +45,13 @@ export default function NlAnnotatedInput({
   const backdropRef = useRef<HTMLDivElement>(null)
   const valueRef = useRef(value)
   valueRef.current = value
+  const [cursor, setCursor] = useState(0)
 
   const parsed = parseTaskNl(value)
+  const tagCtx = inlineTagQueryAtCursor(value, cursor)
+  const tagSuggestions = tagCtx
+    ? filterDailyNoteTagSuggestions(tagCtx.query, extractInlineTagsFromText(value))
+    : []
 
   useEffect(() => {
     if (!autoFocus) return
@@ -50,6 +61,7 @@ export default function NlAnnotatedInput({
       el.focus()
       const len = el.value.length
       el.setSelectionRange(len, len)
+      setCursor(len)
     })
   }, [autoFocus])
 
@@ -66,6 +78,26 @@ export default function NlAnnotatedInput({
     return () => ta.removeEventListener('scroll', sync)
   }, [])
 
+  function syncCursor(): void {
+    setCursor(taRef.current?.selectionStart ?? value.length)
+  }
+
+  function applyTagSuggestion(tag: string): void {
+    if (!tagCtx) return
+    const before = value.slice(0, tagCtx.start)
+    const after = value.slice(cursor)
+    const next = `${before}${tag} ${after}`
+    onChange(next, parseTaskNl(next))
+    const nextCursor = before.length + tag.length + 1
+    requestAnimationFrame(() => {
+      const el = taRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(nextCursor, nextCursor)
+      setCursor(nextCursor)
+    })
+  }
+
   function entityRect(kind: NlEntityKind): DOMRect {
     const span = backdropRef.current?.querySelector(
       `.dn-nl-entity--${kind}`
@@ -77,10 +109,10 @@ export default function NlAnnotatedInput({
     const ta = taRef.current
     if (!ta) return false
     const caret = ta.selectionStart ?? 0
-    let cursor = 0
+    let cursorPos = 0
     for (const seg of parsed.segments) {
-      const start = cursor
-      const end = cursor + seg.text.length
+      const start = cursorPos
+      const end = cursorPos + seg.text.length
       if (seg.kind && caret >= start && caret <= end) {
         // Prefer opening when caret is inside the entity (not only at boundary before)
         if (caret > start || (caret === start && seg.kind)) {
@@ -88,7 +120,7 @@ export default function NlAnnotatedInput({
           return true
         }
       }
-      cursor = end
+      cursorPos = end
     }
     return false
   }
@@ -127,12 +159,21 @@ export default function NlAnnotatedInput({
           onChange={(e) => {
             const raw = e.target.value.replace(/\n+$/g, '')
             onChange(raw, parseTaskNl(raw))
+            setCursor(e.target.selectionStart ?? raw.length)
           }}
+          onSelect={syncCursor}
+          onKeyUp={syncCursor}
           onClick={() => {
+            syncCursor()
             // Clicking an underlined token opens its popover
             tryOpenEntityAtCaret()
           }}
           onKeyDown={(e) => {
+            if (e.key === 'Tab' && tagSuggestions.length > 0) {
+              e.preventDefault()
+              applyTagSuggestion(tagSuggestions[0]!)
+              return
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
               onCommit(parseTaskNl(valueRef.current))
@@ -144,6 +185,28 @@ export default function NlAnnotatedInput({
           }}
         />
       </div>
+      {tagSuggestions.length > 0 && (
+        <div
+          className="dn-inline-tag-suggestions"
+          data-testid="inline-tag-suggestions"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {tagSuggestions.map((tag) => (
+            <button
+              type="button"
+              key={tag}
+              className="dn-tag-suggestion"
+              data-testid="inline-tag-suggestion"
+              onMouseDown={(e) => {
+                e.preventDefault()
+                applyTagSuggestion(tag)
+              }}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

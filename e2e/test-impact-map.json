@@ -346,7 +346,7 @@
         "src/shared/task-nl-parse.ts",
         "Features/agenda-nl-create-polish/spec.md"
       ],
-      "changedLines": "nl-|parseTaskNl|agenda-create|dn-nl|NlTime|NlDuration|NlAnnotated|steel|violet|Proposal A|dn-nl-card-hint|caret-color|#7f9bb0|#c4ced8|Cool slate|never theme green",
+      "changedLines": "nl-|parseTaskNl|agenda-create|dn-nl|NlTime|NlDuration|NlAnnotated|steel|violet|Proposal A|dn-nl-card-hint|caret-color|#7f9bb0|#c4ced8|Cool slate|never theme green|inline-tag|tagSuggestions|applyTagSuggestion|filterDailyNoteTag",
       "targets": [
         {
           "file": "e2e/agenda-nl-task-create.spec.ts"

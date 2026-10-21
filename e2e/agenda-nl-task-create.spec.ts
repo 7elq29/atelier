@@ -60,6 +60,27 @@ test.describe('agenda-nl-task-create', () => {
     await electronApp.close().catch(() => undefined)
   })
 
+  test('NL create: # tag autocomplete Tab applies first suggestion', async () => {
+    const agenda = page.locator('[data-testid="timeline-agenda"]')
+    await expect(agenda).toBeVisible({ timeout: 8_000 })
+
+    const box = await agenda.boundingBox()
+    expect(box).toBeTruthy()
+    await page.mouse.click(box!.x + box!.width / 2, box!.y + 80, { button: 'right' })
+
+    const input = page.locator('[data-testid="agenda-create-input"]')
+    await expect(input).toBeVisible({ timeout: 5_000 })
+    await input.click()
+    await page.keyboard.type('Sync #meet', { delay: 15 })
+    await expect(page.getByTestId('inline-tag-suggestions')).toBeVisible({ timeout: 3_000 })
+    await expect(page.getByTestId('inline-tag-suggestion').filter({ hasText: '#meeting' })).toBeVisible()
+    await page.screenshot({ path: join(artifactsDir, 'agenda-nl-tag-autocomplete.png') })
+    await page.keyboard.press('Tab')
+    await expect(input.locator('textarea')).toHaveValue('Sync #meeting ')
+    await page.keyboard.press('Escape')
+    await expect(input).toBeHidden({ timeout: 3_000 })
+  })
+
   test('NL create: sentence with tag, time, duration creates scheduled task', async () => {
     const agenda = page.locator('[data-testid="timeline-agenda"]')
     await expect(agenda).toBeVisible({ timeout: 8_000 })
