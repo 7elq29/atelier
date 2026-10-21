@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Atelier — Minion SETUP card options (approval)</title>
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    /* Proposal cue: warm amber / paper neutrals — not sage green (--accent). */
+    :root {
+      --setup-cue: var(--warning);
+      --setup-cue-dim: color-mix(in srgb, var(--warning) 18%, var(--bg-tint));
+      --setup-cue-on: #1c1810;
+    }
+
+    body { margin: 0; padding: 28px 32px 48px; background: var(--bg-app); color: var(--text-primary); font-family: var(--font-ui); }
+    h1 { font-size: 18px; font-weight: 600; margin: 0 0 6px; }
+    .lede { font-size: 13px; color: var(--text-tertiary); max-width: 680px; line-height: 1.45; margin: 0 0 28px; }
+    .lede code { font-family: var(--font-mono); font-size: 12px; }
+    .grid { display: flex; flex-direction: column; gap: 28px; max-width: 560px; }
+    .opt { border: 1px solid var(--border-default); border-radius: var(--r-lg); background: var(--bg-panel); overflow: hidden; }
+    .opt-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border-subtle); }
+    .opt-id { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--warning); letter-spacing: 0.04em; }
+    .opt-title { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+    .opt-note { font-size: 12px; color: var(--text-tertiary); margin-left: auto; }
+    .opt-body { padding: 16px; background: var(--bg-base); }
+    .opt-desc { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.45; margin: 0 0 12px; }
+    .current-badge { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--text-disabled); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px; }
+
+    .proposal .spinner {
+      border-color: var(--border-strong);
+      border-top-color: var(--setup-cue);
+    }
+    .proposal .conversation-status-card {
+      border-left: 3px solid var(--setup-cue);
+    }
+    .proposal .tool-badge.other { color: var(--setup-cue); }
+    .proposal .conversation-status-title { flex: 1; min-width: 0; }
+    .proposal .conversation-status-head { flex-wrap: nowrap; }
+    .proposal .conversation-status-progress > span {
+      background: color-mix(in srgb, var(--setup-cue) 75%, transparent);
+    }
+
+    /* —— CURRENT (live, green — for contrast only) —— */
+    .minion-setup-steps-live {
+      display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 8px;
+    }
+    .minion-setup-step-live {
+      font-family: var(--font-mono); font-size: 11px; padding: 3px 8px;
+      border-radius: var(--r-sm); border: 1px solid var(--border-subtle);
+      color: var(--text-disabled); background: var(--bg-hover);
+    }
+    .minion-setup-step-live.done {
+      color: var(--text-secondary);
+      border-color: color-mix(in srgb, var(--accent) 40%, var(--border-subtle));
+    }
+    .minion-setup-step-live.active {
+      color: var(--text-primary);
+      border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+      background: color-mix(in srgb, var(--accent) 12%, var(--bg-tint));
+    }
+
+    /* —— A: vertical timeline (structure change) —— */
+    .setup-a {
+      display: grid;
+      grid-template-columns: 16px 1fr;
+      gap: 0 10px;
+      padding: 4px 12px 10px;
+    }
+    .setup-a-rail {
+      grid-row: 1 / span 3;
+      width: 2px;
+      margin: 6px auto;
+      background: var(--border-strong);
+      border-radius: 1px;
+      position: relative;
+    }
+    .setup-a-rail::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0;
+      width: 100%; height: 55%;
+      background: var(--setup-cue);
+      border-radius: 1px;
+    }
+    .setup-a-row {
+      display: flex; align-items: baseline; gap: 8px;
+      padding: 5px 0;
+      font-size: 12.5px;
+      color: var(--text-disabled);
+    }
+    .setup-a-row.done { color: var(--text-secondary); }
+    .setup-a-row.active { color: var(--text-primary); font-weight: 600; }
+    .setup-a-row.active .setup-a-label::after {
+      content: ' — in progress';
+      font-weight: 500;
+      color: var(--setup-cue);
+      font-size: 11.5px;
+    }
+    .setup-a-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--border-strong); flex-shrink: 0;
+      margin-left: -19px; margin-right: 11px;
+      box-shadow: 0 0 0 3px var(--bg-tint);
+    }
+    .setup-a-row.done .setup-a-dot { background: var(--text-tertiary); }
+    .setup-a-row.active .setup-a-dot {
+      background: var(--setup-cue);
+      box-shadow: 0 0 0 3px var(--setup-cue-dim);
+    }
+
+    /* —— B: COMPACT parity — no step UI at all —— */
+    .setup-b-meta {
+      font-family: var(--font-mono); font-size: 11px; color: var(--text-disabled);
+      padding: 0 12px 8px;
+    }
+
+    /* —— C: segmented bar as the primary stage UI —— */
+    .setup-c-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 4px;
+      padding: 2px 12px 6px;
+    }
+    .setup-c-seg {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--bg-hover);
+    }
+    .setup-c-seg.done { background: var(--text-tertiary); }
+    .setup-c-seg.active {
+      background: var(--setup-cue);
+      animation: setup-c-pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes setup-c-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.45; }
+    }
+    .setup-c-labels {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 4px;
+      padding: 0 12px 10px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-disabled);
+    }
+    .setup-c-labels .done { color: var(--text-secondary); }
+    .setup-c-labels .active { color: var(--setup-cue); font-weight: 600; }
+    .setup-c-labels span:nth-child(2) { text-align: center; }
+    .setup-c-labels span:nth-child(3) { text-align: right; }
+  </style>
+</head>
+<body>
+  <h1>Minion SETUP card — pick one</h1>
+  <p class="lede">
+    <strong>C approved</strong> and shipped in app. A/B kept for comparison.
+    Cue color: amber (<code>--warning</code>), not sage green.
+  </p>
+
+  <div class="grid">
+    <section class="opt" id="opt-current">
+      <div class="opt-head">
+        <span class="opt-id" style="color: var(--text-tertiary)">CURRENT</span>
+        <span class="opt-title">Shipped chips</span>
+        <span class="current-badge">Live</span>
+      </div>
+      <div class="opt-body">
+        <p class="opt-desc">What the app shows today (sage chips + “IN PROGRESS”). Kept only as a baseline.</p>
+        <div class="conversation-status-card conversation-status-card--requesting">
+          <div class="conversation-status-head">
+            <span class="tool-badge other">SETUP</span>
+            <span class="conversation-status-title">Starting DevPod…</span>
+            <span class="spinner"></span>
+          </div>
+          <div class="minion-setup-steps-live">
+            <span class="minion-setup-step-live done">Provision ✓</span>
+            <span class="minion-setup-step-live active">Boot · IN PROGRESS</span>
+            <span class="minion-setup-step-live">Connect</span>
+          </div>
+          <div class="conversation-status-progress conversation-status-progress--accent" aria-hidden="true"><span></span></div>
+          <div class="conversation-status-detail">DevPod reports running. Waiting until the worker is reachable.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="opt" id="opt-a">
+      <div class="opt-head">
+        <span class="opt-id">A</span>
+        <span class="opt-title">Vertical timeline</span>
+        <span class="opt-note">stacked stages + rail</span>
+      </div>
+      <div class="opt-body">
+        <p class="opt-desc">Reads as a short checklist on a progress rail — not a chip row. Active stage called out in amber.</p>
+        <div class="conversation-status-card proposal">
+          <div class="conversation-status-head">
+            <span class="tool-badge other">SETUP</span>
+            <span class="conversation-status-title">Starting DevPod…</span>
+            <span class="spinner"></span>
+          </div>
+          <div class="setup-a">
+            <div class="setup-a-rail" aria-hidden="true"></div>
+            <div class="setup-a-row done"><span class="setup-a-dot"></span><span class="setup-a-label">Provision</span></div>
+            <div class="setup-a-row active"><span class="setup-a-dot"></span><span class="setup-a-label">Boot</span></div>
+            <div class="setup-a-row"><span class="setup-a-dot"></span><span class="setup-a-label">Connect</span></div>
+          </div>
+          <div class="conversation-status-detail">DevPod reports running. Waiting until the worker is reachable.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="opt" id="opt-b">
+      <div class="opt-head">
+        <span class="opt-id">B</span>
+        <span class="opt-title">COMPACT parity</span>
+        <span class="opt-note">no stage chrome</span>
+      </div>
+      <div class="opt-body">
+        <p class="opt-desc">Same density as Cortana Compacting — title + bar + detail only. Stage lives in the title; one mono meta line. No chips, dots, or steppers.</p>
+        <div class="conversation-status-card proposal">
+          <div class="conversation-status-head">
+            <span class="tool-badge other">SETUP</span>
+            <span class="conversation-status-title">Booting DevPod…</span>
+            <span class="spinner"></span>
+          </div>
+          <div class="conversation-status-progress" aria-hidden="true"><span></span></div>
+          <div class="setup-b-meta">stage 2 of 3 · connect next</div>
+          <div class="conversation-status-detail">DevPod reports running. Waiting until the worker is reachable.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="opt" id="opt-c">
+      <div class="opt-head">
+        <span class="opt-id">C</span>
+        <span class="opt-title">Segmented bar</span>
+        <span class="current-badge" style="color: var(--warning); border-color: color-mix(in srgb, var(--warning) 40%, transparent)">Approved</span>
+      </div>
+      <div class="opt-body">
+        <p class="opt-desc">Three segments replace chips and the indeterminate bar. Labels sit under the segments; active segment pulses amber.</p>
+        <div class="conversation-status-card proposal">
+          <div class="conversation-status-head">
+            <span class="tool-badge other">SETUP</span>
+            <span class="conversation-status-title">Starting DevPod…</span>
+            <span class="spinner"></span>
+          </div>
+          <div class="setup-c-bar" aria-hidden="true">
+            <span class="setup-c-seg done"></span>
+            <span class="setup-c-seg active"></span>
+            <span class="setup-c-seg"></span>
+          </div>
+          <div class="setup-c-labels">
+            <span class="done">Provision</span>
+            <span class="active">Boot</span>
+            <span>Connect</span>
+          </div>
+          <div class="conversation-status-detail">DevPod reports running. Waiting until the worker is reachable.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

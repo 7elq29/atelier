@@ -1399,12 +1399,14 @@ export class MinionHarness implements HarnessDriver {
 
     // Full replay must REPLACE the transcript. Appending onto existing rows is
     // what produced: req1…req4 then response1…response4 again.
-    // - resetOnConnect → always replace (wake / storage → WS).
+    // - resetOnConnect + non-empty replay → replace (wake / storage → WS).
     // - No fold cursor + non-empty replay → replace (app restart / lost cursor).
-    // Empty replay with no cursor must NOT wipe (would erase create seed).
+    // Empty replay must NEVER wipe — that erased create seeds + SETUP chrome and
+    // left "Ready to chat" while Minion UI was still Connecting.
     const fullReplayReplace =
       phase === 'replay' &&
-      (state.resetOnConnect || (state.fold.lastSeq === undefined && events.length > 0))
+      events.length > 0 &&
+      (state.resetOnConnect || state.fold.lastSeq === undefined)
     if (fullReplayReplace) {
       state.fold.reset()
       state.channel.push({
@@ -1415,6 +1417,9 @@ export class MinionHarness implements HarnessDriver {
       })
       state.resetOnConnect = false
       state.postedTexts.clear()
+      // wipeConversation clears sdk chrome; force SETUP to re-paint if still open.
+      state.lastSetupKey = ''
+      state.lastWorkingKey = ''
       logger.info('minionHarness: full replay — replacing transcript (not appending)', {
         sessionId,
         eventCount: events.length
@@ -1464,6 +1469,10 @@ export class MinionHarness implements HarnessDriver {
       (phase === 'replay' && folded.events.length > 0)
     ) {
       this.completeStartup(sessionId, state)
+    } else if (!state.setupComplete && state.lastTask) {
+      // Re-paint after conversation_reset wiped sdk chrome, or after empty
+      // replay left Boot/Connect with no dismiss signal.
+      this.pushSetupChrome(state, sessionId, state.lastTask)
     }
     if (folded.chrome && state.lastSetupKey === '' && isWorkerRunning(state.workerState)) {
       this.pushWorkingChrome(state, sessionId, folded.chrome)

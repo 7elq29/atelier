@@ -5625,15 +5625,16 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   margin: 4px 0;
 }
 .conversation-status-card .conversation-status-head {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
   padding: 10px 12px 6px;
 }
 .conversation-status-card .conversation-status-title {
+  flex: 1; min-width: 0;
   font-size: 13px; font-weight: 600; color: var(--text-secondary);
 }
 .conversation-status-card .conversation-status-detail {
   font-size: 12.5px; color: var(--text-tertiary); line-height: 1.45;
-  padding: 0 12px 8px;
+  padding: 0 12px 10px;
 }
 .conversation-status-card .conversation-status-meta {
   font-family: var(--font-mono); font-size: 11px; color: var(--text-disabled);
@@ -5645,6 +5646,13 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 .conversation-status-card--compacting { border-left: 3px solid var(--warning); }
 .conversation-status-card--requesting { border-left: 3px solid var(--accent); }
 .conversation-status-card--compacting-failed { border-left: 3px solid var(--danger); }
+/* Minion SETUP — option C (segmented bar); amber cue, not sage accent. */
+.conversation-status-card--minion-setup { border-left: 3px solid var(--warning); }
+.conversation-status-card--minion-setup .tool-badge.other { color: var(--warning); }
+.conversation-status-card--minion-setup .spinner {
+  border-color: var(--border-strong);
+  border-top-color: var(--warning);
+}
 .conversation-status-progress {
   height: 3px; margin: 0 12px 10px; border-radius: 2px;
   background: var(--bg-hover); overflow: hidden;
@@ -5659,27 +5667,40 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 }
 .minion-setup-steps {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 12px 8px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 12px 8px;
+}
+.minion-setup-bar {
+  display: grid;
+  gap: 4px;
+}
+.minion-setup-seg {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-hover);
+}
+.minion-setup-seg--done { background: var(--text-tertiary); }
+.minion-setup-seg--active {
+  background: var(--warning);
+  animation: minion-setup-seg-pulse 1.2s ease-in-out infinite;
+}
+.minion-setup-seg--pending { background: var(--bg-hover); }
+.minion-setup-labels {
+  display: grid;
+  gap: 4px;
 }
 .minion-setup-step {
   font-family: var(--font-mono);
   font-size: 11px;
-  padding: 3px 8px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-subtle);
   color: var(--text-disabled);
-  background: var(--bg-hover);
+  line-height: 1.2;
 }
-.minion-setup-step--done {
-  color: var(--text-secondary);
-  border-color: color-mix(in srgb, var(--success, #3d9a6a) 40%, var(--border-subtle));
-}
-.minion-setup-step--active {
-  color: var(--text-primary);
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg-tint));
+.minion-setup-step--done { color: var(--text-secondary); }
+.minion-setup-step--active { color: var(--warning); font-weight: 600; }
+@keyframes minion-setup-seg-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 @keyframes sdk-compact-progress {
   0% { transform: translateX(-100%); }

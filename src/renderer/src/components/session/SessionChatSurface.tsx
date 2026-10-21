@@ -121,9 +121,14 @@ export function SessionChatSurface({
             reviewComments={reviewComments}
             busy={busy}
             onRetryTurn={onRetryTurn}
-            // This surface only renders once the session is past the connecting
-            // gate, so an empty transcript here means "connected, nothing said yet".
-            emptyState={<SessionReadyHint workspaceLabel={sessionWorkspaceLabel(session)} />}
+            // Past the session connecting gate — but Minion SETUP still owns the
+            // empty pane (Provision/Boot/Connect). "Ready to chat" during SETUP
+            // looked like DevPod boot failed while Minion UI was still Connecting.
+            emptyState={
+              sdkChrome?.status === 'minion_setup' ? null : (
+                <SessionReadyHint workspaceLabel={sessionWorkspaceLabel(session)} />
+              )
+            }
           />
         </div>
         {reviewTarget ? (
