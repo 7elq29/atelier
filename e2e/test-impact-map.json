@@ -360,6 +360,20 @@
       ]
     },
     {
+      "id": "agenda-delete-duration-overlap",
+      "paths": [
+        "src/renderer/src/components/daily-notes/daily-notes.css",
+        "src/renderer/src/components/daily-notes/AgendaTimeline.tsx",
+        "Features/agenda-delete-duration-overlap/spec.md"
+      ],
+      "changedLines": "dn-agenda-delete|dn-agenda-duration|grid-template-columns.*28px|agenda-task-delete",
+      "targets": [
+        {
+          "file": "e2e/bug-agenda-delete-duration-overlap.spec.ts"
+        }
+      ]
+    },
+    {
       "id": "daily-timeline-editing",
       "paths": [
         "src/renderer/src/components/daily-notes/Timeline.tsx",
@@ -2127,7 +2141,7 @@
         "Features/minion-elicitation-attachments/spec.md",
         "Features/minion-working-composer-status/spec.md"
       ],
-      "changedLines": "minion|Minion|minion_setup|minion-setup|minion_working|minion-working|composer-turn-status|scratch|chat\\.jsonl|cancelRemote|\\.detach\\(|createInteraction|getDevpods|listInteractions|pendingSteer|awaitingSteer|deriveMinionSetup|STATE_RUNNING|elicit|ask_user|attachment|buildMinionSteer|worker_state|workerSocket|MinionWorkerSocket|MinionWorkerFold|resetOnConnect|USER_MESSAGE|storage fold|transcript_user_message",
+      "changedLines": "minion|Minion|minion_setup|minion-setup|minion_working|minion-working|composer-turn-status|scratch|chat\\.jsonl|cancelRemote|\\.detach\\(|createInteraction|getDevpods|listInteractions|pendingSteer|awaitingSteer|deriveMinionSetup|STATE_RUNNING|elicit|ask_user|attachment|buildMinionSteer|worker_state|workerSocket|MinionWorkerSocket|MinionWorkerFold|resetOnConnect|USER_MESSAGE|storage fold|transcript_user_message|formatTaskSummary|shouldPostIdleTaskSummary|pushIdleTurnComplete|foldHealthy",
       "targets": [
         {
           "file": "e2e/minion-session.spec.ts"

@@ -728,7 +728,8 @@
 .dn-agenda-entry {
   position: relative;
   display: grid;
-  grid-template-columns: 36px 18px minmax(0, 1fr) auto;
+  /* time | checkbox | label | duration | delete (hover) */
+  grid-template-columns: 36px 18px minmax(0, 1fr) auto 28px;
   align-items: center;
   column-gap: 9px;
   padding: 7px 0;
@@ -914,9 +915,7 @@
 }
 
 .dn-agenda-delete {
-  position: absolute;
-  top: 4px;
-  right: -4px;
+  justify-self: end;
   opacity: 0;
   background: var(--bg-sidebar);
 }
@@ -926,16 +925,6 @@
   opacity: 1;
 }
 
-.dn-agenda-entry:hover .dn-agenda-duration:not(.dn-agenda-duration--editable) {
-  opacity: 0;
-}
-.dn-agenda-duration--editable {
-  position: relative;
-  z-index: 2;
-}
-.dn-agenda-entry:hover .dn-agenda-duration--editable {
-  opacity: 1;
-}
 /* While a time/duration popover is open, ignore row chrome so the
    activating click cannot fall through onto Delete after unmount. */
 .dn-agenda--popover-open .dn-agenda-delete,

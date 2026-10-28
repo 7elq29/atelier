@@ -390,6 +390,13 @@ test.describe('minion-session', () => {
       await page.screenshot({ path: join(artifactsDir, 'minion-case-a-intermediate.png') })
 
       await expectAssistantAnswerAfter(page, prompt1.slice(0, 48), 300_000)
+      // Soft-stop must not append Done.+latest_update when fold already streamed A1
+      // (MCP Tool Evaluation duplicate: answer row then Done. blob with same body).
+      await expect(
+        page
+          .locator('[data-testid="transcript-message"][data-role="assistant"]')
+          .filter({ hasText: /\bA1-READY\b/i })
+      ).toHaveCount(1)
       await page.screenshot({ path: join(artifactsDir, 'minion-case-a-answer.png') })
 
       await sendComposer(page, prompt2)

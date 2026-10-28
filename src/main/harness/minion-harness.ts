@@ -1570,6 +1570,60 @@ export class MinionHarness implements HarnessDriver {
   }
 
   /**
+   * Soft-stop used to always push `Done.` + latest_update on first-turn idle
+   * completion. When the worker fold already streamed the answer, that becomes
+   * a duplicate blob (progress mashed onto the same reply). Skip the summary
+   * whenever fold owns the transcript or we already absorbed the body.
+   */
+  private shouldPostIdleTaskSummary(
+    state: MinionSessionState,
+    task: Record<string, any>,
+    sawNewAgentInteraction: boolean
+  ): boolean {
+    if (sawNewAgentInteraction || state.lastSteeredAt > 0) return false
+    if (state.foldHealthy) return false
+    let message = task.output?.message ?? task.output?.summary ?? task.status_message
+    if (typeof message !== 'string' || !message.trim()) {
+      message = extractLatestUpdate(task)
+    }
+    if (typeof message !== 'string' || !message.trim()) return true
+    const body = normalizeProgressText(message)
+    if (state.postedTexts.has(body)) return false
+    for (const posted of state.postedTexts) {
+      if (posted.length < 60) continue
+      if (body.includes(posted) || posted.includes(body)) return false
+    }
+    return true
+  }
+
+  private pushIdleTurnComplete(
+    sessionId: string,
+    state: MinionSessionState,
+    task: Record<string, any>,
+    sawNewAgentInteraction: boolean
+  ): void {
+    if (state.completionPosted || state.closing) return
+    state.completionPosted = true
+    const cost = taskCost(task)
+    if (this.shouldPostIdleTaskSummary(state, task, sawNewAgentInteraction)) {
+      pushAssistantMessage(state.channel, sessionId, formatTaskSummary(task), 'end_turn', cost)
+    } else {
+      state.channel.push({
+        type: 'result',
+        sessionId,
+        timestamp: new Date().toISOString(),
+        subtype: 'end_turn',
+        isError: false,
+        numTurns: 1,
+        durationMs: 0,
+        totalCostUsd: cost,
+        usage: null
+      })
+    }
+    this.notifyActivity(sessionId)
+  }
+
+  /**
    * Attach/resume to a sleeping tip: ask Minion to restore the DevPod so SETUP
    * Boot paints and the worker socket can replay history. Scratch
    * `getFileContents` cannot reach SNAPSHOTTED pods (no cluster DNS).
@@ -2260,31 +2314,7 @@ export class MinionHarness implements HarnessDriver {
                 !waitingOnSteer &&
                 !this.shouldDeferSoftStop(state)
               ) {
-                if (!state.completionPosted && !state.closing) {
-                  state.completionPosted = true
-                  if (!sawNewAgentInteraction && state.lastSteeredAt <= 0) {
-                    pushAssistantMessage(
-                      channel,
-                      sessionId,
-                      formatTaskSummary(task),
-                      'end_turn',
-                      taskCost(task)
-                    )
-                  } else {
-                    channel.push({
-                      type: 'result',
-                      sessionId,
-                      timestamp: new Date().toISOString(),
-                      subtype: 'end_turn',
-                      isError: false,
-                      numTurns: 1,
-                      durationMs: 0,
-                      totalCostUsd: taskCost(task),
-                      usage: null
-                    })
-                  }
-                  this.notifyActivity(sessionId)
-                }
+                this.pushIdleTurnComplete(sessionId, state, task, sawNewAgentInteraction)
                 this.softStop(sessionId, state)
                 return
               }
@@ -2297,32 +2327,9 @@ export class MinionHarness implements HarnessDriver {
                 this.pushSetupChrome(state, sessionId, task)
                 this.remember(sessionId, state)
               } else {
-                if (!state.completionPosted && !state.closing) {
-                  state.completionPosted = true
-                  if (!sawNewAgentInteraction && state.lastSteeredAt <= 0) {
-                    // Idle completion only — never recycle latest_update after a steer.
-                    pushAssistantMessage(
-                      channel,
-                      sessionId,
-                      formatTaskSummary(task),
-                      'end_turn',
-                      taskCost(task)
-                    )
-                  } else if (sawNewAgentInteraction || state.lastSteeredAt > 0) {
-                    channel.push({
-                      type: 'result',
-                      sessionId,
-                      timestamp: new Date().toISOString(),
-                      subtype: 'end_turn',
-                      isError: false,
-                      numTurns: 1,
-                      durationMs: 0,
-                      totalCostUsd: taskCost(task),
-                      usage: null
-                    })
-                  }
-                  this.notifyActivity(sessionId)
-                }
+                // Idle completion — never recycle latest_update when fold already
+                // streamed the answer (or after a steer / listInteractions post).
+                this.pushIdleTurnComplete(sessionId, state, task, sawNewAgentInteraction)
                 // softStop keeps Boot SETUP when pod is not RUNNING.
                 this.softStop(sessionId, state)
                 return
