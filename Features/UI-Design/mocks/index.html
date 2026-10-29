@@ -416,7 +416,7 @@
      one cue per theme (--elevation-border/--elevation-shadow), and internal divider lines are
      gone in favor of spacing — matching the chosen variant's flat, borderless option rows. */
   .aq-card { border: 1px solid var(--elevation-border); background: var(--bg-panel); border-radius: var(--r-lg); overflow: hidden; max-width: 84%; box-shadow: var(--elevation-shadow); flex-shrink: 0; align-self: flex-start; }
-  .aq-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px 6px; font-size: 13px; font-weight: 600; color: var(--accent); }
+  .aq-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px 6px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
   .aq-body { padding: 0 14px 13px; display: flex; flex-direction: column; gap: 8px; }
   .aq-question { font-size: 13.5px; line-height: 1.45; color: var(--text-primary); }
   .aq-options { display: flex; flex-direction: column; gap: 6px; }
@@ -425,7 +425,8 @@
   .aq-option .num { width: 15px; height: 15px; border-radius: 50%; background: transparent; border: 1.5px solid var(--text-tertiary); font-size: 0; flex-shrink: 0; margin-top: 2px; }
   .aq-option .desc { color: var(--text-tertiary); font-size: 12.5px; line-height: 1.4; margin-top: 2px; }
   .aq-card.answered .aq-option { pointer-events: none; opacity: .45; }
-  .aq-card .aq-option.selected { opacity: 1; border-color: var(--border-strong); background: var(--bg-tint); }
+  .aq-card .aq-option.selected { opacity: 1; border-color: var(--border-strong); background: var(--bg-hover); }
+  .aq-card .aq-option.selected .num { background: transparent; border-color: var(--text-primary); }
   .aq-card .aq-option.aq-other.selected { border-style: solid; background: transparent; }
   .aq-option.aq-other { border: 1px dashed var(--border-strong); background: transparent; color: var(--text-secondary); }
   .aq-other-box { display: none; gap: 6px; }
@@ -442,7 +443,7 @@
   .aq-card.aq-mode-stacked .aq-question-block.is-done .aq-options { display: none; }
   .aq-card.answered .aq-question-block .aq-options,
   .aq-card.answered .aq-other-box { display: none !important; }
-  .aq-picked-summary { display: none; font-size: 12.5px; color: var(--accent); margin-top: 4px; }
+  .aq-picked-summary { display: none; font-size: 12.5px; color: var(--text-secondary); margin-top: 4px; }
   .aq-card.aq-mode-stacked .aq-question-block.is-done .aq-picked-summary,
   .aq-card.answered .aq-picked-summary { display: block; }
 
@@ -481,11 +482,11 @@
     align-items: center; justify-content: center; font-size: 10px;
     border: 1.5px solid var(--border-strong); color: var(--text-tertiary);
   }
-  .aq-step.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
-  .aq-step.active .aq-step-num { border-color: var(--accent); color: var(--accent); }
+  .aq-step.active { border-color: var(--border-strong); color: var(--text-primary); background: var(--bg-hover); }
+  .aq-step.active .aq-step-num { border-color: var(--text-primary); color: var(--text-primary); }
   .aq-step.done { color: var(--text-secondary); cursor: pointer; }
-  .aq-step.done .aq-step-num { background: var(--accent); border-color: var(--accent); color: var(--accent-text-on); font-size: 0; }
-  .aq-step.done .aq-step-num::after { content: '✓'; font-size: 10px; color: var(--accent-text-on); }
+  .aq-step.done .aq-step-num { background: var(--text-primary); border-color: var(--text-primary); color: var(--bg-panel); font-size: 0; }
+  .aq-step.done .aq-step-num::after { content: '✓'; font-size: 10px; color: var(--bg-panel); }
   .aq-wizard-nav {
     display: flex; align-items: center; gap: 8px; padding: 4px 14px 12px;
   }
@@ -1879,12 +1880,12 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                   <div class="aq-wizard-nav" id="aq-multi-wizard-nav">
                     <button type="button" class="btn btn-ghost btn-sm" id="aq-multi-back" onclick="aqMultiBack()" disabled>Back</button>
                     <span class="aq-step-count" id="aq-multi-step-count">Question 1 of 3</span>
-                    <button type="button" class="btn btn-primary btn-sm" id="aq-multi-next" onclick="aqMultiNext()" disabled>Next</button>
-                    <button type="button" class="btn btn-primary btn-sm aq-submit" id="aq-multi-submit" onclick="aqMultiSubmit()" style="display:none" disabled>Submit</button>
+                    <button type="button" class="btn btn-sm aq-submit" id="aq-multi-next" onclick="aqMultiNext()" disabled>Next</button>
+                    <button type="button" class="btn btn-sm aq-submit" id="aq-multi-submit" onclick="aqMultiSubmit()" style="display:none" disabled>Submit</button>
                   </div>
 
                   <div class="aq-actions aq-stacked-footer" id="aq-multi-stacked-footer">
-                    <button type="button" class="btn btn-primary btn-sm aq-submit" id="aq-multi-stacked-submit" onclick="aqMultiSubmit()" disabled>Submit all answers</button>
+                    <button type="button" class="btn btn-sm aq-submit" id="aq-multi-stacked-submit" onclick="aqMultiSubmit()" disabled>Submit all answers</button>
                   </div>
 
                   <div class="aq-footer-hint">Stepper matches Claude Code's batched AskUserQuestion. Stacked shows today's Atelier layout — every question visible at once.</div>
@@ -1900,15 +1901,18 @@ src/auth/session-bootstrap.ts:22:    this.scheduleRefresh(loginResponse.expiresA
                 <div class="aq-body">
                   <div class="aq-question">Should the fix also cover the local (non-remote) auth bootstrap path?</div>
                   <div class="aq-options" id="aq1-options">
-                    <button type="button" class="aq-option" onclick="answerQuestion('aq1', this)"><div class="num">1</div><div>Yes, apply to both local and remote</div></button>
-                    <button type="button" class="aq-option" onclick="answerQuestion('aq1', this)"><div class="num">2</div><div>Remote only for now</div></button>
+                    <button type="button" class="aq-option" onclick="selectAqOption('aq1', this)"><div class="num">1</div><div>Yes, apply to both local and remote<div class="desc">Patch local and remote bootstrap the same way</div></div></button>
+                    <button type="button" class="aq-option" onclick="selectAqOption('aq1', this)"><div class="num">2</div><div>Remote only for now<div class="desc">Leave the local path alone this turn</div></div></button>
                     <button type="button" class="aq-option aq-other" onclick="showAqOther('aq1', this)"><div class="num">3</div><div>Other — type your own answer</div></button>
                   </div>
                   <div class="aq-other-box" id="aq1-other-box">
-                    <textarea id="aq1-other-input" rows="2" placeholder="Type your answer…"></textarea>
-                    <button class="btn btn-primary btn-sm" onclick="submitAqOther('aq1')">Send</button>
+                    <textarea id="aq1-other-input" rows="2" placeholder="Type your answer…" oninput="syncAq1Submit()"></textarea>
                   </div>
-                  <div class="aq-footer-hint">You can also just type a reply in the composer below instead of picking an option.</div>
+                  <div class="aq-actions" id="aq1-actions">
+                    <button type="button" class="btn btn-sm aq-submit" id="aq1-submit" data-testid="aq-submit" disabled onclick="submitAq1()">Submit answer</button>
+                    <button type="button" class="btn btn-sm btn-ghost aq-cancel" data-testid="aq-cancel" onclick="cancelAq1()">Continue without answering</button>
+                  </div>
+                  <div class="aq-footer-hint">Or type a reply in the composer below.</div>
                 </div>
               </div>
 
@@ -4187,17 +4191,65 @@ function aqMultiSubmit() {
   aqMultiUpdateUI();
 }
 
-function answerQuestion(cardId, optionEl) {
+/** Single-question AQ: select only — Submit confirms (matches production). */
+function selectAqOption(cardId, optionEl) {
   const card = document.getElementById(cardId);
   card.querySelectorAll('.aq-option').forEach(o => o.classList.remove('selected'));
   optionEl.classList.add('selected');
+  const otherBox = document.getElementById(cardId + '-other-box');
+  if (otherBox && !optionEl.classList.contains('aq-other')) otherBox.classList.remove('show');
+  if (cardId === 'aq1') syncAq1Submit();
+}
+function syncAq1Submit() {
+  const card = document.getElementById('aq1');
+  const submit = document.getElementById('aq1-submit');
+  if (!card || !submit) return;
+  const selected = card.querySelector('.aq-option.selected');
+  if (!selected) { submit.disabled = true; return; }
+  if (selected.classList.contains('aq-other')) {
+    submit.disabled = !(document.getElementById('aq1-other-input')?.value || '').trim();
+  } else {
+    submit.disabled = false;
+  }
+}
+function submitAq1() {
+  const card = document.getElementById('aq1');
+  const selected = card.querySelector('.aq-option.selected');
+  if (!selected) return;
+  if (selected.classList.contains('aq-other')) {
+    const text = (document.getElementById('aq1-other-input')?.value || '').trim();
+    if (!text) return;
+    selected.querySelector('div:last-child').textContent = '"' + text + '"';
+    document.getElementById('aq1-other-box').classList.remove('show');
+  }
+  card.classList.add('answered');
+  const actions = document.getElementById('aq1-actions');
+  if (actions) actions.style.display = 'none';
+  const after = document.getElementById('afterAq1');
+  if (after) after.style.display = '';
+  const perm = document.getElementById('perm1');
+  if (perm) perm.style.display = '';
+}
+function cancelAq1() {
+  const card = document.getElementById('aq1');
+  card.classList.add('answered');
+  const actions = document.getElementById('aq1-actions');
+  if (actions) actions.style.display = 'none';
+  const hint = card.querySelector('.aq-footer-hint');
+  if (hint) hint.textContent = 'Skipped — will continue in normal chat.';
+  const after = document.getElementById('afterAq1');
+  if (after) { after.style.display = ''; after.textContent = 'Continuing without that answer.'; }
+}
+function answerQuestion(cardId, optionEl) {
+  /* Legacy instant-submit path (unused by aq1 after explicit-submit mock). */
+  selectAqOption(cardId, optionEl);
+  if (cardId === 'aq1') { submitAq1(); return; }
+  const card = document.getElementById(cardId);
   card.classList.add('answered');
   const otherBox = document.getElementById(cardId + '-other-box');
   if (otherBox) otherBox.classList.remove('show');
   const after = document.getElementById('after' + cardId.charAt(0).toUpperCase() + cardId.slice(1));
   if (after) after.style.display = '';
-  const perm = document.getElementById('perm1');
-  if (cardId === 'aq1' && perm) perm.style.display = '';
 }
 function showAqOther(cardId, optionEl) {
   document.getElementById(cardId + '-options').querySelectorAll('.aq-option').forEach(o => o.classList.remove('selected'));
@@ -4205,8 +4257,10 @@ function showAqOther(cardId, optionEl) {
   const box = document.getElementById(cardId + '-other-box');
   box.classList.add('show');
   document.getElementById(cardId + '-other-input').focus();
+  if (cardId === 'aq1') syncAq1Submit();
 }
 function submitAqOther(cardId) {
+  if (cardId === 'aq1') { submitAq1(); return; }
   const text = document.getElementById(cardId + '-other-input').value.trim();
   if (!text) return;
   const card = document.getElementById(cardId);
@@ -4216,8 +4270,6 @@ function submitAqOther(cardId) {
   document.getElementById(cardId + '-other-box').classList.remove('show');
   const after = document.getElementById('after' + cardId.charAt(0).toUpperCase() + cardId.slice(1));
   if (after) after.style.display = '';
-  const perm = document.getElementById('perm1');
-  if (cardId === 'aq1' && perm) perm.style.display = '';
 }
 
 /* ===== Permission prompt ===== */

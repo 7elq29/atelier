@@ -45,7 +45,7 @@ async function seedUserTurns(page: Page, sessionId: string, count: number): Prom
 }
 
 test.describe('chat-transcript-window', () => {
-  test('shows only the last 20 conversations with a truncation banner', async () => {
+  test('shows only the last 50 conversations with a truncation banner', async () => {
     const userDataDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-transcript-window-'))
     seedE2eConfig(userDataDir)
     seedSkipOnboarding(userDataDir)
@@ -64,7 +64,7 @@ test.describe('chat-transcript-window', () => {
       return session.id
     }, projectDir)
 
-    await seedUserTurns(page, sessionId, 21)
+    await seedUserTurns(page, sessionId, 51)
 
     await page.reload()
     await page.waitForLoadState('domcontentloaded')
@@ -76,19 +76,19 @@ test.describe('chat-transcript-window', () => {
     await expect(page.getByTestId('composer-input')).toBeVisible({ timeout: 15_000 })
     const truncationBanner = page.getByTestId('transcript-history-truncated')
     await expect(truncationBanner).toBeVisible({ timeout: 10_000 })
-    await expect(truncationBanner).toContainText('20 conversations')
+    await expect(truncationBanner).toContainText('50 conversations')
     await expect(truncationBanner).toContainText('1 earlier hidden')
 
     await expect(page.locator('[data-testid="transcript-message"]').filter({ hasText: 'seed-turn-1-user' })).toHaveCount(0)
-    await expect(page.locator('[data-testid="transcript-message"]').filter({ hasText: 'seed-turn-21-user' })).toHaveCount(1)
+    await expect(page.locator('[data-testid="transcript-message"]').filter({ hasText: 'seed-turn-51-user' })).toHaveCount(1)
 
     const result = await page.evaluate((id) => window.atelier.listSessionMessages(id), sessionId)
     expect(result.transcriptTruncated).toBe(true)
     expect(result.hiddenTurnCount).toBe(1)
-    expect(result.messages.filter((m) => m.role === 'user').length).toBe(20)
+    expect(result.messages.filter((m) => m.role === 'user').length).toBe(50)
 
     await truncationBanner.scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(artifactsDir, 'chat-transcript-window-21-turns.png') })
+    await page.screenshot({ path: join(artifactsDir, 'chat-transcript-window-51-turns.png') })
 
     await app.close()
   })

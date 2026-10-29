@@ -3047,19 +3047,17 @@ input[type='range'] {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ===== Interactive prompts (05-interactive-prompts) =====
-   Selectors/values copied verbatim from Features/UI-Design/mocks/index.html
-   — token-driven callout styling throughout (var(--bg-panel), bordered/
-   shadowed like any other card, heading colored via var(--accent)/
-   var(--warning)) — an earlier hardcoded-dark-background version of these
-   cards was explicitly rejected during design work; this must never
-   reintroduce a hardcoded background. */
+   Token-driven callout styling (var(--bg-panel), elevation border/shadow).
+   AskUserQuestion uses neutral text/border tokens — no --accent/green.
+   Permission cards keep var(--warning). Never reintroduce a hardcoded
+   card background. */
 
 .prompt-fold .tool-sequence-summary-head { max-width: 84%; }
 .prompt-fold-head-extra { display: inline-flex; flex-shrink: 0; }
 
-/* ---- AskUserQuestion card ---- */
+/* ---- AskUserQuestion card (neutral chrome — no accent/green) ---- */
 .aq-card { border: 1px solid var(--elevation-border); background: var(--bg-panel); border-radius: var(--r-lg); overflow: hidden; max-width: 84%; box-shadow: var(--elevation-shadow); flex-shrink: 0; align-self: flex-start; }
-.aq-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px 6px; font-size: 13px; font-weight: 600; color: var(--accent); width: 100%; box-sizing: border-box; }
+.aq-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px 6px; font-size: 13px; font-weight: 600; color: var(--text-secondary); width: 100%; box-sizing: border-box; }
 .aq-body { padding: 0 14px 13px; display: flex; flex-direction: column; gap: 8px; }
 .aq-question { font-size: 13.5px; line-height: 1.45; color: var(--text-primary); }
 .aq-options { display: flex; flex-direction: column; gap: 6px; }
@@ -3068,8 +3066,8 @@ input[type='range'] {
 .aq-option .num { width: 15px; height: 15px; border-radius: 50%; background: transparent; border: 1.5px solid var(--text-tertiary); font-size: 0; flex-shrink: 0; margin-top: 2px; }
 .aq-option .desc { color: var(--text-tertiary); font-size: 12.5px; line-height: 1.4; margin-top: 2px; }
 .aq-card.answered .aq-option { pointer-events: none; opacity: .45; }
-.aq-card .aq-option.selected { opacity: 1; border-color: var(--accent); background: var(--accent-dim); }
-.aq-card .aq-option.selected .num { background: var(--accent); border-color: var(--accent); }
+.aq-card .aq-option.selected { opacity: 1; border-color: var(--border-strong); background: var(--bg-hover); }
+.aq-card .aq-option.selected .num { background: transparent; border-color: var(--text-primary); }
 .aq-card .aq-option.aq-other.selected { border-style: solid; background: transparent; }
 .aq-option.aq-other { border: 1px dashed var(--border-strong); background: transparent; color: var(--text-secondary); }
 .aq-other-box { display: none; gap: 6px; }
@@ -3104,11 +3102,11 @@ input[type='range'] {
   align-items: center; justify-content: center; font-size: 10px;
   border: 1.5px solid var(--border-strong); color: var(--text-tertiary);
 }
-.aq-step.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
-.aq-step.active .aq-step-num { border-color: var(--accent); color: var(--accent); }
+.aq-step.active { border-color: var(--border-strong); color: var(--text-primary); background: var(--bg-hover); }
+.aq-step.active .aq-step-num { border-color: var(--text-primary); color: var(--text-primary); }
 .aq-step.done { color: var(--text-secondary); cursor: pointer; }
-.aq-step.done .aq-step-num { background: var(--accent); border-color: var(--accent); color: var(--accent-text-on); font-size: 0; position: relative; }
-.aq-step.done .aq-step-num::after { content: '✓'; font-size: 10px; color: var(--accent-text-on); position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.aq-step.done .aq-step-num { background: var(--text-primary); border-color: var(--text-primary); color: var(--bg-panel); font-size: 0; position: relative; }
+.aq-step.done .aq-step-num::after { content: '✓'; font-size: 10px; color: var(--bg-panel); position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .aq-wizard-nav { display: flex; align-items: center; gap: 8px; padding: 4px 0 0; }
 .aq-wizard-nav .aq-step-count { flex: 1; text-align: center; font-size: 12px; color: var(--text-tertiary); }
 .aq-card.aq-mode-stepper .aq-step-panel { display: none; }

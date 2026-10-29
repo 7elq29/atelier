@@ -18,6 +18,11 @@
    seeds disappeared and the SETUP card never re-painted (`lastSetupKey`
    dedupe). The empty pane showed "Ready to chat" while Minion UI was still
    Connecting.
+7. **Stuck session Connecting… until first send:** `startupReconnect` cleared
+   `connecting` only on the first harness event (via `pendingPanelPreload`).
+   After (6), empty replay emits nothing, so Minion stayed on the Connecting
+   gate until a user turn produced an event. Fix: clear gateway `connecting`
+   when `resume()` returns — same as manual `reconnect()`.
 
 ## Correct flow
 
@@ -60,3 +65,4 @@
 - [x] Minion e2e A/B/D + SETUP evidence green
 - [x] Empty replay must not wipe; preserve/re-paint SETUP across conversation_reset
 - [x] Suppress SessionReadyHint while `minion_setup` chrome is active
+- [x] startupReconnect clears Minion/Cortana `connecting` on resume success

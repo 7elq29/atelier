@@ -23,21 +23,27 @@ function isPickComplete(
   return pick !== undefined
 }
 
+/** Display name in the card head — Claude / Cortana / Minion (same card format). */
+export type AskUserAskerName = 'Claude' | 'Cortana' | 'Minion'
+
 /**
  * AskUserQuestion card (05-interactive-prompts) — a REAL clickable card:
- * clicking an option sends the SDK's expected `answers` shape back through
- * `onRespond`. Multi-question batches use a stepper (one question at a time);
- * single-question cards show all options at once. Resolved cards fold into the
- * tool-sequence summary when embedded in an activity run.
+ * clicking an option selects; Submit sends the SDK's expected `answers` shape
+ * through `onRespond`. Same chrome for Claude / Cortana / Minion sessions.
+ * Multi-question batches use a stepper; single-question cards show all options.
+ * Resolved cards fold into the tool-sequence summary when embedded in a run.
  */
+
 export default function AskUserQuestionCard({
   content,
   onRespond,
-  embedded = false
+  embedded = false,
+  askerName = 'Claude'
 }: {
   content: AskUserQuestionContent
   onRespond: (decision: PromptDecision) => void
   embedded?: boolean
+  askerName?: AskUserAskerName
 }): JSX.Element {
   const answered = content.status === 'answered'
   const cancelled = content.status === 'cancelled'
@@ -187,7 +193,7 @@ export default function AskUserQuestionCard({
         {!onLastStep ? (
           <button
             type="button"
-            className="btn btn-sm btn-allow"
+            className="btn btn-sm aq-submit"
             data-testid="aq-next"
             disabled={!currentStepComplete}
             onClick={() => setStep((s) => Math.min(questionCount - 1, s + 1))}
@@ -197,7 +203,7 @@ export default function AskUserQuestionCard({
         ) : (
           <button
             type="button"
-            className="btn btn-sm btn-allow aq-submit"
+            className="btn btn-sm aq-submit"
             data-testid="aq-submit"
             disabled={!allPicked}
             onClick={() => submit(picked)}
@@ -213,7 +219,7 @@ export default function AskUserQuestionCard({
       <div className="aq-actions" data-testid="aq-actions">
         <button
           type="button"
-          className="btn btn-sm btn-allow aq-submit"
+          className="btn btn-sm aq-submit"
           data-testid="aq-submit"
           disabled={!allPicked}
           onClick={() => submit(picked)}
@@ -274,7 +280,7 @@ export default function AskUserQuestionCard({
         </div>
       ) : cancelled ? (
         <div className="aq-footer-hint" data-testid="aq-cancelled-note">
-          Skipped — Claude will continue in normal chat.
+          Skipped — {askerName} will continue in normal chat.
         </div>
       ) : !resolved ? (
         <div className="aq-footer-hint">Or type a reply in the composer below.</div>
@@ -284,8 +290,8 @@ export default function AskUserQuestionCard({
 
   const headLabel =
     questionCount > 1
-      ? `Claude is asking ${questionCount} questions`
-      : 'Claude is asking a question'
+      ? `${askerName} is asking ${questionCount} questions`
+      : `${askerName} is asking a question`
 
   const resolvedBody = (
     <div

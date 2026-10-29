@@ -93,6 +93,12 @@ test.describe('agenda-nl-task-create', () => {
     await expect(input).toBeVisible({ timeout: 5_000 })
 
     await input.click()
+    const ta = input.locator('textarea.dn-nl-textarea')
+    await expect(ta).toBeFocused()
+    // Transparent overlay text + keyword `color: transparent` can hide the caret in
+    // Chromium unless caret-color is an opaque color (bug-daily-note-nl-caret).
+    const caretColor = await ta.evaluate((el) => getComputedStyle(el).caretColor)
+    expect(caretColor, `caret must be visible, got ${caretColor}`).not.toMatch(/transparent|rgba\(0,\s*0,\s*0,\s*0\)/)
     await page.keyboard.type('Logging Team Sync #meeting at 10:00 am for 1 h', { delay: 15 })
     await page.screenshot({ path: join(artifactsDir, 'agenda-nl-create-typed.png') })
 

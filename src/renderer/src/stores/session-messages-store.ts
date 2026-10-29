@@ -1,4 +1,5 @@
 import type { MessageRecord } from '../../../shared/session-types'
+import { windowMessagesForDisplay } from '../../../shared/chat-transcript-window'
 import { removeSessionPromptDot, syncSessionPromptDot } from './session-prompt-dot-store'
 
 type MessagesBySession = Record<string, MessageRecord[]>
@@ -189,6 +190,20 @@ export function initSessionMessagesListeners(): () => void {
         }
         const buffered = applyBufferedDelta(next, sessionId, message.id)
         if (buffered) next = buffered
+        // Drop turns that scrolled out of the display window so Minion full
+        // replay / long sessions cannot balloon the painted transcript.
+        const priorHidden = truncationBySession[sessionId]?.hiddenTurnCount ?? 0
+        const windowed = windowMessagesForDisplay(next, undefined, priorHidden)
+        if (windowed.messages !== next || windowed.hiddenTurnCount !== priorHidden) {
+          truncationBySession = {
+            ...truncationBySession,
+            [sessionId]: {
+              transcriptTruncated: windowed.transcriptTruncated,
+              hiddenTurnCount: windowed.hiddenTurnCount
+            }
+          }
+          next = windowed.messages
+        }
         return { ...prev, [sessionId]: next }
       },
       { syncPromptDots: true }
