@@ -1876,7 +1876,8 @@
     {
       "id": "chat-window",
       "paths": [
-        "src/shared/chat-transcript-window.ts"
+        "src/shared/chat-transcript-window.ts",
+        "src/renderer/src/stores/session-messages-store.ts"
       ],
       "targets": [
         {
