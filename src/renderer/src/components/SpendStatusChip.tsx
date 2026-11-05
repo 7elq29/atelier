@@ -1,5 +1,9 @@
-import { useEffect, useState } from 'react'
-import type { HarnessSpendBreakdown, SpendStatus } from '../../../shared/spend-status-types'
+import { useCallback, useEffect, useState } from 'react'
+import type {
+  HarnessSpendBreakdown,
+  SpendStatus,
+  SpendStatusSnapshot
+} from '../../../shared/spend-status-types'
 
 const POLL_MS = 5 * 60 * 1000
 
@@ -62,31 +66,92 @@ const NAMED_BAR_ORDER = ['Cortana', 'Minion', 'Cursor'] as const
 /**
  * Org-wide AI spend chip. Claude Code = harness-pool total; Cortana / Minion /
  * Cursor render as extra bars when their spendstatus endpoints return data.
+ * When USSO is expired, shows a Renew USSO link instead of endless browser tabs.
  */
 export default function SpendStatusChip(): JSX.Element | null {
-  const [data, setData] = useState<SpendStatus | null>(null)
+  const [snap, setSnap] = useState<SpendStatusSnapshot | null>(null)
+  const [renewing, setRenewing] = useState(false)
+
+  const load = useCallback((): void => {
+    void window.atelier.getSpendStatus().then((next) => {
+      setSnap(next)
+    })
+  }, [])
 
   useEffect(() => {
     let cancelled = false
-    const load = (): void => {
+    const tick = (): void => {
       void window.atelier.getSpendStatus().then((next) => {
-        if (!cancelled) setData(next)
+        if (!cancelled) setSnap(next)
       })
     }
-    load()
-    const interval = setInterval(load, POLL_MS)
-    return () => { cancelled = true; clearInterval(interval) }
+    tick()
+    const interval = setInterval(tick, POLL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
   }, [])
 
-  if (!data) return null
+  const onRenew = useCallback((): void => {
+    if (renewing) return
+    setRenewing(true)
+    void window.atelier
+      .renewSpendStatusUsso()
+      .then((result) => {
+        if (result.ok) load()
+        else load()
+      })
+      .finally(() => setRenewing(false))
+  }, [load, renewing])
 
+  if (!snap || snap.state === 'unavailable') return null
+
+  if (snap.state === 'needs_usso') {
+    return (
+      <div className="spend-indicator" data-testid="spend-status-chip" data-spend-state="needs_usso">
+        <div className="spend-bar-block">
+          <div className="spend-bar-header">
+            <span className="spend-bar-label">Claude Code</span>
+            <span className="spend-bar-amount">—</span>
+          </div>
+        </div>
+        <div className="spend-bar-block">
+          <div className="spend-bar-header">
+            <span className="spend-bar-label">Cortana</span>
+            <span className="spend-bar-amount">—</span>
+          </div>
+        </div>
+        <div className="spend-indicator-footer">
+          USSO expired ·{' '}
+          <button
+            type="button"
+            className="spend-indicator-link"
+            data-testid="spend-status-renew-usso"
+            onClick={onRenew}
+            disabled={renewing}
+            aria-label="Renew USSO"
+          >
+            {renewing ? 'Renewing…' : 'Renew USSO'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const data = snap.data
   const namedBars = NAMED_BAR_ORDER.flatMap((label) => {
     const entry = data.harnesses.find((h) => h.harness === label)
     return entry ? [{ label, spent: entry.spent, cap: entry.cap }] : []
   })
 
   return (
-    <div className="spend-indicator" data-testid="spend-status-chip" title={formatTooltip(data)}>
+    <div
+      className="spend-indicator"
+      data-testid="spend-status-chip"
+      data-spend-state="ready"
+      title={formatTooltip(data)}
+    >
       <SpendBar label="Claude Code" spent={data.spent} cap={data.cap} />
       {namedBars.map((bar) => (
         <SpendBar key={bar.label} label={bar.label} spent={bar.spent} cap={bar.cap} />

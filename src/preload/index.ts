@@ -62,7 +62,7 @@ import type {
   WorktreeInfo,
   WorkspaceFileEntry
 } from '../shared/panel-types'
-import type { SpendStatus } from '../shared/spend-status-types'
+import type { SpendStatusSnapshot } from '../shared/spend-status-types'
 import type { AppNoteRecord, AppNoteUpdate } from '../shared/app-note-types'
 import type { AppBookmarkInput, AppBookmarkRecord, AppBookmarkUpdate } from '../shared/app-bookmark-types'
 import type { ProjectPathSuggestion } from '../shared/project-path-autocomplete'
@@ -597,7 +597,13 @@ const api = {
 
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),
 
-  getSpendStatus: (): Promise<SpendStatus | null> => ipcRenderer.invoke('spendStatus:get'),
+  getSpendStatus: (): Promise<SpendStatusSnapshot> => ipcRenderer.invoke('spendStatus:get'),
+  renewSpendStatusUsso: (): Promise<{ ok: boolean; interactiveFetchCount: number }> =>
+    ipcRenderer.invoke('spendStatus:renewUsso'),
+  getSpendStatusAuthDebug: (): Promise<{
+    interactiveFetchCount: number
+    autoInteractiveFetchAttempted: boolean
+  }> => ipcRenderer.invoke('spendStatus:authDebug'),
 
   listAppNotes: (): Promise<AppNoteRecord[]> => ipcRenderer.invoke('app-note:list'),
   getAppNote: (id: string): Promise<AppNoteRecord> => ipcRenderer.invoke('app-note:get', id),

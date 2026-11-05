@@ -4,17 +4,29 @@
  * polls on its own schedule (`SpendStatusChip.tsx`).
  */
 import { ipcMain } from 'electron'
-import { logger } from './logger'
-import { getSpendStatus } from './spend-status'
-import type { SpendStatus } from '../shared/spend-status-types'
+import {
+  getSpendStatusAuthDebug,
+  getSpendStatusSnapshot,
+  renewSpendStatusUsso
+} from './spend-status'
+import type { SpendStatusSnapshot } from '../shared/spend-status-types'
 
 export function registerSpendStatusHandlers(): void {
-  ipcMain.handle('spendStatus:get', async (): Promise<SpendStatus | null> => {
-    try {
-      return await getSpendStatus()
-    } catch (err) {
-      logger.warn('spend status unavailable', { error: err instanceof Error ? err.message : String(err) })
-      return null
+  ipcMain.handle('spendStatus:get', async (): Promise<SpendStatusSnapshot> => {
+    return getSpendStatusSnapshot()
+  })
+
+  ipcMain.handle(
+    'spendStatus:renewUsso',
+    async (): Promise<{ ok: boolean; interactiveFetchCount: number }> => {
+      return renewSpendStatusUsso()
     }
+  )
+
+  ipcMain.handle('spendStatus:authDebug', (): {
+    interactiveFetchCount: number
+    autoInteractiveFetchAttempted: boolean
+  } => {
+    return getSpendStatusAuthDebug()
   })
 }

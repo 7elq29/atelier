@@ -37,6 +37,22 @@
       ]
     },
     {
+      "id": "spend-status-usso-renew",
+      "paths": [
+        "src/main/spend-status.ts",
+        "src/main/spend-status-ipc.ts",
+        "src/renderer/src/components/SpendStatusChip.tsx",
+        "src/preload/index.ts"
+      ],
+      "changedLines": "needs_usso|renewSpendStatusUsso|interactive usso fetch|Renew USSO|ATELIER_SPEND_STATUS_FIXTURE",
+      "targets": [
+        {
+          "file": "e2e/global-nav-and-settings.spec.ts",
+          "grep": "USSO expired"
+        }
+      ]
+    },
+    {
       "id": "session-alert-dot",
       "paths": [
         "src/renderer/src/App.tsx",

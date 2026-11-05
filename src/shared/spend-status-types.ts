@@ -19,3 +19,14 @@ export interface SpendStatus {
   updatedAt: number
   harnesses: HarnessSpendBreakdown[]
 }
+
+/**
+ * Renderer-facing snapshot for the sidebar chip.
+ * - `ready` — bars + “view usage”
+ * - `needs_usso` — auth expired/missing; show Renew USSO (no auto tab storm)
+ * - `unavailable` — disabled / offline / other non-auth failure; hide chip
+ */
+export type SpendStatusSnapshot =
+  | { state: 'ready'; data: SpendStatus }
+  | { state: 'needs_usso' }
+  | { state: 'unavailable' }

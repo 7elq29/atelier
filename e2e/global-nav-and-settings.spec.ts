@@ -583,6 +583,7 @@ test.describe('sidebar spend-status chip', () => {
   test('does not render, and the app does not error, when spend status is disabled', async () => {
     const freshDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-spend-status-disabled-'))
     process.env.ATELIER_DISABLE_SPEND_STATUS = '1'
+    delete process.env.ATELIER_SPEND_STATUS_FIXTURE
     try {
       const { app, page } = await launchApp(freshDir)
       await expect(page.getByTestId('sidebar')).toBeVisible()
@@ -594,16 +595,59 @@ test.describe('sidebar spend-status chip', () => {
     }
   })
 
+  test('USSO expired: shows Renew USSO and auto-fetch runs at most once across polls', async () => {
+    const freshDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-spend-status-needs-usso-'))
+    seedE2eConfig(freshDir)
+    seedSkipOnboarding(freshDir)
+    delete process.env.ATELIER_DISABLE_SPEND_STATUS
+    process.env.ATELIER_SPEND_STATUS_FIXTURE = 'needs_usso'
+    try {
+      const { app, page } = await launchApp(freshDir)
+      await expect(page.getByTestId('sidebar')).toBeVisible()
+      const chip = page.getByTestId('spend-status-chip')
+      await expect(chip).toBeVisible({ timeout: 10_000 })
+      await expect(chip).toHaveAttribute('data-spend-state', 'needs_usso')
+      await expect(chip).toContainText('Claude Code')
+      await expect(chip).toContainText('Cortana')
+      await expect(chip).toContainText('USSO expired')
+      const renew = page.getByTestId('spend-status-renew-usso')
+      await expect(renew).toBeVisible()
+
+      const afterMount = await page.evaluate(() => window.atelier.getSpendStatusAuthDebug())
+      expect(afterMount.autoInteractiveFetchAttempted).toBe(true)
+      expect(afterMount.interactiveFetchCount).toBe(1)
+
+      // Second poll must not open another interactive fetch.
+      await page.evaluate(() => window.atelier.getSpendStatus())
+      const afterPoll = await page.evaluate(() => window.atelier.getSpendStatusAuthDebug())
+      expect(afterPoll.interactiveFetchCount).toBe(1)
+
+      await renew.click()
+      await expect
+        .poll(async () => (await page.evaluate(() => window.atelier.getSpendStatusAuthDebug())).interactiveFetchCount)
+        .toBe(2)
+
+      await chip.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: join(artifactsDir, 'spend-status-needs-usso.png') })
+
+      await app.close()
+    } finally {
+      delete process.env.ATELIER_SPEND_STATUS_FIXTURE
+      rmSync(freshDir, { recursive: true, force: true })
+    }
+  })
+
   test('renders a real $spent/$cap readout when the fetch succeeds, or stays absent without erroring otherwise', async () => {
     const freshDir = mkdtempSync(join(tmpdir(), 'atelier-e2e-spend-status-live-'))
     delete process.env.ATELIER_DISABLE_SPEND_STATUS
+    delete process.env.ATELIER_SPEND_STATUS_FIXTURE
     const { app, page } = await launchApp(freshDir)
     await expect(page.getByTestId('sidebar')).toBeVisible()
 
     // No mocking: this either round-trips to the real genai-api spendstatus
     // endpoint via the real `usso` CLI, or — in an environment without Uber
-    // network/usso access — the IPC handler catches the failure and the
-    // chip simply never mounts. Both are valid outcomes; a crash isn't.
+    // network/usso access — the chip shows needs_usso / stays unavailable.
+    // A crash isn't valid.
     const chip = page.getByTestId('spend-status-chip')
     const appeared = await chip
       .waitFor({ state: 'visible', timeout: 8000 })
@@ -611,19 +655,24 @@ test.describe('sidebar spend-status chip', () => {
       .catch(() => false)
 
     if (appeared) {
-      await expect(chip).toContainText('Claude Code')
-      await expect(chip).toContainText('this month')
-      await expect(chip.getByRole('button', { name: /view usage/i })).toBeVisible()
-      // Named pools render when their endpoints return data (Cortana / Minion /
-      // Cursor). Soft-assert: at least one named bar is typical on Uber net.
-      const text = await chip.innerText()
-      if (['Cortana', 'Minion', 'Cursor'].some((label) => text.includes(label))) {
-        // Prefer asserting Minion when present — the new bar for this feature.
-        if (text.includes('Minion')) await expect(chip).toContainText('Minion')
-      }
-      const box = await chip.boundingBox()
-      if (box) {
-        await page.screenshot({ path: 'e2e-artifacts/06-spend-status-chip.png', clip: box })
+      const state = await chip.getAttribute('data-spend-state')
+      if (state === 'needs_usso') {
+        await expect(chip.getByTestId('spend-status-renew-usso')).toBeVisible()
+      } else {
+        await expect(chip).toContainText('Claude Code')
+        await expect(chip).toContainText('this month')
+        await expect(chip.getByRole('button', { name: /view usage/i })).toBeVisible()
+        // Named pools render when their endpoints return data (Cortana / Minion /
+        // Cursor). Soft-assert: at least one named bar is typical on Uber net.
+        const text = await chip.innerText()
+        if (['Cortana', 'Minion', 'Cursor'].some((label) => text.includes(label))) {
+          // Prefer asserting Minion when present — the new bar for this feature.
+          if (text.includes('Minion')) await expect(chip).toContainText('Minion')
+        }
+        const box = await chip.boundingBox()
+        if (box) {
+          await page.screenshot({ path: 'e2e-artifacts/06-spend-status-chip.png', clip: box })
+        }
       }
     }
 

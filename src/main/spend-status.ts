@@ -5,18 +5,31 @@
  * flow, same defensive response parsing; adapted to Atelier's plain
  * directly-instantiated module style instead of Morpheus's DI container.
  *
- * Every failure here (missing `usso`, offline network, non-200 response)
- * is caught by the caller and logged — this must never crash the app or
- * surface an error dialog, only make the sidebar chip disappear.
+ * Auth: prefer quiet `usso -ussh genai-api -print` (no browser). Interactive
+ * `usso -fetch` may open a browser login — spend polls allow that **once**
+ * per process; further polls stay quiet until the user clicks Renew USSO.
+ *
+ * Every non-auth failure (missing `usso`, offline network, non-200) degrades
+ * to `unavailable` — never crash the app or surface an error dialog.
  */
 import { execFile } from 'node:child_process'
 import { userInfo } from 'node:os'
-import type { HarnessSpendBreakdown, SpendStatus } from '../shared/spend-status-types'
+import { promisify } from 'node:util'
+import type {
+  HarnessSpendBreakdown,
+  SpendStatus,
+  SpendStatusSnapshot
+} from '../shared/spend-status-types'
+import { logger } from './logger'
+import { findUsso } from './uber-auth'
+import { subprocessEnvWithDevPath } from './shell-path'
+
+const execFileAsync = promisify(execFile)
 
 const UBER_EMAIL_SUFFIX = '@uber.com'
-import { findUsso } from './uber-auth'
 const SPEND_STATUS_BASE_URL = 'https://genai-api.uberinternal.com/v1/spendstatus/harness-pool'
 const SPEND_STATUS_TIMEOUT_MS = 15_000
+const GENAI_API = 'genai-api'
 
 type PlainObject = Record<string, unknown>
 
@@ -77,11 +90,6 @@ function getCurrentLdap(): string {
 
 function getCurrentUberEmail(): string {
   return `${getCurrentLdap()}${UBER_EMAIL_SUFFIX}`
-}
-
-/** Locates the `usso` binary, falling back to a bare PATH lookup. */
-function resolveUsso(): string {
-  return findUsso()
 }
 
 function normalizeKey(key: string): string {
@@ -187,37 +195,120 @@ export function parseSpendStatusResponse(raw: unknown, email: string): SpendStat
 }
 
 let cachedToken: { raw: string; cachedAt: number } | undefined
+/** Spend poll may open the browser login at most once until manual renew succeeds. */
+let autoInteractiveFetchAttempted = false
+/** Counts interactive `-fetch` invocations (auto + manual) for e2e / logs. */
+let interactiveFetchCount = 0
 
-async function getGenAiToken(forceRefresh = false): Promise<string> {
-  if (cachedToken && !forceRefresh) return cachedToken.raw
-
-  const args = ['-fetch', 'genai-api', '-print']
-  if (forceRefresh) args.push('-force')
-
-  const stdout = await new Promise<string>((resolve, reject) => {
-    execFile(resolveUsso(), args, { encoding: 'utf-8', timeout: 10_000, maxBuffer: 1024 * 1024 }, (err, out) => {
-      if (err) reject(err)
-      else resolve(out)
-    })
-  })
-
+function extractToken(stdout: string): string | null {
   const token = stdout
     .trim()
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
     .pop()
-
-  if (!token) throw new Error('usso returned an empty genai-api token')
-  cachedToken = { raw: token, cachedAt: Date.now() }
-  return token
+  return token && token.length > 0 ? token : null
 }
 
-async function fetchSpendStatus(email: string, forceRefresh = false): Promise<Response> {
-  const token = await getGenAiToken(forceRefresh)
+function isAuthFailureMessage(detail: string): boolean {
+  return /no ssh cert|ussh|usso|login|authenticate|empty|expired|unauthorized|401|403|credential/i.test(
+    detail
+  )
+}
+
+/** Quiet probe — never opens a browser. */
+async function printQuietGenAiToken(): Promise<string | null> {
+  try {
+    const { stdout, stderr } = await execFileAsync(findUsso(), ['-ussh', GENAI_API, '-print'], {
+      encoding: 'utf-8',
+      env: subprocessEnvWithDevPath(),
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024
+    })
+    const token = extractToken(stdout)
+    if (token) return token
+    const detail = stderr.trim() || 'usso quiet print returned empty'
+    if (!isAuthFailureMessage(detail)) {
+      logger.warn('spend-status: quiet usso print failed', { detail: detail.slice(0, 200) })
+    }
+    return null
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    if (!isAuthFailureMessage(detail)) {
+      logger.warn('spend-status: quiet usso print error', { detail: detail.slice(0, 200) })
+    }
+    return null
+  }
+}
+
+/**
+ * Interactive fetch — may open a browser tab.
+ * `auto`: only the first call in this process runs `-fetch`; later autos no-op.
+ * `manual`: always runs (user clicked Renew USSO).
+ */
+async function fetchInteractiveGenAiToken(
+  reason: 'auto' | 'manual',
+  opts?: { force?: boolean }
+): Promise<string | null> {
+  if (reason === 'auto' && autoInteractiveFetchAttempted) {
+    return null
+  }
+  if (reason === 'auto') autoInteractiveFetchAttempted = true
+
+  interactiveFetchCount += 1
+  logger.info('spend-status: interactive usso fetch', {
+    reason,
+    force: !!opts?.force,
+    interactiveFetchCount
+  })
+
+  const args = ['-fetch', GENAI_API, '-print']
+  if (opts?.force) args.push('-force')
+
+  try {
+    const { stdout } = await execFileAsync(findUsso(), args, {
+      encoding: 'utf-8',
+      env: subprocessEnvWithDevPath(),
+      timeout: 120_000,
+      maxBuffer: 1024 * 1024
+    })
+    const token = extractToken(stdout)
+    if (token) {
+      cachedToken = { raw: token, cachedAt: Date.now() }
+      return token
+    }
+    return null
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    logger.warn('spend-status: interactive usso fetch failed', {
+      reason,
+      detail: detail.slice(0, 200)
+    })
+    return null
+  }
+}
+
+async function resolveGenAiToken(): Promise<'ready' | 'needs_usso' | 'unavailable'> {
+  if (cachedToken) return 'ready'
+
+  const quiet = await printQuietGenAiToken()
+  if (quiet) {
+    cachedToken = { raw: quiet, cachedAt: Date.now() }
+    return 'ready'
+  }
+
+  const interactive = await fetchInteractiveGenAiToken('auto')
+  if (interactive) return 'ready'
+
+  // Quiet + (at most one) interactive failed — show Renew USSO, do not fetch again.
+  return 'needs_usso'
+}
+
+async function fetchSpendStatus(email: string): Promise<Response> {
+  if (!cachedToken) throw new Error('spend-status: no genai token')
   return fetch(`${SPEND_STATUS_BASE_URL}/${encodeURIComponent(email)}`, {
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${cachedToken.raw}`,
       Accept: 'application/json'
     },
     signal: AbortSignal.timeout(SPEND_STATUS_TIMEOUT_MS)
@@ -241,12 +332,12 @@ async function fetchNamedPoolSpend(
   path: string
 ): Promise<HarnessSpendBreakdown | null> {
   try {
-    const token = await getGenAiToken()
+    if (!cachedToken) return null
     const resp = await fetch(
       `https://genai-api.uberinternal.com/v1/spendstatus/${path}/${encodeURIComponent(email)}`,
       {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${cachedToken.raw}`,
           'rpc-caller': 'atelier',
           'rpc-service': 'genai-api',
           Accept: 'application/json'
@@ -268,37 +359,134 @@ async function fetchNamedPoolSpend(
   }
 }
 
-/**
- * Fetches the current user's org-wide harness-pool spend status. Throws on
- * any failure (missing `usso`, offline, non-200) — callers must catch and
- * degrade gracefully (see `spend-status-ipc.ts`).
- */
-export async function getSpendStatus(): Promise<SpendStatus> {
+function fixtureSnapshot(): SpendStatusSnapshot | null {
+  const fixture = process.env.ATELIER_SPEND_STATUS_FIXTURE
   if (process.env.ATELIER_DISABLE_SPEND_STATUS === '1') {
-    throw new Error('Spend status is disabled for this process')
+    return { state: 'unavailable' }
+  }
+  if (fixture === 'needs_usso') {
+    // Simulate expired auth without calling usso (e2e).
+    if (!autoInteractiveFetchAttempted) {
+      autoInteractiveFetchAttempted = true
+      interactiveFetchCount += 1
+      logger.info('spend-status: interactive usso fetch', {
+        reason: 'auto',
+        force: false,
+        interactiveFetchCount,
+        fixture: true
+      })
+    }
+    return { state: 'needs_usso' }
+  }
+  if (fixture === 'ready') {
+    return {
+      state: 'ready',
+      data: {
+        email: getCurrentUberEmail(),
+        spent: 12.34,
+        cap: 2000,
+        currency: 'USD',
+        updatedAt: Date.now(),
+        harnesses: [
+          { harness: 'Cortana', spent: 3.21, cap: 1300 },
+          { harness: 'Minion', spent: 1.1, cap: 3000 }
+        ]
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Fetches the current user's org-wide harness-pool spend status.
+ * Never throws to IPC — returns a snapshot the chip can render.
+ */
+export async function getSpendStatusSnapshot(): Promise<SpendStatusSnapshot> {
+  const fixture = fixtureSnapshot()
+  if (fixture) return fixture
+
+  try {
+    const auth = await resolveGenAiToken()
+    if (auth === 'unavailable') return { state: 'unavailable' }
+    if (auth === 'needs_usso') return { state: 'needs_usso' }
+
+    const email = getCurrentUberEmail()
+    let response = await fetchSpendStatus(email)
+    if (response.status === 401) {
+      // Stale cached JWT — quiet re-print only. Do not `-force` (opens another tab).
+      cachedToken = undefined
+      const quiet = await printQuietGenAiToken()
+      if (!quiet) {
+        const again = await fetchInteractiveGenAiToken('auto')
+        if (!again) return { state: 'needs_usso' }
+      } else {
+        cachedToken = { raw: quiet, cachedAt: Date.now() }
+      }
+      response = await fetchSpendStatus(email)
+      if (response.status === 401) return { state: 'needs_usso' }
+    }
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '')
+      logger.warn('spend-status: harness-pool non-OK', {
+        status: response.status,
+        body: body.slice(0, 200)
+      })
+      return { state: 'unavailable' }
+    }
+
+    const [status, ...namedPools] = await Promise.all([
+      parseSpendStatusResponse(await response.json(), email),
+      ...NAMED_SPEND_POOLS.map((pool) => fetchNamedPoolSpend(email, pool.harness, pool.path))
+    ])
+
+    for (const entry of namedPools) {
+      if (entry) status.harnesses.push(entry)
+    }
+    status.harnesses.sort((a, b) => b.spent - a.spent)
+
+    return { state: 'ready', data: status }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    if (isAuthFailureMessage(detail)) return { state: 'needs_usso' }
+    logger.warn('spend status unavailable', { error: detail.slice(0, 200) })
+    return { state: 'unavailable' }
+  }
+}
+
+/** User clicked Renew USSO — always runs one interactive fetch (may open browser). */
+export async function renewSpendStatusUsso(): Promise<{ ok: boolean; interactiveFetchCount: number }> {
+  if (process.env.ATELIER_SPEND_STATUS_FIXTURE === 'needs_usso') {
+    interactiveFetchCount += 1
+    logger.info('spend-status: interactive usso fetch', {
+      reason: 'manual',
+      force: true,
+      interactiveFetchCount,
+      fixture: true
+    })
+    // Stay on needs_usso until fixture flips; still proves the click path.
+    return { ok: false, interactiveFetchCount }
+  }
+  if (process.env.ATELIER_DISABLE_SPEND_STATUS === '1') {
+    return { ok: false, interactiveFetchCount }
   }
 
-  const email = getCurrentUberEmail()
-  let response = await fetchSpendStatus(email)
-  if (response.status === 401) {
-    cachedToken = undefined
-    response = await fetchSpendStatus(email, true)
-  }
+  cachedToken = undefined
+  const token = await fetchInteractiveGenAiToken('manual', { force: true })
+  return { ok: !!token, interactiveFetchCount }
+}
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`spendstatus exited ${response.status}: ${body.slice(0, 200)}`)
-  }
+/** E2E / diagnostics for the once-only auto browser open gate. */
+export function getSpendStatusAuthDebug(): {
+  interactiveFetchCount: number
+  autoInteractiveFetchAttempted: boolean
+} {
+  return { interactiveFetchCount, autoInteractiveFetchAttempted }
+}
 
-  const [status, ...namedPools] = await Promise.all([
-    parseSpendStatusResponse(await response.json(), email),
-    ...NAMED_SPEND_POOLS.map((pool) => fetchNamedPoolSpend(email, pool.harness, pool.path))
-  ])
-
-  for (const entry of namedPools) {
-    if (entry) status.harnesses.push(entry)
-  }
-  status.harnesses.sort((a, b) => b.spent - a.spent)
-
-  return status
+/** @deprecated Prefer getSpendStatusSnapshot — kept for parse unit call sites. */
+export async function getSpendStatus(): Promise<SpendStatus> {
+  const snap = await getSpendStatusSnapshot()
+  if (snap.state !== 'ready') throw new Error(`spend status ${snap.state}`)
+  return snap.data
 }
