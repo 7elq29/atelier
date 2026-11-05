@@ -2045,10 +2045,22 @@
       "paths": [
         "src/renderer/src/styles/global.css"
       ],
-      "changedLines": "chat-body-row|scrollbar-width|::-webkit-scrollbar",
+      "changedLines": "chat-body-row",
       "targets": [
         {
           "file": "e2e/chat-scrollbar-hidden.spec.ts"
+        }
+      ]
+    },
+    {
+      "id": "app-note-empty-scrollbar",
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
+      "changedLines": "app-notes-panel .cm-scroller",
+      "targets": [
+        {
+          "file": "e2e/bug-app-note-empty-scrollbar.spec.ts"
         }
       ]
     },

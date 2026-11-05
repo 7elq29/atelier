@@ -4879,6 +4879,11 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
   padding-inline: 0;
   padding-bottom: 0;
 }
+/* Hide the native scrollbar track — scrollPastEnd always overflows; wheel/keyboard still work. */
+.app-notes-panel .cm-scroller {
+  scrollbar-width: none;
+}
+.app-notes-panel .cm-scroller::-webkit-scrollbar { display: none; }
 
 /* Sidebar — fixed Daily note row (Obsidian vault slice) */
 
