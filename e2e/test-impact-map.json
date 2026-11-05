@@ -405,6 +405,30 @@
       ]
     },
     {
+      "id": "meeting-glyph-checkbox-slot",
+      "paths": [
+        "src/renderer/src/components/daily-notes/MeetingGlyph.tsx",
+        "src/renderer/src/components/daily-notes/AgendaTimeline.tsx",
+        "src/renderer/src/components/daily-notes/Timeline.tsx",
+        "src/renderer/src/components/daily-notes/TaskItem.tsx",
+        "src/renderer/src/components/daily-notes/TaskTextDisplay.tsx",
+        "src/renderer/src/components/daily-notes/daily-notes.css",
+        "src/shared/daily-note-tags.ts",
+        "Features/meeting-glyph-checkbox-slot/spec.md",
+        "Features/UI-Design/mocks/meeting-glyph-proposal.html"
+      ],
+      "changedLines": "MeetingGlyph|dn-meeting-glyph|ICON_REPLACED|agenda-meeting-glyph|timeline-meeting-glyph|#meeting",
+      "targets": [
+        {
+          "file": "e2e/meeting-glyph-checkbox-slot.spec.ts"
+        },
+        {
+          "file": "e2e/bug-daily-notes-time-editing.spec.ts",
+          "grep": "timeline task with #meeting"
+        }
+      ]
+    },
+    {
       "id": "daily-timeline-editing",
       "paths": [
         "src/renderer/src/components/daily-notes/Timeline.tsx",

@@ -14,6 +14,7 @@ import {
 import { formatTaskEditBuffer } from '../../../../shared/task-priority'
 import { priorityTimelineAccentClass } from '../../../../shared/task-priority'
 import AgendaNlCreateCard from './AgendaNlCreateCard'
+import MeetingGlyph from './MeetingGlyph'
 import NlAnnotatedInput from './NlAnnotatedInput'
 import NlDurationPopover from './NlDurationPopover'
 import NlTimePopover from './NlTimePopover'
@@ -684,7 +685,7 @@ export default function AgendaTimeline({
                     onClick={(e) => openFastPop(e, task, start, end, 'time')}
                   >{formatClock(start)}</span>
                   {task.isNote
-                    ? <span aria-hidden="true" />
+                    ? <MeetingGlyph testId="agenda-meeting-glyph" />
                     : (
                       <button
                         type="button"

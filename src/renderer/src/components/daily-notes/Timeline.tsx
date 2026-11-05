@@ -19,6 +19,7 @@ import {
 import { extractInlineTagsFromText } from '../../../../shared/daily-note-tags'
 import { formatTaskEditBuffer } from '../../../../shared/task-priority'
 import { priorityTimelineAccentClass } from '../../../../shared/task-priority'
+import MeetingGlyph from './MeetingGlyph'
 import { TaskEditInput, TaskPriorityBadge, buildTaskEditPatch } from './task-priority-ui'
 import TaskTextDisplay from './TaskTextDisplay'
 
@@ -494,7 +495,9 @@ export default function Timeline({
                   startRename(task)
                 }}
               >
-                {!task.isNote && (
+                {task.isNote ? (
+                  <MeetingGlyph testId="timeline-meeting-glyph" />
+                ) : (
                   <div
                     className="dn-tbox"
                     data-testid="timeline-task-toggle"

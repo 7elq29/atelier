@@ -18,14 +18,19 @@ export const DAILY_NOTE_TAG_SUGGESTIONS = [
 
 const STRUCTURAL_DAILY_NOTE_TAGS = new Set(['#tracker', '#delegated'])
 
-/** Tags shown in task labels (excludes section-managed tags like #tracker). */
+/** Tags rendered as a row glyph (checkbox slot), not as an inline chip. */
+const ICON_REPLACED_DAILY_NOTE_TAGS = new Set(['#meeting'])
+
+/** Tags shown as chips on task labels (excludes structural + icon-replaced). */
 export function visibleDailyNoteTagsForDisplay(tags: readonly string[]): string[] {
-  return tags.filter((tag) => !STRUCTURAL_DAILY_NOTE_TAGS.has(tag))
+  return tags.filter(
+    (tag) => !STRUCTURAL_DAILY_NOTE_TAGS.has(tag) && !ICON_REPLACED_DAILY_NOTE_TAGS.has(tag)
+  )
 }
 
-/** Task text plus inline `#tags` for edit fields (excludes section-managed tags). */
+/** Task text plus inline `#tags` for edit fields (excludes section-managed only). */
 export function formatTaskTextWithInlineTags(text: string, tags: readonly string[]): string {
-  const visible = visibleDailyNoteTagsForDisplay(tags)
+  const visible = tags.filter((tag) => !STRUCTURAL_DAILY_NOTE_TAGS.has(tag))
   if (visible.length === 0) return text
   return `${text} ${visible.join(' ')}`.trim()
 }
