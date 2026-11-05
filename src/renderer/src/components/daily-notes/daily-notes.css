@@ -902,6 +902,27 @@
   background: var(--text-tertiary);
 }
 
+/* Meeting glyph — same grid slot / weight as .dn-tbox */
+.dn-meeting-glyph {
+  width: 16px;
+  height: 16px;
+  justify-self: center;
+  display: inline-grid;
+  place-items: center;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.dn-meeting-glyph svg {
+  display: block;
+}
+.dn-agenda-entry.dn-tblock-pri-high .dn-meeting-glyph {
+  color: #e5484d;
+}
+[data-theme='light'] .dn-agenda-entry.dn-tblock-pri-high .dn-meeting-glyph {
+  color: #c53030;
+}
+
 .dn-agenda-entry.dn-tblock-pri-high .dn-agenda-meeting-dot {
   background: #e5484d;
 }

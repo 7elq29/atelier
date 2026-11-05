@@ -5,6 +5,7 @@ import {
   normalizeDailyNoteTag
 } from '../../../../shared/daily-note-tags'
 import { formatTaskEditBuffer } from '../../../../shared/task-priority'
+import MeetingGlyph from './MeetingGlyph'
 import TaskMoveContextMenu from './TaskMoveContextMenu'
 import { TaskEditInput, TaskPriorityBadge, buildTaskEditPatch } from './task-priority-ui'
 import TaskTextDisplay from './TaskTextDisplay'
@@ -113,7 +114,11 @@ export default function TaskItem({
         setMoveMenu({ x: e.clientX, y: e.clientY })
       }}
     >
-      {!task.isNote && <div className="dn-tbox" onClick={() => onToggle(task.id)} />}
+      {task.isNote ? (
+        <MeetingGlyph testId="unscheduled-meeting-glyph" />
+      ) : (
+        <div className="dn-tbox" onClick={() => onToggle(task.id)} />
+      )}
       {editing ? (
         <div className="dn-task-input-wrap">
           <TaskEditInput

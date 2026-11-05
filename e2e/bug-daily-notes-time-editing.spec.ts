@@ -188,9 +188,13 @@ test.describe('fix-confirmed: daily-notes timeline right-click creates a task at
     await input.press('Enter')
 
     await expect(page.locator('[data-testid="timeline-task"]', { hasText: 'Team sync' })).toBeVisible()
+    // #meeting is a glyph in the checkbox slot, not an inline chip
+    await expect(
+      page.locator('[data-testid="timeline-task"]', { hasText: 'Team sync' }).getByTestId('timeline-meeting-glyph')
+    ).toBeVisible()
     await expect(
       page.locator('[data-testid="timeline-task"]', { hasText: 'Team sync' }).getByTestId('task-tag-chip').filter({ hasText: '#meeting' })
-    ).toBeVisible()
+    ).toHaveCount(0)
     await page.waitForTimeout(1200)
 
     const content = readFileSync(notePath, 'utf-8')
