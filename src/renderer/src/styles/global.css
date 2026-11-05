@@ -4848,7 +4848,12 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 }
 .app-notes-panel .app-notes-atomic-host {
   box-sizing: border-box;
-  padding: 10px 18px 0;
+  /* Fluid gutter: up to pad-max, but never steal below min-content width. */
+  --notes-editor-inline-pad: min(
+    var(--notes-editor-inline-pad-max),
+    max(0px, calc((100% - var(--notes-editor-min-content)) / 2))
+  );
+  padding: 10px var(--notes-editor-inline-pad) 0;
 }
 .app-notes-panel .atomic-cm-editor {
   --atomic-editor-measure: var(--notes-editor-measure);
@@ -4982,7 +4987,12 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 /* Gap below date toolbar — host padding is reliable; .cm-content padding alone often doesn’t show. */
 .daily-note-editor-panel .daily-note-atomic-host {
   box-sizing: border-box;
-  padding: 20px 24px 0;
+  /* Fluid gutter: up to pad-max, but never steal below min-content width. */
+  --notes-editor-inline-pad: min(
+    var(--notes-editor-inline-pad-max),
+    max(0px, calc((100% - var(--notes-editor-min-content)) / 2))
+  );
+  padding: 20px var(--notes-editor-inline-pad) 0;
 }
 /* Hide the native scrollbar track on the CodeMirror scroller — wheel/keyboard scrolling still works. */
 .daily-note-editor-panel .cm-scroller {
