@@ -177,6 +177,20 @@
       ]
     },
     {
+      "id": "notes-editor-inline-pad",
+      "paths": [
+        "src/renderer/src/styles/global.css",
+        "src/renderer/src/styles/tokens.css"
+      ],
+      "changedLines": "notes-editor-inline-pad|app-notes-atomic-host|daily-note-atomic-host",
+      "targets": [
+        {
+          "file": "e2e/daily-note-notes-editor.spec.ts",
+          "grep": "opens from sidebar, edits"
+        }
+      ]
+    },
+    {
       "id": "sidebar-refinement-shared-css",
       "paths": [
         "src/renderer/src/styles/global.css"

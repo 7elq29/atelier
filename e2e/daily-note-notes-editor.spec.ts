@@ -191,6 +191,22 @@ test.describe('Daily note Notes slice editor (sidebar main panel)', () => {
 
     const editor = page.getByTestId('daily-note-editor')
     await expect(editor).toBeVisible()
+    const host = page.locator('.daily-note-atomic-host')
+    const gutter = await host.evaluate((el) => {
+      const style = getComputedStyle(el)
+      const left = parseFloat(style.paddingLeft)
+      const right = parseFloat(style.paddingRight)
+      const width = el.clientWidth
+      const minContent = parseFloat(style.getPropertyValue('--notes-editor-min-content')) || 480
+      const padMax = parseFloat(style.getPropertyValue('--notes-editor-inline-pad-max')) || 200
+      const expected = Math.min(padMax, Math.max(0, (width - minContent) / 2))
+      return { left, right, width, minContent, padMax, expected }
+    })
+    expect(gutter.left).toBeCloseTo(gutter.right, 0)
+    expect(gutter.left).toBeCloseTo(gutter.expected, 0)
+    expect(gutter.width - gutter.left - gutter.right).toBeGreaterThanOrEqual(
+      Math.min(gutter.minContent, gutter.width)
+    )
     await expect(editor.locator('.cm-content').first()).toHaveCSS('font-size', '15.5px')
     await expect
       .poll(() =>

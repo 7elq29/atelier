@@ -100,6 +100,9 @@
 
   /* Daily note + app notes Atomic editor: full main-panel width (package default is 70ch). */
   --notes-editor-measure: 100%;
+  /* Prefer this gutter; shrinks when the panel cannot keep --notes-editor-min-content. */
+  --notes-editor-inline-pad-max: 200px;
+  --notes-editor-min-content: 480px;
 }
 
 /* Light theme override (applied via [data-theme="light"] on <html>) — "Soft Paper" */
