@@ -374,6 +374,21 @@
       ]
     },
     {
+      "id": "palette-new-task-unscheduled",
+      "paths": [
+        "src/renderer/src/components/daily-notes/AgendaTimeline.tsx",
+        "src/renderer/src/components/daily-notes/AgendaNlCreateCard.tsx",
+        "src/renderer/src/App.tsx",
+        "Features/palette-new-task-unscheduled/spec.md"
+      ],
+      "changedLines": "requestCreate|noTime|New Task|new-task|pendingCreate|palette-new-task",
+      "targets": [
+        {
+          "file": "e2e/bug-palette-new-task-unscheduled.spec.ts"
+        }
+      ]
+    },
+    {
       "id": "daily-timeline-editing",
       "paths": [
         "src/renderer/src/components/daily-notes/Timeline.tsx",

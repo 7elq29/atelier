@@ -271,7 +271,9 @@ export default function AgendaTimeline({
     }
   }, [createOpen])
 
-  // Open create card when triggered from command palette
+  // Open create card when triggered from command palette.
+  // noTime: without a typed clock/duration, commit as unscheduled (not the
+  // seed hour). Right-click create keeps noTime unset so the click slot wins.
   useEffect(() => {
     if (!requestCreate || !onCreate) return
     const currentHour: number = new Date().getHours()
@@ -285,6 +287,7 @@ export default function AgendaTimeline({
       text: '',
       cardX: Math.max(8, window.innerWidth / 2 - 200),
       cardY: Math.max(8, window.innerHeight / 2 - 80),
+      noTime: true,
     })
   }, [requestCreate]) // eslint-disable-line react-hooks/exhaustive-deps
 
