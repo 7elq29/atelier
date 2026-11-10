@@ -191,6 +191,19 @@
       ]
     },
     {
+      "id": "note-topbar-bg-gap",
+      "paths": [
+        "src/renderer/src/styles/global.css"
+      ],
+      "changedLines": "topbar--note-editor",
+      "targets": [
+        {
+          "file": "e2e/daily-note-notes-editor.spec.ts",
+          "grep": "opens from sidebar, edits"
+        }
+      ]
+    },
+    {
       "id": "sidebar-refinement-shared-css",
       "paths": [
         "src/renderer/src/styles/global.css"
