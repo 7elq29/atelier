@@ -13,8 +13,10 @@
  * to `unavailable` — never crash the app or surface an error dialog.
  */
 import { execFile } from 'node:child_process'
-import { userInfo } from 'node:os'
+import { homedir, userInfo } from 'node:os'
 import { promisify } from 'node:util'
+import { shell } from 'electron'
+import * as pty from 'node-pty'
 import type {
   HarnessSpendBreakdown,
   SpendStatus,
@@ -30,6 +32,8 @@ const UBER_EMAIL_SUFFIX = '@uber.com'
 const SPEND_STATUS_BASE_URL = 'https://genai-api.uberinternal.com/v1/spendstatus/harness-pool'
 const SPEND_STATUS_TIMEOUT_MS = 15_000
 const GENAI_API = 'genai-api'
+/** Printed by `usso -fetch` when it cannot open a browser itself (no TTY). */
+export const USSO_WEBLOGIN_URL = 'https://usso.uberinternal.com/oidauth/weblogin'
 
 type PlainObject = Record<string, unknown>
 
@@ -199,6 +203,10 @@ let cachedToken: { raw: string; cachedAt: number } | undefined
 let autoInteractiveFetchAttempted = false
 /** Counts interactive `-fetch` invocations (auto + manual) for e2e / logs. */
 let interactiveFetchCount = 0
+/** Counts shell.openExternal weblogin opens (e2e asserts Renew opens the auth page). */
+let webloginOpenCount = 0
+/** Auto path opens the browser at most once per process (manual renew always opens). */
+let webloginOpenedForAuto = false
 
 function extractToken(stdout: string): string | null {
   const token = stdout
@@ -213,6 +221,62 @@ function extractToken(stdout: string): string | null {
 function isAuthFailureMessage(detail: string): boolean {
   return /no ssh cert|ussh|usso|login|authenticate|empty|expired|unauthorized|401|403|credential/i.test(
     detail
+  )
+}
+
+function extractUssoWebloginUrl(text: string): string | null {
+  const match = text.match(/https:\/\/usso\.uberinternal\.com\/oidauth\/weblogin\S*/i)
+  return match?.[0] ?? null
+}
+
+/** GUI / e2e: do not launch a real browser (still count for tests). */
+function spendStatusBrowserOpensDisabled(): boolean {
+  if (process.env.ATELIER_SPEND_STATUS_FIXTURE) return true
+  if (process.env.ATELIER_DISABLE_SPEND_STATUS === '1') return true
+  return process.argv.some((arg) => arg.includes('atelier-e2e'))
+}
+
+/**
+ * Dock-launched Atelier has no TTY — `usso -fetch` prints the weblogin URL then
+ * dies with `open /dev/tty`. Open that URL ourselves so Renew / first auto
+ * fetch actually show the auth page.
+ */
+async function openUssoWebloginBrowser(
+  reason: 'auto' | 'manual',
+  detail = ''
+): Promise<void> {
+  if (reason === 'auto' && webloginOpenedForAuto) return
+  const url = extractUssoWebloginUrl(detail) ?? USSO_WEBLOGIN_URL
+  webloginOpenCount += 1
+  if (reason === 'auto') webloginOpenedForAuto = true
+
+  if (spendStatusBrowserOpensDisabled()) {
+    logger.info('spend-status: weblogin open (skipped in e2e/fixture)', {
+      reason,
+      url,
+      webloginOpenCount
+    })
+    return
+  }
+
+  try {
+    await shell.openExternal(url)
+    logger.info('spend-status: opened USSO weblogin in browser', { reason, url })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.warn('spend-status: failed to open USSO weblogin', {
+      reason,
+      detail: msg.slice(0, 200)
+    })
+  }
+}
+
+function ussoNeedsExternalBrowser(detail: string): boolean {
+  return (
+    /oidauth\/weblogin/i.test(detail) ||
+    /open \/dev\/tty/i.test(detail) ||
+    /Waiting for Authentication/i.test(detail) ||
+    /device not configured/i.test(detail)
   )
 }
 
@@ -242,9 +306,78 @@ async function printQuietGenAiToken(): Promise<string | null> {
 }
 
 /**
- * Interactive fetch — may open a browser tab.
- * `auto`: only the first call in this process runs `-fetch`; later autos no-op.
- * `manual`: always runs (user clicked Renew USSO).
+ * Run `usso -fetch` on a hidden node-pty so it has a real TTY.
+ * Never opens macOS Terminal.app and never shows Atelier's terminal panel —
+ * the user only sees the browser weblogin page.
+ */
+async function fetchInteractiveGenAiTokenViaPty(opts?: { force?: boolean }): Promise<string | null> {
+  const args = ['-fetch', GENAI_API, '-print']
+  if (opts?.force) args.push('-force')
+  const usso = findUsso()
+  const env = subprocessEnvWithDevPath() as Record<string, string>
+
+  return await new Promise((resolve) => {
+    let out = ''
+    let settled = false
+    const finish = (token: string | null): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      try {
+        proc.kill()
+      } catch {
+        /* already exited */
+      }
+      resolve(token)
+    }
+
+    logger.info('spend-status: interactive usso fetch via hidden pty', {
+      force: !!opts?.force
+    })
+
+    let proc: pty.IPty
+    try {
+      proc = pty.spawn(usso, args, {
+        name: 'xterm-256color',
+        cols: 80,
+        rows: 24,
+        cwd: homedir(),
+        env
+      })
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      logger.warn('spend-status: pty spawn failed', { detail: detail.slice(0, 200) })
+      resolve(null)
+      return
+    }
+
+    const timer = setTimeout(() => {
+      logger.warn('spend-status: interactive usso pty timed out')
+      finish(null)
+    }, 120_000)
+
+    proc.onData((chunk) => {
+      out += chunk
+    })
+    proc.onExit(() => {
+      const token = extractToken(out)
+      if (token) {
+        cachedToken = { raw: token, cachedAt: Date.now() }
+        finish(token)
+        return
+      }
+      logger.warn('spend-status: interactive usso pty exited without token', {
+        detail: out.replace(/\s+/g, ' ').trim().slice(0, 200)
+      })
+      finish(null)
+    })
+  })
+}
+
+/**
+ * Interactive fetch.
+ * `auto`: short execFile probe (no Terminal); on TTY failure open browser once.
+ * `manual`: hidden PTY so usso can wait after weblogin (Renew USSO).
  */
 async function fetchInteractiveGenAiToken(
   reason: 'auto' | 'manual',
@@ -259,8 +392,13 @@ async function fetchInteractiveGenAiToken(
   logger.info('spend-status: interactive usso fetch', {
     reason,
     force: !!opts?.force,
-    interactiveFetchCount
+    interactiveFetchCount,
+    via: reason === 'manual' ? 'pty' : 'exec'
   })
+
+  if (reason === 'manual') {
+    return fetchInteractiveGenAiTokenViaPty(opts)
+  }
 
   const args = ['-fetch', GENAI_API, '-print']
   if (opts?.force) args.push('-force')
@@ -269,7 +407,7 @@ async function fetchInteractiveGenAiToken(
     const { stdout } = await execFileAsync(findUsso(), args, {
       encoding: 'utf-8',
       env: subprocessEnvWithDevPath(),
-      timeout: 120_000,
+      timeout: 15_000,
       maxBuffer: 1024 * 1024
     })
     const token = extractToken(stdout)
@@ -284,6 +422,11 @@ async function fetchInteractiveGenAiToken(
       reason,
       detail: detail.slice(0, 200)
     })
+    // usso printed the login URL but could not drive a TTY — open the browser
+    // once. Never open Terminal.app.
+    if (ussoNeedsExternalBrowser(detail)) {
+      await openUssoWebloginBrowser('auto', detail)
+    }
     return null
   }
 }
@@ -454,34 +597,46 @@ export async function getSpendStatusSnapshot(): Promise<SpendStatusSnapshot> {
   }
 }
 
-/** User clicked Renew USSO — always runs one interactive fetch (may open browser). */
-export async function renewSpendStatusUsso(): Promise<{ ok: boolean; interactiveFetchCount: number }> {
+/**
+ * User clicked Renew USSO — open weblogin in the system browser, then complete
+ * `usso -fetch` on a hidden internal PTY. Never opens Terminal.app / terminal UI.
+ */
+export async function renewSpendStatusUsso(): Promise<{
+  ok: boolean
+  interactiveFetchCount: number
+  webloginOpenCount: number
+}> {
+  // Browser only for the user — auth page, not a terminal window.
+  await openUssoWebloginBrowser('manual')
+
   if (process.env.ATELIER_SPEND_STATUS_FIXTURE === 'needs_usso') {
     interactiveFetchCount += 1
     logger.info('spend-status: interactive usso fetch', {
       reason: 'manual',
       force: true,
       interactiveFetchCount,
-      fixture: true
+      fixture: true,
+      via: 'fixture'
     })
     // Stay on needs_usso until fixture flips; still proves the click path.
-    return { ok: false, interactiveFetchCount }
+    return { ok: false, interactiveFetchCount, webloginOpenCount }
   }
   if (process.env.ATELIER_DISABLE_SPEND_STATUS === '1') {
-    return { ok: false, interactiveFetchCount }
+    return { ok: false, interactiveFetchCount, webloginOpenCount }
   }
 
   cachedToken = undefined
   const token = await fetchInteractiveGenAiToken('manual', { force: true })
-  return { ok: !!token, interactiveFetchCount }
+  return { ok: !!token, interactiveFetchCount, webloginOpenCount }
 }
 
 /** E2E / diagnostics for the once-only auto browser open gate. */
 export function getSpendStatusAuthDebug(): {
   interactiveFetchCount: number
   autoInteractiveFetchAttempted: boolean
+  webloginOpenCount: number
 } {
-  return { interactiveFetchCount, autoInteractiveFetchAttempted }
+  return { interactiveFetchCount, autoInteractiveFetchAttempted, webloginOpenCount }
 }
 
 /** @deprecated Prefer getSpendStatusSnapshot — kept for parse unit call sites. */
