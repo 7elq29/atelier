@@ -4809,7 +4809,9 @@ body.dragging-workspace-tab .workspace-drop-zone { opacity: 1; }
 
 /* App notes — Atomic Editor live preview (Atelier tokens, not package purple defaults) */
 .topbar--note-editor {
-  background: var(--bg-code);
+  /* Match note body / session topbar (--bg-app), not --bg-code — darker code
+     strip read as a gap against the sidebar. */
+  background: var(--bg-app);
 }
 .app-note-title-input {
   display: block;

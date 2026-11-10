@@ -189,6 +189,24 @@ test.describe('Daily note Notes slice editor (sidebar main panel)', () => {
 
     await expect(page.getByTestId('daily-note-editor-panel')).toBeVisible({ timeout: 10_000 })
 
+    const topbar = page.locator('.topbar.topbar--note-editor')
+    await expect(topbar).toBeVisible()
+    const topbarBg = await topbar.evaluate((el) => {
+      const style = getComputedStyle(el)
+      const root = getComputedStyle(document.documentElement)
+      return { bg: style.backgroundColor, app: root.getPropertyValue('--bg-app').trim() }
+    })
+    const appRgb = await page.evaluate((cssColor) => {
+      const probe = document.createElement('div')
+      probe.style.background = cssColor
+      document.body.appendChild(probe)
+      const rgb = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return rgb
+    }, topbarBg.app)
+    expect(topbarBg.bg).toBe(appRgb)
+    await page.screenshot({ path: join(artifactsDir, 'bug-note-topbar-bg-gap.png') })
+
     const editor = page.getByTestId('daily-note-editor')
     await expect(editor).toBeVisible()
     const host = page.locator('.daily-note-atomic-host')
