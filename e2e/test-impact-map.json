@@ -42,9 +42,10 @@
         "src/main/spend-status.ts",
         "src/main/spend-status-ipc.ts",
         "src/renderer/src/components/SpendStatusChip.tsx",
-        "src/preload/index.ts"
+        "src/preload/index.ts",
+        "src/main/uber-auth.ts"
       ],
-      "changedLines": "needs_usso|renewSpendStatusUsso|interactive usso fetch|Renew USSO|ATELIER_SPEND_STATUS_FIXTURE",
+      "changedLines": "needs_usso|renewSpendStatusUsso|renewGenAiAuth|interactive usso fetch|Renew USSO|ATELIER_SPEND_STATUS_FIXTURE|Complete login in Terminal",
       "targets": [
         {
           "file": "e2e/global-nav-and-settings.spec.ts",

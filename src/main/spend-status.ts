@@ -5,9 +5,9 @@
  * flow, same defensive response parsing; adapted to Atelier's plain
  * directly-instantiated module style instead of Morpheus's DI container.
  *
- * Auth: prefer quiet `usso -ussh genai-api -print` (no browser). Interactive
- * `usso -fetch` may open a browser login — spend polls allow that **once**
- * per process; further polls stay quiet until the user clicks Renew USSO.
+ * Auth: prefer quiet `usso -ussh genai-api -print` (no browser). Spend polls
+ * never run headless `usso -fetch` (browser asks to paste into a terminal the
+ * app does not own). Show Renew USSO; click opens Terminal via uber-auth.
  *
  * Every non-auth failure (missing `usso`, offline network, non-200) degrades
  * to `unavailable` — never crash the app or surface an error dialog.
@@ -21,7 +21,7 @@ import type {
   SpendStatusSnapshot
 } from '../shared/spend-status-types'
 import { logger } from './logger'
-import { findUsso } from './uber-auth'
+import { findUsso, renewGenAiAuth } from './uber-auth'
 import { subprocessEnvWithDevPath } from './shell-path'
 
 const execFileAsync = promisify(execFile)
@@ -241,53 +241,6 @@ async function printQuietGenAiToken(): Promise<string | null> {
   }
 }
 
-/**
- * Interactive fetch — may open a browser tab.
- * `auto`: only the first call in this process runs `-fetch`; later autos no-op.
- * `manual`: always runs (user clicked Renew USSO).
- */
-async function fetchInteractiveGenAiToken(
-  reason: 'auto' | 'manual',
-  opts?: { force?: boolean }
-): Promise<string | null> {
-  if (reason === 'auto' && autoInteractiveFetchAttempted) {
-    return null
-  }
-  if (reason === 'auto') autoInteractiveFetchAttempted = true
-
-  interactiveFetchCount += 1
-  logger.info('spend-status: interactive usso fetch', {
-    reason,
-    force: !!opts?.force,
-    interactiveFetchCount
-  })
-
-  const args = ['-fetch', GENAI_API, '-print']
-  if (opts?.force) args.push('-force')
-
-  try {
-    const { stdout } = await execFileAsync(findUsso(), args, {
-      encoding: 'utf-8',
-      env: subprocessEnvWithDevPath(),
-      timeout: 120_000,
-      maxBuffer: 1024 * 1024
-    })
-    const token = extractToken(stdout)
-    if (token) {
-      cachedToken = { raw: token, cachedAt: Date.now() }
-      return token
-    }
-    return null
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err)
-    logger.warn('spend-status: interactive usso fetch failed', {
-      reason,
-      detail: detail.slice(0, 200)
-    })
-    return null
-  }
-}
-
 async function resolveGenAiToken(): Promise<'ready' | 'needs_usso' | 'unavailable'> {
   if (cachedToken) return 'ready'
 
@@ -297,10 +250,18 @@ async function resolveGenAiToken(): Promise<'ready' | 'needs_usso' | 'unavailabl
     return 'ready'
   }
 
-  const interactive = await fetchInteractiveGenAiToken('auto')
-  if (interactive) return 'ready'
-
-  // Quiet + (at most one) interactive failed — show Renew USSO, do not fetch again.
+  // Do not headless `-fetch` here — it opens a browser with nowhere to paste.
+  // Mark the auto gate so polls stay quiet until Renew USSO (Terminal path).
+  if (!autoInteractiveFetchAttempted) {
+    autoInteractiveFetchAttempted = true
+    interactiveFetchCount += 1
+    logger.info('spend-status: interactive usso fetch', {
+      reason: 'auto',
+      force: false,
+      interactiveFetchCount,
+      skippedHeadless: true
+    })
+  }
   return 'needs_usso'
 }
 
@@ -413,15 +374,11 @@ export async function getSpendStatusSnapshot(): Promise<SpendStatusSnapshot> {
     const email = getCurrentUberEmail()
     let response = await fetchSpendStatus(email)
     if (response.status === 401) {
-      // Stale cached JWT — quiet re-print only. Do not `-force` (opens another tab).
+      // Stale cached JWT — quiet re-print only. Renew USSO handles interactive login.
       cachedToken = undefined
       const quiet = await printQuietGenAiToken()
-      if (!quiet) {
-        const again = await fetchInteractiveGenAiToken('auto')
-        if (!again) return { state: 'needs_usso' }
-      } else {
-        cachedToken = { raw: quiet, cachedAt: Date.now() }
-      }
+      if (!quiet) return { state: 'needs_usso' }
+      cachedToken = { raw: quiet, cachedAt: Date.now() }
       response = await fetchSpendStatus(email)
       if (response.status === 401) return { state: 'needs_usso' }
     }
@@ -454,7 +411,10 @@ export async function getSpendStatusSnapshot(): Promise<SpendStatusSnapshot> {
   }
 }
 
-/** User clicked Renew USSO — always runs one interactive fetch (may open browser). */
+/**
+ * User clicked Renew USSO — interactive login via Terminal (not headless
+ * `usso -fetch`, which leaves a browser token with nowhere to paste).
+ */
 export async function renewSpendStatusUsso(): Promise<{ ok: boolean; interactiveFetchCount: number }> {
   if (process.env.ATELIER_SPEND_STATUS_FIXTURE === 'needs_usso') {
     interactiveFetchCount += 1
@@ -472,8 +432,24 @@ export async function renewSpendStatusUsso(): Promise<{ ok: boolean; interactive
   }
 
   cachedToken = undefined
-  const token = await fetchInteractiveGenAiToken('manual', { force: true })
-  return { ok: !!token, interactiveFetchCount }
+  interactiveFetchCount += 1
+  logger.info('spend-status: interactive usso fetch', {
+    reason: 'manual',
+    force: true,
+    interactiveFetchCount,
+    via: 'terminal-bootstrap'
+  })
+
+  const renewed = await renewGenAiAuth()
+  if (!renewed) return { ok: false, interactiveFetchCount }
+
+  const quiet = await printQuietGenAiToken()
+  if (quiet) {
+    cachedToken = { raw: quiet, cachedAt: Date.now() }
+    autoInteractiveFetchAttempted = true
+    return { ok: true, interactiveFetchCount }
+  }
+  return { ok: false, interactiveFetchCount }
 }
 
 /** E2E / diagnostics for the once-only auto browser open gate. */

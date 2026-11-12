@@ -263,6 +263,33 @@ export async function ensureGenAiAuth(): Promise<void> {
 }
 
 /**
+ * Spend-chip **Renew USSO**: force interactive genai-api login.
+ *
+ * Headless `usso -fetch` opens a browser that says “copy-paste the state token
+ * to your terminal” — with no TTY that paste never lands and usage never
+ * returns. Reuse the Terminal bootstrap path instead, then probe for a JWT.
+ */
+export async function renewGenAiAuth(): Promise<boolean> {
+  if (uberAuthBootstrapDisabled()) return false
+
+  try {
+    logger.info('uber-auth: renew genai-api via interactive bootstrap')
+    await runInteractiveAuthBootstrap()
+    const after = await probeGenAiToken()
+    if (!after.ok) {
+      logger.warn('uber-auth: renew genai-api failed', { detail: after.detail.slice(0, 200) })
+      return false
+    }
+    logger.info('uber-auth: renew genai-api ready')
+    return true
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    logger.warn('uber-auth: renew genai-api error', { detail: detail.slice(0, 200) })
+    return false
+  }
+}
+
+/**
  * Ensures a local uSSH cert exists before ssh/devpod spawns (ssh, remote terminals).
  * Successful `-ussh-quiet` is cached for the process lifetime; concurrent callers
  * share one in-flight probe/bootstrap instead of spawning ussh per call.
