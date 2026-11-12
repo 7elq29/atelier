@@ -622,10 +622,15 @@ test.describe('sidebar spend-status chip', () => {
       const afterPoll = await page.evaluate(() => window.atelier.getSpendStatusAuthDebug())
       expect(afterPoll.interactiveFetchCount).toBe(1)
 
+      const beforeRenew = await page.evaluate(() => window.atelier.getSpendStatusAuthDebug())
       await renew.click()
       await expect
         .poll(async () => (await page.evaluate(() => window.atelier.getSpendStatusAuthDebug())).interactiveFetchCount)
         .toBe(2)
+      // Renew must open the USSO weblogin page (counted; real browser skipped in e2e).
+      await expect
+        .poll(async () => (await page.evaluate(() => window.atelier.getSpendStatusAuthDebug())).webloginOpenCount)
+        .toBe(beforeRenew.webloginOpenCount + 1)
 
       await chip.scrollIntoViewIfNeeded()
       await page.screenshot({ path: join(artifactsDir, 'spend-status-needs-usso.png') })
