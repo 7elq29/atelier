@@ -29,6 +29,7 @@
         "src/shared/spend-status-types.ts",
         "src/renderer/src/components/SpendStatusChip.tsx"
       ],
+      "changedLines": "spend-status|SpendStatus|harness-pool|spend_usd|getSpendStatusSnapshot",
       "targets": [
         {
           "file": "e2e/global-nav-and-settings.spec.ts",
@@ -43,9 +44,9 @@
         "src/main/spend-status-ipc.ts",
         "src/renderer/src/components/SpendStatusChip.tsx",
         "src/preload/index.ts",
-        "src/main/uber-auth.ts"
+        "Features/spend-usso-renew-open-browser/spec.md"
       ],
-      "changedLines": "needs_usso|renewSpendStatusUsso|renewGenAiAuth|interactive usso fetch|Renew USSO|ATELIER_SPEND_STATUS_FIXTURE|Complete login in Terminal",
+      "changedLines": "needs_usso|renewSpendStatusUsso|interactive usso fetch|Renew USSO|ATELIER_SPEND_STATUS_FIXTURE|webloginOpenCount|openUssoWebloginBrowser|USSO_WEBLOGIN|oidauth/weblogin",
       "targets": [
         {
           "file": "e2e/global-nav-and-settings.spec.ts",

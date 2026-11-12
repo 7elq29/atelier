@@ -132,7 +132,7 @@ export default function SpendStatusChip(): JSX.Element | null {
             disabled={renewing}
             aria-label="Renew USSO"
           >
-            {renewing ? 'Complete login in Terminal…' : 'Renew USSO'}
+            {renewing ? 'Renewing…' : 'Renew USSO'}
           </button>
         </div>
       </div>
