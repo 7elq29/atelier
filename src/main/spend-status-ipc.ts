@@ -18,11 +18,7 @@ export function registerSpendStatusHandlers(): void {
 
   ipcMain.handle(
     'spendStatus:renewUsso',
-    async (): Promise<{
-      ok: boolean
-      interactiveFetchCount: number
-      webloginOpenCount: number
-    }> => {
+    async (): Promise<{ ok: boolean; interactiveFetchCount: number }> => {
       return renewSpendStatusUsso()
     }
   )
@@ -30,7 +26,6 @@ export function registerSpendStatusHandlers(): void {
   ipcMain.handle('spendStatus:authDebug', (): {
     interactiveFetchCount: number
     autoInteractiveFetchAttempted: boolean
-    webloginOpenCount: number
   } => {
     return getSpendStatusAuthDebug()
   })

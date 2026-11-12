@@ -598,15 +598,11 @@ const api = {
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),
 
   getSpendStatus: (): Promise<SpendStatusSnapshot> => ipcRenderer.invoke('spendStatus:get'),
-  renewSpendStatusUsso: (): Promise<{
-    ok: boolean
-    interactiveFetchCount: number
-    webloginOpenCount: number
-  }> => ipcRenderer.invoke('spendStatus:renewUsso'),
+  renewSpendStatusUsso: (): Promise<{ ok: boolean; interactiveFetchCount: number }> =>
+    ipcRenderer.invoke('spendStatus:renewUsso'),
   getSpendStatusAuthDebug: (): Promise<{
     interactiveFetchCount: number
     autoInteractiveFetchAttempted: boolean
-    webloginOpenCount: number
   }> => ipcRenderer.invoke('spendStatus:authDebug'),
 
   listAppNotes: (): Promise<AppNoteRecord[]> => ipcRenderer.invoke('app-note:list'),
