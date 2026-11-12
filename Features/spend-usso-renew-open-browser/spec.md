@@ -1,22 +1,24 @@
-# Renew USSO must open the weblogin page
+# Renew USSO: linked weblogin wait/callback (no paste page)
 
-## Bug
-Dock-launched Atelier runs `usso -fetch genai-api -print` with no TTY.
-usso prints `https://usso.uberinternal.com/oidauth/weblogin` then dies with
-`open /dev/tty: device not configured` — **never opens a browser**. Clicking
-**Renew USSO** therefore looked like a no-op (main.log 2026-11-10).
+## Workflow
 
-## Expected
-1. Click **Renew USSO** → system **browser** opens the USSO weblogin URL.
-2. Complete `usso -fetch` on a **hidden internal PTY** (`node-pty`) so it has a
-   TTY — never open macOS Terminal.app and never surface Atelier’s terminal UI
-   (that confuses users for a simple auth renew).
-3. Auto interactive fetch (once per process) that hits the same TTY failure
-   also opens the weblogin URL once (matches “at most one browser open”).
-4. E2E fixture counts opens without launching a real browser / PTY wait.
+1. **Quiet check** (poll / mount): `usso -ussh genai-api -print`.
+   - JWT → fetch spendstatus → Claude Code / Cortana / Minion bars.
+   - Fail → chip shows **USSO expired · Renew USSO**. No auto browser tabs.
+2. **Renew USSO**: start `usso -fetch genai-api -print` on a **hidden PTY**
+   first so the CLI is `Waiting for Authentication` (wait/callback registered).
+3. Only then open the **weblogin URL usso printed** in the system browser.
+4. User completes Okta/SSO. usso receives the offline token via its wait /
+   callback path — **not** the copy-paste state-token page (that page appears
+   when weblogin is opened *before* usso is waiting).
+5. Quiet print succeeds → spend bars reload.
+
+Never open macOS Terminal.app or Atelier’s terminal UI for this flow.
 
 ## Done
-- [x] Renew click increments `webloginOpenCount` / opens URL
-- [x] TTY-failure path opens weblogin (auto once)
-- [x] Manual renew uses hidden node-pty for `usso -fetch` (no Terminal.app)
-- [x] `npm run build`; spend-status chip e2e (USSO expired) passes
+
+- [x] Polls: quiet only; no auto browser.
+- [x] Renew: PTY `usso -fetch` first, then open linked weblogin URL.
+- [x] JWT extraction ignores “Enter the state token…” prompts.
+- [x] E2e fixture still counts `webloginOpenCount` on Renew click.
+- [x] `npm run build` + spend-status chip e2e pass.

@@ -5,9 +5,10 @@
  * flow, same defensive response parsing; adapted to Atelier's plain
  * directly-instantiated module style instead of Morpheus's DI container.
  *
- * Auth: prefer quiet `usso -ussh genai-api -print` (no browser). Interactive
- * `usso -fetch` may open a browser login — spend polls allow that **once**
- * per process; further polls stay quiet until the user clicks Renew USSO.
+ * Auth: prefer quiet `usso -ussh genai-api -print` (no browser). Spend polls
+ * never open a browser. Renew USSO starts `usso -fetch` on a hidden PTY first
+ * (so the CLI is Waiting for Authentication), then opens the weblogin URL
+ * usso printed — Okta completes via usso’s wait/callback, not copy-paste.
  *
  * Every non-auth failure (missing `usso`, offline network, non-200) degrades
  * to `unavailable` — never crash the app or surface an error dialog.
@@ -208,14 +209,17 @@ let webloginOpenCount = 0
 /** Auto path opens the browser at most once per process (manual renew always opens). */
 let webloginOpenedForAuto = false
 
+/** Prefer a JWT line (`eyJ…`); ignore usso prompts like “Enter the state token…”. */
 function extractToken(stdout: string): string | null {
-  const token = stdout
+  const lines = stdout
     .trim()
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .pop()
-  return token && token.length > 0 ? token : null
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].startsWith('eyJ')) return lines[i]
+  }
+  return null
 }
 
 function isAuthFailureMessage(detail: string): boolean {
@@ -237,9 +241,9 @@ function spendStatusBrowserOpensDisabled(): boolean {
 }
 
 /**
- * Dock-launched Atelier has no TTY — `usso -fetch` prints the weblogin URL then
- * dies with `open /dev/tty`. Open that URL ourselves so Renew / first auto
- * fetch actually show the auth page.
+ * Open the weblogin URL **after** `usso -fetch` is already Waiting.
+ * Opening the bare URL before usso starts leaves an unlinked session and the
+ * server falls back to the copy-paste state-token page.
  */
 async function openUssoWebloginBrowser(
   reason: 'auto' | 'manual',
@@ -271,15 +275,6 @@ async function openUssoWebloginBrowser(
   }
 }
 
-function ussoNeedsExternalBrowser(detail: string): boolean {
-  return (
-    /oidauth\/weblogin/i.test(detail) ||
-    /open \/dev\/tty/i.test(detail) ||
-    /Waiting for Authentication/i.test(detail) ||
-    /device not configured/i.test(detail)
-  )
-}
-
 /** Quiet probe — never opens a browser. */
 async function printQuietGenAiToken(): Promise<string | null> {
   try {
@@ -306,9 +301,10 @@ async function printQuietGenAiToken(): Promise<string | null> {
 }
 
 /**
- * Run `usso -fetch` on a hidden node-pty so it has a real TTY.
- * Never opens macOS Terminal.app and never shows Atelier's terminal panel —
- * the user only sees the browser weblogin page.
+ * Renew path: start `usso -fetch` on a hidden PTY first (registers the wait /
+ * callback). When usso prints the weblogin URL / “Waiting for Authentication”,
+ * open that URL in the system browser. Okta completes via usso’s wait path —
+ * never Terminal.app, never paste into a terminal UI.
  */
 async function fetchInteractiveGenAiTokenViaPty(opts?: { force?: boolean }): Promise<string | null> {
   const args = ['-fetch', GENAI_API, '-print']
@@ -319,6 +315,7 @@ async function fetchInteractiveGenAiTokenViaPty(opts?: { force?: boolean }): Pro
   return await new Promise((resolve) => {
     let out = ''
     let settled = false
+    let browserOpened = false
     const finish = (token: string | null): void => {
       if (settled) return
       settled = true
@@ -354,10 +351,23 @@ async function fetchInteractiveGenAiTokenViaPty(opts?: { force?: boolean }): Pro
     const timer = setTimeout(() => {
       logger.warn('spend-status: interactive usso pty timed out')
       finish(null)
-    }, 120_000)
+    }, 180_000)
 
     proc.onData((chunk) => {
       out += chunk
+      if (!browserOpened) {
+        const url = extractUssoWebloginUrl(out)
+        const waiting = /Waiting for Authentication/i.test(out)
+        if (url || waiting) {
+          browserOpened = true
+          void openUssoWebloginBrowser('manual', out)
+        }
+      }
+      const jwt = extractToken(out)
+      if (jwt) {
+        cachedToken = { raw: jwt, cachedAt: Date.now() }
+        finish(jwt)
+      }
     })
     proc.onExit(() => {
       const token = extractToken(out)
@@ -374,61 +384,16 @@ async function fetchInteractiveGenAiTokenViaPty(opts?: { force?: boolean }): Pro
   })
 }
 
-/**
- * Interactive fetch.
- * `auto`: short execFile probe (no Terminal); on TTY failure open browser once.
- * `manual`: hidden PTY so usso can wait after weblogin (Renew USSO).
- */
-async function fetchInteractiveGenAiToken(
-  reason: 'auto' | 'manual',
-  opts?: { force?: boolean }
-): Promise<string | null> {
-  if (reason === 'auto' && autoInteractiveFetchAttempted) {
-    return null
-  }
-  if (reason === 'auto') autoInteractiveFetchAttempted = true
-
+/** Manual Renew only — polls never start interactive `-fetch` / browser. */
+async function fetchInteractiveGenAiToken(opts?: { force?: boolean }): Promise<string | null> {
   interactiveFetchCount += 1
   logger.info('spend-status: interactive usso fetch', {
-    reason,
+    reason: 'manual',
     force: !!opts?.force,
     interactiveFetchCount,
-    via: reason === 'manual' ? 'pty' : 'exec'
+    via: 'pty'
   })
-
-  if (reason === 'manual') {
-    return fetchInteractiveGenAiTokenViaPty(opts)
-  }
-
-  const args = ['-fetch', GENAI_API, '-print']
-  if (opts?.force) args.push('-force')
-
-  try {
-    const { stdout } = await execFileAsync(findUsso(), args, {
-      encoding: 'utf-8',
-      env: subprocessEnvWithDevPath(),
-      timeout: 15_000,
-      maxBuffer: 1024 * 1024
-    })
-    const token = extractToken(stdout)
-    if (token) {
-      cachedToken = { raw: token, cachedAt: Date.now() }
-      return token
-    }
-    return null
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err)
-    logger.warn('spend-status: interactive usso fetch failed', {
-      reason,
-      detail: detail.slice(0, 200)
-    })
-    // usso printed the login URL but could not drive a TTY — open the browser
-    // once. Never open Terminal.app.
-    if (ussoNeedsExternalBrowser(detail)) {
-      await openUssoWebloginBrowser('auto', detail)
-    }
-    return null
-  }
+  return fetchInteractiveGenAiTokenViaPty(opts)
 }
 
 async function resolveGenAiToken(): Promise<'ready' | 'needs_usso' | 'unavailable'> {
@@ -440,10 +405,17 @@ async function resolveGenAiToken(): Promise<'ready' | 'needs_usso' | 'unavailabl
     return 'ready'
   }
 
-  const interactive = await fetchInteractiveGenAiToken('auto')
-  if (interactive) return 'ready'
-
-  // Quiet + (at most one) interactive failed — show Renew USSO, do not fetch again.
+  // No auto browser tabs — Renew USSO starts the linked wait/callback flow.
+  if (!autoInteractiveFetchAttempted) {
+    autoInteractiveFetchAttempted = true
+    interactiveFetchCount += 1
+    logger.info('spend-status: interactive usso fetch', {
+      reason: 'auto',
+      force: false,
+      interactiveFetchCount,
+      skippedHeadless: true
+    })
+  }
   return 'needs_usso'
 }
 
@@ -556,15 +528,11 @@ export async function getSpendStatusSnapshot(): Promise<SpendStatusSnapshot> {
     const email = getCurrentUberEmail()
     let response = await fetchSpendStatus(email)
     if (response.status === 401) {
-      // Stale cached JWT — quiet re-print only. Do not `-force` (opens another tab).
+      // Stale cached JWT — quiet re-print only. Renew USSO handles interactive login.
       cachedToken = undefined
       const quiet = await printQuietGenAiToken()
-      if (!quiet) {
-        const again = await fetchInteractiveGenAiToken('auto')
-        if (!again) return { state: 'needs_usso' }
-      } else {
-        cachedToken = { raw: quiet, cachedAt: Date.now() }
-      }
+      if (!quiet) return { state: 'needs_usso' }
+      cachedToken = { raw: quiet, cachedAt: Date.now() }
       response = await fetchSpendStatus(email)
       if (response.status === 401) return { state: 'needs_usso' }
     }
@@ -598,17 +566,17 @@ export async function getSpendStatusSnapshot(): Promise<SpendStatusSnapshot> {
 }
 
 /**
- * User clicked Renew USSO — open weblogin in the system browser, then complete
- * `usso -fetch` on a hidden internal PTY. Never opens Terminal.app / terminal UI.
+ * User clicked Renew USSO:
+ * 1) Start `usso -fetch` on a hidden PTY (wait/callback registered).
+ * 2) When usso prints weblogin / Waiting, open that URL in the system browser.
+ * 3) Okta finishes → usso receives the offline token → we reload spend.
+ * Never opens Terminal.app / terminal UI; never opens weblogin before usso waits.
  */
 export async function renewSpendStatusUsso(): Promise<{
   ok: boolean
   interactiveFetchCount: number
   webloginOpenCount: number
 }> {
-  // Browser only for the user — auth page, not a terminal window.
-  await openUssoWebloginBrowser('manual')
-
   if (process.env.ATELIER_SPEND_STATUS_FIXTURE === 'needs_usso') {
     interactiveFetchCount += 1
     logger.info('spend-status: interactive usso fetch', {
@@ -618,7 +586,8 @@ export async function renewSpendStatusUsso(): Promise<{
       fixture: true,
       via: 'fixture'
     })
-    // Stay on needs_usso until fixture flips; still proves the click path.
+    // Count a linked-style open without launching a real browser / PTY wait.
+    await openUssoWebloginBrowser('manual')
     return { ok: false, interactiveFetchCount, webloginOpenCount }
   }
   if (process.env.ATELIER_DISABLE_SPEND_STATUS === '1') {
@@ -626,7 +595,7 @@ export async function renewSpendStatusUsso(): Promise<{
   }
 
   cachedToken = undefined
-  const token = await fetchInteractiveGenAiToken('manual', { force: true })
+  const token = await fetchInteractiveGenAiToken({ force: true })
   return { ok: !!token, interactiveFetchCount, webloginOpenCount }
 }
 
