@@ -1311,9 +1311,9 @@ export class MinionHarness implements HarnessDriver {
         // Dialing/backoff: stay on Boot until onConnected. Live: dismiss attach.
         if (!s.setupComplete) this.pushSetupChrome(s, sessionId, s.lastTask)
         if (sockState === 'live') {
-          // Attach safety net: empty replay still leaves Connect via onEvents;
-          // if that races, complete when we enter live and this was not a create.
-          if (!s.justCreated) this.completeStartup(sessionId, s)
+          // Worker socket live ⇒ past Connect. Do not leave SETUP on
+          // “Connecting…” while the session is already linked (create or attach).
+          this.completeStartup(sessionId, s)
           this.syncWorkingFromWorker(sessionId, s)
           this.notifyActivity(sessionId)
         }
@@ -1460,15 +1460,29 @@ export class MinionHarness implements HarnessDriver {
       // Scratch is backup only when fold never connected.
       this.stopScratchLoop(sessionId)
     }
-    // Dismiss SETUP as soon as the worker is clearly past Connect — user turn,
-    // attach replay, or any assistant text. Holding Connect after PROBE-OK was us.
+    // Dismiss SETUP as soon as the worker is past Connect. Live tool streams
+    // must count too — otherwise SETUP stays on “Connecting…” while tools run.
+    const liveWorkStarted =
+      phase === 'live' &&
+      state.workerLinked &&
+      (folded.events.length > 0 || folded.chrome != null || folded.sawAssistantText)
     if (
       sawUserTurn ||
       (phase === 'replay' && !state.justCreated) ||
       folded.sawAssistantText ||
-      (phase === 'replay' && folded.events.length > 0)
+      (phase === 'replay' && folded.events.length > 0) ||
+      liveWorkStarted
     ) {
       this.completeStartup(sessionId, state)
+      // completeStartup clears SETUP; paint Working immediately so we don't
+      // flash an empty chrome gap (tools can arrive before worker_state RUNNING).
+      if (liveWorkStarted) {
+        this.pushWorkingChrome(
+          state,
+          sessionId,
+          folded.chrome ?? { title: 'Working…', detail: '' }
+        )
+      }
     } else if (!state.setupComplete && state.lastTask) {
       // Re-paint after conversation_reset wiped sdk chrome, or after empty
       // replay left Boot/Connect with no dismiss signal.
@@ -2083,7 +2097,14 @@ export class MinionHarness implements HarnessDriver {
         if (state.closing || state.channel.closed || signal.aborted) break
         state.channel.push(ev)
       }
-      // Never dismiss SETUP from scratch — only worker socket live does.
+      // Scratch can stream tools while SETUP is still on Connect — dismiss so we
+      // don't leave “Connecting to DevPod…” over an already-running turn.
+      const scratchLiveWork = events.some(
+        (e) => e.type === 'tool_call_start' || e.type === 'text_delta' || e.type === 'tool_call_end'
+      )
+      if (!state.setupComplete && state.workerLinked && scratchLiveWork) {
+        this.completeStartup(sessionId, state)
+      }
       if (chrome) this.pushWorkingChrome(state, sessionId, chrome)
       else if (!state.completionPosted && (state.lastWorkingKey === '' || this.isScratchWaitChrome(state))) {
         this.pushOrchestratorWorkingChrome(state, sessionId, task)

@@ -384,6 +384,11 @@ test.describe('minion-session', () => {
         page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-working"]')
       ).toHaveCount(0)
       await expectIntermediateBeforeDone(page, 420_000)
+      // SETUP must not stay on Connecting while tools / the turn are already running.
+      await expect(page.getByTestId('minion-setup-steps')).toHaveCount(0)
+      await expect(
+        page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-setup"]')
+      ).toHaveCount(0)
       await expect(
         page.locator('[data-testid="conversation-status-card"][data-status-kind="minion-working"]')
       ).toHaveCount(0)
